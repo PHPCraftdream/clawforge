@@ -197,6 +197,8 @@ try {
   check("an extra field reads as unset — never half a value", takeInvocationFromEnv(), undefined);
   process.env[INVOCATION_ENV] = '{"version":1,"program":"","mode":"installed","audience":"terminal"}';
   check("an empty program reads as unset", takeInvocationFromEnv(), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":" ./clawforge ","mode":"checkout","audience":"terminal"}';
+  check("a padded program is trimmed, not stored raw", takeInvocationFromEnv(), { program: "./clawforge", mode: "checkout", audience: "terminal" });
   process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
   check("an unknown app selection reads as unset", takeInvocationFromEnv(), undefined);
 

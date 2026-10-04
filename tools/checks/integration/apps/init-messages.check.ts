@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { initApp, INIT_ARGUMENTS } from "#framework/integration/deployment/init.ts";
+import { setInvocation } from "#framework/core/io/invocation/index.ts";
 import { docsUrl } from "#framework/core/io/docs-url.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -25,6 +26,9 @@ async function initIn(options?: { local?: boolean }): Promise<{ output: string; 
 
 const plain = await initIn();
 const local = await initIn({ local: true });
+setInvocation({ program: "./clawforge", mode: "local-package", audience: "terminal" });
+const localPackageHint = await initIn();
+setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
 try {
   checkTrue("the commit advice names mcp-launch.mjs", plain.output.includes("mcp-launch.mjs"));
   checkTrue("...and app.ts, package.json, config/ and recipes/", ["app.ts", "package.json", "config/", "recipes/"].every((name) => plain.output.includes(name)));
@@ -38,6 +42,12 @@ try {
   checkTrue("--local does not hint at itself", !local.output.includes("clawforge init --local"));
   const localPackage = JSON.parse(await readFile(resolve(local.directory, "package.json"), "utf8")) as { devDependencies?: unknown };
   check("--local writes no machine path into package.json", localPackage.devDependencies, undefined);
+
+  // The hint goes through the renderer (review R2-1): under a local-package invocation the
+  // pasted command must name the program as typed, never the bare installed spelling.
+  const hint = /(\S+) init --local/.exec(localPackageHint.output)?.[1];
+  check("a local-package invocation spells the hint with the program as typed", hint, "./clawforge");
+  checkTrue("...and never the bare installed spelling", !/(^|[^/.\w])clawforge init --local/.test(localPackageHint.output));
   check("init declares --local through the argument machinery", INIT_ARGUMENTS.map((argument) => argument.name), ["local"]);
 
   const homepage = (JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { homepage: string }).homepage;
@@ -45,6 +55,7 @@ try {
 } finally {
   await rm(plain.parent, { recursive: true, force: true });
   await rm(local.parent, { recursive: true, force: true });
+  await rm(localPackageHint.parent, { recursive: true, force: true });
 }
 
 finish("init-messages");

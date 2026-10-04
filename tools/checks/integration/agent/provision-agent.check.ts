@@ -31,7 +31,7 @@ import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
   try {
@@ -539,10 +539,14 @@ async function realPosixTarget(): Promise<Transport | undefined> {
   return undefined;
 }
 
-const linkTransport = await realPosixTarget();
-if (linkTransport === undefined) {
+let probeTarget: Transport | undefined;
+await requires(process.platform === "linux" ? "linux-host" : "wsl", "provision symlink-boundary checks", async () => {
+  probeTarget = await realPosixTarget();
+});
+if (probeTarget === undefined) {
   check("provision symlink-boundary checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
 } else {
+  const linkTransport = probeTarget;
   // A one-shot target root with an `outside/` directory beside the data dir, plus a recipe
   // directory Node can read directly. Cleanup removes both sides.
   const stage = async (label: string) => {

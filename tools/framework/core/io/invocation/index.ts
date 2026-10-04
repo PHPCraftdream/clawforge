@@ -75,7 +75,9 @@ export function parseInvocation(text: string): Invocation | undefined {
     typeof audience !== "string" || !AUDIENCES.includes(audience as InvocationAudience) ||
     Object.keys(extra).length > 0
   ) return undefined;
-  if (app === undefined) return { program, mode: mode as InvocationMode, audience: audience as InvocationAudience };
+  // Stored trimmed, like parseLegacyInvokedAs: an untrimmed program renders a broken line.
+  const trimmed = program.trim();
+  if (app === undefined) return { program: trimmed, mode: mode as InvocationMode, audience: audience as InvocationAudience };
   if (!plainObject(app)) return undefined;
   const { name, selectedBy, ...appExtra } = app;
   if (
@@ -83,7 +85,7 @@ export function parseInvocation(text: string): Invocation | undefined {
     typeof selectedBy !== "string" || !SELECTIONS.includes(selectedBy as AppSelection) ||
     Object.keys(appExtra).length > 0
   ) return undefined;
-  return { program, mode: mode as InvocationMode, app: { name, selectedBy: selectedBy as AppSelection }, audience: audience as InvocationAudience };
+  return { program: trimmed, mode: mode as InvocationMode, app: { name, selectedBy: selectedBy as AppSelection }, audience: audience as InvocationAudience };
 }
 
 /** A legacy CLAWFORGE_INVOKED_AS prefix mapped onto the value: a program path (the launcher's

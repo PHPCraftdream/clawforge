@@ -16,7 +16,7 @@ import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, sp
 import { cannotCheckMessage, cannotSearchMessage, SYMLINK_LOOP, PRESENCE_PROBE } from "#framework/runtime/transport/quoting.ts";
 import { STDIN_DELIVERY_FAILED } from "#framework/runtime/transport/exec.ts";
 import type { ExecResult, ExecOptions, CommandFailure } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 // --- local: a real directory tree -----------------------------------------------------
 
@@ -86,20 +86,23 @@ import { check, finish } from "#checks/kit/harness.ts";
 // WSL's `--` mode feeds the command line through the distro's default shell. That silently
 // evaluates `$()`, backticks and `$NAME` inside a path or other argv value. `--exec` preserves
 // the argument vector while retaining the normal env wrapper used by the transport.
-const integrationDistro = process.env.CLAWFORGE_TEST_WSL_DISTRO;
-if (process.platform === "win32" && integrationDistro !== undefined) {
-  const wsl = new WslTransport(integrationDistro);
-  const literal = "backup ' quoted $literal ; `printf expanded` $(printf expanded)";
-  const result = await wsl.exec("printf", ["%s", literal], { allowFailure: true });
-  check("wsl preserves shell metacharacters in literal argv", result.code, 0);
-  check("wsl does not evaluate shell metacharacters", result.stdout, literal);
-  const envResult = await wsl.exec("sh", ["-c", "printf '%s' \"$CLAWFORGE_ARG\""], {
-    allowFailure: true,
-    env: { CLAWFORGE_ARG: literal },
-  });
-  check("wsl still passes target environment through argv", envResult.code, 0);
-  check("wsl environment values remain literal", envResult.stdout, literal);
-}
+await requires("wsl", "wsl --exec preserves the argument vector", async () => {
+  const integrationDistro = process.env.CLAWFORGE_TEST_WSL_DISTRO;
+  if (process.platform !== "win32" || integrationDistro === undefined) return;
+  {
+    const wsl = new WslTransport(integrationDistro);
+    const literal = "backup ' quoted $literal ; `printf expanded` $(printf expanded)";
+    const result = await wsl.exec("printf", ["%s", literal], { allowFailure: true });
+    check("wsl preserves shell metacharacters in literal argv", result.code, 0);
+    check("wsl does not evaluate shell metacharacters", result.stdout, literal);
+    const envResult = await wsl.exec("sh", ["-c", "printf '%s' \"$CLAWFORGE_ARG\""], {
+      allowFailure: true,
+      env: { CLAWFORGE_ARG: literal },
+    });
+    check("wsl still passes target environment through argv", envResult.code, 0);
+    check("wsl environment values remain literal", envResult.stdout, literal);
+  }
+});
 
 function execReturning(result: ExecResult) {
   const calls: { command: string; args: string[] }[] = [];
@@ -260,12 +263,13 @@ function execReturning(result: ExecResult) {
 // it. The symlinks are the half the first fix missed: the reason a stat fails need not be
 // anywhere in the path as written.
 
-if (process.platform === "win32") {
-  process.stderr.write("  skip local-shell exists checks (POSIX permissions are not enforced here)\n");
-} else if (process.getuid?.() === 0) {
-  // root enters a directory whatever its mode, so the case cannot be staged as root.
-  process.stderr.write("  skip local-shell exists checks (running as root)\n");
-} else {
+await requires("linux-host", "local-shell exists checks", async () => {
+  if (process.getuid?.() === 0) {
+    // root enters a directory whatever its mode, so the case cannot be staged as root.
+    process.stderr.write("  skip local-shell exists checks (running as root)\n");
+    return;
+  }
+  {
   const dir = await mkdtemp(join(tmpdir(), "clawforge-exists-shell-"));
   const blockedDir = resolve(dir, "blocked");
   try {
@@ -327,6 +331,7 @@ if (process.platform === "win32") {
     await rm(dir, { recursive: true, force: true });
   }
 }
+});
 
 // An env file supplies deployment values to compose; inherited host values for the same
 // names must be removed at every transport boundary.

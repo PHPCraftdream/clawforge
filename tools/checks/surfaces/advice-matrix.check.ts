@@ -18,7 +18,7 @@ import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, shimInvocation, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderArgument, shimInvocation, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -176,6 +176,17 @@ for (const { label, advice } of ADVICE_ROWS) {
     }
   }
 }
+
+// The renderer single-quotes shell-active words under the bare program (review R2-2), so the
+// rule above is pinned on renderArgument directly, not only on the golden rows: a renderer
+// that regressed to double-quoting them would pass the scan alone. It never throws: it runs
+// while an error is being reported.
+check("renderArgument single-quotes $ under the bare program", renderArgument("a$b", "clawforge"), "'a$b'");
+check("renderArgument single-quotes a backtick under the bare program", renderArgument("a`b", "clawforge"), "'a`b'");
+check("renderArgument single-quotes a backslash under the bare program", renderArgument("a\\b", "clawforge"), "'a\\b'");
+check("renderArgument still POSIX-quotes under a path spelling", renderArgument("a$b", SHIM_PROGRAM), "'a$b'");
+check("renderArgument still double-quotes an inert word under the bare program", renderArgument("two words", "clawforge"), '"two words"');
+check("renderAdvice single-quotes a shell-active word under the bare program", renderAdvice(command(["status", "--reason", "a$b`c"]), BARE_PROGRAM), "clawforge status --reason 'a$b`c'");
 
 /** P3 — a `shell` line is byte for byte what the advice carries, note included, under every
  *  column: nothing in the output layer rewrites a line for another shell or host. */

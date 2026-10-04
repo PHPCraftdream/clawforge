@@ -399,7 +399,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   // Types resolve already when this CLI runs from the app's own node_modules.
   const ownInstall = frameworkRoot.startsWith(resolve(root, "node_modules"));
   if (!ownInstall && options.local === true) for (const line of await localTypesLines()) info(line);
-  else if (!ownInstall) info("editors cannot resolve @clawforge/framework types without a local install: clawforge init --local");
+  else if (!ownInstall) info(`editors cannot resolve @clawforge/framework types without a local install: ${commandLine(["init", "--local"])}`);
 
   const boundaryNote = await wslBoundaryNote(envFile);
   if (boundaryNote !== undefined) info(boundaryNote);

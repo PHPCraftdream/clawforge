@@ -29,6 +29,8 @@ function isGateCommand(word: string | undefined): boolean {
 
 /** A word POSIX, cmd and pwsh leave as is without quoting (a path or an image reference included). */
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
+/** Characters POSIX expands inside double quotes: such a word is single-quoted (see renderArgument). */
+const POSIX_ACTIVE = /[`$\\]/;
 
 /** One word's quoting, exported for refusals that print a value the user typed (the same
  *  rule as the advice line, applied outside renderAdvice). */
@@ -37,9 +39,11 @@ export function renderArgument(word: string, program: string): string {
   if (SAFE_WORD.test(word)) return word;
   if (program.includes("/")) return shellQuote(word); // a path spelling: POSIX rules
   // Bare `clawforge` is typed in cmd.exe and PowerShell as often as in bash: double quotes
-  // are the only spelling all three parse. Accepted limit: POSIX would still expand `$` and
-  // backticks inside them, so no advice may reach this branch carrying a shell-active
-  // character — the matrix check in surfaces/advice-matrix.check.ts holds that rule.
+  // are the only spelling all three parse. POSIX shells still expand `$` and backticks
+  // inside them, so a word carrying one is single-quoted instead: it pastes safely into POSIX
+  // shells and PowerShell (cmd.exe keeps single quotes literally, an accepted limit for a value
+  // that cannot be spelled safely there). Never throws: this runs while an error is reported.
+  if (POSIX_ACTIVE.test(word)) return shellQuote(word);
   return `"${word.replaceAll('"', '\\"')}"`;
 }
 

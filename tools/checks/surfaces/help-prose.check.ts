@@ -100,8 +100,9 @@ for (const declaration of declarations) {
   validateProse(declaration, declaration.details);
 }
 
-// No details carry a token yet, so the rules above are vacuous — this table keeps them live
-// against the real declarations. Every string parses and must be accepted; a rule that
+// The synthetic table keeps the rules live against the real declarations, which now carry
+// {clawforge …} tokens of their own (the advice matrix's group 5 rows). Every string parses
+// and must be accepted; a rule that
 // stopped rejecting a broken token fails here first.
 const SYNTHETIC_TOKENS: readonly (readonly [string, string])[] = [
   ["status", "{clawforge}"],

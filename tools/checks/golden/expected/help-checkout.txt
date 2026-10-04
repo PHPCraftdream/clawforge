@@ -187,6 +187,7 @@
       --confirm-name <name>  Confirms the deployment's own name
       --break-lock           Take over the instance lock held by another operation
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --yes requires --confirm-name
     
     The inverse of bootstrap. Always stops and removes the compose project's containers, network and volumes (down, plus volumes) — nothing else goes without its own flag:
     --data removes the data directory (OC_DATA_DIR), --backups the backup directory (OC_BACKUP_DIR), --snapshots the snapshot directory (OC_SNAPSHOT_DIR).

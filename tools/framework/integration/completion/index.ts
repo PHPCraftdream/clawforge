@@ -10,7 +10,6 @@
 // whichever of the system-wide command or the checkout shim was typed. Output never carries a machine path.
 
 import { parseDeclaredArgs } from "../../core/command/index.ts";
-import { reportError } from "../../core/io/log.ts";
 import { commandLine } from "../../core/io/invocation/render.ts";
 import { emitRaw } from "../../core/io/output.ts";
 import { openclawCommands } from "../../commands/interface/index.ts";
@@ -75,14 +74,10 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
       "No deployment is resolved, no .env is read, no lock is touched.",
     arguments: COMPLETION_ARGUMENTS,
     run: async (args) => {
-      const parsed = parseDeclaredArgs(COMPLETION_ARGUMENTS, args);
-      const shell = parsed.shell as string | undefined;
-      if (shell === undefined || !COMPLETION_SHELLS.includes(shell as CompletionShell)) {
-        reportError(`usage: ${commandLine(["completion", `<${COMPLETION_SHELLS.join("|")}>`])}`);
-        return 1;
-      }
+      // required and choices are enforced by runGateCommand against this same declaration.
+      const shell = parseDeclaredArgs(COMPLETION_ARGUMENTS, args).shell as CompletionShell;
       const model = completionData(commandRegistry({ deployment: openclawCommands, gate: siblings, appName: "clawforge" }), appFlag);
-      emitRaw(renderCompletion(shell as CompletionShell, model));
+      emitRaw(renderCompletion(shell, model));
       return 0;
     },
   };

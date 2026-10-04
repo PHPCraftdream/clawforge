@@ -45,7 +45,8 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   const destroyCmd = openclawCommands.destroy!;
   check("destroy is destructive", effectProfile(destroyCmd).destructive, true);
   check("its dry run (no --yes) is read-only", callFactsFor(destroyCmd, []).effect, "read");
-  check("a real run (--yes) is not read-only", callFactsFor(destroyCmd, ["--yes"]).effect, "destroy");
+  // --yes carries --confirm-name: the declared rule refuses the pair-less argv at parse.
+  check("a real run (--yes) is not read-only", callFactsFor(destroyCmd, ["--yes", "--confirm-name", "policy"]).effect, "destroy");
   check("confirm stays conditional in the schema (readOnlyWhen decides, not a bare required)", (inputSchema(destroyCmd).required as string[]).includes("confirm"), false);
   check("destroy keeps --yes and --confirm-name apart from --force", [destroyCmd.arguments?.some((a) => a.name === "force"), destroyCmd.arguments?.some((a) => a.name === "yes"), destroyCmd.arguments?.some((a) => a.name === "confirm-name")], [false, true, true]);
 

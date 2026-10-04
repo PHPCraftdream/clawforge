@@ -68,7 +68,6 @@ export const HOST_ARGUMENTS = [
 interface HostInvocation {
   readonly context: HostContextName;
   readonly root: boolean;
-  readonly confirmRoot: boolean;
   readonly command: string[];
 }
 
@@ -77,13 +76,12 @@ interface HostInvocation {
  *  through untouched; that order is the parser's (tokenize's verbatim tail), not re-derived
  *  here. */
 function invocationOf(values: Values<typeof HOST_ARGUMENTS>): HostInvocation {
-  return { context: values.context, root: values.root, confirmRoot: values["confirm-root"], command: [...values.args] };
+  return { context: values.context, root: values.root, command: [...values.args] };
 }
 
-export function rootElevationRequested(root: boolean, confirmRoot: boolean): boolean {
+export function rootElevationRequested(root: boolean): boolean {
   // The body's declared rules refuse one-flag-alone calls in the parser before this runs;
   // the "double friction" intent lives in those rules' reasons now.
-  void confirmRoot;
   return root;
 }
 
@@ -112,7 +110,7 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
 }
 
 async function runInvocation(ctx: Context, parsed: HostInvocation, environment: HostEnvironment): Promise<void> {
-  const elevate = rootElevationRequested(parsed.root, parsed.confirmRoot);
+  const elevate = rootElevationRequested(parsed.root);
   const execution = await resolveHostContext(ctx, parsed.context, environment);
   if (execution.note !== undefined) info(execution.note);
   // The gate answers "will this command arrive as root", not "do we recognize this backend

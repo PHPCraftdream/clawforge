@@ -11,7 +11,7 @@ import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { format, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
+import { format, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "#src/runtime/deployment.ts";
@@ -31,7 +31,7 @@ import { down } from "#src/commands/lifecycle/instance/control.ts";
 import { loadSecrets } from "#src/commands/lifecycle/state.ts";
 import { createPrivateFile, protectPrivateDirectory } from "#src/security/privacy/private-file.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
-import { runCheck, requiresModel, summarize, acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
+import { runCheck, requiresModel, summarize } from "#src/commands/orchestration/accept.ts";
 import { withModelApproval } from "#src/service/openclaw-cli.ts";
 import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
@@ -216,25 +216,11 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   try {
     const { manifest, id } = unpacked.verified;
 
-    // No second validateSet here: the unpack gate already ran every check, with the files
-    // present — this subset re-ran it with checkFiles: false and its die branch was
-    // unreachable (R32-05).
-
-    if (manifest.acceptance === null || typeof manifest.acceptance !== "object" || Array.isArray(manifest.acceptance)) {
-      die("this set has an invalid acceptance section: expected an object keyed by recipe");
-    }
-    for (const [recipe, checks] of Object.entries(manifest.acceptance)) {
-      if (!Array.isArray(checks)) die(`this set has an invalid acceptance section for recipe "${recipe}": expected an array`);
-      const invalid = checks.map((check, index) => acceptanceSpecError(check, index)).find((detail) => detail !== undefined);
-      if (invalid !== undefined) die(`recipe "${recipe}": ${invalid}`);
-    }
-    if (!Array.isArray(manifest.secrets) || manifest.secrets.some((name) => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
-      die("this set has invalid secret names: use shell variable names such as WIKI_TOKEN");
-    }
-    // The image module's grammar, not a hand-rolled test — and the parsed value is what
-    // reaches the .env, the same format(ref) string the upgrade path guarantees.
-    const imageRef = typeof manifest.requires?.image === "string" ? tryParse(manifest.requires.image) : undefined;
-    if (imageRef === undefined) die(invalidImageReference(String(manifest.requires?.image ?? "")));
+    // Acceptance, secret names and the image grammar are the unpack gate's verdict
+    // (unpackArtifactVerified → loadSet/validateLoadedSet, with the files present) — no second
+    // check here (R32-05). The parsed image is what reaches the .env, the same format(ref)
+    // string the upgrade path guarantees.
+    const imageRef = tryParse(manifest.requires.image)!;
 
     const targetLines = manifest.secrets
       .filter((name) => name !== "OPENCLAW_GATEWAY_TOKEN" && secretValues[name] !== undefined)

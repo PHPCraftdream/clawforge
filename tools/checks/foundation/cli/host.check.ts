@@ -117,8 +117,8 @@ function envWith(platform: NodeJS.Platform, distros: string[], localIdentity: Id
 
 // --- the root gate: either flag alone is a refusal, not a silent downgrade --------------------
 
-check("neither flag elevates nobody", rootElevationRequested(false, false), false);
-check("both flags together are consent", rootElevationRequested(true, true), true);
+check("neither flag elevates nobody", rootElevationRequested(false), false);
+check("both flags together are consent", rootElevationRequested(true), true);
 
 {
   const stub = recordingTransport();

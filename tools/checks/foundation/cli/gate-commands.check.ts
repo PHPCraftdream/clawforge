@@ -30,10 +30,10 @@ import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
-import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
+import { makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
-import { parseDeclaredArgs, ArgumentError, UnknownArgumentError, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { parseDeclaredArgs, ArgumentError, UnknownArgumentError, unknownArgumentMessage, missingArgumentMessage } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -205,7 +205,26 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const code = await withOutputSink((chunk) => written.push(chunk), async () =>
     runGateCommand([makeCompletionGateCommand([versionGateCommand], true)], ["completion", "ruby"]));
   check("an unsupported shell is refused", code, 1);
-  check("naming the accepted ones", written.join("").includes("bash|zsh|pwsh"), true);
+  // The declaration's choices, in the parser's own voice (the same refusal an MCP call gets
+  // from validate) — not a hand-written usage line.
+  const refusedOutput = written.join("");
+  check("naming the accepted ones", COMPLETION_SHELLS.every((shell) => refusedOutput.includes(shell))
+    && refusedOutput.includes("ruby"), true);
+}
+
+// --- required and choices, enforced once from the declaration ------------------------------
+
+{
+  // Without the declaration's `required` being enforced here, a bare `new-app` used to run
+  // the command with no name at all.
+  let ran = false;
+  const written: string[] = [];
+  const command = sample({ run: async () => { ran = true; return 0; } });
+  const code = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([command], ["new-app"]));
+  check("a missing required argument is refused", code, 1);
+  check("in the parser's own voice", written.join("").includes(missingArgumentMessage("new-app", "<name>")), true);
+  check("the command never ran", ran, false);
 }
 
 // --- help where there is no deployment -------------------------------------------------------

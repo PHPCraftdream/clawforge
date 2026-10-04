@@ -96,7 +96,7 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
 
   // Terminal `--json` failure contract: a command invoked with its own declared --json flag
   // that fails still prints a machine-readable answer, unless it already printed (or
-  // streamed) something of its own. Never for an argument error — that is reported as such.
+  // streamed) something of its own. Never for an unknown-argument error — that is reported as such.
   const failed = (stage: Stage, error: unknown, facts?: CallFacts, shape?: EffectShape, action?: string): Execution => {
     if (io.surface === "terminal" && !(error instanceof UnknownArgumentError)
       && declaresJsonFlag(command, shape, action)

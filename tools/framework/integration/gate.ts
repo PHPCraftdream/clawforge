@@ -15,7 +15,9 @@ import { info, log, reportError, UserError } from "../core/io/log.ts";
 import { command, manual } from "../core/io/invocation/advice.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import { shellLine } from "../core/io/invocation/advice.ts";
-import { closestCommand } from "../core/command/index.ts";
+import { bind, tokenize } from "../core/command/parse.ts";
+import { closestCommand } from "../core/command/errors.ts";
+import type { ArgumentSpec } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 
@@ -73,11 +75,20 @@ export async function runGateCommand(
   }
 
   try {
+    refuseAgainstDeclaration(command, args);
     return await command.run(args);
   } catch (error) {
     reportError(error);
     return 1;
   }
+}
+
+/** `required` and `choices`, enforced once here against the command's declaration — the same
+ *  facts the MCP tool's validate refuses from (mcp/call.ts), in the parser's own voice. A
+ *  gate command's own parseDeclaredArgs stays syntactic. */
+function refuseAgainstDeclaration(command: GateCommand, args: readonly string[]): void {
+  const declared = command.arguments ?? [];
+  bind(declared as readonly ArgumentSpec[], tokenize(declared, args), { command: command.name });
 }
 
 /** What the help without a deployment knows about its surroundings. */
@@ -313,6 +324,8 @@ export interface CommandRegistry {
 export const DISPATCHER_COMMANDS = ["control-mcp", "help"] as const;
 
 /** The description the `help` command's own positional takes. */
+// Short: the tool summary beside it already says the bare call lists every command, and the
+// enum of names is what the schema spends its bytes on.
 export const HELP_COMMAND_DESCRIPTION = "Command name; omit to list every command";
 
 /** The details body shared by `help control-mcp` and `control-mcp --help` — control-mcp is

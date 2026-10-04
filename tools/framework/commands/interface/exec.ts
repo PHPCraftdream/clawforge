@@ -40,10 +40,8 @@ export async function exec(ctx: Context, args: string[]): Promise<void> {
 }
 
 async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
+  // Empty argv is refused by the parser: the verbatim variadic is declared required (see cli).
   const [command, ...rest] = rawArgs;
-  if (command === undefined) {
-    die(`usage: ${commandLine("exec")} <command> [args...], e.g. ${commandLine([])} exec cat /app/docs/channels/telegram.md`);
-  }
 
   // Same capture/streaming and failure-reporting shape as `cli` — see its own comments for why.
   const captured = isCaptured();

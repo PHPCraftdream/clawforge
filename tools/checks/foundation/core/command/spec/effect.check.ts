@@ -18,7 +18,8 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   up: [[[], "change"], [["--break-lock"], "change"]],
   restart: [[[], "change"]],
   down: [[[], "change"]],
-  destroy: [[[], "read", false], [["--data"], "read", false], [["--yes"], "destroy", true], [["--data", "--yes"], "destroy", true]],
+  // --yes carries --confirm-name: the declared rule refuses the pair-less argv at parse.
+  destroy: [[[], "read", false], [["--data"], "read", false], [["--yes", "--confirm-name", "sample"], "destroy", true], [["--data", "--yes", "--confirm-name", "sample"], "destroy", true]],
   logs: [[[], "read"], [["--tail", "5"], "read"]],
   backup: [
     [[], "change", true], [["--dry-run"], "read", false], [["--hot"], "change", true], [["create"], "change", true], [["create", "--dry-run"], "read", false],

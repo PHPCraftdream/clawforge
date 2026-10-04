@@ -17,13 +17,13 @@ import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, confirmNameMismatch } from "#framework/commands/lifecycle/instance/destroy.ts";
+import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, confirmNameMismatch, DESTROY_ARGUMENTS } from "#framework/commands/lifecycle/instance/destroy.ts";
 import { SUDO_PASSWORD_REFUSAL } from "#framework/runtime/datadir.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { humanSize } from "#framework/core/io/size.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
-import { ArgumentError } from "#framework/core/command/index.ts";
+import { ArgumentError, ruleText } from "#framework/core/command/index.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 
@@ -152,7 +152,10 @@ async function output(body: () => Promise<void>): Promise<string> {
 {
   const { ctx, dirs } = destroyContext();
   const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes"]));
-  check("--yes with no --confirm-name is refused", message.includes("--confirm-name"), true);
+  // The declared rule's voice, not a hand-written refusal: the same wording the parser
+  // prints on every surface and `--help` lists as a rule.
+  check("--yes with no --confirm-name is refused",
+    message.includes(ruleText({ rule: "requires", name: "yes", with: ["confirm-name"] }, DESTROY_ARGUMENTS)), true);
   check("nothing was removed", dirs.has(DATA_DIR), true);
 }
 
@@ -459,10 +462,10 @@ if (process.platform === "linux") {
   check("present target keeps the real-run hint", text.includes(DRY_RUN_REAL_RUN_HINT), true);
 }
 
-// --- --yes + --confirm-name is a prepare refusal: before any contact or the lock ------------
-// The name check needs only the arguments and the local deployment name, so the pipeline
-// refuses at the prepare stage — executeCommand with a recording transport proves no target
-// is ever reached.
+// --- --yes + --confirm-name is refused before any contact or the lock -----------------------
+// Presence is the declared rule, refused at parse; the value match needs only the arguments
+// and the local deployment name, so it refuses at the prepare stage — executeCommand with a
+// recording transport proves no target is ever reached.
 
 {
   const app: AppDefinition = { name: "destroy-fixture", description: "fixture", commands: { destroy: openclawCommands.destroy } };
@@ -474,15 +477,17 @@ if (process.platform === "linux") {
     readFile(): never { contacts.push("readFile"); throw new Error("unreachable"); },
   } as unknown as Transport;
 
-  for (const [label, argv, messagePart] of [
-    ["a missing --confirm-name", ["--data", "--yes"], "--confirm-name <deployment name> too"],
-    ["a wrong --confirm-name", ["--data", "--yes", "--confirm-name", "not-this-deployment"], "does not match"],
+  for (const [label, argv, stage, argument, messagePart] of [
+    // A rule refusal names the rule's own argument (--yes); the value refusal names --confirm-name.
+    ["a missing --confirm-name", ["--data", "--yes"], "parse", "yes",
+      ruleText({ rule: "requires", name: "yes", with: ["confirm-name"] }, DESTROY_ARGUMENTS)],
+    ["a wrong --confirm-name", ["--data", "--yes", "--confirm-name", "not-this-deployment"], "prepare", "confirm-name", "does not match"],
   ] as const) {
     const execution = await executeCommand(app, "destroy", [...argv], { surface: "terminal", transport });
-    check(`${label} stops at the prepare stage`, execution.stage, "prepare");
+    check(`${label} stops at the ${stage} stage`, execution.stage, stage);
     checkTrue(`${label} is an ArgumentError naming the argument`, execution.error instanceof ArgumentError
-      && (execution.error as ArgumentError).argument === "confirm-name");
-    checkTrue(`${label} keeps the established refusal text`, (execution.error as Error).message.includes(messagePart));
+      && (execution.error as ArgumentError).argument === argument);
+    checkTrue(`${label} keeps the declared refusal text`, (execution.error as Error).message.includes(messagePart));
     check(`${label} never contacts the target`, contacts, []);
     contacts.length = 0;
   }

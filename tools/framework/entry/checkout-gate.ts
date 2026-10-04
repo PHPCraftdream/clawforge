@@ -6,8 +6,6 @@
 
 import { parseDeclaredArgs, type UnknownArgumentError } from "../core/command/index.ts";
 import { countValue } from "../core/values/value.ts";
-import { reportError } from "../core/io/log.ts";
-import { commandLine } from "../core/io/invocation/render.ts";
 import { emit } from "../core/io/output.ts";
 import { createApp } from "../integration/deployment/scaffold.ts";
 import { removeApp } from "../integration/deployment/remove.ts";
@@ -110,11 +108,8 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "{clawforge --app <name> bootstrap}.",
     arguments: NEW_APP_ARGUMENTS,
     run: async (args) => {
-      const target = parseDeclaredArgs(NEW_APP_ARGUMENTS, args).name as string | undefined;
-      if (target === undefined) {
-        reportError(`usage: ${commandLine(["new-app", "<name>"])}`);
-        return 1;
-      }
+      // required is enforced by runGateCommand against this same declaration.
+      const target = parseDeclaredArgs(NEW_APP_ARGUMENTS, args).name as string;
       await createApp(target);
       return 0;
     },
@@ -138,12 +133,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
     arguments: REMOVE_APP_ARGUMENTS,
     run: async (args) => {
       const parsed = parseDeclaredArgs(REMOVE_APP_ARGUMENTS, args);
-      const target = parsed.name as string | undefined;
-      if (target === undefined) {
-        reportError(`usage: ${commandLine(["remove-app", "<name>"])} [--yes]`);
-        return 1;
-      }
-      return removeApp(target, parsed.yes === true);
+      return removeApp(parsed.name as string, parsed.yes === true);
     },
   },
   {

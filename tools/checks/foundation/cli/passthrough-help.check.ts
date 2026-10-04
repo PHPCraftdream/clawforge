@@ -11,6 +11,7 @@ import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { runApp, requestsHelp } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { missingArgumentMessage } from "#framework/core/command/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 checkTrue("--help alone requests our own help", requestsHelp(["--help"]));
@@ -23,5 +24,19 @@ const app = defineApp({ name: "passthrough-help-check", description: "fixture", 
 let output = "";
 await withOutputSink((chunk) => { output += chunk; }, () => runApp(app, ["cli", "--help"]));
 check("./clawforge cli --help prints our own summary, not OpenClaw's", output.includes(openclawCommands.cli.summary), true);
+
+// Empty argv is refused by the parser — the verbatim variadic is declared required — so the
+// refusal is the parser's own voice on every path, not a hand-written usage branch in the
+// command body.
+for (const name of ["cli", "exec"] as const) {
+  let refused = "";
+  try {
+    await withOutputSink((chunk) => { refused += chunk; }, () => runApp(app, [name]));
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+  check(`./clawforge ${name} with no arguments is refused by the parser`,
+    refused.includes(missingArgumentMessage(name, "<args…>")), true);
+}
 
 finish("passthrough-help");

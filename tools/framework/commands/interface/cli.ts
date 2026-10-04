@@ -37,9 +37,8 @@ export async function cli(ctx: Context, args: string[]): Promise<void> {
 }
 
 async function runCli(ctx: Context, passed: string[]): Promise<void> {
-  if (passed.length === 0) {
-    die(`usage: ${commandLine("cli")} <openclaw arguments>, e.g. ${commandLine([])} cli agent --agent main -m 'hi'`);
-  }
+  // Empty argv is refused by the parser: the verbatim variadic is declared required, so bind
+  // refuses before any phase runs.
 
   // Under a sink the child's own stdout would land in the middle of a JSON-RPC message, so
   // it is captured and re-emitted through the same sink as everything else. On a terminal

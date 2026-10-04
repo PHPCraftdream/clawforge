@@ -6,6 +6,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Gate commands (`new-app`, `remove-app`, `completion`) refuse a missing required argument or
+  an unsupported shell in the parser's own words, from their declarations, instead of
+  hand-written `usage:` lines; `destroy --yes` without `--confirm-name` is refused at the
+  parse stage with the declared rule's wording (previously a prepare-stage message), so the
+  `--help` rules section and the MCP refusal carry it too.
 * `set validate`, `set build` and `set try` refuse a set whose image reference the image
   grammar rejects (previously anything containing `@sha256:` passed); `set try`'s throwaway
   `.env` carries the canonical form of the parsed reference.

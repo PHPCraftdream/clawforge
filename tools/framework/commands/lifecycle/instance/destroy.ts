@@ -204,19 +204,18 @@ interface DestroyPlan extends DestroyValues {
 export const DESTROY = commandBody({
   effect: "read",
   arguments: DESTROY_ARGUMENTS,
+  rules: [
+    { rule: "requires", name: "yes", with: ["confirm-name"], reason: "so a typo cannot remove the wrong instance" },
+  ],
   prepare(call): DestroyPlan {
     const values = call.values as DestroyValues;
-    // Refused in prepare, before any contact or lock: the name is local, the decision is
-    // the arguments'. Shape guards below stay in run — they read the deployment's settings.
+    // Presence (--yes needs --confirm-name) is the declared rule above, refused at parse on
+    // every surface; here only the value has to match the deployment's own name. Shape
+    // guards below stay in run — they read the deployment's settings.
     if (values.yes === true) {
-      const confirmName = values["confirm-name"];
+      const confirmName = values["confirm-name"] ?? "";
       if (confirmName !== deploymentName()) {
-        throw new ArgumentError(
-          confirmName === undefined
-            ? "--yes needs --confirm-name <deployment name> too — this refuses a typo removing the wrong instance"
-            : confirmNameMismatch(confirmName),
-          "confirm-name",
-        );
+        throw new ArgumentError(confirmNameMismatch(confirmName), "confirm-name");
       }
       return { ...values, confirmName };
     }

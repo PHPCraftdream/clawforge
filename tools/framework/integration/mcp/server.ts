@@ -18,7 +18,7 @@
 
 import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
-import { commandRegistry, renderHelp, HELP_COMMAND_DESCRIPTION, type GateCommand } from "../gate.ts";
+import { commandRegistry, renderHelp, type CommandRegistry, type GateCommand } from "../gate.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
@@ -37,7 +37,7 @@ const PROTOCOL_VERSION = "2025-06-18";
  *
  *  mcp-serve and control-mcp are the same argument at different heights: a stdio JSON-RPC
  *  server cannot be started by a tool call inside a stdio JSON-RPC server — both would own
- *  the same stdout. `help` is not listed here: it is a tool (see HELP_TOOL below), the one
+ *  the same stdout. `help` is not listed here: it is a tool (see helpTool below), the one
  *  every other tool's shrunk description points at instead of carrying its own `--help`
  *  text whole. */
 export const MCP_EXEMPTIONS: Record<string, string> = {
@@ -48,14 +48,18 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
   "completion": "prints a shell script for a human's own shell profile; a tool call has no shell to register it in, and the byte budget is better spent on tools an agent actually calls",
 };
 
-/** The `help` tool: not a command, answered through renderHelp like the console's help. */
-const HELP_TOOL: Declared = {
-  summary: "Full description, usage and argument list for one command, or the command list when none is given",
-  arguments: [
-    { name: "command", description: HELP_COMMAND_DESCRIPTION, kind: "option", valueName: "name" },
-  ],
-  readOnly: true,
-};
+const HELP_TOOL_SUMMARY = "Full description, usage and argument list for one command, or the command list when none is given";
+
+/** The `help` tool: not a command, answered through renderHelp like the console's help. Its
+ *  argument is the registry's own `help` entry, not a second declaration here — minus the
+ *  `choices` list of every command name: tools/list already names every tool, and the enum
+ *  would cost about 500 bytes of the byte budget for nothing a client lacks. */
+function helpTool(registry: CommandRegistry): Declared {
+  const entry = registry.find("help");
+  if (entry === undefined) throw new Error("the registry has no help entry");
+  const argument = (entry.arguments ?? []).map((declared) => ({ ...declared, choices: undefined }));
+  return { summary: HELP_TOOL_SUMMARY, arguments: argument, readOnly: true };
+}
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -158,7 +162,7 @@ function wireSchema(schema: Record<string, unknown>): Record<string, unknown> {
   return Array.isArray(required) && required.length === 0 ? rest : schema;
 }
 
-function handleToolsList(id: number | string | undefined, tools: [string, AppCommand][], gateTools: GateCommand[]): void {
+function handleToolsList(id: number | string | undefined, tools: [string, AppCommand][], gateTools: GateCommand[], help: Declared): void {
   reply(id, {
     tools: [
       ...tools.map(([name, command]) => ({
@@ -176,8 +180,8 @@ function handleToolsList(id: number | string | undefined, tools: [string, AppCom
       })),
       {
         name: "help",
-        description: HELP_TOOL.summary,
-        inputSchema: wireSchema(inputSchema(HELP_TOOL)),
+        description: help.summary,
+        inputSchema: wireSchema(inputSchema(help)),
       },
     ],
   });
@@ -191,8 +195,9 @@ async function handleHelpTool(
   app: AppDefinition,
   gateCommands: GateCommand[],
   gateHelp: string[],
+  registry: CommandRegistry,
 ): Promise<void> {
-  const problems = validate(HELP_TOOL, args);
+  const problems = validate(helpTool(registry), args);
   if (problems.length > 0) {
     reply(id, {
       isError: true,
@@ -207,7 +212,6 @@ async function handleHelpTool(
     // The loop and the console's `help` read the same registry, so a tool call and a typed
     // `help <command>` answer byte for byte alike — and fail alike: an unknown target is an
     // error result here, as the console's exit 1 is there.
-    const registry = commandRegistry({ deployment: app.commands, gate: gateCommands, appName: app.name });
     rendered = renderHelp(target, app, registry, gateHelp);
   });
   const output = chunks.join("").trim();
@@ -338,6 +342,7 @@ async function handleToolsCall(
   gateCommands: GateCommand[],
   gateHelp: string[],
   lookup: (name: string) => Declared | undefined,
+  registry: CommandRegistry,
 ): Promise<void> {
   const params = request.params ?? {};
   // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
@@ -349,7 +354,7 @@ async function handleToolsCall(
   // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts) —
   // so it is handled here rather than through the `tools`/`gateTools` lookup below.
   if (name === "help") {
-    await handleHelpTool(request.id, args, app, gateCommands, gateHelp);
+    await handleHelpTool(request.id, args, app, gateCommands, gateHelp, registry);
     return;
   }
 
@@ -369,6 +374,9 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
   // dispatches what. Kept apart here only because they are invoked differently — a gate
   // command takes no Context, having to run before there is one.
   const gateTools = gateCommands.filter((command) => MCP_EXEMPTIONS[command.name] === undefined);
+  // One registry for the whole surface: the tools/list entry, the `help` tool and the help
+  // answers all read the same entries.
+  const registry = commandRegistry({ deployment: app.commands, gate: gateCommands, appName: app.name });
 
   // The tools nextSteps can name: what this server serves, app commands and gate commands
   // alike — the one surface a client called, so a remedy names a tool it can actually call.
@@ -427,7 +435,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
         break;
 
       case "tools/list":
-        handleToolsList(request.id, tools, gateTools);
+        handleToolsList(request.id, tools, gateTools, helpTool(registry));
         break;
 
       case "tools/call": {
@@ -439,7 +447,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           .then(() => {
             // Cancelled while still queued: never start it.
             if (id !== undefined && cancelledIds.delete(id)) return undefined;
-            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp, lookup);
+            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp, lookup, registry);
           })
           .catch((error) => {
             // handleToolsCall answers its own failures; this only guards a throw from

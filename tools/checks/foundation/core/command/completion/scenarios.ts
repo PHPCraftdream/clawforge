@@ -57,6 +57,17 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
     scenarios.push({ name: `${row.command} ${label}${row.option}'s value`, words, cword: words.length - 1 });
   }
 
+  // A pass-through command's free tail (R4-1): past the declared positionals the words are the
+  // child's literal text and nothing more is offered; at the last free slot the flags return.
+  for (const [command, positionals] of data.verbatim) {
+    const words = [command, ...Array.from({ length: positionals + 2 }, (_, index) => `zz${index}`), ""];
+    scenarios.push({ name: `${command}'s verbatim tail offers nothing`, words, cword: words.length - 1 });
+    if (positionals > 0) {
+      const boundary = [command, ...Array.from({ length: positionals }, (_, index) => `zz${index}`), ""];
+      scenarios.push({ name: `${command}'s last free slot still offers flags`, words: boundary, cword: boundary.length - 1 });
+    }
+  }
+
   if (first !== "") scenarios.push({ name: "--app before the command", words: ["--app", "x", first, ""], cword: 3 });
   // The `=` form the parser's splitLeadingAppFlag also accepts: one token with its own value.
   if (first !== "") scenarios.push({ name: "--app= before the command", words: [`--app=x`, first, ""], cword: 2 });

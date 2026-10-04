@@ -15,6 +15,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   contains `@sha256:`: `set validate` reports it as the finding `SET_IMAGE_INVALID` (on a working
   tree and on an artifact alike), `set build` and `set try` refuse it, and `set try`'s throwaway
   `.env` carries the canonical form of the parsed reference.
+* Shell completion offers `--version` and `-v` as the first word (they were accepted but never
+  offered), and after the first argument of a pass-through command (`host`, `cli`, `exec`) it
+  offers nothing more: what follows is the child's own text. Regenerate a completion script saved to a
+  file. On Windows, `clawforge` run in a deployment folder whose directory name differs in case
+  from the name it is known by no longer fails with `invalid deployment name`.
 * On Windows, a deployment that depends on its own `@clawforge/framework` copy gets advice
   lines prefixed with npm's `node_modules\.bin\clawforge` instead of the bash-only committed
   `./clawforge` shim, which cmd.exe and PowerShell cannot run.

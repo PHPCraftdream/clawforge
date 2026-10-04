@@ -79,6 +79,15 @@ export const BASH_COMPLETER: string =
   "  # Nothing after the command: the word being completed IS its own first position, which\n" +
   "  # the lookup above already answered.\n" +
   "  if (( ${#between[@]} == 0 )); then return; fi\n" +
+  "  # A pass-through command: past its declared positionals the tail is literal child text,\n" +
+  "  # so the command's own flags stop being offered.\n" +
+  "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"verbatim $cmd\")\"; then\n" +
+  "    local free=0 token\n" +
+  "    for token in \"${between[@]}\"; do\n" +
+  "      if [[ \"$token\" != -* ]]; then free=$((free + 1)); fi\n" +
+  "    done\n" +
+  "    if (( free > reply )); then COMPREPLY=(); return; fi\n" +
+  "  fi\n" +
   "  # Past a word after the command: that word's own list, else the command's fallback.\n" +
   "  if reply=\"$(_clawforge_lookup \"after $cmd ${between[0]}\")\"; then\n" +
   "    COMPREPLY=( $(compgen -W \"$reply\" -- \"$cur\") )\n" +
@@ -103,6 +112,7 @@ function caseArms(data: CompletionData): string {
     caseArm("  ", "top", data.top),
     ...[...data.first].map(([command, words]) => caseArm("    ", `first ${command}`, words)),
     ...[...data.after].map(([key, words]) => caseArm("    ", `after ${key}`, words)),
+    ...[...data.verbatim].map(([command, positionals]) => caseArm("    ", `verbatim ${command}`, [String(positionals)])),
     ...data.values.map((row) => caseArm("    ", `values ${row.command}${row.scope}${row.option}`, row.values)),
   ].join("");
 }

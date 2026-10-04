@@ -41,6 +41,9 @@ export interface GateCommand {
   readonly details?: string;
   /** Declared the same way an AppCommand's are, and used for the same three things. */
   readonly arguments?: CommandArgument[];
+  /** Alternative first-token spellings the gate rewrites onto this command (e.g. --version);
+   *  completion offers them at the top level. */
+  readonly aliases?: readonly string[];
   /** No Context — there is no deployment yet. Returns the exit code. */
   readonly run: (args: string[]) => Promise<number>;
 }

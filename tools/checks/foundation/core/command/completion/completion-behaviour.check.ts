@@ -99,6 +99,10 @@ const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
     registry.names.filter((name) => !(data.first.get("help") ?? []).includes(name)), []);
   check("every registry name is in the top level", registry.names.filter((name) => !data.top.includes(name)), []);
   check("--app is listed last at the top level, where the gate has one", data.top.at(-1), "--app");
+  // R4-2: the --version/-v alias is declared on the version gate command (GateCommand.aliases),
+  // so completion offers it at the top level instead of the alias living only in prose.
+  check("the declared version aliases complete at the top level",
+    [data.top.includes("--version"), data.top.includes("-v")], [true, true]);
 
   for (const shell of ["bash", "zsh", "pwsh"] as const) {
     const once = renderCompletion(shell, data);
@@ -195,6 +199,12 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   check("host's positional choices are offered at its position",
     ["target", "engine", "local"].every((value) => hostPosition.includes(value)), true);
   check("after host's positional flags return", at(data, ["host", "target", ""], 2).includes("--confirm-root"), true);
+  // R4-1: past a pass-through command's declared positionals the tail is the child's literal
+  // text — its own flags must not be offered where the parser would bind them as child text.
+  check("host's verbatim tail offers nothing (R4-1)", [...at(data, ["host", "target", "id", "--ro"], 4)], []);
+  check("exec's verbatim tail offers nothing (R4-1)", [...at(data, ["exec", "ls", "--raw"], 3)], []);
+  check("an option's value at a verbatim command's last free slot still completes",
+    at(data, ["host", "--context", "docker", ""], 3).includes("--help"), true);
 
   check("help completes command names",
     [at(data, ["help", "st"], 1).includes("status"), at(data, ["help", ""], 1).includes("backup")], [true, true]);

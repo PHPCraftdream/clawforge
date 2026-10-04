@@ -1,6 +1,5 @@
 // `logs`: bounded read or live follow, with --tail/--since/--grep.
 
-import { die } from "#src/core/io/log.ts";
 import { shouldFollow, emitRaw, withOutputSink } from "#src/core/io/output.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { countValue, regexValue } from "#src/core/values/value.ts";
@@ -41,19 +40,6 @@ export const LOGS = commandBody({
     emitRaw(grep === undefined ? output : filterLines(output, grep));
   },
 });
-
-/** Takes a validated recipe action's tail binding without losing inline literal values. */
-export function takeTail(args: string[]): { tail?: string; rest: string[] } {
-  const boundary = args.indexOf("--");
-  const at = args.findIndex((arg, index) => (boundary === -1 || index < boundary) && (arg === "--tail" || arg.startsWith("--tail=")));
-  if (at === -1) return { rest: args };
-  const inline = args[at].startsWith("--tail=");
-  const value = inline ? args[at].slice("--tail=".length) : args[at + 1];
-  if (value === undefined || (!inline && value.startsWith("-"))) die("--tail needs a number of lines");
-  if (!/^\d+$/.test(value)) die(`--tail takes a number of lines, not "${value}"`);
-
-  return { tail: value, rest: [...args.slice(0, at), ...args.slice(at + (inline ? 1 : 2))] };
-}
 
 /** Keeps only the lines `pattern` matches, preserving a trailing newline when the input had
  *  one. The bounded read arrives as one string; grepFollowSink below does the same job for a

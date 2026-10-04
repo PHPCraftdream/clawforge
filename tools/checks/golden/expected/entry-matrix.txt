@@ -180,6 +180,54 @@ stray: none
 == platform=linux layout=apps-upper argv=["status","--app","x"] env=OC_APP=x
 handover: run-here
 stray: none
+== platform=linux layout=apps-demo-case argv=<none> env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["status"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["status","--help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["--app","x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-demo-case argv=["--app=x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-demo-case argv=["--app"] env=none
+handover: refuse-app-value: missing
+stray: none
+== platform=linux layout=apps-demo-case argv=["status","--app","x"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
+stray: none
+== platform=linux layout=apps-demo-case argv=<none> env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["status"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["status","--help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
+stray: none
+== platform=linux layout=apps-demo-case argv=["--app","x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-demo-case argv=["--app=x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-demo-case argv=["--app"] env=OC_APP=x
+handover: refuse-app-value: missing
+stray: none
+== platform=linux layout=apps-demo-case argv=["status","--app","x"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
+stray: none
 == platform=linux layout=checkout-subfolder argv=<none> env=none
 handover: run-here
 stray: none
@@ -533,11 +581,11 @@ gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=./c
 handover: spawn checkout-gate delegated=false argv=["status","--help"]
 stray: none
 == platform=win32 layout=checkout-root argv=["--app","x","status"] env=none
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
 stray: none
 == platform=win32 layout=checkout-root argv=["--app=x","status"] env=none
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
 stray: none
 == platform=win32 layout=checkout-root argv=["--app"] env=none
@@ -549,27 +597,27 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
 stray: none
 == platform=win32 layout=checkout-root argv=<none> env=OC_APP=x
-gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+gate: help-without-deployment: no deployment "x" — available: openclaw (pick one with --app <name> or OC_APP)
 handover: spawn checkout-gate delegated=false argv=[]
 stray: none
 == platform=win32 layout=checkout-root argv=["help"] env=OC_APP=x
-gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+gate: help-without-deployment: no deployment "x" — available: openclaw (pick one with --app <name> or OC_APP)
 handover: spawn checkout-gate delegated=false argv=["help"]
 stray: none
 == platform=win32 layout=checkout-root argv=["status"] env=OC_APP=x
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: spawn checkout-gate delegated=false argv=["status"]
 stray: none
 == platform=win32 layout=checkout-root argv=["status","--help"] env=OC_APP=x
-gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+gate: help-without-deployment: no deployment "x" — available: openclaw (pick one with --app <name> or OC_APP)
 handover: spawn checkout-gate delegated=false argv=["status","--help"]
 stray: none
 == platform=win32 layout=checkout-root argv=["--app","x","status"] env=OC_APP=x
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
 stray: none
 == platform=win32 layout=checkout-root argv=["--app=x","status"] env=OC_APP=x
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
 stray: none
 == platform=win32 layout=checkout-root argv=["--app"] env=OC_APP=x
@@ -597,11 +645,11 @@ gate: run app=openclaw fact=openclaw/cwd argv=["status","--help"] prefix=./clawf
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
 stray: none
 == platform=win32 layout=apps-openclaw argv=["--app","x","status"] env=none
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: refuse-app-value: conflict --app x
 stray: none
 == platform=win32 layout=apps-openclaw argv=["--app=x","status"] env=none
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: refuse-app-value: conflict --app x
 stray: none
 == platform=win32 layout=apps-openclaw argv=["--app"] env=none
@@ -613,27 +661,27 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
 stray: none
 == platform=win32 layout=apps-openclaw argv=<none> env=OC_APP=x
-gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+gate: help-without-deployment: no deployment "x" — available: openclaw (pick one with --app <name> or OC_APP)
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
 stray: none
 == platform=win32 layout=apps-openclaw argv=["help"] env=OC_APP=x
-gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+gate: help-without-deployment: no deployment "x" — available: openclaw (pick one with --app <name> or OC_APP)
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
 stray: none
 == platform=win32 layout=apps-openclaw argv=["status"] env=OC_APP=x
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
 stray: none
 == platform=win32 layout=apps-openclaw argv=["status","--help"] env=OC_APP=x
-gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+gate: help-without-deployment: no deployment "x" — available: openclaw (pick one with --app <name> or OC_APP)
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
 stray: none
 == platform=win32 layout=apps-openclaw argv=["--app","x","status"] env=OC_APP=x
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: refuse-app-value: conflict --app x
 stray: none
 == platform=win32 layout=apps-openclaw argv=["--app=x","status"] env=OC_APP=x
-gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x => available: openclaw — pick one with --app <name> (or OC_APP), or create one with: | ./clawforge new-app <name>
 handover: refuse-app-value: conflict --app x
 stray: none
 == platform=win32 layout=apps-openclaw argv=["--app"] env=OC_APP=x
@@ -691,6 +739,54 @@ handover: refuse-app-value: missing
 stray: none
 == platform=win32 layout=apps-upper argv=["status","--app","x"] env=OC_APP=x
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=<none> env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["status"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["status","--help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["--app","x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-demo-case argv=["--app=x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-demo-case argv=["--app"] env=none
+handover: refuse-app-value: missing
+stray: none
+== platform=win32 layout=apps-demo-case argv=["status","--app","x"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=<none> env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["status"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["status","--help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
+stray: none
+== platform=win32 layout=apps-demo-case argv=["--app","x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-demo-case argv=["--app=x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-demo-case argv=["--app"] env=OC_APP=x
+handover: refuse-app-value: missing
+stray: none
+== platform=win32 layout=apps-demo-case argv=["status","--app","x"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=win32 layout=checkout-subfolder argv=<none> env=none
 handover: run-here
@@ -1203,6 +1299,54 @@ handover: run-here
 stray: none
 == platform=darwin layout=apps-upper argv=["status","--app","x"] env=OC_APP=x
 handover: run-here
+stray: none
+== platform=darwin layout=apps-demo-case argv=<none> env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["status"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["status","--help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["--app","x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-demo-case argv=["--app=x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-demo-case argv=["--app"] env=none
+handover: refuse-app-value: missing
+stray: none
+== platform=darwin layout=apps-demo-case argv=["status","--app","x"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=<none> env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["status"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["status","--help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
+stray: none
+== platform=darwin layout=apps-demo-case argv=["--app","x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-demo-case argv=["--app=x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-demo-case argv=["--app"] env=OC_APP=x
+handover: refuse-app-value: missing
+stray: none
+== platform=darwin layout=apps-demo-case argv=["status","--app","x"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=darwin layout=checkout-subfolder argv=<none> env=none
 handover: run-here

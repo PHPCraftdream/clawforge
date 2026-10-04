@@ -293,6 +293,7 @@ export function frameworkOwner(input: HandoverInput): HandoverDecision {
   const inCheckout = checkoutGateIn(appRoot, fs);
   if (inCheckout !== undefined) return { kind: "spawn", entry: inCheckout, args: argv, delegated: false };
   // The cwd keeps the case it was typed in; the file system may not (Windows: APPS/<name>).
+  // The app's name stays the typed spelling: the canonical basename may be cased differently.
   const canonical = platform === "win32" ? fs.realpath(appRoot) : appRoot;
   const parent = dirname(canonical);
   const parentName = basename(parent);
@@ -300,7 +301,7 @@ export function frameworkOwner(input: HandoverInput): HandoverDecision {
   if (isApps && fs.exists(resolve(appRoot, "app.ts"))) {
     const appGate = checkoutGateIn(dirname(parent), fs);
     if (appGate !== undefined) {
-      const withApp = handoverArgv(basename(canonical), argv);
+      const withApp = handoverArgv(basename(appRoot), argv);
       if ("refuse" in withApp) {
         return withApp.refuse === "missing-app-value" ? { kind: "refuse-app-value", reason: "missing-app-value" } : { kind: "refuse-app-value", reason: "app-conflict", typed: withApp.typed, app: withApp.app };
       }

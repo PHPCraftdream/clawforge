@@ -76,6 +76,7 @@ const BASE_DIRS = [`${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`,
 const WIN_REAL: Record<string, string> = {
   [`${ROOT}/APPS/openclaw`]: `${ROOT}/apps/openclaw`,
   [`${ROOT}/APPS/openclaw/app.ts`]: `${ROOT}/apps/openclaw/app.ts`,
+  [`${ROOT}/apps/demo`]: `${ROOT}/apps/DEMO`,
 };
 
 interface CaseLayout {
@@ -95,6 +96,7 @@ const LAYOUTS: readonly CaseLayout[] = [
   // handed-over gate process then sees its own cwd as inside is the host path module's case
   // rule, not resolver logic — covered end to end by system-install on Windows.
   { id: "apps-upper", handover: { appRoot: `${ROOT}/APPS/openclaw` } },
+  { id: "apps-demo-case", handover: { appRoot: `${ROOT}/apps/demo` } },
   { id: "checkout-subfolder", handover: { appRoot: `${ROOT}/docs` }, installed: { cwd: `${ROOT}/docs` } },
   { id: "checkout-fresh-apps", handover: { appRoot: `${ROOT}/apps/fresh` }, installed: { cwd: `${ROOT}/apps/fresh` } },
   { id: "installed-app", handover: { appRoot: APP }, installed: { cwd: APP } },

@@ -99,8 +99,9 @@ export function parseLegacyInvokedAs(text: string): Invocation | undefined {
   if (value === "") return undefined;
   const suffix = /^(.*) --app (\S+)$/.exec(value);
   if (suffix === null || suffix[1].trim() === "") {
-    // A value that is only a flag suffix, or one with internal spacing, is garbage a
-    // hand-written variable picked up on the way: it reads as unset, like the strict parse.
+    // A value that is only a flag suffix, or whose program carries internal spacing, is
+    // garbage a hand-written variable picked up on the way: it reads as unset, like the
+    // strict parse. Spacing between program and suffix trims away and is kept.
     if (value.startsWith("--") || /\s/.test(value)) return undefined;
     return { program: value, mode: value === "clawforge" ? "installed" : "checkout", audience: "terminal" };
   }

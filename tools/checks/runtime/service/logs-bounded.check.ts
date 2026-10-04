@@ -16,7 +16,6 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink, outputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
-import { takeTail } from "#framework/commands/lifecycle/instance/logs.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
@@ -28,22 +27,6 @@ useComposeProjectOverride("example-app");
 // the same question.
 const originalIsTTY = process.stdout.isTTY;
 Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
-
-// --- takeTail: the parser side of the declared --tail option --------------------------------
-
-check("no --tail leaves the arguments alone", takeTail(["--since", "1h"]), { rest: ["--since", "1h"] });
-check("--tail is taken out, the rest is kept in order", takeTail(["--since", "1h", "--tail", "50"]), { tail: "50", rest: ["--since", "1h"] });
-check("--tail is taken from the middle too", takeTail(["--tail", "5", "--since", "1h"]), { tail: "5", rest: ["--since", "1h"] });
-
-for (const bad of [["--tail"], ["--tail", "--since"], ["--tail", "lots"]]) {
-  let threw = false;
-  try {
-    takeTail(bad);
-  } catch {
-    threw = true;
-  }
-  check(`--tail ${bad[1] ?? "(nothing)"} is refused rather than passed to the runtime`, threw, true);
-}
 
 // --- the service log ------------------------------------------------------------------------
 

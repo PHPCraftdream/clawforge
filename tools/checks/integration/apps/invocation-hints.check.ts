@@ -231,6 +231,9 @@ try {
   check("parseLegacyInvokedAs refuses a -- program", parseLegacyInvokedAs("--app x"), undefined);
   check("parseLegacyInvokedAs refuses a spaced program", parseLegacyInvokedAs("a b"), undefined);
   check("parseLegacyInvokedAs agrees with the env path", parseLegacyInvokedAs("../../clawforge --app app1"), { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "flag" }, audience: "terminal" });
+  // R4-A F2: the documented rule — spacing between program and suffix trims away, so a doubled
+  // space there still parses, while spacing INSIDE the program does not.
+  check("parseLegacyInvokedAs keeps a doubled space between program and suffix", parseLegacyInvokedAs("clawforge  --app x"), { program: "clawforge", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
 
   // --- monorepo prefix: outputs keep ./clawforge --------------------------------------------
 

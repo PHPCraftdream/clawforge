@@ -31,6 +31,9 @@ export interface CompletionData {
   /** `"<command> <action>"` and `"<command> *"` → candidates; `*` is the fallback for an
    *  action word that is absent or unknown, where the shell cannot tell which was meant. */
   readonly after: ReadonlyMap<string, readonly string[]>;
+  /** Pass-through commands (`verbatim: true` variadic) → their declared positional count. Once
+   *  more non-flag words than that are typed, the tail is the child's literal text. */
+  readonly verbatim: ReadonlyMap<string, number>;
   readonly values: readonly OptionValues[];
 }
 
@@ -44,14 +47,20 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
   const top = [...registry.names].sort();
   // --app is the gate's own selector, not a registry name; appended after them (the bash
   // script has always listed it last), and only where the gate actually has one.
+  // A gate command's declared first-token aliases (e.g. --version) complete at the top level.
+  for (const entry of registry.entries) top.push(...(entry.gate?.aliases ?? []));
   if (appFlag) top.push("--app");
   const first = new Map<string, readonly string[]>();
   const after = new Map<string, readonly string[]>();
   const values: OptionValues[] = [];
+  const verbatim = new Map<string, number>();
 
   for (const entry of registry.entries) {
     const name = entry.name;
     const args = entry.arguments ?? [];
+    if (args.some((argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true)) {
+      verbatim.set(name, args.filter((argument) => argument.kind === "positional").length);
+    }
     const actionArgument = args.find(
       (argument): argument is CommandArgument & { choices: readonly string[] } =>
         argument.kind === "positional" && argument.name === "action" && argument.choices !== undefined,
@@ -103,7 +112,7 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
     after.set(`${name} *`, fallback);
   }
 
-  return { appFlag, top, first, after, values };
+  return { appFlag, top, first, after, verbatim, values };
 }
 
 /** The candidates for one completion request — the one decision both emitted scripts
@@ -146,5 +155,10 @@ export function completionCandidates(
   // Nothing after the command means the word being completed IS its own first positional —
   // an action word, typed in full or in part.
   if (between.length === 0) return candidates;
+  // A pass-through command: once more non-flag words than declared positionals are typed, the
+  // tail is the child's literal text and the command's own flags no longer apply. (An option's
+  // value is not recognised here — without the declared arguments the tail is assumed first.)
+  const positionals = data.verbatim.get(cmd);
+  if (positionals !== undefined && between.filter((word) => !word.startsWith("-")).length > positionals) return [];
   return data.after.get(`${cmd} ${between[0]}`) ?? data.after.get(`${cmd} *`) ?? [];
 }

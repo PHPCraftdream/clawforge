@@ -22,11 +22,15 @@ export const VERSION_ARGUMENTS: CommandArgument[] = [
 
 export const VERSION_COMMAND_NAME = "version";
 
+/** The first-token spellings normalizeVersionAlias rewrites onto the command: declared here once,
+ *  read by the gate dispatch and by completion. */
+export const VERSION_ALIASES: readonly string[] = ["--version", "-v"];
+
 export type VersionSource = "global" | "local" | "checkout";
 
 /** `--version`/`-v` as the first token become `version`: one declaration serves all spellings. */
 export function normalizeVersionAlias(argv: string[]): string[] {
-  if (argv[0] === "--version" || argv[0] === "-v") return [VERSION_COMMAND_NAME, ...argv.slice(1)];
+  if (argv[0] !== undefined && VERSION_ALIASES.includes(argv[0])) return [VERSION_COMMAND_NAME, ...argv.slice(1)];
   return argv;
 }
 
@@ -53,11 +57,12 @@ export function classifyCopy(packageDir: string, appRoot?: string): { source: Ve
 export function makeVersionGateCommand(appRoot?: string): GateCommand {
   return {
     name: VERSION_COMMAND_NAME,
-    summary: "Print clawforge's own version (also: --version, -v)",
+    summary: `Print clawforge's own version (also: ${VERSION_ALIASES.join(", ")})`,
     details:
       "Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. " +
       "{--verbose} / {--json} also say which copy runs: global, local (the app's own dependency) or checkout, and its path.",
     arguments: VERSION_ARGUMENTS,
+    aliases: VERSION_ALIASES,
     run: async (args) => {
       const parsed = parseDeclaredArgs(VERSION_ARGUMENTS, args);
       const pkg = await frameworkPackage();

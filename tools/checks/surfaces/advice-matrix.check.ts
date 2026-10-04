@@ -184,6 +184,22 @@ for (const { label, advice } of ADVICE_ROWS) {
 check("renderArgument single-quotes $ under the bare program", renderArgument("a$b", "clawforge"), "'a$b'");
 check("renderArgument single-quotes a backtick under the bare program", renderArgument("a`b", "clawforge"), "'a`b'");
 check("renderArgument single-quotes a backslash under the bare program", renderArgument("a\\b", "clawforge"), "'a\\b'");
+/** cmd.exe expands %VAR% even inside double quotes (review R-A F1) and no quoting
+ *  neutralises it under the bare program; render.ts keeps % in SAFE_WORD because POSIX and
+ *  PowerShell treat it literally — the accepted limit, documented at SAFE_WORD. Deployment
+ *  names cannot carry % (safeName), so what must hold is that no golden advice word does:
+ *  this fails the moment a new row builds one from free text. */
+for (const { label, advice } of ADVICE_ROWS) {
+  if (advice.kind !== CLAWFORGE_KIND) continue;
+  for (const word of [advice.app ?? "", ...advice.argv]) {
+    checkTrue(`${label}: no % in an advice word (cmd expands it even quoted)`, !word.includes("%"));
+  }
+}
+check(
+  "renderArgument keeps % bare under the bare program — the accepted cmd limit (see SAFE_WORD)",
+  renderArgument("a%b", "clawforge"),
+  "a%b",
+);
 check("renderArgument still POSIX-quotes under a path spelling", renderArgument("a$b", SHIM_PROGRAM), "'a$b'");
 check("renderArgument still double-quotes an inert word under the bare program", renderArgument("two words", "clawforge"), '"two words"');
 check("renderAdvice single-quotes a shell-active word under the bare program", renderAdvice(command(["status", "--reason", "a$b`c"]), BARE_PROGRAM), "clawforge status --reason 'a$b`c'");

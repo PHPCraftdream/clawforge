@@ -10,6 +10,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo status
   shim init (./clawforge, installed): ./clawforge status
   local package: ./clawforge status
+  local package (win32): node_modules\.bin\clawforge status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status
   tool form: {"tool":"status","arguments":{}}
 
@@ -25,6 +26,7 @@
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
+  local package (win32): node_modules\.bin\clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -40,6 +42,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo status
   shim init (./clawforge, installed): ./clawforge --app demo status
   local package: ./clawforge --app demo status
+  local package (win32): node_modules\.bin\clawforge --app demo status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status
   tool form: —
 
@@ -55,6 +58,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo logs --tail <n>
   shim init (./clawforge, installed): ./clawforge logs --tail <n>
   local package: ./clawforge logs --tail <n>
+  local package (win32): node_modules\.bin\clawforge logs --tail <n>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo logs --tail <n>
   tool form: {"tool":"logs","arguments":{"tail":"<n>"}}
 
@@ -70,6 +74,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo up  (after the change)
   shim init (./clawforge, installed): ./clawforge up  (after the change)
   local package: ./clawforge up  (after the change)
+  local package (win32): node_modules\.bin\clawforge up  (after the change)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up  (after the change)
   tool form: {"tool":"up","arguments":{}}
 
@@ -85,6 +90,7 @@
   global, handed to the checkout gate with --app demo: cd /srv/openclaw && ./clawforge backup  (in the crontab)
   shim init (./clawforge, installed): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   local package: cd /srv/openclaw && ./clawforge backup  (in the crontab)
+  local package (win32): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   checkout MCP launcher (../../clawforge, demo/flag): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   tool form: —
 
@@ -100,6 +106,7 @@
   global, handed to the checkout gate with --app demo: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   shim init (./clawforge, installed): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   local package: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
+  local package (win32): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   checkout MCP launcher (../../clawforge, demo/flag): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   tool form: —
 
@@ -115,6 +122,7 @@
   global, handed to the checkout gate with --app demo: clawforge status | Out-String
   shim init (./clawforge, installed): clawforge status | Out-String
   local package: clawforge status | Out-String
+  local package (win32): clawforge status | Out-String
   checkout MCP launcher (../../clawforge, demo/flag): clawforge status | Out-String
   tool form: —
 
@@ -130,6 +138,7 @@
   global, handed to the checkout gate with --app demo: reconnect the MCP client (in Claude Code: /mcp)
   shim init (./clawforge, installed): reconnect the MCP client (in Claude Code: /mcp)
   local package: reconnect the MCP client (in Claude Code: /mcp)
+  local package (win32): reconnect the MCP client (in Claude Code: /mcp)
   checkout MCP launcher (../../clawforge, demo/flag): reconnect the MCP client (in Claude Code: /mcp)
   tool form: —
 
@@ -145,6 +154,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap
   shim init (./clawforge, installed): ./clawforge bootstrap
   local package: ./clawforge bootstrap
+  local package (win32): node_modules\.bin\clawforge bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
@@ -160,6 +170,7 @@
   global, handed to the checkout gate with --app demo: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   shim init (./clawforge, installed): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   local package: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
+  local package (win32): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   checkout MCP launcher (../../clawforge, demo/flag): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   tool form: —
 
@@ -175,6 +186,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap --check
   shim init (./clawforge, installed): ./clawforge bootstrap --check
   local package: ./clawforge bootstrap --check
+  local package (win32): node_modules\.bin\clawforge bootstrap --check
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap --check
   tool form: {"tool":"bootstrap","arguments":{"check":true}}
 
@@ -190,6 +202,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
   local package: ./clawforge up
+  local package (win32): node_modules\.bin\clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -205,6 +218,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo logs --tail 100
   shim init (./clawforge, installed): ./clawforge logs --tail 100
   local package: ./clawforge logs --tail 100
+  local package (win32): node_modules\.bin\clawforge logs --tail 100
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo logs --tail 100
   tool form: {"tool":"logs","arguments":{"tail":"100"}}
 
@@ -220,6 +234,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo logs --tail 100
   shim init (./clawforge, installed): ./clawforge logs --tail 100
   local package: ./clawforge logs --tail 100
+  local package (win32): node_modules\.bin\clawforge logs --tail 100
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo logs --tail 100
   tool form: {"tool":"logs","arguments":{"tail":"100"}}
 
@@ -235,6 +250,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -250,6 +266,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --apply
   shim init (./clawforge, installed): ./clawforge secrets --apply
   local package: ./clawforge secrets --apply
+  local package (win32): node_modules\.bin\clawforge secrets --apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --apply
   tool form: {"tool":"secrets","arguments":{"apply":true}}
 
@@ -265,6 +282,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo configure-provider
   shim init (./clawforge, installed): ./clawforge configure-provider
   local package: ./clawforge configure-provider
+  local package (win32): node_modules\.bin\clawforge configure-provider
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo configure-provider
   tool form: {"tool":"configure-provider","arguments":{}}
 
@@ -280,6 +298,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo restart
   shim init (./clawforge, installed): ./clawforge restart
   local package: ./clawforge restart
+  local package (win32): node_modules\.bin\clawforge restart
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo restart
   tool form: {"tool":"restart","arguments":{}}
 
@@ -295,6 +314,7 @@
   global, handed to the checkout gate with --app demo: reconnect the MCP client (in Claude Code: /mcp)
   shim init (./clawforge, installed): reconnect the MCP client (in Claude Code: /mcp)
   local package: reconnect the MCP client (in Claude Code: /mcp)
+  local package (win32): reconnect the MCP client (in Claude Code: /mcp)
   checkout MCP launcher (../../clawforge, demo/flag): reconnect the MCP client (in Claude Code: /mcp)
   tool form: —
 
@@ -310,6 +330,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -325,6 +346,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -340,6 +362,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -355,6 +378,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -370,6 +394,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
   local package: ./clawforge inspect
+  local package (win32): node_modules\.bin\clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -385,6 +410,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli channels status --json
   shim init (./clawforge, installed): ./clawforge cli channels status --json
   local package: ./clawforge cli channels status --json
+  local package (win32): node_modules\.bin\clawforge cli channels status --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli channels status --json
   tool form: {"tool":"cli","arguments":{"args":["channels","status","--json"]}}
 
@@ -400,6 +426,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo lock
   shim init (./clawforge, installed): ./clawforge lock
   local package: ./clawforge lock
+  local package (win32): node_modules\.bin\clawforge lock
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo lock
   tool form: {"tool":"lock","arguments":{}}
 
@@ -415,6 +442,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -430,6 +458,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -445,6 +474,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -460,6 +490,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo recover-env
   shim init (./clawforge, installed): ./clawforge recover-env
   local package: ./clawforge recover-env
+  local package (win32): node_modules\.bin\clawforge recover-env
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo recover-env
   tool form: {"tool":"recover-env","arguments":{}}
 
@@ -475,6 +506,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect  (then edit .env: fix the line named)
   shim init (./clawforge, installed): ./clawforge inspect  (then edit .env: fix the line named)
   local package: ./clawforge inspect  (then edit .env: fix the line named)
+  local package (win32): node_modules\.bin\clawforge inspect  (then edit .env: fix the line named)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect  (then edit .env: fix the line named)
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -490,6 +522,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config --dump
   shim init (./clawforge, installed): ./clawforge apply-config --dump
   local package: ./clawforge apply-config --dump
+  local package (win32): node_modules\.bin\clawforge apply-config --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config --dump
   tool form: {"tool":"apply-config","arguments":{"dump":true}}
 
@@ -505,6 +538,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --dump
   shim init (./clawforge, installed): ./clawforge secrets --dump
   local package: ./clawforge secrets --dump
+  local package (win32): node_modules\.bin\clawforge secrets --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --dump
   tool form: {"tool":"secrets","arguments":{"dump":true}}
 
@@ -520,6 +554,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade
   shim init (./clawforge, installed): ./clawforge upgrade
   local package: ./clawforge upgrade
+  local package (win32): node_modules\.bin\clawforge upgrade
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade
   tool form: {"tool":"upgrade","arguments":{}}
 
@@ -535,6 +570,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade
   shim init (./clawforge, installed): ./clawforge upgrade
   local package: ./clawforge upgrade
+  local package (win32): node_modules\.bin\clawforge upgrade
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade
   tool form: {"tool":"upgrade","arguments":{}}
 
@@ -550,6 +586,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   shim init (./clawforge, installed): ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   local package: ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
+  local package (win32): node_modules\.bin\clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -565,6 +602,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after fixing the recipe's recipe.json)
   shim init (./clawforge, installed): ./clawforge set validate  (after fixing the recipe's recipe.json)
   local package: ./clawforge set validate  (after fixing the recipe's recipe.json)
+  local package (win32): node_modules\.bin\clawforge set validate  (after fixing the recipe's recipe.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after fixing the recipe's recipe.json)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -580,6 +618,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
   local package: ./clawforge set validate
+  local package (win32): node_modules\.bin\clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -595,6 +634,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
   local package: ./clawforge set validate
+  local package (win32): node_modules\.bin\clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -610,6 +650,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
   local package: ./clawforge set validate
+  local package (win32): node_modules\.bin\clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -625,6 +666,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
   local package: ./clawforge set validate
+  local package (win32): node_modules\.bin\clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -640,6 +682,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
   local package: ./clawforge inspect
+  local package (win32): node_modules\.bin\clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -655,6 +698,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap
   shim init (./clawforge, installed): ./clawforge bootstrap
   local package: ./clawforge bootstrap
+  local package (win32): node_modules\.bin\clawforge bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
@@ -670,6 +714,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
   local package: ./clawforge set validate
+  local package (win32): node_modules\.bin\clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -685,6 +730,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -700,6 +746,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli security audit --json
   shim init (./clawforge, installed): ./clawforge cli security audit --json
   local package: ./clawforge cli security audit --json
+  local package (win32): node_modules\.bin\clawforge cli security audit --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli security audit --json
   tool form: {"tool":"cli","arguments":{"args":["security","audit","--json"]}}
 
@@ -715,6 +762,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli security audit --json
   shim init (./clawforge, installed): ./clawforge cli security audit --json
   local package: ./clawforge cli security audit --json
+  local package (win32): node_modules\.bin\clawforge cli security audit --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli security audit --json
   tool form: {"tool":"cli","arguments":{"args":["security","audit","--json"]}}
 
@@ -730,6 +778,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   shim init (./clawforge, installed): ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   local package: ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
+  local package (win32): node_modules\.bin\clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   tool form: {"tool":"expose","arguments":{"action":"status"}}
 
@@ -745,6 +794,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo expose status
   shim init (./clawforge, installed): ./clawforge expose status
   local package: ./clawforge expose status
+  local package (win32): node_modules\.bin\clawforge expose status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status
   tool form: {"tool":"expose","arguments":{"action":"status"}}
 
@@ -760,6 +810,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   shim init (./clawforge, installed): ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   local package: ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
+  local package (win32): node_modules\.bin\clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   tool form: {"tool":"expose","arguments":{"action":"status"}}
 
@@ -775,6 +826,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   shim init (./clawforge, installed): ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   local package: ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
+  local package (win32): node_modules\.bin\clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   tool form: {"tool":"secrets","arguments":{"apply":true}}
 
@@ -790,6 +842,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo doctor  (check local filesystem access, then retry)
   shim init (./clawforge, installed): ./clawforge doctor  (check local filesystem access, then retry)
   local package: ./clawforge doctor  (check local filesystem access, then retry)
+  local package (win32): node_modules\.bin\clawforge doctor  (check local filesystem access, then retry)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor  (check local filesystem access, then retry)
   tool form: {"tool":"doctor","arguments":{}}
 
@@ -805,6 +858,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo backup
   shim init (./clawforge, installed): ./clawforge backup
   local package: ./clawforge backup
+  local package (win32): node_modules\.bin\clawforge backup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup
   tool form: {"tool":"backup","arguments":{}}
 
@@ -820,6 +874,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo backup list
   shim init (./clawforge, installed): ./clawforge backup list
   local package: ./clawforge backup list
+  local package (win32): node_modules\.bin\clawforge backup list
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup list
   tool form: {"tool":"backup","arguments":{"action":"list"}}
 
@@ -835,6 +890,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo backup install --apply
   shim init (./clawforge, installed): ./clawforge backup install --apply
   local package: ./clawforge backup install --apply
+  local package (win32): node_modules\.bin\clawforge backup install --apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup install --apply
   tool form: {"tool":"backup","arguments":{"action":"install","apply":true}}
 
@@ -850,6 +906,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   shim init (./clawforge, installed): ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   local package: ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
+  local package (win32): node_modules\.bin\clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   tool form: {"tool":"backup","arguments":{"action":"list"}}
 
@@ -865,6 +922,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap
   shim init (./clawforge, installed): ./clawforge bootstrap
   local package: ./clawforge bootstrap
+  local package (win32): node_modules\.bin\clawforge bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
@@ -880,6 +938,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   shim init (./clawforge, installed): ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   local package: ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
+  local package (win32): node_modules\.bin\clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   tool form: {"tool":"upgrade","arguments":{"image":"<image>"}}
 
@@ -895,6 +954,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   shim init (./clawforge, installed): ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   local package: ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
+  local package (win32): node_modules\.bin\clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   tool form: {"tool":"upgrade","arguments":{"image":"<image>"}}
 
@@ -910,6 +970,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after adding the missing file)
   shim init (./clawforge, installed): ./clawforge set validate  (after adding the missing file)
   local package: ./clawforge set validate  (after adding the missing file)
+  local package (win32): node_modules\.bin\clawforge set validate  (after adding the missing file)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after adding the missing file)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -925,6 +986,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set build  (after rebuilding)
   shim init (./clawforge, installed): ./clawforge set build  (after rebuilding)
   local package: ./clawforge set build  (after rebuilding)
+  local package (win32): node_modules\.bin\clawforge set build  (after rebuilding)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set build  (after rebuilding)
   tool form: {"tool":"set","arguments":{"action":"build"}}
 
@@ -940,6 +1002,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   shim init (./clawforge, installed): ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   local package: ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
+  local package (win32): node_modules\.bin\clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   tool form: {"tool":"set","arguments":{"action":"build"}}
 
@@ -955,6 +1018,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
   shim init (./clawforge, installed): ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   local package: ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
+  local package (win32): node_modules\.bin\clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -970,6 +1034,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo provision-agent <recipe>
   shim init (./clawforge, installed): ./clawforge provision-agent <recipe>
   local package: ./clawforge provision-agent <recipe>
+  local package (win32): node_modules\.bin\clawforge provision-agent <recipe>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo provision-agent <recipe>
   tool form: {"tool":"provision-agent","arguments":{"recipe":"<recipe>"}}
 
@@ -985,6 +1050,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo set forget --kind cron-job --name <name>
   shim init (./clawforge, installed): ./clawforge set forget --kind cron-job --name <name>
   local package: ./clawforge set forget --kind cron-job --name <name>
+  local package (win32): node_modules\.bin\clawforge set forget --kind cron-job --name <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set forget --kind cron-job --name <name>
   tool form: {"tool":"set","arguments":{"action":"forget","kind":"cron-job","name":"<name>"}}
 
@@ -1000,6 +1066,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli plugins install <package> --force
   shim init (./clawforge, installed): ./clawforge cli plugins install <package> --force
   local package: ./clawforge cli plugins install <package> --force
+  local package (win32): node_modules\.bin\clawforge cli plugins install <package> --force
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli plugins install <package> --force
   tool form: {"tool":"cli","arguments":{"args":["plugins","install","<package>","--force"]}}
 
@@ -1015,6 +1082,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli skills install <name> --force
   shim init (./clawforge, installed): ./clawforge cli skills install <name> --force
   local package: ./clawforge cli skills install <name> --force
+  local package (win32): node_modules\.bin\clawforge cli skills install <name> --force
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli skills install <name> --force
   tool form: {"tool":"cli","arguments":{"args":["skills","install","<name>","--force"]}}
 
@@ -1030,6 +1098,7 @@
   global, handed to the checkout gate with --app demo: Set gateway.auth (token recommended).
   shim init (./clawforge, installed): Set gateway.auth (token recommended).
   local package: Set gateway.auth (token recommended).
+  local package (win32): Set gateway.auth (token recommended).
   checkout MCP launcher (../../clawforge, demo/flag): Set gateway.auth (token recommended).
   tool form: —
 
@@ -1045,6 +1114,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli security audit --json
   shim init (./clawforge, installed): ./clawforge cli security audit --json
   local package: ./clawforge cli security audit --json
+  local package (win32): node_modules\.bin\clawforge cli security audit --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli security audit --json
   tool form: {"tool":"cli","arguments":{"args":["security","audit","--json"]}}
 
@@ -1060,6 +1130,7 @@
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
+  local package (win32): node_modules\.bin\clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1075,6 +1146,7 @@
   global, handed to the checkout gate with --app demo: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   shim init (./clawforge, installed): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   local package: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
+  local package (win32): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   checkout MCP launcher (../../clawforge, demo/flag): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   tool form: —
 
@@ -1090,6 +1162,7 @@
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
+  local package (win32): node_modules\.bin\clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1105,6 +1178,7 @@
   global, handed to the checkout gate with --app demo: clawforge new-app demo
   shim init (./clawforge, installed): ./clawforge new-app demo
   local package: ./clawforge new-app demo
+  local package (win32): node_modules\.bin\clawforge new-app demo
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app demo
   tool form: {"tool":"new-app","arguments":{"name":"demo"}}
 
@@ -1120,6 +1194,7 @@
   global, handed to the checkout gate with --app demo: otherwise remove it or pick another name
   shim init (./clawforge, installed): otherwise remove it or pick another name
   local package: otherwise remove it or pick another name
+  local package (win32): otherwise remove it or pick another name
   checkout MCP launcher (../../clawforge, demo/flag): otherwise remove it or pick another name
   tool form: —
 
@@ -1135,6 +1210,7 @@
   global, handed to the checkout gate with --app demo: cd "/clawforge-checkout"
   shim init (./clawforge, installed): cd "/clawforge-checkout"
   local package: cd "/clawforge-checkout"
+  local package (win32): cd "/clawforge-checkout"
   checkout MCP launcher (../../clawforge, demo/flag): cd "/clawforge-checkout"
   tool form: —
 
@@ -1150,6 +1226,7 @@
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
+  local package (win32): node_modules\.bin\clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1165,6 +1242,7 @@
   global, handed to the checkout gate with --app demo: ./clawforge new-app <name>  (in bash)
   shim init (./clawforge, installed): ./clawforge new-app <name>  (in bash)
   local package: ./clawforge new-app <name>  (in bash)
+  local package (win32): ./clawforge new-app <name>  (in bash)
   checkout MCP launcher (../../clawforge, demo/flag): ./clawforge new-app <name>  (in bash)
   tool form: —
 
@@ -1180,6 +1258,7 @@
   global, handed to the checkout gate with --app demo: clawforge init
   shim init (./clawforge, installed): ./clawforge init
   local package: ./clawforge init
+  local package (win32): node_modules\.bin\clawforge init
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge init
   tool form: {"tool":"init","arguments":{}}
 
@@ -1195,6 +1274,7 @@
   global, handed to the checkout gate with --app demo: ./clawforge  (in bash)
   shim init (./clawforge, installed): ./clawforge  (in bash)
   local package: ./clawforge  (in bash)
+  local package (win32): ./clawforge  (in bash)
   checkout MCP launcher (../../clawforge, demo/flag): ./clawforge  (in bash)
   tool form: —
 
@@ -1210,6 +1290,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo help
   shim init (./clawforge, installed): ./clawforge help
   local package: ./clawforge help
+  local package (win32): node_modules\.bin\clawforge help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo help
   tool form: —
 
@@ -1225,6 +1306,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo status --help
   shim init (./clawforge, installed): ./clawforge status --help
   local package: ./clawforge status --help
+  local package (win32): node_modules\.bin\clawforge status --help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status --help
   tool form: —
 
@@ -1240,6 +1322,7 @@
   global, handed to the checkout gate with --app demo: cd <remotePath> && ./clawforge --app <name> bootstrap
   shim init (./clawforge, installed): cd <remotePath> && ./clawforge --app <name> bootstrap
   local package: cd <remotePath> && ./clawforge --app <name> bootstrap
+  local package (win32): cd <remotePath> && ./clawforge --app <name> bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): cd <remotePath> && ./clawforge --app <name> bootstrap
   tool form: —
 
@@ -1255,6 +1338,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app <name> bootstrap
   shim init (./clawforge, installed): ./clawforge --app <name> bootstrap
   local package: ./clawforge --app <name> bootstrap
+  local package (win32): node_modules\.bin\clawforge --app <name> bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> bootstrap
   tool form: —
 
@@ -1270,6 +1354,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app <name> secrets --apply
   shim init (./clawforge, installed): ./clawforge --app <name> secrets --apply
   local package: ./clawforge --app <name> secrets --apply
+  local package (win32): node_modules\.bin\clawforge --app <name> secrets --apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> secrets --apply
   tool form: —
 
@@ -1285,6 +1370,7 @@
   global, handed to the checkout gate with --app demo: cd <root> && ./clawforge --app "<name>" backup
   shim init (./clawforge, installed): cd <root> && ./clawforge --app "<name>" backup
   local package: cd <root> && ./clawforge --app "<name>" backup
+  local package (win32): cd <root> && ./clawforge --app "<name>" backup
   checkout MCP launcher (../../clawforge, demo/flag): cd <root> && ./clawforge --app "<name>" backup
   tool form: —
 
@@ -1300,6 +1386,7 @@
   global, handed to the checkout gate with --app demo: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   shim init (./clawforge, installed): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   local package: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
+  local package (win32): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   checkout MCP launcher (../../clawforge, demo/flag): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   tool form: —
 
@@ -1315,6 +1402,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
   local package: ./clawforge up
+  local package (win32): node_modules\.bin\clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1330,6 +1418,7 @@
   global, handed to the checkout gate with --app demo: clawforge remove-app
   shim init (./clawforge, installed): ./clawforge remove-app
   local package: ./clawforge remove-app
+  local package (win32): node_modules\.bin\clawforge remove-app
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge remove-app
   tool form: {"tool":"remove-app","arguments":{}}
 
@@ -1345,6 +1434,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo help pull
   shim init (./clawforge, installed): ./clawforge help pull
   local package: ./clawforge help pull
+  local package (win32): node_modules\.bin\clawforge help pull
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo help pull
   tool form: —
 
@@ -1360,6 +1450,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo restore
   shim init (./clawforge, installed): ./clawforge restore
   local package: ./clawforge restore
+  local package (win32): node_modules\.bin\clawforge restore
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo restore
   tool form: {"tool":"restore","arguments":{}}
 
@@ -1375,6 +1466,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo backup
   shim init (./clawforge, installed): ./clawforge backup
   local package: ./clawforge backup
+  local package (win32): node_modules\.bin\clawforge backup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup
   tool form: {"tool":"backup","arguments":{}}
 
@@ -1390,6 +1482,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo pull --share
   shim init (./clawforge, installed): ./clawforge pull --share
   local package: ./clawforge pull --share
+  local package (win32): node_modules\.bin\clawforge pull --share
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo pull --share
   tool form: {"tool":"pull","arguments":{"share":true}}
 
@@ -1405,6 +1498,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo lock
   shim init (./clawforge, installed): ./clawforge lock
   local package: ./clawforge lock
+  local package (win32): node_modules\.bin\clawforge lock
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo lock
   tool form: {"tool":"lock","arguments":{}}
 
@@ -1420,6 +1514,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config
   shim init (./clawforge, installed): ./clawforge apply-config
   local package: ./clawforge apply-config
+  local package (win32): node_modules\.bin\clawforge apply-config
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config
   tool form: {"tool":"apply-config","arguments":{}}
 
@@ -1435,6 +1530,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -1450,6 +1546,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli-start
   shim init (./clawforge, installed): ./clawforge cli-start
   local package: ./clawforge cli-start
+  local package (win32): node_modules\.bin\clawforge cli-start
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli-start
   tool form: {"tool":"cli-start","arguments":{}}
 
@@ -1465,6 +1562,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
   local package: ./clawforge inspect
+  local package (win32): node_modules\.bin\clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -1480,6 +1578,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
   local package: ./clawforge inspect
+  local package (win32): node_modules\.bin\clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -1495,6 +1594,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo recover-env
   shim init (./clawforge, installed): ./clawforge recover-env
   local package: ./clawforge recover-env
+  local package (win32): node_modules\.bin\clawforge recover-env
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo recover-env
   tool form: {"tool":"recover-env","arguments":{}}
 
@@ -1510,6 +1610,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config --dump
   shim init (./clawforge, installed): ./clawforge apply-config --dump
   local package: ./clawforge apply-config --dump
+  local package (win32): node_modules\.bin\clawforge apply-config --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config --dump
   tool form: {"tool":"apply-config","arguments":{"dump":true}}
 
@@ -1525,6 +1626,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --dump
   shim init (./clawforge, installed): ./clawforge secrets --dump
   local package: ./clawforge secrets --dump
+  local package (win32): node_modules\.bin\clawforge secrets --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --dump
   tool form: {"tool":"secrets","arguments":{"dump":true}}
 
@@ -1540,6 +1642,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -1555,6 +1658,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -1570,6 +1674,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo operations
   shim init (./clawforge, installed): ./clawforge operations
   local package: ./clawforge operations
+  local package (win32): node_modules\.bin\clawforge operations
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo operations
   tool form: {"tool":"operations","arguments":{}}
 
@@ -1585,6 +1690,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --dump
   shim init (./clawforge, installed): ./clawforge secrets --dump
   local package: ./clawforge secrets --dump
+  local package (win32): node_modules\.bin\clawforge secrets --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --dump
   tool form: {"tool":"secrets","arguments":{"dump":true}}
 
@@ -1600,6 +1706,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config --dry-run
   shim init (./clawforge, installed): ./clawforge apply-config --dry-run
   local package: ./clawforge apply-config --dry-run
+  local package (win32): node_modules\.bin\clawforge apply-config --dry-run
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config --dry-run
   tool form: {"tool":"apply-config","arguments":{"dry-run":true}}
 
@@ -1615,6 +1722,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo smoke
   shim init (./clawforge, installed): ./clawforge smoke
   local package: ./clawforge smoke
+  local package (win32): node_modules\.bin\clawforge smoke
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo smoke
   tool form: {"tool":"smoke","arguments":{}}
 
@@ -1630,6 +1738,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo doctor
   shim init (./clawforge, installed): ./clawforge doctor
   local package: ./clawforge doctor
+  local package (win32): node_modules\.bin\clawforge doctor
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor
   tool form: {"tool":"doctor","arguments":{}}
 
@@ -1645,6 +1754,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
   local package: ./clawforge apply
+  local package (win32): node_modules\.bin\clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -1660,6 +1770,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo push
   shim init (./clawforge, installed): ./clawforge push
   local package: ./clawforge push
+  local package (win32): node_modules\.bin\clawforge push
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo push
   tool form: {"tool":"push","arguments":{}}
 
@@ -1675,6 +1786,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo apply --set
   shim init (./clawforge, installed): ./clawforge apply --set
   local package: ./clawforge apply --set
+  local package (win32): node_modules\.bin\clawforge apply --set
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply --set
   tool form: —
 
@@ -1690,6 +1802,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo rollback
   shim init (./clawforge, installed): ./clawforge rollback
   local package: ./clawforge rollback
+  local package (win32): node_modules\.bin\clawforge rollback
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo rollback
   tool form: {"tool":"rollback","arguments":{}}
 
@@ -1705,6 +1818,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo status
   shim init (./clawforge, installed): ./clawforge status
   local package: ./clawforge status
+  local package (win32): node_modules\.bin\clawforge status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status
   tool form: {"tool":"status","arguments":{}}
 
@@ -1720,6 +1834,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
   local package: ./clawforge up
+  local package (win32): node_modules\.bin\clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1735,6 +1850,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-creds
   shim init (./clawforge, installed): ./clawforge mcp-creds
   local package: ./clawforge mcp-creds
+  local package (win32): node_modules\.bin\clawforge mcp-creds
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-creds
   tool form: {"tool":"mcp-creds","arguments":{}}
 
@@ -1750,6 +1866,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo doctor
   shim init (./clawforge, installed): ./clawforge doctor
   local package: ./clawforge doctor
+  local package (win32): node_modules\.bin\clawforge doctor
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor
   tool form: {"tool":"doctor","arguments":{}}
 
@@ -1765,6 +1882,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo accept
   shim init (./clawforge, installed): ./clawforge accept
   local package: ./clawforge accept
+  local package (win32): node_modules\.bin\clawforge accept
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo accept
   tool form: {"tool":"accept","arguments":{}}
 
@@ -1780,6 +1898,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
   local package: ./clawforge inspect
+  local package (win32): node_modules\.bin\clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -1795,6 +1914,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli config get gateway.mode
   shim init (./clawforge, installed): ./clawforge cli config get gateway.mode
   local package: ./clawforge cli config get gateway.mode
+  local package (win32): node_modules\.bin\clawforge cli config get gateway.mode
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli config get gateway.mode
   tool form: {"tool":"cli","arguments":{"args":["config","get","gateway.mode"]}}
 
@@ -1810,6 +1930,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli-start
   shim init (./clawforge, installed): ./clawforge cli-start
   local package: ./clawforge cli-start
+  local package (win32): node_modules\.bin\clawforge cli-start
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli-start
   tool form: {"tool":"cli-start","arguments":{}}
 
@@ -1825,6 +1946,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli --help
   shim init (./clawforge, installed): ./clawforge cli --help
   local package: ./clawforge cli --help
+  local package (win32): node_modules\.bin\clawforge cli --help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli --help
   tool form: {"tool":"cli","arguments":{"args":["--help"]}}
 
@@ -1840,6 +1962,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo help cli
   shim init (./clawforge, installed): ./clawforge help cli
   local package: ./clawforge help cli
+  local package (win32): node_modules\.bin\clawforge help cli
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo help cli
   tool form: —
 
@@ -1855,6 +1978,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli -- --help
   shim init (./clawforge, installed): ./clawforge cli -- --help
   local package: ./clawforge cli -- --help
+  local package (win32): node_modules\.bin\clawforge cli -- --help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli -- --help
   tool form: {"tool":"cli","arguments":{"args":["--help"]}}
 
@@ -1870,6 +1994,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
   shim init (./clawforge, installed): ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   local package: ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
+  local package (win32): node_modules\.bin\clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
   tool form: {"tool":"exec","arguments":{"args":["curl","-fsS","http://127.0.0.1:18789/healthz"]}}
 
@@ -1885,6 +2010,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo exec cat /app/docs/channels/telegram.md
   shim init (./clawforge, installed): ./clawforge exec cat /app/docs/channels/telegram.md
   local package: ./clawforge exec cat /app/docs/channels/telegram.md
+  local package (win32): node_modules\.bin\clawforge exec cat /app/docs/channels/telegram.md
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo exec cat /app/docs/channels/telegram.md
   tool form: {"tool":"exec","arguments":{"args":["cat","/app/docs/channels/telegram.md"]}}
 
@@ -1900,6 +2026,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli
   shim init (./clawforge, installed): ./clawforge cli
   local package: ./clawforge cli
+  local package (win32): node_modules\.bin\clawforge cli
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli
   tool form: {"tool":"cli","arguments":{}}
 
@@ -1915,6 +2042,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-serve
   shim init (./clawforge, installed): ./clawforge mcp-serve
   local package: ./clawforge mcp-serve
+  local package (win32): node_modules\.bin\clawforge mcp-serve
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-serve
   tool form: {"tool":"mcp-serve","arguments":{}}
 
@@ -1930,6 +2058,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
   local package: ./clawforge up
+  local package (win32): node_modules\.bin\clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1945,6 +2074,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo down
   shim init (./clawforge, installed): ./clawforge down
   local package: ./clawforge down
+  local package (win32): node_modules\.bin\clawforge down
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo down
   tool form: {"tool":"down","arguments":{}}
 
@@ -1960,6 +2090,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli
   shim init (./clawforge, installed): ./clawforge cli
   local package: ./clawforge cli
+  local package (win32): node_modules\.bin\clawforge cli
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli
   tool form: {"tool":"cli","arguments":{}}
 
@@ -1975,6 +2106,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-serve
   shim init (./clawforge, installed): ./clawforge mcp-serve
   local package: ./clawforge mcp-serve
+  local package (win32): node_modules\.bin\clawforge mcp-serve
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-serve
   tool form: {"tool":"mcp-serve","arguments":{}}
 
@@ -1990,6 +2122,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
   local package: ./clawforge up
+  local package (win32): node_modules\.bin\clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -2005,6 +2138,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-setup
   shim init (./clawforge, installed): ./clawforge mcp-setup
   local package: ./clawforge mcp-setup
+  local package (win32): node_modules\.bin\clawforge mcp-setup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-setup
   tool form: {"tool":"mcp-setup","arguments":{}}
 
@@ -2020,6 +2154,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo control-mcp
   shim init (./clawforge, installed): ./clawforge control-mcp
   local package: ./clawforge control-mcp
+  local package (win32): node_modules\.bin\clawforge control-mcp
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo control-mcp
   tool form: —
 
@@ -2035,6 +2170,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo cli-start
   shim init (./clawforge, installed): ./clawforge cli-start
   local package: ./clawforge cli-start
+  local package (win32): node_modules\.bin\clawforge cli-start
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli-start
   tool form: {"tool":"cli-start","arguments":{}}
 
@@ -2050,6 +2186,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-setup
   shim init (./clawforge, installed): ./clawforge mcp-setup
   local package: ./clawforge mcp-setup
+  local package (win32): node_modules\.bin\clawforge mcp-setup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-setup
   tool form: {"tool":"mcp-setup","arguments":{}}
 
@@ -2065,6 +2202,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
   local package: ./clawforge plan
+  local package (win32): node_modules\.bin\clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -2080,6 +2218,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo smoke
   shim init (./clawforge, installed): ./clawforge smoke
   local package: ./clawforge smoke
+  local package (win32): node_modules\.bin\clawforge smoke
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo smoke
   tool form: {"tool":"smoke","arguments":{}}
 
@@ -2095,6 +2234,7 @@
   global, handed to the checkout gate with --app demo: clawforge check gate
   shim init (./clawforge, installed): ./clawforge check gate
   local package: ./clawforge check gate
+  local package (win32): node_modules\.bin\clawforge check gate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge check gate
   tool form: {"tool":"check","arguments":{"filter":["gate"]}}
 
@@ -2110,6 +2250,7 @@
   global, handed to the checkout gate with --app demo: clawforge --app <name> bootstrap
   shim init (./clawforge, installed): ./clawforge --app <name> bootstrap
   local package: ./clawforge --app <name> bootstrap
+  local package (win32): node_modules\.bin\clawforge --app <name> bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> bootstrap
   tool form: —
 
@@ -2125,6 +2266,7 @@
   global, handed to the checkout gate with --app demo: clawforge list
   shim init (./clawforge, installed): ./clawforge list
   local package: ./clawforge list
+  local package (win32): node_modules\.bin\clawforge list
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge list
   tool form: {"tool":"list","arguments":{}}
 
@@ -2140,5 +2282,6 @@
   global, handed to the checkout gate with --app demo: clawforge --app <name> destroy
   shim init (./clawforge, installed): ./clawforge --app <name> destroy
   local package: ./clawforge --app <name> destroy
+  local package (win32): node_modules\.bin\clawforge --app <name> destroy
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> destroy
   tool form: —

@@ -6,6 +6,7 @@ handled in batches, not in review rounds. A finding of class A–F is never park
 | Item | Where | Why it is parked |
 | --- | --- | --- |
 | A bare program's double-quoted words are not POSIX-safe for `$` and backtick | `core/io/invocation/render.ts` (bare-program branch) | One quoting rule has to serve cmd, PowerShell and POSIX; single quotes break cmd. No advice word needs the characters today, and `advice-matrix.check.ts` fails if one ever does. |
+| A `%` in an advice word pasted under the bare program is expanded by cmd.exe even inside double quotes | `core/io/invocation/render.ts` (SAFE_WORD) | No shell-agnostic safe spelling exists inside quotes; `%` stays in SAFE_WORD because POSIX and PowerShell treat it literally. Deployment names cannot contain `%` (safeName) and `advice-matrix.check.ts` refuses any advice word that carries one. |
 | `set/load.ts` and `set/artifacts/*` import types and helpers from `commands/` | `tools/framework/set/` | Layering inversion, no behaviour defect. Moving `lock`, `accept` and `provision-agent` types to a lower layer touches many files. |
 | Lazy `loadChecks` import in the check runner | `tools/checks/kit/` | Works; only the import style differs from the rest. |
 | `digestOf` is lexical and lenient on purpose | `runtime/docker/image-ref.ts` | A pin recorded in a non-canonical spelling must keep comparing equal to itself; only `parse()` enforces the grammar. |

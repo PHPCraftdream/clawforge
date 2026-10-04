@@ -6,7 +6,7 @@
 // regenerating the expected file.
 
 import { command, manual, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, SHIM_PROGRAM, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM, useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -165,9 +165,10 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
   { label: "global (clawforge)", invocation: { program: "clawforge", mode: "installed", audience: "terminal" } },
   { label: "global, handed to the checkout gate with --app demo", invocation: { program: "clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
   { label: "shim init (./clawforge, installed)", invocation: { program: SHIM_PROGRAM, mode: "installed", audience: "terminal" } },
-  // entry/root.ts is the only writer of local-package and always pairs it with the shim
-  // spelling — the column shows the invocation a local-package run really holds.
+  // entry/root.ts is the only writer of local-package: the committed shim spelling on POSIX,
+  // npm's bin wrapper on Windows, where the bash-only shim does not run (WINDOWS_BIN_PROGRAM).
   { label: "local package", invocation: { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" } },
+  { label: "local package (win32)", invocation: { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" } },
   { label: "checkout MCP launcher (../../clawforge, demo/flag)", invocation: { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" } },
   { label: TOOL_FORM_LABEL, cell: TOOL_FORM_CELL },
 ];

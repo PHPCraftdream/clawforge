@@ -57,7 +57,7 @@ const { appRoot, localTypesOnly, ancestor, checkout } = entry;
 const argv = [...entry.argv];
 const launchArgv = [...entry.launchArgv];
 
-if (handed === undefined) setInvocation({ ...(await defaultInvocation(appRoot)), audience: "terminal" });
+if (handed === undefined) setInvocation({ ...(await defaultInvocation(appRoot, process.platform)), audience: "terminal" });
 
 // Installed system-wide, this may not be the framework this deployment runs on.
 delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver);

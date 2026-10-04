@@ -17,9 +17,10 @@ import {
   type Invocation,
 } from "#framework/core/io/invocation/index.ts";
 import { command, manual, shellLine } from "#framework/core/io/invocation/advice.ts";
-import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { commandLine, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderAdvice, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { die, formatError, registerSecret, UserError, reportError, info } from "#framework/core/io/log.ts";
+import { defaultInvocation } from "#framework/entry/root.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
 import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
@@ -165,6 +166,13 @@ try {
   check("the entry default is the monorepo prefix, without an app part", commandLine([]), HINT);
   check("the default names no deployment", invocation().app, undefined);
 
+  // entry/root.ts picks the local-package spelling per host (review R-A F2): the committed
+  // shim is bash-only, so Windows names npm's bin wrapper, which cmd resolves through
+  // PATHEXT and PowerShell through its own lookup. Here the running framework is the
+  // checkout's own copy, so defaultInvocation answers the local-package branch.
+  check("local-package on Windows names npm's bin wrapper", await defaultInvocation(process.cwd(), "win32"), { program: WINDOWS_BIN_PROGRAM, mode: "local-package" });
+  check("local-package elsewhere keeps the committed shim", await defaultInvocation(process.cwd(), "linux"), { program: SHIM_PROGRAM, mode: "local-package" });
+
   // --- the value between processes: versioned JSON in CLAWFORGE_INVOCATION -------------------
 
   for (const value of [
@@ -199,6 +207,8 @@ try {
   check("an empty program reads as unset", takeInvocationFromEnv(), undefined);
   process.env[INVOCATION_ENV] = '{"version":1,"program":" ./clawforge ","mode":"checkout","audience":"terminal"}';
   check("a padded program is trimmed, not stored raw", takeInvocationFromEnv(), { program: "./clawforge", mode: "checkout", audience: "terminal" });
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":" x ","selectedBy":"flag"}}';
+  check("a padded app name is trimmed, not stored raw", takeInvocationFromEnv(), { program: "clawforge", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
   process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
   check("an unknown app selection reads as unset", takeInvocationFromEnv(), undefined);
 
@@ -211,6 +221,15 @@ try {
   check("a bare path ending in clawforge is still checkout mode", takeInvocationFromEnv(), { program: "/usr/local/bin/clawforge", mode: "checkout", audience: "terminal" });
   process.env[INVOKED_AS_ENV] = "   ";
   check("blank legacy reads as unset", takeInvocationFromEnv(), undefined);
+  // A legacy value that is only a flag suffix, or one carrying spacing, is garbage a
+  // hand-written variable picked up on the way: it reads as unset (review R-A F3), like the
+  // strict parse — otherwise it becomes the program and every advice line opens with it.
+  process.env[INVOKED_AS_ENV] = "--app x";
+  check("a legacy value that is only the suffix reads as unset", takeInvocationFromEnv(), undefined);
+  process.env[INVOKED_AS_ENV] = "a b";
+  check("a legacy value with internal spacing reads as unset", takeInvocationFromEnv(), undefined);
+  check("parseLegacyInvokedAs refuses a -- program", parseLegacyInvokedAs("--app x"), undefined);
+  check("parseLegacyInvokedAs refuses a spaced program", parseLegacyInvokedAs("a b"), undefined);
   check("parseLegacyInvokedAs agrees with the env path", parseLegacyInvokedAs("../../clawforge --app app1"), { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "flag" }, audience: "terminal" });
 
   // --- monorepo prefix: outputs keep ./clawforge --------------------------------------------

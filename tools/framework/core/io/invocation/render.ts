@@ -7,6 +7,10 @@ import { invocation, type Invocation } from "./index.ts";
 import { command, type Advice } from "./advice.ts";
 
 export const SHIM_PROGRAM = "./clawforge";
+/** The local-package program on Windows: npm's bin wrapper, which cmd resolves through
+ *  PATHEXT and PowerShell through its own lookup. The committed shim (SHIM_PROGRAM) is
+ *  bash-only (see init.ts) and runs in neither; forward slashes fail in cmd. */
+export const WINDOWS_BIN_PROGRAM = "node_modules\\.bin\\clawforge";
 
 /** Gate-command names, registered by the entry before any command runs; they run before a
  *  deployment is resolved, so they never receive an `--app` (see useGateCommands). */
@@ -27,7 +31,11 @@ function isGateCommand(word: string | undefined): boolean {
   return word !== undefined && gateCommands.has(word);
 }
 
-/** A word POSIX, cmd and pwsh leave as is without quoting (a path or an image reference included). */
+/** A word POSIX, cmd and pwsh leave as is without quoting (a path or an image reference included).
+ *  `%` stays only because POSIX and PowerShell treat it literally; under the bare program
+ *  cmd.exe expands `%VAR%` even inside double quotes and no quoting neutralises it, so no
+ *  advice word may carry one — advice-matrix.check.ts refuses such a row, and deployment
+ *  names cannot contain `%` anyway (safeName, core/values/names.ts). */
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 /** Characters POSIX expands inside double quotes: such a word is single-quoted (see renderArgument). */
 const POSIX_ACTIVE = /[`$\\]/;

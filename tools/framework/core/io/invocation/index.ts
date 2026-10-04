@@ -85,7 +85,7 @@ export function parseInvocation(text: string): Invocation | undefined {
     typeof selectedBy !== "string" || !SELECTIONS.includes(selectedBy as AppSelection) ||
     Object.keys(appExtra).length > 0
   ) return undefined;
-  return { program: trimmed, mode: mode as InvocationMode, app: { name, selectedBy: selectedBy as AppSelection }, audience: audience as InvocationAudience };
+  return { program: trimmed, mode: mode as InvocationMode, app: { name: name.trim(), selectedBy: selectedBy as AppSelection }, audience: audience as InvocationAudience };
 }
 
 /** A legacy CLAWFORGE_INVOKED_AS prefix mapped onto the value: a program path (the launcher's
@@ -99,9 +99,14 @@ export function parseLegacyInvokedAs(text: string): Invocation | undefined {
   if (value === "") return undefined;
   const suffix = /^(.*) --app (\S+)$/.exec(value);
   if (suffix === null || suffix[1].trim() === "") {
+    // A value that is only a flag suffix, or one with internal spacing, is garbage a
+    // hand-written variable picked up on the way: it reads as unset, like the strict parse.
+    if (value.startsWith("--") || /\s/.test(value)) return undefined;
     return { program: value, mode: value === "clawforge" ? "installed" : "checkout", audience: "terminal" };
   }
   const program = suffix[1].trim();
+  // The same rule for the program of a suffixed value: "--app x --app y" is not a path.
+  if (program.startsWith("--") || /\s/.test(program)) return undefined;
   return { program, mode: program === "clawforge" ? "installed" : "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
 }
 

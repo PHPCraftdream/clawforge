@@ -16,7 +16,7 @@ import { createApp, appsDir } from "#framework/integration/deployment/scaffold.t
 import { CLAWFORGE_CONTROL_MCP_NAME, projectMcpEntries } from "#framework/integration/mcp/project.ts";
 import { usageTopLine, usageFooterHint } from "#framework/core/io/help-render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import type { Invocation } from "#framework/core/io/invocation/index.ts";
 import { FULL_LIST_NOTE, CHECKOUT_NOTE, NO_APP_TS_HERE, RUNS_INSIDE_NOTE, CHECKOUT_ROOT_NOTE, unknownCommandMessage, didYouMeanMessage, emptyDirNote, closestCommand } from "#framework/integration/gate.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
@@ -31,6 +31,9 @@ const windows = process.platform === "win32";
 
 const installedHint: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
 const shimHint: Invocation = { program: "./clawforge", mode: "checkout", audience: "terminal" };
+// The app's own package run directly: the bash shim does not run in cmd or PowerShell, so on Windows
+// the hints name npm's bin wrapper (defaultInvocation, entry/root.ts).
+const localPackageHint: Invocation = windows ? { ...shimHint, program: WINDOWS_BIN_PROGRAM } : shimHint;
 const names = surfaceRegistry().names;
 const say = (argv: string[], on: Invocation, app?: string): string => renderAdvice(command(argv, app === undefined ? undefined : { app }), on);
 
@@ -215,7 +218,7 @@ try {
   // global command behind it, so hints say the committed ./clawforge shim.
   const localBin = await run(process.execPath, [join(localPackage, "dist", "entry", "bin.js"), "help"], pinned, { env });
   tail(localBin);
-  check("an app's own package run directly hints ./clawforge", localBin.output.includes(usageFooterHint(shimHint)), true);
+  check("an app's own package run directly hints its own program", localBin.output.includes(usageFooterHint(localPackageHint)), true);
   const globalBin = await run(process.execPath, [join(globalPackage, "dist", "entry", "bin.js"), "help"], fresh, { env });
   check("the global package run directly still hints clawforge", globalBin.output.includes(usageFooterHint(installedHint)), true);
 

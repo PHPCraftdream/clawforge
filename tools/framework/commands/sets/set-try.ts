@@ -11,7 +11,6 @@ import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "#src/runtime/deployment.ts";
@@ -37,12 +36,12 @@ import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
-import { ArgumentError, defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
+import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
 export * from "./set-try-env.ts";
 
 export const SET_TRY_ARGUMENTS = [
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", required: true },
   {
     name: "with-model",
     summary: "include acceptance checks that call the model",
@@ -104,9 +103,7 @@ export interface SetTryOptions {
 
 /** The artifact and explicit execution options. */
 function tryPlan(values: Values<typeof SET_TRY_ARGUMENTS>): SetTryOptions {
-  const artifact = values.set;
-  if (artifact === undefined) throw new ArgumentError(`usage: ${commandLine(["set", "try", "--set", "<artifact>"])} [--with-model] [--keep] [--json]`, "set");
-  return { artifact, withModel: values["with-model"], keep: values.keep, jsonOnly: values.json };
+  return { artifact: values.set, withModel: values["with-model"], keep: values.keep, jsonOnly: values.json };
 }
 
 /** Stops and removes only the resources owned by a try. Callbacks are injectable so the

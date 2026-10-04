@@ -182,7 +182,8 @@ export function tokenize(declared: readonly CommandArgument[], argv: readonly st
   return { entries, given };
 }
 
-/** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens. */
+/** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens,
+ *  a value with a declared `parse` its parsed value. */
 function toParsedArgs(entries: readonly TokenEntry[]): ParsedArgs {
   const result: ParsedArgs = {};
   for (const { argument, value } of entries) {
@@ -190,6 +191,8 @@ function toParsedArgs(entries: readonly TokenEntry[]): ParsedArgs {
       const list = result[argument.name] as string[] | undefined;
       if (list === undefined) result[argument.name] = [value as string];
       else list.push(value as string);
+    } else if (argument.kind !== "flag" && argument.parse !== undefined) {
+      result[argument.name] = convert(argument as ValueSpec<"option">, value as string) as string;
     } else result[argument.name] = value;
   }
   return result;

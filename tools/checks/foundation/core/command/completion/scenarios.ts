@@ -58,6 +58,8 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
   }
 
   if (first !== "") scenarios.push({ name: "--app before the command", words: ["--app", "x", first, ""], cword: 3 });
+  // The `=` form the parser's splitLeadingAppFlag also accepts: one token with its own value.
+  if (first !== "") scenarios.push({ name: "--app= before the command", words: [`--app=x`, first, ""], cword: 2 });
   scenarios.push({ name: "--app's own value", words: ["--app", ""], cword: 1 });
   // --app is positional: past a command it completes that command's flags instead (R33-10).
   const afterApp = data.first.has("status") ? "status" : first;

@@ -33,7 +33,7 @@ import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
-import { parseDeclaredArgs, UnknownArgumentError, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { parseDeclaredArgs, ArgumentError, UnknownArgumentError, unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -335,6 +335,22 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   }
   check("list --bogus is refused", code, 1);
   check("list --bogus answers exactly the standard unknown-argument report", actual, reference);
+}
+
+{
+  // --jobs declares a value grammar, so a value it refuses dies in the parser — on every
+  // surface, in the one voice the declaration states — instead of coercing to NaN and
+  // silently falling back to the default.
+  const checkCommand = checkoutGateCommands.find((command) => command.name === "check");
+  if (checkCommand === undefined) throw new Error("check is not declared in entry/checkout-gate.ts");
+  const grammar = checkCommand.arguments?.find((argument) => argument.name === "jobs")?.parse;
+  let refusal: unknown;
+  try { await checkCommand.run(["--list", "--jobs", "abc"]); }
+  catch (error) { refusal = error; }
+  checkTrue("check --jobs abc is refused at the parse stage", refusal instanceof ArgumentError);
+  check("check --jobs abc names the argument", (refusal as ArgumentError).argument, "jobs");
+  check("check --jobs abc answers in the declared grammar's voice",
+    (refusal as Error).message, `--jobs takes ${grammar?.expected}, not "abc"`);
 }
 
 finish("gate-command");

@@ -171,6 +171,12 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
     [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
   check("--app's own value is the deployment list", [...at(data, ["--app", ""], 1)], ["app-one", "app-two"]);
 
+  // The `=` form splitLeadingAppFlag accepts on the command line too: the command after it
+  // completes, exactly as after the two-token form.
+  const afterAppEq = at(data, ["--app=app-one", "backup", ""], 2);
+  check("after --app=x backup still offers actions and create flags",
+    [afterAppEq.includes("create"), afterAppEq.includes("--hot")], [true, true]);
+
   const afterFlag = at(data, ["backup", "--hot", ""], 2);
   check("after backup --hot the create flags continue", [afterFlag.includes("--dry-run"), afterFlag.includes("--migrate")], [true, true]);
   check("after backup --hot no action word is offered (backup would reject it)", afterFlag.includes("list"), false);

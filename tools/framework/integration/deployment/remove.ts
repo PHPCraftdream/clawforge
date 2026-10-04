@@ -100,13 +100,12 @@ async function hasOwnGitHistory(directory: string): Promise<boolean> {
 }
 
 /** The gate's `remove-app <name>` — deletes apps/<name>/. Default is a dry run: lists what
- *  would go and exits 0. A real run needs --yes, and refuses while the deployment still has
- *  a bootstrapped instance (running or stopped-but-bootstrapped) — destroy that first. */
-export async function removeApp(name: string, args: string[], options: RemoveAppOptions = {}): Promise<number> {
+ *  would go and exits 0. A real run needs the gate's parsed `yes`, and refuses while the
+ *  deployment still has a bootstrapped instance (running or stopped-but-bootstrapped) —
+ *  destroy that first. The argv re-parse used to live here too; the gate's
+ *  parseDeclaredArgs(REMOVE_APP_ARGUMENTS) is the one parse. */
+export async function removeApp(name: string, yes: boolean, options: RemoveAppOptions = {}): Promise<number> {
   const appsRoot = options.appsRoot ?? appsDir;
-  const unknown = args.find((arg) => arg !== "--yes");
-  if (unknown !== undefined) die(`unknown argument: ${unknown}`);
-  const yes = args.includes("--yes");
 
   const directory = await resolveTargetDirectory(name, appsRoot);
   const state = await currentState(name, appsRoot, options.buildContext, options.listDeployments ?? listDeployments);

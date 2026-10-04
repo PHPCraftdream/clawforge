@@ -6,7 +6,6 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { RECEIPT_NEEDS_SET_ID } from "#framework/commands/sets/set-receipts.ts";
-import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -205,12 +204,11 @@ import { check, finish } from "#checks/kit/harness.ts";
       return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     }
   };
-  const usageSetTry = `usage: ${commandLine(["set", "try"])}`;
   check("set try --kind names forget", (await outcome(["try", "--set", "x.tar.gz", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set diff --kind names forget", (await outcome(["diff", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set receipts --set names validate/try", (await outcome(["receipts", "--set", "x.tar.gz"])).includes("--set applies to `validate`"), true);
   check("set receipts still parses its own slice", (await outcome(["receipts", "--receipt", "r", "--json"])).includes(RECEIPT_NEEDS_SET_ID), true);
-  check("set try still parses its own slice", (await outcome(["try"])).includes(usageSetTry), true);
+  check("set try still parses its own slice", (await outcome(["try"])).includes(missingArgumentMessage("set try", "--set <artifact>")), true);
 
   // The drift check must drive the real dispatcher, not the registry against itself: with
   // watch's table declaring the WRONG slice for an action, the declaration offers a flag the

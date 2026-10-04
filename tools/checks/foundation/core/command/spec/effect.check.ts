@@ -76,7 +76,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   "mcp-creds": [[[], "read"], [["--token"], "read"]],
   set: [
     [["validate"], "read", false], [["diff"], "read", false], [["receipts"], "read", false],
-    [["build"], "change", true], [["try"], "destroy", true], [["forget"], "destroy", true], [[], "change", false],
+    [["build"], "change", true], [["try", "--set", "x"], "destroy", true], [["forget"], "destroy", true], [[], "change", false],
   ],
 };
 

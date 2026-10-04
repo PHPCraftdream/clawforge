@@ -165,6 +165,6 @@ check("profile: destructive through a flag", effectProfile(commands.single), { d
 check("profile: by action, destructive through an action", effectProfile(commands.multi), { destructive: true, alwaysDestroys: false, byAction: true });
 check("profile: a body with nothing destructive", effectProfile(commands.deployment), { destructive: false, alwaysDestroys: false, byAction: false });
 check("a legacy command still takes the legacy path", [callFactsFor(commands.legacy, ["--dry-run"]).effect, callFactsFor(commands.legacy, []).effect, effectProfile(commands.legacy)], ["read", "destroy", { destructive: true, alwaysDestroys: false, byAction: false }]);
-check("the real set command is a spec, and try still destroys", [specOf(setsCommands.set) !== undefined, callFactsFor(setsCommands.set, ["try"]).effect], [true, "destroy"]);
+check("the real set command is a spec, and try still destroys", [specOf(setsCommands.set) !== undefined, callFactsFor(setsCommands.set, ["try", "--set", "a.tar.gz"]).effect], [true, "destroy"]);
 
 finish("materialization");

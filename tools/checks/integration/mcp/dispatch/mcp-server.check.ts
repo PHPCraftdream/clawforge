@@ -216,7 +216,7 @@ try {
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
     check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes(DESTRUCTIVE_SOME), true);
     check("set build is mutable without confirmation", callFactsFor(openclawCommands.set!, ["build"]).effect, "change");
-    check("set try remains destructive for MCP gating", callFactsFor(openclawCommands.set!, ["try"]).effect, "destroy");
+    check("set try remains destructive for MCP gating", callFactsFor(openclawCommands.set!, ["try", "--set", "x.tar.gz"]).effect, "destroy");
     check("lock check is read-only for MCP gating", callFactsFor(openclawCommands.lock!, ["--check"]).effect, "read");
     check("lock write remains mutable for MCP gating", callFactsFor(openclawCommands.lock!, []).effect, "change");
   } finally {

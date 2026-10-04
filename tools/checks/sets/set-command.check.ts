@@ -6,7 +6,7 @@
 
 import { executeCommand } from "#framework/core/command/execute.ts";
 import {
-  ArgumentError, UnknownActionError, UnknownArgumentError, parseCall, specOf, specShape,
+  ArgumentError, UnknownActionError, UnknownArgumentError, missingArgumentMessage, parseCall, specOf, specShape,
 } from "#framework/core/command/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -91,6 +91,13 @@ const badKind = refusal(["forget", "--kind", "plugin", "--name", "n"]) as Argume
 check("set forget --kind outside its choices names it", badKind.argument, "kind");
 check("set forget with both arguments parses", refusal(["forget", "--kind", "cron-job", "--name", "n"]), undefined);
 
+check("set forget without --kind uses the parser's missing-required text",
+  missingKind.message, missingArgumentMessage("set forget", "--kind <kind>"));
+// --set is declared required, so the parser refuses before prepare — the usage line the
+// prepare phase used to print by hand is gone.
+check("set try without --set uses the parser's missing-required text",
+  (refusal(["try"]) as ArgumentError).message, missingArgumentMessage("set try", "--set <artifact>"));
+
 // --- the pipeline: refusals before any contact ---------------------------------------------
 
 const CASES: readonly { name: string; argv: string[]; stage: "parse" | "prepare"; argument: string | undefined }[] = [
@@ -101,7 +108,7 @@ const CASES: readonly { name: string; argv: string[]; stage: "parse" | "prepare"
   { name: "set diff --to without --from", argv: ["diff", "--to", "b.tar.gz"], stage: "prepare", argument: "from" },
   { name: "set diff --from with a positional artifact", argv: ["diff", "--from", "a", "b"], stage: "prepare", argument: "artifacts" },
   { name: "set receipts --receipt without --set-id", argv: ["receipts", "--receipt", "r1"], stage: "prepare", argument: "receipt" },
-  { name: "set try without --set", argv: ["try"], stage: "prepare", argument: "set" },
+  { name: "set try without --set", argv: ["try"], stage: "parse", argument: "set" },
   { name: "set try --set with a flag in place of its value", argv: ["try", "--set", "--keep"], stage: "parse", argument: "set" },
   { name: "set forget without --kind", argv: ["forget", "--name", "n"], stage: "parse", argument: "kind" },
   { name: "set forget with an unknown kind", argv: ["forget", "--kind", "plugin", "--name", "n"], stage: "parse", argument: "kind" },

@@ -77,7 +77,8 @@ else if (args[0] === 'compose' && args.includes('logs')) {
     const calls: Array<{ jsonrpc: string; id: number; method: string; params: { name: string; arguments: Record<string, unknown> } }> =
       ["--tail", "--tail=5"].map((grep, index) => ({ jsonrpc: "2.0", id: index + 2, method: "tools/call", params: { name: "logs", arguments: { grep } } }));
     calls.push(...["cli", "exec"].map((name, index) => ({ jsonrpc: "2.0", id: index + 4, method: "tools/call", params: { name, arguments: { confirm: true, args: [...(name === "exec" ? ["option-consumer"] : []), "--help", "--message=two words=--tail"] } } })));
-    const server = await run(["control-mcp"], [{ jsonrpc: "2.0", id: 1, method: "initialize" }, ...calls].map(value => JSON.stringify(value)).join("\n") + "\n");
+    const server = await run(["control-mcp"], [{ jsonrpc: "2.0", id: 1, method: "initialize" }, ...calls,
+      { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "help", arguments: { command: "zz-no-such-command" } } }].map(value => JSON.stringify(value)).join("\n") + "\n");
     check("control-mcp completes the real JSON-RPC exchange", server.code, 0);
     const replies = server.stdout.trim().split("\n").map(line => JSON.parse(line));
     for (const call of calls) {
@@ -85,6 +86,9 @@ else if (args[0] === 'compose' && args.includes('logs')) {
       check(`MCP ${call.id} is not a tool error`, result?.isError === true, false);
       check(`MCP ${call.id} returns consumer output`, result?.content?.[0]?.text, call.params.name === "logs" ? "diagnostic --tail=5" : "child help: two words=--tail");
     }
+    // The console's `help <unknown>` exits 1; the tool answers the same refusal as an error result.
+    const helpReply = replies.find(reply => reply.id === 8)?.result;
+    check("an unknown help target answers as an error, like the console's exit 1", helpReply?.isError, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

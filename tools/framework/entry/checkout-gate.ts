@@ -5,6 +5,7 @@
 // declaration closes over the finished command array (see completion.ts).
 
 import { parseDeclaredArgs, type UnknownArgumentError } from "../core/command/index.ts";
+import { countValue } from "../core/values/value.ts";
 import { reportError } from "../core/io/log.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import { emit } from "../core/io/output.ts";
@@ -49,6 +50,7 @@ const checkArguments: CommandArgument[] = [
     description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))",
     kind: "option",
     valueName: "n",
+    parse: countValue(),
   },
   {
     name: "require",
@@ -87,8 +89,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       const parsed = parseDeclaredArgs(checkArguments, args);
       const filters = (parsed.filter as string[] | undefined) ?? [];
       const list = parsed.list === true;
-      const jobsRaw = parsed.jobs as string | undefined;
-      const jobs = jobsRaw === undefined ? undefined : Number(jobsRaw);
+      const jobs = parsed.jobs as number | undefined;
       const requireRaw = parsed.require as string | undefined;
       const require = requireRaw === undefined ? undefined : requireRaw.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
       const { runChecks } = await import(CHECK_RUNNER_PATH);
@@ -142,7 +143,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
         reportError(`usage: ${commandLine(["remove-app", "<name>"])} [--yes]`);
         return 1;
       }
-      return removeApp(target, parsed.yes === true ? ["--yes"] : []);
+      return removeApp(target, parsed.yes === true);
     },
   },
   {

@@ -123,8 +123,9 @@ export function completionCandidates(
   const scan = words.slice(0, cword);
   const prev = scan.at(-1);
   // --app leads the command line and takes the next word as its own value: step over both.
+  // The `--app=<name>` form carries its own value in one token: step over that token alone.
   let i = 0;
-  while (data.appFlag && scan[i] === "--app") i += 2;
+  while (data.appFlag && (scan[i] === "--app" || scan[i]?.startsWith("--app=") === true)) i += scan[i] === "--app" ? 2 : 1;
   if (i >= scan.length) {
     // --app's own value, offered only while no command word has been typed yet: past one it
     // is positional and must come before the command, so the command's flags return (R33-10).

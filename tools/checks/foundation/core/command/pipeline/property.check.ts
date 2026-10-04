@@ -44,6 +44,7 @@ interface Unit {
   readonly command: string;
   readonly action?: string;
   readonly args: readonly ArgumentSpec[];
+  readonly refuse: Readonly<Record<string, string>>;
 }
 
 const units: Unit[] = [];
@@ -52,8 +53,8 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   checkTrue(`${command} is a declared body`, entry !== undefined);
   if (entry === undefined) continue;
   const data = specData(entry);
-  if (data.kind === "single") units.push({ label: command, command, args: data.arguments });
-  else for (const [action, spec] of Object.entries(data.actions)) units.push({ label: `${command} ${action}`, command, action, args: spec.arguments });
+  if (data.kind === "single") units.push({ label: command, command, args: data.arguments, refuse: data.refuse ?? {} });
+  else for (const [action, spec] of Object.entries(data.actions)) units.push({ label: `${command} ${action}`, command, action, args: spec.arguments, refuse: spec.refuse ?? {} });
 }
 
 function exampleOf(argument: ArgumentSpec): string {
@@ -130,6 +131,57 @@ for (const unit of units) {
     check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
     check(`${name}: MCP never contacts the target`, mcp.contacts, []);
     check(`${name}: MCP prints no document`, mcp.output, "");
+  }
+}
+
+// Missing required arguments, derived from the declaration (requiredness is declared once,
+// so the parser refuses at parse on every surface — a hand-written prepare-stage usage line
+// where the declaration says required slips past the value cases above).
+for (const unit of units) {
+  const lead = unit.action === undefined ? [] : [unit.action];
+  const positionals = unit.args.filter((argument) => argument.kind === "positional");
+  const required = unit.args.filter((argument) => argument.kind !== "flag" && argument.kind !== "variadic" && argument.required === true);
+  for (const argument of required) {
+    const dropped = argument.kind === "positional";
+    const kept = dropped ? positionals.slice(0, positionals.indexOf(argument)) : positionals;
+    const others = unit.args.filter((other) => other.kind === "option" && other !== argument);
+    const name = `${unit.label}: missing required ${dropped ? `<${argument.name}>` : `--${argument.name}`}`;
+    const argv = [...lead, ...kept.map(exampleOf), ...others.flatMap((other) => [`--${other.name}`, exampleOf(other)])];
+    const terminal = await runCase(unit.command, argv, "terminal");
+    cases += 1;
+    check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+    checkTrue(`${name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+    check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument.name);
+    check(`${name}: console never contacts the target`, terminal.contacts, []);
+
+    const mcpArgs: Record<string, unknown> = {
+      ...(unit.action === undefined ? {} : { action: unit.action }),
+      ...Object.fromEntries(kept.map((other) => [other.name, exampleOf(other)])),
+      ...Object.fromEntries(others.map((other) => [other.name, exampleOf(other)])),
+    };
+    const declaration = openclawCommands[unit.command];
+    check(`${name}: the MCP argument object is well-formed`, validate(declaration, mcpArgs), []);
+    const mcp = await runCase(unit.command, toArgv(declaration, mcpArgs), "mcp");
+    cases += 1;
+    check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+    checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+    check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
+    check(`${name}: MCP never contacts the target`, mcp.contacts, []);
+    check(`${name}: MCP prints no document`, mcp.output, "");
+  }
+}
+
+// A declared `refuse` token is refused by the one pipeline before any tokenizing, with the
+// declaration's own reason — on the console. (MCP's toArgv binds values inline —
+// `--funnel=x` — so the bare refused token is a console shape by construction.)
+for (const unit of units) {
+  for (const [token, reason] of Object.entries(unit.refuse)) {
+    const terminal = await runCase(unit.command, [...(unit.action === undefined ? [] : [unit.action]), token], "terminal");
+    cases += 1;
+    check(`${unit.label} ${token}: stops at the parse stage`, terminal.execution.stage, "parse");
+    checkTrue(`${unit.label} ${token}: is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+    check(`${unit.label} ${token}: is refused with the declared reason`, (terminal.execution.error as Error).message, reason);
+    check(`${unit.label} ${token}: never contacts the target`, terminal.contacts, []);
   }
 }
 

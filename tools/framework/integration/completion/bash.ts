@@ -13,11 +13,13 @@ const APP_VALUES_PIPELINE = "$(\"${COMP_WORDS[0]}\" list --json --no-status 2>/d
 
 /** The `--app` pair the command scan steps over: `--app` leads the command line and takes the
  *  next word as its own value, so neither is read as the command (a value that looks like a
- *  command name does not shadow the real one). Emitted only where the gate has an `--app`
+ *  command name does not shadow the real one); the `--app=<name>` form carries its own value
+ *  in one token. Emitted only where the gate has an `--app`
  *  selector — an installed single-deployment gate must not mention it in its script either. */
 export const APP_SKIP_PAIR: string =
   "if [[ $skip -eq 1 ]]; then skip=0; continue; fi\n" +
-  "    if [[ \"$w\" == \"--app\" ]]; then skip=1; continue; fi\n";
+  "    if [[ \"$w\" == \"--app\" ]]; then skip=1; continue; fi\n" +
+  "    if [[ \"$w\" == --app=* ]]; then continue; fi\n";
 /** `--app`'s own value, offered only while no command word has been typed yet — past one it is
  *  positional and must come before the command, so the command's flags return (R33-10). The
  *  names are asked for lazily, through whichever of the system-wide command or the checkout

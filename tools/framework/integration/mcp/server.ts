@@ -202,14 +202,17 @@ async function handleHelpTool(
   }
   const target = typeof args.command === "string" && args.command !== "" ? args.command : undefined;
   const chunks: string[] = [];
+  let rendered = true;
   await withOutputSink((chunk) => { chunks.push(chunk); }, async () => {
     // The loop and the console's `help` read the same registry, so a tool call and a typed
-    // `help <command>` answer byte for byte alike.
+    // `help <command>` answer byte for byte alike — and fail alike: an unknown target is an
+    // error result here, as the console's exit 1 is there.
     const registry = commandRegistry({ deployment: app.commands, gate: gateCommands, appName: app.name });
-    renderHelp(target, app, registry, gateHelp);
+    rendered = renderHelp(target, app, registry, gateHelp);
   });
   const output = chunks.join("").trim();
   reply(id, {
+    ...(rendered ? {} : { isError: true }),
     content: [{ type: "text", text: output === "" ? "(no output)" : maskSecrets(output) }],
   });
 }

@@ -33,8 +33,9 @@ export const PWSH_COMPLETER: string =
   "  if ($scan.Count -ge 1) { $prev = $scan[$scan.Count - 1] }\n" +
   "  # --app is positional and takes a value: the pair is skipped, so it is never read as the\n" +
   "  # command (and a value that looks like a command name does not shadow the real one).\n" +
+  "  # The '--app=<name>' form carries its own value in one token: it is skipped alone.\n" +
   "  $i = 0\n" +
-  "  while ($clawforgeApp -and $i -lt $scan.Count -and $scan[$i] -eq '--app') { $i = $i + 2 }\n" +
+  "  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -eq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -eq '--app') { 2 } else { 1 }) }\n" +
   "  $candidates = @()\n" +
   "  if ($i -ge $scan.Count) {\n" +
   "    if ($clawforgeApp -and $prev -eq '--app') {\n" +

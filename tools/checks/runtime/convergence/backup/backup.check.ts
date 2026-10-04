@@ -292,7 +292,7 @@ function stubBackupCtx(
     const slice = data.arguments ?? [];
     for (const argument of slice) {
       if (argument.kind !== "flag" && argument.kind !== "option") continue;
-      const tokens = argument.kind === "option" ? [`--${argument.name}`, "x"] : [`--${argument.name}`];
+      const tokens = argument.kind === "option" ? [`--${argument.name}`, argument.parse?.example ?? "x"] : [`--${argument.name}`];
       let error: unknown;
       try { parseDeclaredArgs(slice, tokens); } catch (caught) { error = caught; }
       check(`backup ${action} accepts its declared --${argument.name}`, error, undefined);

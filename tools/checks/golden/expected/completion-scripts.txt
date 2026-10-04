@@ -152,6 +152,7 @@ _clawforge_complete() {
     local w="${words[i]}"
     if [[ $skip -eq 1 ]]; then skip=0; continue; fi
     if [[ "$w" == "--app" ]]; then skip=1; continue; fi
+    if [[ "$w" == --app=* ]]; then continue; fi
     cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
@@ -348,6 +349,7 @@ _clawforge_complete() {
     local w="${words[i]}"
     if [[ $skip -eq 1 ]]; then skip=0; continue; fi
     if [[ "$w" == "--app" ]]; then skip=1; continue; fi
+    if [[ "$w" == --app=* ]]; then continue; fi
     cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
@@ -542,8 +544,9 @@ $clawforgeCompleter = {
   if ($scan.Count -ge 1) { $prev = $scan[$scan.Count - 1] }
   # --app is positional and takes a value: the pair is skipped, so it is never read as the
   # command (and a value that looks like a command name does not shadow the real one).
+  # The '--app=<name>' form carries its own value in one token: it is skipped alone.
   $i = 0
-  while ($clawforgeApp -and $i -lt $scan.Count -and $scan[$i] -eq '--app') { $i = $i + 2 }
+  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -eq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -eq '--app') { 2 } else { 1 }) }
   $candidates = @()
   if ($i -ge $scan.Count) {
     if ($clawforgeApp -and $prev -eq '--app') {
@@ -1102,8 +1105,9 @@ $clawforgeCompleter = {
   if ($scan.Count -ge 1) { $prev = $scan[$scan.Count - 1] }
   # --app is positional and takes a value: the pair is skipped, so it is never read as the
   # command (and a value that looks like a command name does not shadow the real one).
+  # The '--app=<name>' form carries its own value in one token: it is skipped alone.
   $i = 0
-  while ($clawforgeApp -and $i -lt $scan.Count -and $scan[$i] -eq '--app') { $i = $i + 2 }
+  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -eq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -eq '--app') { 2 } else { 1 }) }
   $candidates = @()
   if ($i -ge $scan.Count) {
     if ($clawforgeApp -and $prev -eq '--app') {

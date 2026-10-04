@@ -53,7 +53,7 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   check("set build is mutable but needs no confirmation", callFactsFor(set, ["build"]).effect, "change");
   check("set build reports its artifact write", toolEnvelope(set, "built", undefined, "set-build", ["build"]).changed, true);
   check("set validate remains read-only", callFactsFor(set, ["validate"]).effect, "read");
-  check("set try and forget require confirmation", [callFactsFor(set, ["try"]).effect, callFactsFor(set, ["forget", "--kind", "agent", "--name", "x"]).effect], ["destroy", "destroy"]);
+  check("set try and forget require confirmation", [callFactsFor(set, ["try", "--set", "a.tar.gz"]).effect, callFactsFor(set, ["forget", "--kind", "agent", "--name", "x"]).effect], ["destroy", "destroy"]);
 }
 
 // Exercise the actual dispatcher, with stubbed command bodies and local-only context.

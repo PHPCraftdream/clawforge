@@ -11,6 +11,7 @@
 import type { Env } from "./env.ts";
 import type { Context } from "./context.ts";
 import type { MountPoint } from "./paths.ts";
+import type { ValueParser } from "./values/value.ts";
 
 export type ArgumentKind = "positional" | "flag" | "option" | "variadic";
 
@@ -48,6 +49,9 @@ export interface CommandArgument {
    *  by the shared help renderer and folded into the MCP tool description. Applies to
    *  `option` only. foundation/core/command/spec/parse.check.ts fails if a declared option omits it. */
   readonly valueName?: string;
+  /** Parses the typed value once, in one voice on every surface; without it the raw text
+   *  reaches the command's run. Mutually exclusive with `choices` on an option. */
+  readonly parse?: ValueParser<unknown>;
   /** For a multi-action command (backup's `action` positional): which action(s) this
    *  argument belongs to. Absent for a single-action command or a shared argument. Read by
    *  help-render and by parseDeclaredArgs' cross-action lookup. */

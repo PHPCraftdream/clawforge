@@ -1,7 +1,7 @@
 // Per-action views of a multi-action command's declaration.
 
 import type { CommandArgument } from "#src/core/app.ts";
-import { specData, specOf, type ArgumentSpec, type CommandBody } from "#src/core/command/spec.ts";
+import { specData, specOf, type ArgumentRule, type ArgumentSpec, type CommandBody } from "#src/core/command/spec.ts";
 
 /** One multi-action command's flags/options from what each action's own parser accepts:
  *  `actions` is derived (absent when every action takes it), so completion, --help and the MCP
@@ -48,6 +48,31 @@ export function argumentScopes(command: { readonly run?: unknown }, name: string
   if (data.kind === "single") return undefined;
   const slices = Object.fromEntries(Object.entries(data.actions).map(([action, slice]) => [action, slice.arguments]));
   return argumentParts(slices, name);
+}
+
+/** One unit of a body that declares argument rules: the command itself, or one action. */
+export interface ArgumentRulesView {
+  readonly action?: string;
+  readonly rules: readonly ArgumentRule[];
+  /** The unit's own declared arguments — the labels a rule's text names. */
+  readonly arguments: readonly ArgumentSpec[];
+}
+
+/** The declared argument rules of a command, per unit; undefined when none are declared
+ *  (a gate command has no body, so none either). */
+export function argumentRules(command: { readonly run?: unknown }): readonly ArgumentRulesView[] | undefined {
+  const entry = specOf(command);
+  if (entry === undefined) return undefined;
+  const data = specData(entry);
+  if (data.kind === "single") {
+    return data.rules === undefined || data.rules.length === 0
+      ? undefined
+      : [{ rules: data.rules, arguments: data.arguments }];
+  }
+  const units = Object.entries(data.actions)
+    .filter(([, slice]) => slice.rules !== undefined && slice.rules.length > 0)
+    .map(([action, slice]) => ({ action, rules: slice.rules!, arguments: slice.arguments }));
+  return units.length === 0 ? undefined : units;
 }
 
 /** The distinct texts the actions of a multi-action body's slices declare for one flag/option,

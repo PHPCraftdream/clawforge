@@ -455,6 +455,7 @@
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
       --json                 Emit the outcome as JSON
       --dry-run              Show what would happen without touching anything
+      --previous-set cannot be combined with --operation and --no-restart
     
     `./clawforge apply` copies the live configuration aside before its first mutating step. This puts that copy back and restarts, because a configuration the instance has not read is not in force.
     Not the same operation as `./clawforge push`, and the difference matters at exactly the wrong moment: push replaces the whole data directory from a snapshot — every workspace, every agent's memory, every transcript written since. This replaces one file. Undoing a bad configuration should not cost an agent its notes.
@@ -490,6 +491,12 @@
       --break-lock           Take over the instance lock held by another operation (real apply only)
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
       --json                 Emit the outcome as JSON
+      --dry-run cannot be combined with --dump
+      --break-lock cannot be combined with --dump
+      --break-foreign-lock cannot be combined with --dump
+      --break-lock cannot be combined with --dry-run
+      --break-foreign-lock cannot be combined with --dry-run
+      --force requires --dump
     
     The declaration in config/desired-state.json is the source of truth:
     this pushes it onto the running instance via OpenClaw's own `config set --batch-file`, overwriting whatever was set by hand.
@@ -666,6 +673,8 @@
       --root                 Request root. On target/local: half of the elevation consent, dead without --confirm-root. On engine: half of the consent every command needs to run at all — the distro's only user is root (uid 0)
       --confirm-root         Second consent; both flags together are required — to elevate on target/local, and for an engine command to run at all
       <args…>                Command and arguments to run, e.g. ["resolvectl", "status"] (required)
+      --root requires --confirm-root
+      --confirm-root requires --root
     
     Unlike exec/cli, which run inside the deployment's own containers, this reaches the machine-side layers: a WSL distro's resolv.conf, Docker Desktop's own settings, the bare host.
     The context is a role, resolved per platform:
@@ -850,6 +859,8 @@
       --kind <kind>          agent, mcp-server, or cron-job (forget) [agent|mcp-server|cron-job]
       --break-lock           Take over the instance lock held by another operation (forget)
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (forget)
+      diff: <artifacts…> or --from and --to (one required)
+      receipts: --receipt requires --set-id
     
     Collects every recipe (served content and agent bundle, each file checksummed), config/desired-state.json, the required framework version and image digest, and the NAMES of the secrets the set needs — into sets/<name>-<id>.tar.gz inside the deployment directory.
     The id is over the manifest, not the archive bytes: two builds of an unchanged tree give the same id, so it can be compared, committed and installed against.

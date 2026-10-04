@@ -20,7 +20,7 @@ import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import { SET_TRY } from "./set-try.ts";
-import { SET_DIFF_ARGUMENTS, planSetDiff, runSetDiff } from "./set-diff.ts";
+import { SET_DIFF_ARGUMENTS, runSetDiff } from "./set-diff.ts";
 import { SET_RECEIPTS } from "./set-receipts.ts";
 import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
@@ -205,7 +205,8 @@ export const SET = multiActionBody({
       summary: "Compare two verified artifacts",
       effect: "read",
       arguments: SET_DIFF_ARGUMENTS,
-      prepare: ({ values }) => planSetDiff(values),
+      rules: [{ rule: "oneOf", groups: [["artifacts"], ["from", "to"]], required: true }],
+      prepare: ({ values: v }) => ({ from: v.from ?? v.artifacts[0], to: v.to ?? v.artifacts[1], json: v.json }),
       run: runSetDiff,
     }),
     receipts: SET_RECEIPTS,

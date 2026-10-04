@@ -1,7 +1,8 @@
 // `set` as a command spec: the declaration equals what the parser accepts per action, the
 // action word and `forget`'s required options are the parser's refusals, and every refusal
-// that depends only on the arguments lands at the prepare/parse stage through the ONE pipeline
-// (executeCommand) with a transport that records every contact — before the target, the
+// that depends only on the arguments — including the cross-field rules of `diff` and
+// `receipts`, which land at the parse stage through the declaration's own rules — goes
+// executeCommand) with a transport that records every contact — before the target, the
 // instance lock or a .env write, on every host.
 
 import { executeCommand } from "#framework/core/command/execute.ts";
@@ -101,13 +102,13 @@ check("set try without --set uses the parser's missing-required text",
 // --- the pipeline: refusals before any contact ---------------------------------------------
 
 const CASES: readonly { name: string; argv: string[]; stage: "parse" | "prepare"; argument: string | undefined }[] = [
-  { name: "set diff with no artifact", argv: ["diff"], stage: "prepare", argument: "artifacts" },
-  { name: "set diff with one positional artifact", argv: ["diff", "a.tar.gz"], stage: "prepare", argument: "artifacts" },
-  { name: "set diff with three positional artifacts", argv: ["diff", "a", "b", "c"], stage: "prepare", argument: "artifacts" },
-  { name: "set diff --from without --to", argv: ["diff", "--from", "a.tar.gz"], stage: "prepare", argument: "to" },
-  { name: "set diff --to without --from", argv: ["diff", "--to", "b.tar.gz"], stage: "prepare", argument: "from" },
-  { name: "set diff --from with a positional artifact", argv: ["diff", "--from", "a", "b"], stage: "prepare", argument: "artifacts" },
-  { name: "set receipts --receipt without --set-id", argv: ["receipts", "--receipt", "r1"], stage: "prepare", argument: "receipt" },
+  { name: "set diff with no artifact", argv: ["diff"], stage: "parse", argument: "artifacts" },
+  { name: "set diff with one positional artifact", argv: ["diff", "a.tar.gz"], stage: "parse", argument: "artifacts" },
+  { name: "set diff with three positional artifacts", argv: ["diff", "a", "b", "c"], stage: "parse", argument: "artifacts" },
+  { name: "set diff --from without --to", argv: ["diff", "--from", "a.tar.gz"], stage: "parse", argument: "to" },
+  { name: "set diff --to without --from", argv: ["diff", "--to", "b.tar.gz"], stage: "parse", argument: "from" },
+  { name: "set diff --from with a positional artifact", argv: ["diff", "--from", "a", "b"], stage: "parse", argument: "artifacts" },
+  { name: "set receipts --receipt without --set-id", argv: ["receipts", "--receipt", "r1"], stage: "parse", argument: "receipt" },
   { name: "set try without --set", argv: ["try"], stage: "parse", argument: "set" },
   { name: "set try --set with a flag in place of its value", argv: ["try", "--set", "--keep"], stage: "parse", argument: "set" },
   { name: "set forget without --kind", argv: ["forget", "--name", "n"], stage: "parse", argument: "kind" },

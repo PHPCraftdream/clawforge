@@ -4,7 +4,7 @@ import { info, log } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
-import { ArgumentError, defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
+import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
 export const RECEIPT_NEEDS_SET_ID = "--receipt requires --set-id";
 
@@ -25,12 +25,6 @@ export const SET_RECEIPTS_ARGUMENTS = [
   },
   { name: "json", summary: "Emit the receipts as JSON", description: "Emit the receipts as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
-
-function receiptsPlan(values: Values<typeof SET_RECEIPTS_ARGUMENTS>): { setId?: string; receiptId?: string; json: boolean } {
-  const { "set-id": setId, receipt: receiptId, json } = values;
-  if (receiptId !== undefined && setId === undefined) throw new ArgumentError(RECEIPT_NEEDS_SET_ID, "receipt");
-  return { setId, receiptId, json };
-}
 
 function showLine(receipt: AcceptanceReceipt): void {
   log(`receipt ${receipt.receiptId}`);
@@ -58,7 +52,11 @@ function securitySummary(receipt: AcceptanceReceipt): string {
 
 /** The persistence root is deploymentDir(), while the optional root in the persistence API
  *  keeps that API independently testable. This command intentionally has no runtime calls. */
-async function runSetReceipts(_ctx: Context, { setId, receiptId, json }: { setId?: string; receiptId?: string; json: boolean }): Promise<void> {
+async function runSetReceipts(
+  _ctx: Context,
+  values: Values<typeof SET_RECEIPTS_ARGUMENTS>,
+): Promise<void> {
+  const { "set-id": setId, receipt: receiptId, json } = values;
   if (receiptId !== undefined && setId !== undefined) {
     const receipt = await readReceipt(setId, receiptId);
     if (json || isCaptured()) emit(`${JSON.stringify(receipt, null, 2)}\n`);
@@ -83,6 +81,6 @@ export const SET_RECEIPTS = defineAction({
   summary: "List saved acceptance receipts",
   effect: "read",
   arguments: SET_RECEIPTS_ARGUMENTS,
-  prepare: ({ values }) => receiptsPlan(values),
+  rules: [{ rule: "requires", name: "receipt", with: ["set-id"] }],
   run: runSetReceipts,
 });

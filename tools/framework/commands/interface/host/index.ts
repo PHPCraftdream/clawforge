@@ -98,10 +98,12 @@ export function rootElevationRequested(root: boolean, confirmRoot: boolean): boo
 export const HOST = commandBody({
   effect: "destroy",
   arguments: HOST_ARGUMENTS,
+  rules: [
+    { rule: "requires", name: "root", with: ["confirm-root"], reason: "does not elevate on its own" },
+    { rule: "requires", name: "confirm-root", with: ["root"] },
+  ],
   prepare(call) {
-    const parsed = invocationOf(call.values as Values<typeof HOST_ARGUMENTS>);
-    rootElevationRequested(parsed.root, parsed.confirmRoot);
-    return parsed;
+    return invocationOf(call.values as Values<typeof HOST_ARGUMENTS>);
   },
   async run(ctx, plan) {
     await runInvocation(ctx, plan as HostInvocation, realHostEnvironment);

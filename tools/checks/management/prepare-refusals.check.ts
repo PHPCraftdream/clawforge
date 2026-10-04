@@ -1,8 +1,8 @@
-// The management group's prepare-stage refusals, through the ONE pipeline (executeCommand)
-// with a transport that records every contact: a refusal that depends only on the arguments
-// (secrets' cross-flag rules, host's elevation consent, configure-provider's id/variable
-// grammars) lands at the prepare stage — before any contact with the target, before the
-// instance lock, before a .env write, on every host.
+// The management group's argument-only refusals, through the ONE pipeline (executeCommand)
+// with a transport that records every contact: the secrets' cross-flag rules and
+// configure-provider's id/variable grammars land at the prepare stage, while host's elevation
+// consent moved to the declaration's rules at the parse stage — all before any contact with
+// the target, before the instance lock, before a .env write, on every host.
 
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { ArgumentError } from "#framework/core/command/index.ts";
@@ -42,15 +42,15 @@ const app: AppDefinition = {
 };
 
 for (const kase of [
-  { name: "secrets --json --apply", argv: ["--json", "--apply"], argument: "json" },
-  { name: "secrets --break-foreign-lock without --apply", argv: ["--break-foreign-lock", "host-id"], argument: "break-foreign-lock" },
-  { name: "host --root without --confirm-root", argv: ["target", "--root", "--", "whoami"], argument: "root" },
-  { name: "configure-provider --provider with an invalid id", argv: ["--provider", "BAD ID"], argument: "provider" },
-  { name: "configure-provider --env with an invalid variable", argv: ["--env", "1BAD"], argument: "env" },
+  { name: "secrets --json --apply", argv: ["--json", "--apply"], stage: "prepare", argument: "json" },
+  { name: "secrets --break-foreign-lock without --apply", argv: ["--break-foreign-lock", "host-id"], stage: "prepare", argument: "break-foreign-lock" },
+  { name: "host --root without --confirm-root", argv: ["target", "--root", "--", "whoami"], stage: "parse", argument: "root" },
+  { name: "configure-provider --provider with an invalid id", argv: ["--provider", "BAD ID"], stage: "prepare", argument: "provider" },
+  { name: "configure-provider --env with an invalid variable", argv: ["--env", "1BAD"], stage: "prepare", argument: "env" },
 ] as const) {
   const { transport, contacts } = recordingTransport();
   const execution = await executeCommand(app, kase.argv[0] === "target" ? "host" : kase.argv[0] === "--json" || kase.argv[0] === "--break-foreign-lock" ? "secrets" : "configure-provider", [...kase.argv], { surface: "mcp", confirmed: true, transport });
-  check(`${kase.name} stops at the prepare stage`, execution.stage, "prepare");
+  check(`${kase.name} stops at the ${kase.stage} stage`, execution.stage, kase.stage);
   checkTrue(`${kase.name} is refused as an argument error`, execution.error instanceof ArgumentError);
   check(`${kase.name} names its argument`, (execution.error as ArgumentError).argument, kase.argument);
   check(`${kase.name}: the target was never contacted`, contacts, []);

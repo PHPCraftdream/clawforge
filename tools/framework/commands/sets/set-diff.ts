@@ -14,7 +14,7 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
-import { ArgumentError, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =
@@ -319,19 +319,13 @@ export const SET_DIFF_ARGUMENTS = [
     valueName: "artifact",
   },
   { name: "json", summary: "Emit JSON", kind: "flag", description: "Emit JSON" },
-  { name: "artifacts", kind: "variadic", description: "Two positional artifacts" },
+  { name: "artifacts", kind: "variadic", count: 2, description: "Two positional artifacts" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface SetDiffPlan { readonly from: string; readonly to: string; readonly json: boolean }
 
 export function planSetDiff({ from, to, json, artifacts: positional }: Values<typeof SET_DIFF_ARGUMENTS>): SetDiffPlan {
-  if (from !== undefined || to !== undefined) {
-    if (positional.length > 0) throw new ArgumentError("set diff accepts either two positional artifacts or --from and --to, not both", "artifacts");
-    if (from === undefined || to === undefined) throw new ArgumentError("set diff needs both --from and --to artifact paths", from === undefined ? "from" : "to");
-    return { from, to, json };
-  }
-  if (positional.length !== 2) throw new ArgumentError(`usage: ${commandLine(["set", "diff", "<from.tar.gz>", "<to.tar.gz>"])} [--json]`, "artifacts");
-  return { from: positional[0], to: positional[1], json };
+  return { from: from ?? positional[0], to: to ?? positional[1], json };
 }
 
 function humanChange(change: SetDiffChange): string {

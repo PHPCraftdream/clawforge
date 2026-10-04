@@ -53,9 +53,21 @@ export interface VariadicSpec<N extends string = string> extends ArgumentBase<N>
   /** Pass-through commands (cli, exec, host): the first free token starts the variadic and the rest is literal.
    *  Absent: free tokens are collected while flags and options are still recognized anywhere. */
   readonly verbatim?: true;
+  /** Exact number of values the variadic takes; absent: any number. */
+  readonly count?: number;
 }
 
 export type ArgumentSpec = FlagSpec | ValueSpec<"option"> | ValueSpec<"positional"> | VariadicSpec;
+
+/** Rules check only presence: a flag is present if true; option/positional if a value was given;
+ *  variadic if it has > 0 values. */
+export type ArgumentRule<N extends string = string> =
+  // name given => every one of `with` given
+  | { rule: "requires"; name: N; with: readonly N[]; reason?: string }
+  // name given => none of `with` given
+  | { rule: "conflicts"; name: N; with: readonly N[]; reason?: string }
+  // each group is given whole or not at all; at most one group; with `required`: exactly one
+  | { rule: "oneOf"; groups: readonly (readonly N[])[]; required?: true; reason?: string };
 
 type ValueOf<A> = A extends { kind: "flag" } ? boolean
   : A extends { kind: "variadic" } ? readonly string[]
@@ -105,6 +117,8 @@ export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Need
   /** Exact argv tokens (before a bare `--`) refused with this reason, ahead of tokenizing: not an
    *  argument, so absent from help, the MCP schema and the declared arguments. */
   readonly refuse?: Readonly<Record<string, string>>;
+  /** Cross-field presence rules, enforced by the parser before any phase runs. */
+  readonly rules?: readonly ArgumentRule<A[number]["name"]>[];
   readonly preparesEnvironment?: N extends "target" ? true : never;
 }
 
@@ -116,6 +130,8 @@ export interface ActionSpec<A extends readonly ArgumentSpec[], P> extends Phases
   /** Exact argv tokens (before a bare `--`) refused with this reason, ahead of tokenizing: not an
    *  argument, so absent from help, the MCP schema and the declared arguments. */
   readonly refuse?: Readonly<Record<string, string>>;
+  /** Cross-field presence rules, enforced by the parser before any phase runs. */
+  readonly rules?: readonly ArgumentRule<A[number]["name"]>[];
 }
 
 /** The stamp on an erased body: the only way to read one back is through this module. */
@@ -131,6 +147,7 @@ interface ActionData extends PhaseData {
   readonly effect?: Effect;
   readonly arguments: readonly ArgumentSpec[];
   readonly refuse?: Readonly<Record<string, string>>;
+  readonly rules?: readonly ArgumentRule[];
 }
 interface SingleData extends PhaseData {
   readonly kind: "single";
@@ -138,6 +155,7 @@ interface SingleData extends PhaseData {
   readonly needs: Needs;
   readonly arguments: readonly ArgumentSpec[];
   readonly refuse?: Readonly<Record<string, string>>;
+  readonly rules?: readonly ArgumentRule[];
   readonly preparesEnvironment: boolean;
 }
 interface MultiData {
@@ -201,7 +219,36 @@ function checkArguments(where: string, args: readonly ArgumentSpec[]): void {
       if (argument.parse !== undefined && argument.choices !== undefined) fail("parse-with-choices", where, `${label} has both parse and choices`);
       if (argument.kind === "option" && argument.valueName === undefined) fail("option-without-value-name", where, `${label} is an option without a valueName`);
     }
+    if ((argument as { count?: unknown }).count !== undefined && argument.kind !== "variadic") {
+      fail("count-not-variadic", where, `${label} has a count but is not variadic`);
+    }
   });
+}
+
+function checkRules(where: string, args: readonly ArgumentSpec[], rules: readonly ArgumentRule[]): void {
+  const byName = new Map(args.map((argument) => [argument.name, argument]));
+  const member = (rule: ArgumentRule): readonly string[] =>
+    rule.rule === "oneOf" ? rule.groups.flat() : [rule.name, ...rule.with];
+  for (const rule of rules) {
+    for (const name of member(rule)) {
+      if (!byName.has(name)) fail("rule-unknown-argument", where, `rule names ${name}, which is not declared`);
+      const argument = byName.get(name)! as ArgumentSpec & { required?: boolean; setByConfirm?: true };
+      if (argument.required === true) fail("rule-on-required", where, `rule names ${name}, which is declared required`);
+      if (argument.kind === "flag" && argument.setByConfirm === true) fail("rule-on-set-by-confirm", where, `rule names ${name}, which is set by a confirmation`);
+    }
+    if (rule.rule === "requires" && rule.with.includes(rule.name)) fail("rule-self", where, `rule requires ${rule.name} of itself`);
+    if (rule.rule === "conflicts" && rule.with.includes(rule.name)) fail("rule-self", where, `rule conflicts ${rule.name} with itself`);
+    if (rule.rule === "oneOf") {
+      if (rule.groups.length < 2) fail("one-of-groups", where, "oneOf needs at least two groups");
+      const seen = new Set<string>();
+      for (const group of rule.groups) {
+        for (const name of group) {
+          if (seen.has(name)) fail("one-of-groups", where, `oneOf names ${name} in two groups`);
+          seen.add(name);
+        }
+      }
+    }
+  }
 }
 
 function phasesOf(source: { prepare?: unknown; run: unknown }): PhaseData {
@@ -212,9 +259,10 @@ function phasesOf(source: { prepare?: unknown; run: unknown }): PhaseData {
 export function commandBody<const A extends readonly ArgumentSpec[], P = Values<A>, N extends Needs = "target">(body: SingleBody<A, P, N>): CommandBody {
   const needs: Needs = body.needs ?? "target";
   checkArguments("command body", body.arguments);
+  if (body.rules !== undefined) checkRules("command body", body.arguments, body.rules);
   if (body.preparesEnvironment === true && needs !== "target") fail("prepares-environment-needs-target", "command body", "preparesEnvironment needs `needs: \"target\"`");
   const data: SingleData = {
-    kind: "single", effect: body.effect, needs, arguments: body.arguments, refuse: body.refuse,
+    kind: "single", effect: body.effect, needs, arguments: body.arguments, refuse: body.refuse, rules: body.rules,
     preparesEnvironment: body.preparesEnvironment === true, ...phasesOf(body),
   };
   return { [COMMAND_SPEC]: data };
@@ -223,8 +271,9 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
 /** One action of a multi-action command. */
 export function defineAction<const A extends readonly ArgumentSpec[], P = Values<A>>(action: ActionSpec<A, P>): Action {
   checkArguments(`action ${action.summary}`, action.arguments ?? []);
+  if (action.rules !== undefined) checkRules(`action ${action.summary}`, action.arguments ?? [], action.rules);
   const data: ActionData = {
-    kind: "action", summary: action.summary, effect: action.effect, arguments: action.arguments ?? [], refuse: action.refuse, ...phasesOf(action),
+    kind: "action", summary: action.summary, effect: action.effect, arguments: action.arguments ?? [], refuse: action.refuse, rules: action.rules, ...phasesOf(action),
   };
   return { [COMMAND_SPEC]: data };
 }
@@ -251,7 +300,7 @@ export function specData(body: CommandBody): SingleData | MultiData {
 /** The parse and effect shape of a body: arguments, or per-action arguments and effects. */
 export function specShape(body: CommandBody): CallShape & EffectShape {
   const data = specData(body);
-  if (data.kind === "single") return { effect: data.effect, arguments: data.arguments, refuse: data.refuse };
+  if (data.kind === "single") return { effect: data.effect, arguments: data.arguments, refuse: data.refuse, rules: data.rules };
   return { effect: data.effect, actions: data.actions, defaultAction: data.defaultAction };
 }
 

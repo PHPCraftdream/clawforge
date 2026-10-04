@@ -10,7 +10,7 @@ import type { CommandArgument } from "#src/core/app.ts";
 import {
   ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument, UnknownActionError, UnknownArgumentError,
 } from "#src/core/command/errors.ts";
-import type { ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
+import type { ArgumentRule, ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
 import { scopeByAction } from "#src/core/command/view.ts";
 import { ValueError } from "#src/core/values/value.ts";
 
@@ -32,6 +32,98 @@ export const APPLIES_TO = "applies to";
 
 export function missingArgumentMessage(prefix: string, label: string): string {
   return `${prefix} needs ${label}`;
+}
+
+/** One argument's label in a rule's text: `--name`, `<name>`, `<name…>`. */
+function ruleLabel(declared: ReadonlyMap<string, ArgumentSpec>, name: string): string {
+  const argument = declared.get(name);
+  if (argument === undefined || argument.kind === "flag" || argument.kind === "option") return `--${name}`;
+  return argument.kind === "variadic" ? `<${name}…>` : `<${name}>`;
+}
+
+function groupClause(declared: ReadonlyMap<string, ArgumentSpec>, group: readonly string[]): string {
+  return group.map((name) => ruleLabel(declared, name)).join(" and ");
+}
+
+function groupsClause(declared: ReadonlyMap<string, ArgumentSpec>, groups: readonly (readonly string[])[]): string {
+  return groups.map((group) => groupClause(declared, group)).join(" or ");
+}
+
+/** The one voice a rule is refused and printed in: the parser's messages on error, the same
+ *  clauses without the verb for `--help` (help-render adds its own prefix and marker). */
+export function ruleText(
+  rule: ArgumentRule,
+  declared: readonly ArgumentSpec[],
+  context: BindContext = {},
+  options: { mode?: "error" | "help"; case?: "mix" | "incomplete" | "empty"; incomplete?: readonly string[] } = {},
+): string {
+  const byName = new Map(declared.map((argument) => [argument.name, argument]));
+  const prefix = [context.command, context.action].filter((part) => part !== undefined && part !== "").join(" ");
+  const lead = prefix === "" ? "" : `${prefix} `;
+  const withReason = (text: string): string =>
+    options.mode !== "help" && rule.reason !== undefined ? `${text} — ${rule.reason}` : text;
+  if (rule.rule === "requires") return withReason(`${ruleLabel(byName, rule.name)} requires ${groupClause(byName, rule.with)}`);
+  if (rule.rule === "conflicts") return withReason(`${ruleLabel(byName, rule.name)} cannot be combined with ${groupClause(byName, options.incomplete ?? rule.with)}`);
+  if (options.mode === "help") return groupsClause(byName, rule.groups);
+  if (options.case === "mix") return withReason(`${lead}takes ${groupsClause(byName, rule.groups)}, not both`);
+  if (options.case === "incomplete") {
+    const group = options.incomplete ?? [];
+    return withReason(`${lead}needs ${group.length === 2 ? "both " : ""}${groupClause(byName, group)}`);
+  }
+  return withReason(`${lead}needs ${groupsClause(byName, rule.groups)}`);
+}
+
+/** Whether the declared argument is present in the bound values. */
+function isGiven(argument: ArgumentSpec | undefined, values: Record<string, unknown>): boolean {
+  if (argument === undefined) return false;
+  if (argument.kind === "flag") return values[argument.name] === true;
+  if (argument.kind === "variadic") return (values[argument.name] as string[]).length > 0;
+  return values[argument.name] !== undefined;
+}
+
+/** The declaration's cross-field rules against the bound values, in declaration order: the
+ *  first violation refuses. Runs after `bind`, so a value error or a missing required
+ *  argument is still the first refusal. */
+export function enforceRules(
+  declared: readonly ArgumentSpec[],
+  rules: readonly ArgumentRule[] | undefined,
+  values: Record<string, unknown>,
+  context: BindContext = {},
+): void {
+  if (rules === undefined) return;
+  const byName = new Map(declared.map((argument) => [argument.name, argument]));
+  for (const rule of rules) {
+    if (rule.rule === "requires") {
+      if (!isGiven(byName.get(rule.name), values)) continue;
+      const missing = rule.with.find((name) => !isGiven(byName.get(name), values));
+      if (missing !== undefined) {
+        throw new ArgumentError(ruleText(rule, declared, context), rule.name);
+      }
+      continue;
+    }
+    if (rule.rule === "conflicts") {
+      if (!isGiven(byName.get(rule.name), values)) continue;
+      const other = rule.with.find((name) => isGiven(byName.get(name), values));
+      if (other !== undefined) {
+        throw new ArgumentError(ruleText(rule, declared, context, { case: "mix", incomplete: [other] }), rule.name);
+      }
+      continue;
+    }
+    const touched = rule.groups.filter((group) => group.some((name) => isGiven(byName.get(name), values)));
+    if (touched.length > 1) {
+      throw new ArgumentError(ruleText(rule, declared, context, { case: "mix" }), touched[1].find((name) => isGiven(byName.get(name), values))!);
+    }
+    if (touched.length === 1) {
+      const group = touched[0];
+      if (!group.every((name) => isGiven(byName.get(name), values))) {
+        throw new ArgumentError(ruleText(rule, declared, context, { case: "incomplete", incomplete: group }), group.find((name) => !isGiven(byName.get(name), values))!);
+      }
+      continue;
+    }
+    if (rule.required === true) {
+      throw new ArgumentError(ruleText(rule, declared, context, { case: "empty" }), rule.groups[0][0]);
+    }
+  }
 }
 
 function formatActions(actions: readonly string[]): string {
@@ -253,6 +345,15 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
     else if (argument.kind === "variadic") (values[argument.name] as string[]).push(value as string);
     else values[argument.name] = convert(argument, value as string);
   }
+  for (const argument of declared) {
+    if (argument.kind !== "variadic" || argument.count === undefined) continue;
+    const taken = (values[argument.name] as string[]).length;
+    // An empty variadic is "not given" — its absence is a rule's or a required argument's
+    // to refuse, not the count's.
+    if (taken > 0 && taken !== argument.count) {
+      throw new ArgumentError(`<${argument.name}…> takes exactly ${argument.count} values, not ${taken}`, argument.name);
+    }
+  }
   const prefix = [context.command, context.action].filter((part) => part !== undefined && part !== "").join(" ");
   for (const argument of declared) {
     if (argument.kind === "flag" || argument.required !== true) continue;
@@ -274,7 +375,8 @@ function isVerbatim(declared: readonly ArgumentSpec[]): boolean {
 export interface CallShape {
   readonly arguments?: readonly ArgumentSpec[];
   readonly refuse?: Readonly<Record<string, string>>;
-  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly ArgumentSpec[]; readonly refuse?: Readonly<Record<string, string>> }>>;
+  readonly rules?: readonly ArgumentRule[];
+  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly ArgumentSpec[]; readonly refuse?: Readonly<Record<string, string>>; readonly rules?: readonly ArgumentRule[] }>>;
   readonly defaultAction?: string;
 }
 
@@ -297,7 +399,9 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
     const declared = shape.arguments ?? [];
     refuseTokens(shape.refuse, argv);
     const tokens = tokenize(declared, argv, undefined, isVerbatim(declared));
-    return { values: bind(declared, tokens, { command }), given: tokens.given };
+    const values = bind(declared, tokens, { command });
+    enforceRules(declared, shape.rules, values, { command });
+    return { values, given: tokens.given };
   }
   const actions = shape.actions;
   const names = Object.keys(actions);
@@ -318,5 +422,7 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
   refuseTokens(actions[action].refuse, rest);
   const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, actions[name].arguments ?? []])));
   const tokens = tokenize(declared, rest, { action, siblings }, isVerbatim(declared));
-  return { values: bind(declared, tokens, { command, action }), action, given: tokens.given };
+  const values = bind(declared, tokens, { command, action });
+  enforceRules(declared, actions[action].rules, values, { command, action });
+  return { values, action, given: tokens.given };
 }

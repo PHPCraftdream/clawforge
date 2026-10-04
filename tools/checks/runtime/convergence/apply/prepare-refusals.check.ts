@@ -1,14 +1,13 @@
-// Stage-3 migration of the orchestration group: the refusals that depend only on the
-// arguments now run in the pipeline's `prepare` stage (cross-flag rules of apply-config,
-// rollback's --previous-set conflict), and the value grammars moved into the declaration
-// (--expect, --set, --operation, --limit). Both facts are asserted through the ONE pipeline
+// Stage-3 migration of the orchestration group: the cross-field rules (apply-config's flag
+// conflicts and --force requirement, rollback's --previous-set conflict) and the value
+// grammars (--expect, --set, --operation, --limit) live in the declaration and are enforced at
+// parse by the ONE pipeline
 // with a transport that records every contact and then throws: the stage that refused, the
 // named argument, and zero contacts — never prose.
 
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { ArgumentError } from "#framework/core/command/index.ts";
 import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
-import { UserError } from "#framework/core/io/log.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -56,25 +55,27 @@ async function refusal(name: string, argv: string[]): Promise<{ stage: string; e
   return { stage: execution.stage, error: execution.error, contacts };
 }
 
-// --- prepare-stage refusals: cross-flag rules, before any contact -------------------------------
+// --- parse-stage refusals: the declaration's cross-field rules -----------------------------------
 
-for (const argv of [
-  ["--dry-run", "--dump"],
-  ["--dump", "--break-lock"],
-  ["--dump", "--break-foreign-lock", "host-id"],
-  ["--dry-run", "--break-lock"],
-  ["--force"],
-]) {
+for (const [argv, argument] of [
+  [["--dry-run", "--dump"], "dry-run"],
+  [["--dump", "--break-lock"], "break-lock"],
+  [["--dump", "--break-foreign-lock", "host-id"], "break-foreign-lock"],
+  [["--dry-run", "--break-lock"], "break-lock"],
+  [["--force"], "force"],
+] as const) {
   const { stage, error, contacts } = await refusal("apply-config", [...argv]);
-  check(`apply-config ${argv.join(" ")} stops at the prepare stage`, stage, "prepare");
-  checkTrue(`apply-config ${argv.join(" ")} is a user error`, error instanceof UserError);
+  check(`apply-config ${argv.join(" ")} stops at the parse stage`, stage, "parse");
+  checkTrue(`apply-config ${argv.join(" ")} is refused as an argument error`, error instanceof ArgumentError);
+  check(`apply-config ${argv.join(" ")} names its argument`, (error as ArgumentError).argument, argument);
   check(`apply-config ${argv.join(" ")} never contacts the target`, contacts, []);
 }
 
 for (const argv of [["--previous-set", "--operation", "apply-1"], ["--previous-set", "--no-restart"]]) {
   const { stage, error, contacts } = await refusal("rollback", [...argv]);
-  check(`rollback ${argv.join(" ")} stops at the prepare stage`, stage, "prepare");
-  checkTrue(`rollback ${argv.join(" ")} is a user error`, error instanceof UserError);
+  check(`rollback ${argv.join(" ")} stops at the parse stage`, stage, "parse");
+  checkTrue(`rollback ${argv.join(" ")} is refused as an argument error`, error instanceof ArgumentError);
+  check(`rollback ${argv.join(" ")} names its argument`, (error as ArgumentError).argument, "previous-set");
   check(`rollback ${argv.join(" ")} never contacts the target`, contacts, []);
 }
 

@@ -16,7 +16,7 @@
 
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { ArgumentError, UnknownActionError, specData } from "#framework/core/command/index.ts";
-import type { ArgumentSpec } from "#framework/core/command/index.ts";
+import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf } from "#framework/core/command/spec.ts";
 import { toArgv, validate } from "#framework/integration/mcp/call.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -44,6 +44,7 @@ interface Unit {
   readonly command: string;
   readonly action?: string;
   readonly args: readonly ArgumentSpec[];
+  readonly rules: readonly ArgumentRule[];
   readonly refuse: Readonly<Record<string, string>>;
 }
 
@@ -53,8 +54,8 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   checkTrue(`${command} is a declared body`, entry !== undefined);
   if (entry === undefined) continue;
   const data = specData(entry);
-  if (data.kind === "single") units.push({ label: command, command, args: data.arguments, refuse: data.refuse ?? {} });
-  else for (const [action, spec] of Object.entries(data.actions)) units.push({ label: `${command} ${action}`, command, action, args: spec.arguments, refuse: spec.refuse ?? {} });
+  if (data.kind === "single") units.push({ label: command, command, args: data.arguments, rules: data.rules ?? [], refuse: data.refuse ?? {} });
+  else for (const [action, spec] of Object.entries(data.actions)) units.push({ label: `${command} ${action}`, command, action, args: spec.arguments, rules: spec.rules ?? [], refuse: spec.refuse ?? {} });
 }
 
 function exampleOf(argument: ArgumentSpec): string {
@@ -168,6 +169,97 @@ for (const unit of units) {
     check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
     check(`${name}: MCP never contacts the target`, mcp.contacts, []);
     check(`${name}: MCP prints no document`, mcp.output, "");
+  }
+}
+
+// Declared presence rules and variadic counts refuse at parse on both surfaces, derived
+// from the declarations: the same one pipeline enforces the rules before any phase runs.
+for (const unit of units) {
+  if (unit.rules.length === 0 && !unit.args.some((argument) => argument.kind === "variadic" && argument.count !== undefined)) continue;
+  const lead = unit.action === undefined ? [] : [unit.action];
+  const declaresJson = unit.args.some((argument) => argument.name === "json" && argument.kind === "flag");
+  const declaration = openclawCommands[unit.command];
+  const declaredNames = new Set((declaration.arguments ?? []).map((argument) => argument.name));
+  const byName = new Map(unit.args.map((argument) => [argument.name, argument] as const));
+  interface GivenEntry {
+    readonly argument: ArgumentSpec;
+    readonly values?: number;
+  }
+  interface RuleCase {
+    readonly name: string;
+    readonly given: readonly GivenEntry[];
+    readonly members: readonly string[];
+  }
+  const ruleCases: RuleCase[] = [];
+  for (const rule of unit.rules) {
+    if (rule.rule === "requires") {
+      ruleCases.push({ name: `${unit.label}: rule requires --${rule.name}`, given: [{ argument: byName.get(rule.name)! }], members: [rule.name, ...rule.with] });
+    } else if (rule.rule === "conflicts") {
+      for (const member of rule.with) {
+        ruleCases.push({ name: `${unit.label}: rule conflicts --${rule.name} with --${member}`, given: [{ argument: byName.get(rule.name)! }, { argument: byName.get(member)! }], members: [rule.name, ...rule.with] });
+      }
+    } else {
+      const members = rule.groups.flat();
+      const valuesOf = (name: string): GivenEntry => {
+        const argument = byName.get(name)!;
+        return { argument, ...(argument.kind === "variadic" && argument.count !== undefined ? { values: argument.count } : {}) };
+      };
+      ruleCases.push({ name: `${unit.label}: rule oneOf mixes its first two groups`, given: [...rule.groups[0]!.map(valuesOf), valuesOf(rule.groups[1]![0]!)], members });
+      for (const group of rule.groups) {
+        if (group.length < 2) continue;
+        ruleCases.push({ name: `${unit.label}: rule oneOf gives only the first of a ${group.length}-member group`, given: [valuesOf(group[0]!)], members });
+      }
+      if (rule.required === true) ruleCases.push({ name: `${unit.label}: rule oneOf gives no group at all`, given: [], members });
+    }
+  }
+  for (const argument of unit.args) {
+    if (argument.kind !== "variadic" || argument.count === undefined) continue;
+    ruleCases.push({ name: `${unit.label}: --${argument.name} gets fewer than its ${argument.count} values`, given: [{ argument, values: argument.count - 1 }], members: [argument.name] });
+    ruleCases.push({ name: `${unit.label}: --${argument.name} gets more than its ${argument.count} values`, given: [{ argument, values: argument.count + 1 }], members: [argument.name] });
+  }
+  for (const kase of ruleCases) {
+    const givenNames = new Set(kase.given.map((entry) => entry.argument.name));
+    // Required positionals/variadics/options the case does not give itself, so `bind`'s
+    // missing-required refusal stays out of the way and the RULE is what fires.
+    const extras: GivenEntry[] = unit.args.filter((argument) =>
+      !givenNames.has(argument.name)
+      && (argument.kind === "positional" || ((argument as { required?: boolean }).required === true && argument.kind !== "flag"))).map((argument) => ({ argument }));
+    const argv = [
+      ...lead,
+      ...[...extras, ...kase.given].filter((entry) => entry.argument.kind === "positional").map(({ argument }) => exampleOf(argument)),
+      ...[...extras, ...kase.given].filter((entry) => entry.argument.kind === "flag").map(({ argument }) => `--${argument.name}`),
+      ...[...extras, ...kase.given].filter((entry) => entry.argument.kind === "option").flatMap(({ argument }) => [`--${argument.name}`, exampleOf(argument)]),
+      ...[...extras, ...kase.given].filter((entry) => entry.argument.kind === "variadic").flatMap(({ argument, values }) => Array.from({ length: values ?? (argument as { count?: number }).count ?? 1 }, () => exampleOf(argument))),
+      ...(declaresJson ? ["--json"] : []),
+    ];
+    const terminal = await runCase(unit.command, argv, "terminal");
+    cases += 1;
+    check(`${kase.name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+    checkTrue(`${kase.name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+    checkTrue(`${kase.name}: the error names a member of the rule`, kase.members.includes((terminal.execution.error as ArgumentError).argument ?? ""));
+    check(`${kase.name}: console never contacts the target`, terminal.contacts, []);
+    if (declaresJson) {
+      const document = JSON.parse(terminal.output) as { error?: { message?: unknown } };
+      checkTrue(`${kase.name}: --json gets the error document`, typeof document.error?.message === "string");
+    } else check(`${kase.name}: no --json document without a json flag`, terminal.output, "");
+
+    // MCP twin from the same arguments object; a rule member the merged view does not carry
+    // (set's variadic is per-action) has no MCP case by construction.
+    if (kase.members.some((name) => !declaredNames.has(name))) continue;
+    const mcpArgs: Record<string, unknown> = {
+      ...(unit.action === undefined ? {} : { action: unit.action }),
+      ...Object.fromEntries([...extras, ...kase.given].filter((entry) => entry.argument.kind === "option" || entry.argument.kind === "positional").map(({ argument }) => [argument.name, exampleOf(argument)])),
+      ...Object.fromEntries([...extras, ...kase.given].filter((entry) => entry.argument.kind === "flag").map(({ argument }) => [argument.name, true])),
+      ...Object.fromEntries([...extras, ...kase.given].filter((entry) => entry.argument.kind === "variadic").map(({ argument, values }) => [argument.name, Array.from({ length: values ?? (argument as { count?: number }).count ?? 1 }, () => exampleOf(argument))])),
+      ...(declaresJson ? { json: true } : {}),
+    };
+    const mcp = await runCase(unit.command, toArgv(declaration, mcpArgs), "mcp");
+    cases += 1;
+    check(`${kase.name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+    checkTrue(`${kase.name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+    checkTrue(`${kase.name}: MCP error names a member of the rule`, kase.members.includes((mcp.execution.error as ArgumentError).argument ?? ""));
+    check(`${kase.name}: MCP never contacts the target`, mcp.contacts, []);
+    check(`${kase.name}: MCP prints no document`, mcp.output, "");
   }
 }
 

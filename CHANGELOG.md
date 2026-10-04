@@ -113,6 +113,10 @@ All notable changes to `@clawforge/framework` will be documented here.
     declarations, identical in behaviour for bash, zsh and PowerShell; after `help <command>`
     only `--help` is offered. A script saved to a file (`> "${fpath[1]}/_clawforge"`) needs to be
     generated again; the `source <(…)` and `| Invoke-Expression` forms update themselves.
+* Cross-field refusals of `apply-config`, `rollback`, `host`, `set diff` and `set receipts` now
+  happen at the parse stage, before any contact with the target, in the parser's wording (an
+  `ArgumentError` naming the argument); several texts changed accordingly (`--force requires
+  --dump`, and `set diff` speaks the parser's voice).
 
 ### Fixed
 

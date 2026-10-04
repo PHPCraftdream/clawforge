@@ -5,7 +5,7 @@
 import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 import type { EffectDeclaration } from "../command/index.ts";
-import { effectProfile, argumentScopes } from "../command/index.ts";
+import { effectProfile, argumentScopes, argumentRules, ruleText } from "../command/index.ts";
 import { commandLine, renderAdvice } from "./invocation/render.ts";
 import { command } from "./invocation/advice.ts";
 import { invocation, type Invocation } from "./invocation/index.ts";
@@ -61,6 +61,13 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
     const description = argument.description.replace(/^With [\w/-]+: /, "");
     const scope = argument.actions === undefined || scopes !== undefined ? "" : ` (${argument.actions.join(", ")})`;
     info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${description}${scope}${choices}${required}`);
+  }
+  for (const unit of argumentRules(command) ?? []) {
+    for (const rule of unit.rules) {
+      const prefix = unit.action === undefined ? "" : `${unit.action}: `;
+      const marker = rule.rule === "oneOf" && rule.required === true ? " (one required)" : "";
+      info(`  ${prefix}${ruleText(rule, unit.arguments, { action: unit.action }, { mode: "help" })}${marker}`);
+    }
   }
   if (command.details !== undefined) {
     info("");

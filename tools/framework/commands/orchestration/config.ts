@@ -67,30 +67,23 @@ export function appliedHeadline(restartAdvice: boolean): string {
 }
 
 /** Which flags mean anything is decided from the mode here, not branch order: order alone
- *  would let --dry-run --dump --force reach the dump branch with the dry run never
- *  consulted, replacing a declaration with the recovered file's RECOVERABLE_PATHS subset.
- *  These refusals depend on the arguments alone, so they run in the prepare stage — before
- *  any contact with the target, on every host. */
+ *  would let --dry-run --dump --force reach the dump branch. The cross-flag refusals are the
+ *  declaration's rules now — the parser refuses them before any phase runs, on every host. */
+const DUMP_LOCK_REASON = "a dump takes no instance lock, so there is no lock to break";
+const DRY_RUN_LOCK_REASON = "a dry run takes no instance lock, so there is no lock to break";
+
 function applyConfigPlan(call: ParsedCall<Record<string, unknown>>): ConfigPlan {
   const values = call.values as {
     "dry-run"?: boolean; dump?: boolean; force?: boolean;
     "break-lock"?: boolean; "break-foreign-lock"?: string; json?: boolean;
   };
-  const dryRun = values["dry-run"] === true;
-  const dump = values.dump === true;
-  const force = values.force === true;
-  const breakLock = values["break-lock"] === true;
-  const breakForeignLockHost = values["break-foreign-lock"];
-  const jsonOnly = values.json === true;
-
-  if (dump && dryRun) die("--dry-run cannot be combined with --dump — a dump has no dry-run form: it writes the recovered declaration or it does nothing");
-  if (dump && breakLock) die("--break-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
-  if (dump && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
-  if (!dump && dryRun && breakLock) die("--break-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
-  if (!dump && dryRun && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
-  if (!dump && force) die("--force only applies to --dump — a real apply overwrites the instance config regardless, and its preview is --dry-run");
-
-  return { dryRun, dump, force, jsonOnly, takeover: { breakLock, breakForeignLockHost } };
+  return {
+    dryRun: values["dry-run"] === true,
+    dump: values.dump === true,
+    force: values.force === true,
+    jsonOnly: values.json === true,
+    takeover: { breakLock: values["break-lock"] === true, breakForeignLockHost: values["break-foreign-lock"] },
+  };
 }
 
 interface ConfigPlan {
@@ -104,6 +97,14 @@ interface ConfigPlan {
 export const APPLY_CONFIG = commandBody({
   effect: "change",
   arguments: APPLY_CONFIG_ARGUMENTS,
+  rules: [
+    { rule: "conflicts", name: "dry-run", with: ["dump"], reason: "a dump has no dry-run form: it writes the recovered declaration or it does nothing" },
+    { rule: "conflicts", name: "break-lock", with: ["dump"], reason: DUMP_LOCK_REASON },
+    { rule: "conflicts", name: "break-foreign-lock", with: ["dump"], reason: DUMP_LOCK_REASON },
+    { rule: "conflicts", name: "break-lock", with: ["dry-run"], reason: DRY_RUN_LOCK_REASON },
+    { rule: "conflicts", name: "break-foreign-lock", with: ["dry-run"], reason: DRY_RUN_LOCK_REASON },
+    { rule: "requires", name: "force", with: ["dump"], reason: "only applies to --dump — a real apply overwrites the instance config regardless, and its preview is --dry-run" },
+  ],
   prepare: (call) => applyConfigPlan(call),
   run: (ctx, plan) => runApplyConfig(ctx, plan, true),
 });

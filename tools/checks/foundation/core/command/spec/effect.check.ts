@@ -75,7 +75,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   "mcp-setup": [[[], "change"]],
   "mcp-creds": [[[], "read"], [["--token"], "read"]],
   set: [
-    [["validate"], "read", false], [["diff"], "read", false], [["receipts"], "read", false],
+    [["validate"], "read", false], [["receipts"], "read", false],
     [["build"], "change", true], [["try", "--set", "x"], "destroy", true], [["forget"], "destroy", true], [[], "change", false],
   ],
 };
@@ -96,6 +96,7 @@ const REFUSED: readonly (readonly [name: string, argv: readonly string[]])[] = [
   ["provision-agent", []],
   ["recipe", ["verify", "--dry-run"]],
   ["set", []],
+  ["set", ["diff"]],
   ["set", ["forget"]],
 ];
 const refusedKey = (name: string, argv: readonly string[]): string => `${name} ${argv.join(" ")}`;

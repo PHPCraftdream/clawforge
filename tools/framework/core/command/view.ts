@@ -6,7 +6,8 @@ import { specData, specOf, type ArgumentRule, type ArgumentSpec, type CommandBod
 /** One multi-action command's flags/options from what each action's own parser accepts:
  *  `actions` is derived (absent when every action takes it), so completion, --help and the MCP
  *  schema cannot offer a flag the chosen action rejects. First declaration of a name wins;
- *  slices must not set `actions` themselves. Positionals/variadics are not scoped, so skipped.
+ *  slices must not set `actions` themselves. Positionals are not scoped; per-action variadics
+ *  are surfaced by `argumentsView` below.
  *  When the slices describe one name differently (set's `--name`: the set for build/validate,
  *  the object for forget), the descriptions are composed with their own action lists instead
  *  of the first one silently standing for every action (R31-03). */
@@ -99,8 +100,10 @@ function argumentParts(slices: Readonly<Record<string, readonly ArgumentSpec[]>>
 /** What `arguments` shows for a body. A single action: its arguments as declared. A multi-action
  *  command: the positional `action` (choices in declaration order, required without a default
  *  action), the actions' positionals merged by name (first declaration, unscoped, required only
- *  when every action requires it), then flags and options through scopeByAction in "default
- *  action first, then declaration order" — `required` only when every action requires it.
+ *  when every action requires it), then the actions' variadics merged the same way but scoped
+ *  like flags (`actions` when only some actions declare them), then flags and options through
+ *  scopeByAction in "default action first, then declaration order" — `required` only when every
+ *  action requires it.
  *  A name described differently by the actions gets a `summary` composed like its description,
  *  only when every part declares one. */
 export function argumentsView(body: CommandBody): readonly CommandArgument[] {
@@ -133,6 +136,20 @@ export function argumentsView(body: CommandBody): readonly CommandArgument[] {
     return { ...rest, ...(everyAction((other) => (other as { required?: boolean }).required === true, argument.name) ? { required: true } : {}) };
   });
 
+  const variadics = new Map<string, { argument: ArgumentSpec; actions: string[] }>();
+  for (const name of order) {
+    for (const argument of slices[name]) {
+      if (argument.kind !== "variadic") continue;
+      let entry = variadics.get(argument.name);
+      if (entry === undefined) variadics.set(argument.name, entry = { argument, actions: [] });
+      if (!entry.actions.includes(name)) entry.actions.push(name);
+    }
+  }
+  const mergedVariadics: CommandArgument[] = [...variadics.values()].map(({ argument, actions }) => ({
+    ...argument,
+    ...(actions.length === order.length ? {} : { actions }),
+  }));
+
   const scoped = scopeByAction(slices).map((argument): CommandArgument => {
     const { required: _required, summary: _summary, ...rest } = argument as CommandArgument & { required?: boolean; summary?: string };
     const parts = argumentParts(slices, argument.name);
@@ -147,5 +164,5 @@ export function argumentsView(body: CommandBody): readonly CommandArgument[] {
       ...(everyAction((other) => (other as { required?: boolean }).required === true, argument.name) ? { required: true } : {}),
     };
   });
-  return [action, ...merged, ...scoped];
+  return [action, ...merged, ...mergedVariadics, ...scoped];
 }

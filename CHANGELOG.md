@@ -120,6 +120,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   happen at the parse stage, before any contact with the target, in the parser's wording (an
   `ArgumentError` naming the argument); several texts changed accordingly (`--force requires
   --dump`, and `set diff` speaks the parser's voice).
+* `set diff`'s two positional artifacts reach the MCP schema (`artifacts`, an array of strings),
+  `set --help` and MCP validation: calling `set` over MCP with `artifacts` is accepted instead of
+  answered `unknown argument: artifacts`.
+* `secrets`' cross-flag refusals use the parser's one voice: `--break-foreign-lock requires
+  --apply — no other action takes the instance lock` and `--json cannot be combined with
+  --<flag> — only the default report is structured` (the old `--json only supports the default
+  report — not with …` wording is gone).
 
 ### Fixed
 

@@ -150,7 +150,7 @@ try {  const ctx = {
     } catch (error) {
       comboMessage = error instanceof Error ? error.message : String(error);
     }
-    checkTrue(`--json with ${combo.join(" ")} is refused`, comboMessage.includes("--json only supports the default report"));
+    checkTrue(`--json with ${combo.join(" ")} is refused`, comboMessage.includes("--json cannot be combined with"));
   }
 
 } finally {

@@ -117,8 +117,6 @@ function envWith(platform: NodeJS.Platform, distros: string[], localIdentity: Id
 
 // --- the root gate: either flag alone is a refusal, not a silent downgrade --------------------
 
-check("--root alone refuses to elevate, naming the missing consent", (await deathOf(() => rootElevationRequested(true, false))).includes("--confirm-root"), true);
-check("--confirm-root alone refuses too, naming the missing request", (await deathOf(() => rootElevationRequested(false, true))).includes("--root"), true);
 check("neither flag elevates nobody", rootElevationRequested(false, false), false);
 check("both flags together are consent", rootElevationRequested(true, true), true);
 

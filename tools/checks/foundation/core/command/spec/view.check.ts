@@ -5,8 +5,7 @@
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
-import { RECEIPT_NEEDS_SET_ID } from "#framework/commands/sets/set-receipts.ts";
-import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
+import { inputSchema, schemaArgumentDescription, validate } from "#framework/integration/mcp/server.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
@@ -207,7 +206,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   check("set try --kind names forget", (await outcome(["try", "--set", "x.tar.gz", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set diff --kind names forget", (await outcome(["diff", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set receipts --set names validate/try", (await outcome(["receipts", "--set", "x.tar.gz"])).includes("--set applies to `validate`"), true);
-  check("set receipts still parses its own slice", (await outcome(["receipts", "--receipt", "r", "--json"])).includes(RECEIPT_NEEDS_SET_ID), true);
+  check("set receipts still parses its own slice", (await outcome(["receipts", "--receipt", "r", "--json"])).includes("--receipt requires --set-id"), true);
   check("set try still parses its own slice", (await outcome(["try"])).includes(missingArgumentMessage("set try", "--set <artifact>")), true);
 
   // The drift check must drive the real dispatcher, not the registry against itself: with
@@ -363,6 +362,17 @@ import { check, finish } from "#checks/kit/harness.ts";
 
   const single = [flag("json")] as const satisfies readonly ArgumentSpec[];
   check("a single body shows its arguments as declared", argumentsView(commandBody({ effect: "read", arguments: single, run })), single);
+}
+
+// --- F1/I4: set's per-action variadic reaches the declaration, the schema and MCP validate ---
+{
+  const artifacts = (openclawCommands.set.arguments ?? []).find((argument) => argument.name === "artifacts");
+  check("set declares the diff variadic", [artifacts?.kind, artifacts?.description], ["variadic", "Two positional artifacts"]);
+  check("it is scoped to the actions that declare it", artifacts?.actions, ["diff"]);
+  const setSchema = inputSchema(openclawCommands.set) as { properties: Record<string, { type: string; items?: { type: string } }> };
+  check("the MCP schema renders it as a string array", [setSchema.properties.artifacts?.type, setSchema.properties.artifacts?.items?.type], ["array", "string"]);
+  check("MCP validate accepts two artifacts for set diff", validate(openclawCommands.set, { action: "diff", artifacts: ["a.tar.gz", "b.tar.gz"] }), []);
+  check("MCP validate refuses a non-string artifact", validate(openclawCommands.set, { action: "diff", artifacts: [1] }).length > 0, true);
 }
 
 finish("action arguments");

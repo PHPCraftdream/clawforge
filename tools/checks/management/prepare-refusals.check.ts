@@ -42,8 +42,8 @@ const app: AppDefinition = {
 };
 
 for (const kase of [
-  { name: "secrets --json --apply", argv: ["--json", "--apply"], stage: "prepare", argument: "json" },
-  { name: "secrets --break-foreign-lock without --apply", argv: ["--break-foreign-lock", "host-id"], stage: "prepare", argument: "break-foreign-lock" },
+  { name: "secrets --json --apply", argv: ["--json", "--apply"], stage: "parse", argument: "json" },
+  { name: "secrets --break-foreign-lock without --apply", argv: ["--break-foreign-lock", "host-id"], stage: "parse", argument: "break-foreign-lock" },
   { name: "host --root without --confirm-root", argv: ["target", "--root", "--", "whoami"], stage: "parse", argument: "root" },
   { name: "configure-provider --provider with an invalid id", argv: ["--provider", "BAD ID"], stage: "prepare", argument: "provider" },
   { name: "configure-provider --env with an invalid variable", argv: ["--env", "1BAD"], stage: "prepare", argument: "env" },

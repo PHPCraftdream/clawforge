@@ -5,7 +5,7 @@
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { initApp, INIT_ARGUMENTS } from "#framework/integration/deployment/init.ts";
+import { initApp, makeInitGateCommand, INIT_ARGUMENTS } from "#framework/integration/deployment/init.ts";
 import { setInvocation } from "#framework/core/io/invocation/index.ts";
 import { docsUrl } from "#framework/core/io/docs-url.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -49,6 +49,30 @@ try {
   check("a local-package invocation spells the hint with the program as typed", hint, "./clawforge");
   checkTrue("...and never the bare installed spelling", !/(^|[^/.\w])clawforge init --local/.test(localPackageHint.output));
   check("init declares --local through the argument machinery", INIT_ARGUMENTS.map((argument) => argument.name), ["local"]);
+
+  // The localTypesOnly path must parse argv like every other path: an unknown flag is
+  // refused at parse, not silently ignored, and the happy path still prints its lines.
+  {
+    const gate = makeInitGateCommand("D:/root", { localTypesOnly: true, ancestor: "D:/elsewhere" });
+    let refusal = "";
+    try {
+      await gate.run!(["--bogus"]);
+      refusal = "no error";
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check("init --bogus is refused at parse on the local-types-only path", refusal.includes("unknown argument: --bogus"), true);
+    const printed: string[] = [];
+    let happyError: unknown;
+    await withOutputSink((chunk) => printed.push(chunk), async () => {
+      try {
+        await gate.run!([]);
+      } catch (error) {
+        happyError = error;
+      }
+    });
+    check("the local-types-only path runs its happy path", happyError === undefined && printed.join("").includes("editor types:"), true);
+  }
 
   const homepage = (JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { homepage: string }).homepage;
   check("docsUrl points at the package's own repository, default branch", docsUrl("x.md"), `${homepage.replace(/#readme$/, "")}/blob/main/docs/x.md`);

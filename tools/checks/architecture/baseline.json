@@ -69,7 +69,7 @@
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
-    "total": 183
+    "total": 184
   },
   "imageStringOps": {
     "comment": "stage 1 (ImageRef): image references are parsed by runtime/docker/image-ref.ts; the lines still counted are prose (help text, refusal messages, comments) that merely mentions the grammar",
@@ -91,6 +91,7 @@
       "tools/checks/foundation/cli/help-groups.check.ts": 6,
       "tools/checks/foundation/core/archive.check.ts": 1,
       "tools/checks/foundation/core/env.check.ts": 1,
+      "tools/checks/foundation/core/command/spec/view.check.ts": 1,
       "tools/checks/foundation/hygiene/readme-quickstart.check.ts": 1,
       "tools/checks/foundation/hygiene/spawn-noise.check.ts": 5,
       "tools/checks/foundation/providers/provider.check.ts": 1,
@@ -100,7 +101,7 @@
       "tools/checks/integration/agent/recipe-hook-freshness/import-graph.check.ts": 5,
       "tools/checks/integration/agent/recipe-readiness.check.ts": 7,
       "tools/checks/integration/agent/recipe.check.ts": 10,
-      "tools/checks/integration/apps/init-messages.check.ts": 4,
+      "tools/checks/integration/apps/init-messages.check.ts": 6,
       "tools/checks/integration/apps/invocation-hints.check.ts": 12,
       "tools/checks/integration/apps/new-app-acl-warning.check.ts": 1,
       "tools/checks/integration/list.check.ts": 2,
@@ -208,7 +209,7 @@
       "tools/checks/runtime/convergence/apply-config.check.ts": 4,
       "tools/checks/runtime/convergence/instance-lock/advice.check.ts": 2
     },
-    "total": 395
+    "total": 398
   },
   "proseMatchers": {
     "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator",

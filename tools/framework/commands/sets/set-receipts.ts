@@ -6,8 +6,6 @@ import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/arti
 import type { Context } from "#src/core/context.ts";
 import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
-export const RECEIPT_NEEDS_SET_ID = "--receipt requires --set-id";
-
 export const SET_RECEIPTS_ARGUMENTS = [
   {
     name: "set-id",

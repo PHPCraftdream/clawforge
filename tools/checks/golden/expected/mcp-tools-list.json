@@ -1633,6 +1633,13 @@
               "forget"
             ]
           },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Two positional artifacts (diff)"
+          },
           "name": {
             "type": "string",
             "description": "Set name (build, validate); Object name (forget)"

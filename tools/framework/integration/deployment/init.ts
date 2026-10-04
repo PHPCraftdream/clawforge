@@ -312,13 +312,14 @@ export function makeInitGateCommand(
       "`init {--local}` in an already initialised directory only prints the editor-types npm line and writes nothing.",
     arguments: INIT_ARGUMENTS,
     run: async (args) => {
+      const parsed = parseDeclaredArgs(INIT_ARGUMENTS, args);
       const localTypesOnly = placement.localTypesOnly === true;
       const ancestor = placement.ancestor;
       if (localTypesOnly && ancestor !== appRoot) {
         for (const line of await localTypesLines()) info(line);
         return 0;
       }
-      await initApp(appRoot, { local: parseDeclaredArgs(INIT_ARGUMENTS, args).local === true });
+      await initApp(appRoot, { local: parsed.local === true });
       return 0;
     },
   };

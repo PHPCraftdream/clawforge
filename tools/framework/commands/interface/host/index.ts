@@ -15,7 +15,6 @@ import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport/transport.ts";
 import { commandBody, parseCall, runOnContext, specShape } from "#src/core/command/index.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
-import { ArgumentError } from "#src/core/command/index.ts";
 import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
 
 /** The consent line the gate's refusal ends with; both flags must be spelled in argv. */
@@ -82,14 +81,9 @@ function invocationOf(values: Values<typeof HOST_ARGUMENTS>): HostInvocation {
 }
 
 export function rootElevationRequested(root: boolean, confirmRoot: boolean): boolean {
-  // Deliberate double friction: one flag alone does nothing, so an accident needs two
-  // mistakes instead of one.
-  if (root && !confirmRoot) {
-    throw new ArgumentError("--root does not elevate on its own: add --confirm-root to run the command as root", "root");
-  }
-  if (!root && confirmRoot) {
-    throw new ArgumentError("--confirm-root does not elevate on its own: add --root to ask for elevation at all", "confirm-root");
-  }
+  // The body's declared rules refuse one-flag-alone calls in the parser before this runs;
+  // the "double friction" intent lives in those rules' reasons now.
+  void confirmRoot;
   return root;
 }
 

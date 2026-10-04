@@ -85,7 +85,7 @@ is unchanged.
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]` | Show required secrets and whether they are in place (destructive for some actions) |
 | `recipe` | `[<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes]` | Deploy services next to the instance: install, verify, list, and more (destructive for some actions) |
 | `provision-agent` | `<recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Wire a recipe's MCP server to its own OpenClaw agent, with optional cron |
-| `set` | `<action> [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]` | Build or validate the set: what a deployment installs, as one artifact (destructive for some actions) |
+| `set` | `<action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]` | Build or validate the set: what a deployment installs, as one artifact (destructive for some actions) |
 
 ### Save & move
 

@@ -21,7 +21,6 @@ import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
-import { ArgumentError } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "#src/commands/orchestration/inspect/helpers.ts";
 
@@ -425,9 +424,9 @@ interface SecretsPlan {
   jsonOnly: boolean;
 }
 
-/** Which single action the flags select, and the cross-flag refusals: both depend only on
- *  the arguments, so they run in the prepare stage — before any contact, lock or .env write
- *  on every host. */
+/** Which single action the flags select: depends only on the arguments, so it runs in the
+ *  prepare stage — before any contact, lock or .env write on every host. The cross-flag
+ *  refusals are declared rules, refused at parse. */
 function secretsPlan(values: Values<typeof SECRETS_ARGUMENTS>): SecretsPlan {
   const action: SecretsAction = values["init-store"] === true ? "init-store"
     : values.dump === true ? "dump"
@@ -436,13 +435,6 @@ function secretsPlan(values: Values<typeof SECRETS_ARGUMENTS>): SecretsPlan {
     : values.template === true ? "template"
     : "report";
   const breakForeignLockHost = values["break-foreign-lock"];
-  if (breakForeignLockHost !== undefined && action !== "apply") {
-    throw new ArgumentError("--break-foreign-lock only applies with --apply — no other action takes the instance lock", "break-foreign-lock");
-  }
-  // --json structures only the default report; the other actions print, write or mutate.
-  if (values.json === true && action !== "report") {
-    throw new ArgumentError("--json only supports the default report — not with --template, --print-template, --init-store, --apply or --dump", "json");
-  }
   return { action, store: values.store ?? DEFAULT_SECRET_STORE, force: values.force === true, breakForeignLockHost, jsonOnly: values.json === true };
 }
 
@@ -450,6 +442,10 @@ function secretsPlan(values: Values<typeof SECRETS_ARGUMENTS>): SecretsPlan {
 export const SECRETS = commandBody({
   effect: "read",
   arguments: SECRETS_ARGUMENTS,
+  rules: [
+    { rule: "requires", name: "break-foreign-lock", with: ["apply"], reason: "no other action takes the instance lock" },
+    { rule: "conflicts", name: "json", with: ["template", "print-template", "init-store", "apply", "dump"], reason: "only the default report is structured" },
+  ],
   prepare(call) {
     return secretsPlan(call.values as Values<typeof SECRETS_ARGUMENTS>);
   },

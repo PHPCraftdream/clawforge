@@ -54,9 +54,10 @@ interface Baseline {
   readonly legacyCommands: { readonly comment: string; readonly total: number };
   readonly unsummarizedDescriptions: { readonly comment: string; readonly total: number };
   readonly declaredArguments: { readonly comment: string; readonly total: number };
-  readonly imageStringOps: PerFileMetric;
+  readonly imageStringOps: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly prosePins: PerFileMetric;
   readonly proseMatchers: { readonly comment: string; readonly total: number };
+  readonly proseEquality: { readonly comment: string; readonly total: number };
   readonly proseFlags: PerFileMetric;
   readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
 }
@@ -281,17 +282,51 @@ report(ratchet("unsummarizedDescriptions", baseline.unsummarizedDescriptions.tot
 report(ratchet("declaredArguments", baseline.declaredArguments.total, argumentCount, [], []));
 
 // 5. String operations on image references outside runtime/docker/image-ref.ts — stage 1
-// (ImageRef): one module owns the grammar, call sites get values.
-const IMAGE_OPS = /@sha256|split\("@"\)|indexOf\("@"\)|lastIndexOf\(":"\)/;
+// (ImageRef): one module owns the grammar, call sites get values. Trailing comments and
+// prose string literals (contents containing whitespace) are stripped first, so only code
+// operations count. An occurrence on an `exempt` line is left out of the per-file counts
+// but still counted in the total, and the table fails in both directions, like section 1.
+const IMAGE_OPS =
+  /@sha256|split\(\s*\/@\s*\/|split\(\s*["'`]@["'`]\s*\)|includes\(\s*["'`]@["'`]\s*\)|indexOf\(\s*["'`]@["'`]\s*\)|lastIndexOf\(\s*["'`]@["'`]\s*\)|lastIndexOf\(\s*["'`]:["'`]\s*\)|startsWith\(\s*["'`]sha256|endsWith\(\s*["'`]sha256/;
+const imageExemptLeft = new Map<string, Map<string, number>>(
+  Object.entries(baseline.imageStringOps.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+);
 const imageAfter = new Map<string, number>();
+let imageTotal = 0;
 for (const full of frameworkFiles) {
   if (rel(full) === "tools/framework/runtime/docker/image-ref.ts") continue;
   const content = await readFile(full, "utf8");
-  let count = 0;
-  for (const line of content.split("\n")) if (IMAGE_OPS.test(line)) count += 1;
-  if (count > 0) imageAfter.set(rel(full), count);
+  const left = imageExemptLeft.get(rel(full));
+  let counted = 0;
+  for (const line of content.split("\n")) {
+    let stripped = line.replace(/(^|\s)\/\/.*$/, "$1");
+    // Inline block-comment spans; whole-comment lines (continuation "* ..." and closers).
+    stripped = stripped.replace(/\/\*.*?\*\//g, "");
+    const trimmed = stripped.trim();
+    if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+    stripped = stripped.replace(/\*\/\s*$/, "");
+    // Same-line prose literals.
+    stripped = stripped.replace(/(["'`])[^"'`\n]*\s[^"'`\n]*\1/g, '""');
+    // An odd quote count means a fragment of a multi-line string/template literal — prose.
+    const oddQuotes = ['"', "'", "`"].some((quote) => (stripped.split(quote).length - 1) % 2 === 1);
+    if (oddQuotes) continue;
+    if (!IMAGE_OPS.test(stripped)) continue;
+    imageTotal += 1;
+    const remaining = left?.get(line.trim()) ?? 0;
+    const exempt = Math.min(remaining, 1);
+    if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
+    counted += 1 - exempt;
+  }
+  if (counted > 0) imageAfter.set(rel(full), counted);
+}
+for (const [file, lines] of imageExemptLeft) {
+  for (const [line, unmatched] of lines) {
+    if (unmatched === 0) continue;
+    checkTrue(`imageStringOps.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+  }
 }
 report(perFileRatchet("imageStringOps", baseline.imageStringOps.files, imageAfter));
+report(ratchet("imageStringOps.total", baseline.imageStringOps.total, imageTotal, [], []));
 
 // 6. Prose pins in checks — stage 5 and the cross-cutting I9: checks assert structure
 // (codes, argv, JSON fields); prose belongs in goldens and renderer checks. The generated
@@ -321,6 +356,19 @@ for (const file of checkFiles) {
   }
 }
 report(ratchet("proseMatchers", baseline.proseMatchers.total, matcherCount, [], []));
+
+// 6c. Prose as the third argument of check(name, actual, "literal with a space") — stage 5
+// + cross-cutting (I9): this form escapes both prosePins (includes only) and proseMatchers
+// (equality operator required), so rewriting a === pin into check() lowers proseMatchers
+// while the prose stays. Equality ratchet: growth fails; the sites are not being converted
+// now, this records the honest count.
+const PROSE_EQUALITY = /\bcheck\([^\n]*,\s*(`|")[^`"]* [^`"]*\1\s*\)/;
+let proseEqualityCount = 0;
+for (const file of checkFiles) {
+  const content = await readFile(resolve(root, file), "utf8");
+  for (const line of content.split("\n")) if (PROSE_EQUALITY.test(line)) proseEqualityCount += 1;
+}
+report(ratchet("proseEquality", baseline.proseEquality.total, proseEqualityCount, [], []));
 
 // 7. Retired symbols — stage 5 (rf5-completion C1): names the command registry made
 // structural that must not reappear anywhere under tools/ outside this check's own directory

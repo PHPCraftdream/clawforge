@@ -456,9 +456,11 @@ git grep -o -F './clawforge' -- 'tools/framework/*.ts' ':!tools/framework/dist' 
 git grep -l -F './clawforge' -- 'tools/framework/*.ts' ':!tools/framework/dist' | wc -l
 # обходы переписывания (минус одно определение каждого)
 git grep -o -F 'infoRaw(' -- 'tools/framework/*.ts' ':!tools/framework/dist' | wc -l
-# строковые операции с образом вне image-digest.ts
+# строковые операции с образом вне image-ref.ts
 git grep -nE '@sha256|split\("@"\)|indexOf\("@"\)|lastIndexOf\(":"\)' -- 'tools/framework/*.ts' \
-  ':!tools/framework/dist' ':!tools/framework/runtime/docker/image-digest.ts' | wc -l
+  ':!tools/framework/dist' ':!tools/framework/runtime/docker/image-ref.ts' | wc -l
+# ориентировочная метрика: владелец — ratchet imageStringOps в tools/checks/architecture
+# (baseline.json), чей exempt-список уже отделяет код от прозы/комментариев.
 # проверки с прозой
 git grep -E 'includes\((`|")[^"`]* [^"`]*(`|")\)' -- 'tools/checks/*.ts' | wc -l
 ```

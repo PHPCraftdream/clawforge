@@ -6,11 +6,16 @@
 // A probe never throws: an absent tool, a timeout, an unexpected error all read as "absent".
 // A capability check must never be the reason a run crashes instead of skipping cleanly.
 
+import { readlinkSync, symlinkSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { DEFAULT_WSL_DISTRO } from "#framework/core/env.ts";
+import { ENGINE_DISTRO } from "#framework/commands/interface/host/contexts.ts";
 
 export const CAPABILITIES = [
-  "docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback", "gnu-userland", "auto-target",
+  "docker", "docker-desktop-wsl", "wsl", "posix-sh", "rsync", "symlink", "linux-host", "windows-host", "ssh-loopback", "gnu-userland", "auto-target",
   "bash", "pwsh",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -82,6 +87,17 @@ export async function hasPwsh(): Promise<boolean> {
   return (await pwshCommand()) !== undefined;
 }
 
+/** Docker Desktop's own WSL distro answers `sh -c true` on a Windows host: the engine
+ *  context's real half, probed the way provision-agent.check.ts probes a usable distro.
+ *  wsl.exe alone is not enough — the cases gated here run commands inside THIS distro,
+ *  which a plain `wsl` answer (Git-Bash's sh, another distro) says nothing about. */
+export async function hasDockerDesktopWsl(): Promise<boolean> {
+  if (process.platform !== "win32" || !(await hasWsl())) return false;
+  return swallow(async () =>
+    (await spawnLocal("wsl.exe", ["-d", ENGINE_DISTRO, "sh", "-c", "true"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0,
+  );
+}
+
 /** This process's own host, not a target: some checks assume GNU/Linux tools with no
  *  fallback (find -printf, /proc, stat -c). No probe needed — the fact is process.platform
  *  itself — but it is still async, so every entry in ProbeMap has the same shape. */
@@ -107,6 +123,22 @@ export async function hasGnuUserland(): Promise<boolean> {
       ["mkdir", "mv", "tar"].map((tool) => spawnLocal(tool, ["--version"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })),
     );
     return versions.every((result, index) => result.code === 0 && (index === 2 ? /GNU tar/ : /(GNU|uutils) coreutils/).test(result.stdout));
+  });
+}
+
+/** A file symlink round-trips in a temp dir: what the symlink-boundary checks actually need.
+ *  Windows without developer mode or elevation refuses file links (a directory link falls
+ *  back to an NTFS junction, which needs neither), so the link-boundary groups answer
+ *  "absent" there instead of failing. */
+export async function hasSymlink(): Promise<boolean> {
+  return swallow(async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-symlink-"));
+    try {
+      symlinkSync("target", join(dir, "probe"), "file");
+      return readlinkSync(join(dir, "probe")) === "target";
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 }
 
@@ -147,9 +179,11 @@ export type ProbeMap = Readonly<Record<Capability, () => Promise<boolean>>>;
 
 export const DEFAULT_PROBES: ProbeMap = {
   docker: hasDocker,
+  "docker-desktop-wsl": hasDockerDesktopWsl,
   wsl: hasWsl,
   "posix-sh": hasPosixSh,
   rsync: hasRsync,
+  symlink: hasSymlink,
   "linux-host": isLinuxHost,
   "windows-host": isWindowsHost,
   "ssh-loopback": hasSshLoopback,

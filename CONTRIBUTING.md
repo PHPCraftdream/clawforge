@@ -91,9 +91,12 @@ non-interactive; BatchMode refuses instead of prompting, so a host with no key s
 `wsl -d ${OC_WSL_DISTRO:-Ubuntu-24.04} docker info` on Windows — a WSL distro without docker
 answers "absent", so a case that needs the target to answer, not merely wsl.exe, gates on this
 one), `bash` (a `bash` that runs a trivial command — `bash -c "exit 0"`; the shell that
-sources the generated completion script for real) and `pwsh` (a PowerShell that runs
+sources the generated completion script for real), `pwsh` (a PowerShell that runs
 `pwsh -NoProfile -NonInteractive -Command exit 0`, falling back on Windows alone to
-`powershell.exe` — the other shell the completion differential executes). Each is probed at most
+`powershell.exe` — the other shell the completion differential executes), `docker-desktop-wsl`
+(Docker Desktop's own WSL distro answers `sh -c true` on a Windows host — the engine context's
+real half) and `symlink` (a file symlink round-trips in a temp dir — what the link-boundary
+groups need; Windows without developer mode or elevation answers "absent"). Each is probed at most
 once per run, only when some selected file actually requires it, and a probe failure (missing
 tool, timeout, anything) reads as "absent" rather than crashing the run.
 

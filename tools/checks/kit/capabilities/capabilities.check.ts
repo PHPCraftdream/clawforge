@@ -6,13 +6,17 @@
 // a direct spawn of the same command, so bash and PowerShell really do run here.
 
 import { spawnSync } from "node:child_process";
+import { readlinkSync, symlinkSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
-import { CapabilityProbe, CAPABILITIES, hasBash, hasDocker, hasGnuUserland, hasAutoTarget, hasPosixSh, hasPwsh, hasRsync, hasSshLoopback, hasWsl, isCapability, isLinuxHost, isWindowsHost, pwshCommand, type Capability, type ProbeMap } from "./capabilities.ts";
+import { CapabilityProbe, CAPABILITIES, hasBash, hasDocker, hasDockerDesktopWsl, hasGnuUserland, hasAutoTarget, hasPosixSh, hasPwsh, hasRsync, hasSshLoopback, hasSymlink, hasWsl, isCapability, isLinuxHost, isWindowsHost, pwshCommand, type Capability, type ProbeMap } from "./capabilities.ts";
 
 check(
-  "the known capability list is exactly the documented eleven",
+  "the known capability list is exactly the documented thirteen",
   [...CAPABILITIES].sort(),
-  ["auto-target", "bash", "docker", "gnu-userland", "linux-host", "posix-sh", "pwsh", "rsync", "ssh-loopback", "windows-host", "wsl"],
+  ["auto-target", "bash", "docker", "docker-desktop-wsl", "gnu-userland", "linux-host", "posix-sh", "pwsh", "rsync", "ssh-loopback", "symlink", "windows-host", "wsl"],
 );
 check("isCapability accepts every known name", CAPABILITIES.every((capability) => isCapability(capability)), true);
 check("isCapability rejects an unknown name", isCapability("ssh"), false);
@@ -87,12 +91,27 @@ function countingProbes(answers: Partial<Record<Capability, boolean>>): { probes
 
 // --- the real probes: never throw, always answer a plain boolean ------------------------------
 
-for (const [name, real] of Object.entries({ hasDocker, hasWsl, hasPosixSh, hasRsync, isLinuxHost, isWindowsHost, hasSshLoopback, hasGnuUserland, hasAutoTarget, hasBash, hasPwsh })) {
+for (const [name, real] of Object.entries({ hasDocker, hasDockerDesktopWsl, hasWsl, hasPosixSh, hasRsync, hasSymlink, isLinuxHost, isWindowsHost, hasSshLoopback, hasGnuUserland, hasAutoTarget, hasBash, hasPwsh })) {
   const answer = await real();
   check(`${name}() answers a boolean`, typeof answer, "boolean");
 }
 check("isLinuxHost() agrees with process.platform", await isLinuxHost(), process.platform === "linux");
 check("isWindowsHost() agrees with process.platform", await isWindowsHost(), process.platform === "win32");
+if (process.platform !== "win32") check("docker-desktop-wsl answers false off windows", await hasDockerDesktopWsl(), false);
+checkTrue("docker-desktop-wsl implies wsl", !(await hasDockerDesktopWsl()) || (await hasWsl()));
+check("hasSymlink() agrees with a direct symlink round trip here", await hasSymlink(), await directSymlinkRoundTrip());
+
+async function directSymlinkRoundTrip(): Promise<boolean> {
+  const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-symlink-direct-"));
+  try {
+    symlinkSync("target", join(dir, "probe"), "file");
+    return readlinkSync(join(dir, "probe")) === "target";
+  } catch {
+    return false;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 // --- the shell probes: the verdict is the shells' own behaviour, not a constant -------------
 

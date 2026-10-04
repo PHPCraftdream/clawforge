@@ -134,7 +134,7 @@ useDeployment(baseDeployment);
       check("the refusal carries validate's exact advice", advice !== "" && refusal.includes(advice), true);
       let invalidImage = "";
       try {
-        await collectManifest("garbage image@sha256:zz", "demo", { tolerateUnpinnedImage: true });
+        await collectManifest("garbage image@sha256:zz", "demo");
       } catch (error) {
         invalidImage = error instanceof Error ? error.message : String(error);
       }

@@ -42,9 +42,9 @@
 //
 // Windows/privilege caveat: creating symlinks can fail without developer mode or elevated
 // privileges (file links have no fallback; directory links fall back to a junction, which
-// needs neither). Any group whose links cannot be created degrades exactly the way the
-// portable-content check (runtime/lifecycle/recipe-portable-content.check.ts) already does: it
-// prints `skip` and never fails, and the rest of the file still runs.
+// needs neither). The link-dependent groups gate on the `symlink` capability (requires()):
+// where links cannot be created they are skipped as named capability limits, counted by
+// finish(), and the rest of the file still runs.
 
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
@@ -58,11 +58,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
-
-function skip(name: string): void {
-  process.stderr.write(`  skip ${name}\n`);
-}
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 /** The message a rejected promise failed with, or undefined when it did not reject. */
 async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
@@ -180,13 +176,8 @@ try {
   //     three-way parity, now for a public-named symlink onto a private target.
 
   const aliasCreated = await trySymlink(resolve(bundledDir, "agent", "private.md"), resolve(bundledDir, "agent", "alias-private.md"));
-  if (!aliasCreated) {
-    skip("the walker holds back a public-named alias of a declared-private prompt (symlinks unavailable on this machine)");
-    skip("the checksum map holds back the same alias (symlinks unavailable on this machine)");
-    skip("direct provisioning never writes the alias into the workspace payload (symlinks unavailable on this machine)");
-    skip("set build holds back the same alias too (symlinks unavailable on this machine)");
-    skip("no reader anywhere carries the private bytes through the alias (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "a public-named alias of a declared-private prompt is held back by every reader", async () => {
+    if (!aliasCreated) return;
     const aliasWalked = await withOutputSink(() => {}, () => collectPortableAgentBundleFiles(bundledDir));
     check(
       "the walker holds back a public-named alias of a declared-private prompt, under the target's own reason",
@@ -209,7 +200,7 @@ try {
       false,
     );
     await rm(resolve(bundledDir, "agent", "alias-private.md"));
-  }
+  });
 
   // --- Group C: a symlink escaping the recipe directory is refused before any file is read --
 
@@ -223,11 +214,8 @@ try {
   );
   await writeFile(resolve(escapingDir, "agent", "AGENTS.md"), "# public instructions\n");
   const escapeLinked = await trySymlink(resolve(tempRoot, "holding", "outsider.env"), resolve(escapingDir, "agent", "escape.md"));
-  if (!escapeLinked) {
-    skip("the walker refuses a symlink escaping the recipe directory (symlinks unavailable on this machine)");
-    skip("the checksum map refuses the same escaping symlink (symlinks unavailable on this machine)");
-    skip("direct provisioning refuses the same escaping symlink before reading anything (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "a symlink escaping the recipe directory is refused before any file is read", async () => {
+    if (!escapeLinked) return;
     const walkRefusal = await rejectionOf(() => withOutputSink(() => {}, () => collectPortableAgentBundleFiles(escapingDir)));
     check("the walker refuses a symlink escaping the recipe directory", /outside the recipe directory/.test(walkRefusal ?? ""), true);
     check("the refusal carries none of the bytes on the other side of the link", walkRefusal?.includes(MARKER) ?? true, false);
@@ -238,7 +226,7 @@ try {
     const provisionRefusal = await rejectionOf(() => withOutputSink(() => {}, () => loadRecipeAgentBundle("escaping")));
     check("direct provisioning refuses the same escaping symlink before reading anything", /outside the recipe directory/.test(provisionRefusal ?? ""), true);
     check("its refusal carries none of the bytes on the other side of the link either", provisionRefusal?.includes(MARKER) ?? true, false);
-  }
+  });
 
   // --- Group C2: the WALK ROOT itself is the escape — agent/ a symlink out of the recipe --
   //
@@ -257,12 +245,8 @@ try {
   );
   await writeFile(resolve(outsideAgent, "AGENTS.md"), `${MARKER}=outside-prompt\n`);
   const rootLinked = await trySymlink(outsideAgent, resolve(rootLinkDir, "agent"), "dir");
-  if (!rootLinked) {
-    skip("the walker refuses an agent/ that is itself a symlink out of the recipe (symlinks unavailable on this machine)");
-    skip("the checksum map refuses the same root-level symlink instead of reading an empty bundle (symlinks unavailable on this machine)");
-    skip("direct provisioning refuses the same root-level symlink before reading anything (symlinks unavailable on this machine)");
-    skip("no reader carries any bytes from the tree a root-level link points at (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "an agent/ that is itself a symlink out of the recipe is refused", async () => {
+    if (!rootLinked) return;
     const rootWalkRefusal = await rejectionOf(() => withOutputSink(() => {}, () => collectPortableAgentBundleFiles(rootLinkDir)));
     check("the walker refuses an agent/ that is itself a symlink out of the recipe", /walk root .*agent resolves outside the recipe directory/.test(rootWalkRefusal ?? ""), true);
     check("the root-level refusal stops at the same boundary a child symlink is refused at", /outside the recipe directory/.test(rootWalkRefusal ?? ""), true);
@@ -278,7 +262,7 @@ try {
       false,
     );
     await rm(resolve(rootLinkDir, "agent"));
-  }
+  });
 
   // --- Group C3: a root that exists but does not resolve is untrusted, not absent ---------
   //
@@ -290,11 +274,8 @@ try {
   const danglingDir = resolve(tempRoot, "recipes", "danglingroot");
   await mkdir(danglingDir, { recursive: true });
   const danglingLinked = await trySymlink(resolve(tempRoot, "holding", "nowhere"), resolve(danglingDir, "agent"), "dir");
-  if (!danglingLinked) {
-    skip("the walker refuses an agent/ link that does not resolve instead of calling the bundle absent (symlinks unavailable on this machine)");
-    skip("the checksum map refuses a dangling agent/ link instead of returning an empty map (symlinks unavailable on this machine)");
-    skip("direct provisioning refuses a dangling agent/ link the same way (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "an agent/ link that does not resolve is refused instead of read as absent", async () => {
+    if (!danglingLinked) return;
     const danglingWalkRefusal = await rejectionOf(() => withOutputSink(() => {}, () => collectPortableAgentBundleFiles(danglingDir)));
     check("the walker refuses an agent/ link that does not resolve instead of calling the bundle absent", /does not resolve/.test(danglingWalkRefusal ?? ""), true);
     const danglingChecksumRefusal = await rejectionOf(() => withOutputSink(() => {}, () => agentBundleChecksums(danglingDir)));
@@ -302,7 +283,7 @@ try {
     const danglingProvisionRefusal = await rejectionOf(() => withOutputSink(() => {}, () => loadRecipeAgentBundle("danglingroot")));
     check("direct provisioning refuses a dangling agent/ link the same way", /does not resolve/.test(danglingProvisionRefusal ?? ""), true);
     await rm(resolve(danglingDir, "agent"));
-  }
+  });
 
   // --- Group C4: an ENOENT from INSIDE the walk is not an absent bundle either ------------
   //
@@ -319,11 +300,8 @@ try {
   );
   await writeFile(resolve(brokenChildDir, "agent", "AGENTS.md"), "# public instructions\n");
   const brokenChildLinked = await trySymlink(resolve(tempRoot, "holding", "nowhere-too"), resolve(brokenChildDir, "agent", "broken.md"));
-  if (!brokenChildLinked) {
-    skip("the walker refuses a dangling prompt link instead of calling the bundle absent (symlinks unavailable on this machine)");
-    skip("the checksum map refuses the same dangling prompt link instead of returning an empty map (symlinks unavailable on this machine)");
-    skip("direct provisioning refuses the same dangling prompt link (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "a dangling prompt link is refused instead of read as absent", async () => {
+    if (!brokenChildLinked) return;
     const brokenWalkRefusal = await rejectionOf(() => withOutputSink(() => {}, () => collectPortableAgentBundleFiles(brokenChildDir)));
     check("the walker refuses a dangling prompt link instead of calling the bundle absent", /broken\.md is a symlink that does not resolve/.test(brokenWalkRefusal ?? ""), true);
     const brokenChecksumRefusal = await rejectionOf(() => withOutputSink(() => {}, () => agentBundleChecksums(brokenChildDir)));
@@ -331,7 +309,7 @@ try {
     const brokenProvisionRefusal = await rejectionOf(() => withOutputSink(() => {}, () => loadRecipeAgentBundle("brokenchild")));
     check("direct provisioning refuses the same dangling prompt link", /does not resolve/.test(brokenProvisionRefusal ?? ""), true);
     await rm(resolve(brokenChildDir, "agent", "broken.md"));
-  }
+  });
 
   // --- Group C5: the common case — a plain real agent/ directory — must be untouched ------
 

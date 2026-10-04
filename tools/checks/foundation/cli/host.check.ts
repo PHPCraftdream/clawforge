@@ -24,7 +24,7 @@
 //   - full dispatch through a recording transport, and one real bare-machine run.
 
 import { host, rootElevationRequested, ROOT_CONSENT, ROOT_ARRIVAL, IDENTITY_UNKNOWN, commandFailedMessage, HOST_ARGUMENTS } from "#framework/commands/interface/host/index.ts";
-import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, engineDistroNote, probeAnsweredEvidence, probeNoAnswerEvidence, parseWslDistroListing, probeUidAnswer, realHostEnvironment, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
+import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, engineDistroNote, probeAnsweredEvidence, probeNoAnswerEvidence, parseWslDistroListing, probeUidAnswer, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
@@ -32,11 +32,7 @@ import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { CommandFailedError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
-
-function skip(reason: string): void {
-  process.stderr.write(`  skip ${reason}\n`);
-}
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 // die() throws rather than exiting, so the message is the observable.
 async function deathOf(run: () => unknown): Promise<string> {
@@ -206,8 +202,9 @@ check("both flags together are consent", rootElevationRequested(true), true);
 // The auditors' failure mode, pinned here: argv containing -u root proves a request, never a
 // privilege. The hermetic half pins the declaration and the gate against fake environments;
 // the real half runs the auditors' own probe — id -u through the real engine resolution — and
-// is skipped, plainly, wherever this machine cannot answer it: not Windows, or no docker-desktop
-// distro. A skip there is a named limit of the check, not a pass.
+// is gated on the `docker-desktop-wsl` capability, wherever this machine cannot answer it: not
+// Windows, or no docker-desktop distro. A capability skip is a named limit of the check, counted
+// by finish(), not a pass.
 
 {
   const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine", {
@@ -232,11 +229,10 @@ check("both flags together are consent", rootElevationRequested(true), true);
   check("refusal is not a downgrade: nothing ran", stub.calls.length, 0);
 }
 
-const realEngineDistro = realHostEnvironment.platform === "win32" && (await realHostEnvironment.listWslDistros()).includes(ENGINE_DISTRO);
-if (realEngineDistro) {
-  // The exact probe, read-only (id -u, the only command this runs in the distro): what the
-  // engine context REALLY arrives as before any flag is read. argv alone cannot answer this —
-  // only the effective uid can.
+// The exact probe, read-only (id -u, the only command this runs in the distro): what the
+// engine context REALLY arrives as before any flag is read. argv alone cannot answer this —
+// only the effective uid can.
+await requires("docker-desktop-wsl", "the real engine uid probe (Windows with the docker-desktop distro)", async () => {
   const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine");
   const probe = await execution.exec("id", ["-u"], { input: "", allowFailure: true, timeoutMs: 120_000 });
   const uid = probe.stdout.trim().split("\n").at(-1)?.trim() ?? "";
@@ -249,9 +245,7 @@ if (realEngineDistro) {
     await host(ctxWith(recordingTransport().transport), ["engine", "--root", "--confirm-root", "--", "id", "-u"]);
   });
   check("consented, the command runs in the engine and answers as root", written.join("").trim().split("\n").at(-1)?.trim(), "0");
-} else {
-  skip("the real engine uid probe needs this machine to be Windows with the docker-desktop distro — the arrival declaration and the consent gate above are pinned hermetically instead");
-}
+});
 
 // --- the effective-identity gate: consent answers what the probe found ------------------------
 // The gate must ask "will this command actually run as root", not "do we recognize this

@@ -23,6 +23,7 @@ import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
+import { invalidImageReference } from "#framework/runtime/docker/image-ref.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
@@ -372,6 +373,48 @@ try {
     } finally {
       await removeBuildDeployment(gone);
     }
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// A grammar-invalid declared image: the tree loader flows it through so the validator
+// reports SET_IMAGE_INVALID — the same finding an artifact carrying the same bytes gets
+// (parity) — while build keeps its refusal.
+{
+  const deployment = await createBuildDeployment();
+  try {
+    const loaded = await loadSet({ kind: "tree" }, {
+      name: "demo-set",
+      declaredImage: "garbage image@sha256:zz",
+      tolerateUnpinnedImage: true,
+      reportInvalidDeclaration: true,
+    });
+    check("a grammar-invalid image is a finding on the tree path, like the artifact path", codesOf(await validateLoadedSet(loaded)), ["SET_IMAGE_INVALID"]);
+
+    // The artifact side of the same bytes: pack a manifest carrying the invalid image with
+    // the test assembler (build refuses to) and load it strictly.
+    const healthyInvalid = await collectManifest(IMAGE, "demo-set", { tolerateUnpinnedImage: true });
+    const crafted: SetManifest = { ...healthyInvalid.manifest, requires: { ...healthyInvalid.manifest.requires, image: "garbage image@sha256:zz" } };
+    const artifact = resolve(deployment, "invalid-image-assembled.tar.gz");
+    await packArtifact(deployment, crafted, artifact);
+    const strict = await loadSet({ kind: "artifact", path: artifact });
+    try {
+      check("the artifact path reports the same finding for the same bytes", codesOf(await validateLoadedSet(strict)), ["SET_IMAGE_INVALID"]);
+    } finally {
+      if (strict.staging !== undefined) {
+        await rm(strict.staging, { recursive: true, force: true });
+        await assertRemoved(strict.staging, "the invalid-image strict load");
+      }
+    }
+
+    let refusal = "";
+    try {
+      await collectManifest("garbage image@sha256:zz", "demo-set");
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check("build keeps its refusal of a grammar-invalid image", refusal, invalidImageReference("garbage image@sha256:zz"));
   } finally {
     await removeBuildDeployment(deployment);
   }

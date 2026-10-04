@@ -11,11 +11,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   hand-written `usage:` lines; `destroy --yes` without `--confirm-name` is refused at the
   parse stage with the declared rule's wording (previously a prepare-stage message), so the
   `--help` rules section and the MCP refusal carry it too.
-* `set validate`, `set build` and `set try` refuse a set whose image reference the image
-  grammar rejects (previously anything containing `@sha256:` passed); `set try`'s throwaway
+* A set whose image reference the image grammar rejects is no longer accepted when it merely
+  contains `@sha256:`: `set validate` reports it as the finding `SET_IMAGE_INVALID` (on a working
+  tree and on an artifact alike), `set build` and `set try` refuse it, and `set try`'s throwaway
   `.env` carries the canonical form of the parsed reference.
 * On Windows, a deployment that depends on its own `@clawforge/framework` copy gets advice
-  lines prefixed with npm's `node_modules\\.bin\\clawforge` instead of the bash-only committed
+  lines prefixed with npm's `node_modules\.bin\clawforge` instead of the bash-only committed
   `./clawforge` shim, which cmd.exe and PowerShell cannot run.
 * `deploy`'s printed bootstrap lines quote the remote path (`cd '/srv/my app' && …`), so a
   path with a space pastes as one line instead of splitting; the `--app <name>` in advice

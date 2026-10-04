@@ -113,8 +113,13 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
  *  from a previous OPENCLAW_IMAGE must not pin this build to the wrong digest. */
 async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<string> {
   // The image module's grammar, not a digest-suffix test: a garbage value with a digest
-  // shape must not pass as pinned.
-  if (tryParse(image) === undefined) die(invalidImageReference(image));
+  // shape must not pass as pinned. Validate (tolerateUnpinned) lets it through so the
+  // validator reports SET_IMAGE_INVALID — the same finding the artifact path answers for
+  // the same bytes; only build, which cannot pack it, keeps the die.
+  if (tryParse(image) === undefined) {
+    if (tolerateUnpinned) return image;
+    die(invalidImageReference(image));
+  }
   if (hasDigest(image)) return image;
   const lock = await readLock();
   if (lock?.image.digest !== undefined) {

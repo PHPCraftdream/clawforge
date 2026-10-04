@@ -1,177 +1,410 @@
-// Shell completion behaves, not just renders: every scenario below states "given the words
-// and the cursor state, these candidates come out" — against completionCandidates (the one
-// decision both emitted scripts implement), against the bash script actually sourced by a
-// real bash, and against the pwsh script's own body EXECUTED by a PowerShell-subset
-// evaluator (tools/checks .../pwsh-completer.ts). All three must agree on every scenario —
-// substring checks over script text passed the R32-02 regression; these cannot (R33-10).
+// Shell completion BEHAVES, not just renders. Every scenario here states "given the words and
+// the cursor state, these candidates come out" — against completionCandidates (the one decision
+// both emitted scripts implement), against the bash script ACTUALLY SOURCED by a real bash, and
+// against the pwsh script EXECUTED by a real PowerShell through TabExpansion2. All three must
+// agree. What this file replaces pinned script substrings (bash's `-W` list, pwsh's
+// `"install" = @(` line, the position-past-an-action-word regex) — and those checks PASSED the
+// R32-02 regression, a prefix typed at the top level offering nothing; behavioural checks
+// cannot (R33-10).
 
 import { spawnSync } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { buildCompletionModel, renderCompletion, completionCandidates, makeCompletionGateCommand } from "#framework/integration/completion.ts";
-import type { GateCommand } from "#framework/integration/gate.ts";
-import { runPwshCompleter } from "./pwsh-completer.ts";
+import { completionCandidates, completionData } from "#framework/integration/completion/table.ts";
+import { makeCompletionGateCommand, renderCompletion } from "#framework/integration/completion/index.ts";
+import { APP_SKIP_PAIR, APP_VALUES_BLOCK } from "#framework/integration/completion/bash.ts";
+import { surfaceRegistry } from "#framework/entry/registry.ts";
+import { completionScenarios, type CompletionScenario } from "./scenarios.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
+import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
+import type { GateCommand } from "#framework/integration/gate.ts";
 
-// The completion command itself is in the model, as the gates assemble it — so its own
-// positional shell choices are completable too.
+// The table is built from the one registry every other surface reads — help, the docs table,
+// the MCP tool list — not a hand-written gate list beside them, so a command completes because
+// it is declared there. The completion command itself is a registry entry (registry.ts closes
+// the gate over the finished array), which is what makes its own shell choices completable.
 const gateCommands: GateCommand[] = [];
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
-const model = buildCompletionModel(gateCommands);
-const names = model.map((spec) => spec.name);
+const registry = surfaceRegistry();
+const data = completionData(registry, true);
+const installed = completionData(registry, false);
 
-function candidates(rest: string[], wordToComplete: string, appFlag = true): readonly string[] {
-  return completionCandidates(model, rest, wordToComplete, appFlag, ["app-one", "app-two"]);
-}
+/** --app's own value: what every candidate list below and both scripts must end up with. The
+ *  stub each differential runs also answers a HIDDEN name, which both scripts filter out — so
+ *  the post-filter list is the model's answer, and a script that stopped filtering hidden
+ *  directories fails the differential. */
+const appNames = (): readonly string[] => ["app-one", "app-two"];
+/** The action words a command declares, read off its own `after` rows — so a word that is one
+ *  command's action and another command's name (backup's `list` vs the gate's `list`) is never
+ *  mistaken for a command name leaking into a command's own candidates. */
+const actionWordsOf = (command: string): string[] =>
+  [...data.after.keys()]
+    .filter((key) => key.startsWith(`${command} `) && key !== `${command} *`)
+    .map((key) => key.slice(command.length + 1));
 
-// --- the shared decision, scenario by scenario (R32-02 / R32-09) ------------------------------
+const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
+
+// --- 1. the data: structure instead of script text ------------------------------------------
+//
+// These are properties of the CompletionData table. They moved here from
+// gate-commands.check.ts's completion section and spec/view.check.ts's R31-07 block, where the
+// same facts were read out of generated script text — a substring in the right place says
+// nothing about what the completer answers.
 
 {
-  check("a typed prefix at the top level still completes commands (R32-02)", candidates(["sta"], "sta").includes("status"), true);
-  check("a typed flag prefix completes --app", candidates(["--ap"], "--ap").includes("--app"), true);
-  check("a typed prefix after a command completes an action word", candidates(["backup", "l"], "l").includes("list"), true);
-  check("a typed prefix after watch completes install", candidates(["watch", "in"], "in").includes("install"), true);
+  const row = (command: string, action: string): readonly string[] => data.after.get(`${command} ${action}`) ?? [];
 
-  const trailing = candidates(["backup"], "");
-  check("a trailing space after backup offers the implicit action's flags", [trailing.includes("create"), trailing.includes("--hot"), trailing.includes("--dry-run")], [true, true, true]);
-  check("a trailing space never offers command names", names.filter((name) => trailing.includes(name)), []);
+  // A flag one action declares must not leak into the others' rows: completion is derived from
+  // the same declaration --help and the parser read, so a row is wrong exactly when a flag's
+  // `actions` list is.
+  check("backup install carries --interval",
+    ["install", "list", "prune-replaced", "uninstall"].map((action) => row("backup", action).includes("--interval")),
+    [true, false, false, false]);
+  check("--keep is only under backup prune-replaced",
+    ["install", "list", "prune-replaced", "uninstall"].filter((action) => row("backup", action).includes("--keep")),
+    ["prune-replaced"]);
+  check("--apply is under prune-replaced, install and uninstall",
+    ["prune-replaced", "install", "uninstall"].map((action) => row("backup", action).includes("--apply")),
+    [true, true, true]);
+  check("--apply is not under list, which is read-only", row("backup", "list").includes("--apply"), false);
 
-  const afterApp = candidates(["--app", "app-one", "backup"], "");
-  check("after --app X, backup still offers actions and create's flags", [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
-  check("--app's own value completes from the deployment list", candidates(["--app"], ""), ["app-one", "app-two"]);
+  // backup's action positional is OPTIONAL, so a bare `backup` is the implicit default action
+  // (create): its flags are the fallback for the no-action and unknown-action cases, where the
+  // shell cannot tell which was meant — not just --help.
+  check("backup's \"backup *\" fallback carries the create flags",
+    ["--dry-run", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets"]
+      .every((flag) => row("backup", "*").includes(flag)), true);
 
-  const afterFlag = candidates(["backup", "--hot"], "");
+  // R31-07: the word right after the command offers the action words AND the create flags, so
+  // `backup --h<Tab>` completes --hot rather than only --help.
+  check("backup's first position offers the action words and the create flags (R31-07)",
+    [...data.first.get("backup")!], [...new Set([...actionWordsOf("backup"), ...row("backup", "*")])].sort());
+  // A command with no default action keeps its action words plus --help, and nothing else. The
+  // old unsorted pin ("check install status test uninstall --help") belonged to the removed
+  // generated arm; the table is sorted, so this is the sorted set.
+  check("watch's first position is its action words plus --help, and nothing else",
+    [...data.first.get("watch")!], ["--help", "check", "install", "status", "test", "uninstall"]);
+
+  // R33-10: the action word already typed scopes an option's values, so `set try` (no --kind)
+  // never sees forget's kind values while `set forget --kind` does.
+  const kindRow = data.values.find((entry) => entry.command === "set" && entry.scope === "forget" && entry.option === "--kind");
+  check("set forget --kind's row carries the kind values", [...kindRow?.values ?? []].sort(), ["agent", "cron-job", "mcp-server"]);
+  check("set try has no --kind row (R33-10)",
+    data.values.find((entry) => entry.command === "set" && entry.scope === "try" && entry.option === "--kind"), undefined);
+
+  // help's positional takes every registry name as its choices, so its first position IS the
+  // command list — one declaration, read by the completer like any other positional.
+  check("help's first position offers every command name",
+    registry.names.filter((name) => !(data.first.get("help") ?? []).includes(name)), []);
+  check("every registry name is in the top level", registry.names.filter((name) => !data.top.includes(name)), []);
+  check("--app is listed last at the top level, where the gate has one", data.top.at(-1), "--app");
+
+  for (const shell of ["bash", "zsh", "pwsh"] as const) {
+    const once = renderCompletion(shell, data);
+    check(`${shell}: no per-run value — rendering twice is byte-identical`, renderCompletion(shell, data), once);
+  }
+
+  // --app's values come from whichever of the system-wide command or the checkout shim was typed,
+  // asked for lazily from inside the completer — never a hard-wired ./clawforge, never polling
+  // targets, and hidden directories (.r28) are not deployments, so they are filtered out.
+  for (const shell of ["bash", "zsh"] as const) {
+    const text = renderCompletion(shell, data);
+    check(`${shell}: --app's values come from the invoked name, never a hard-wired ./clawforge list`,
+      [text.includes('"${COMP_WORDS[0]}" list --json --no-status'), text.includes("./clawforge list")], [true, false]);
+    check(`${shell}: hidden directories are filtered out of --app's values`, text.includes("grep -v '^[.]'"), true);
+  }
+  const pwshText = renderCompletion("pwsh", data);
+  check("pwsh: --app's values come from the invoked name, never a hard-wired ./clawforge list",
+    [pwshText.includes("& $tokens[0] list --json --no-status"), pwshText.includes("./clawforge list")], [true, false]);
+  check("pwsh: hidden directories are filtered out of --app's values", pwshText.includes("$_ -notlike '.*'"), true);
+}
+
+{
+  // The installed single-deployment gate (entry/bin.ts) has no --app selector. The table offers
+  // it nowhere, and bash/zsh emit the interpreter's --app snippets only where the gate declares
+  // one — so an installed script names it neither as a candidate nor in the lazy `list --json`
+  // call that would fill it. pwsh keeps ONE fixed interpreter body (section 4): its --app branch
+  // and that call live in it, guarded at run time by $clawforgeApp, so what the declarations
+  // reach it through — the flag line and the four data tables — is what must be free of --app.
+  check("the installed top level carries no --app", installed.top.includes("--app"), false);
+  for (const shell of ["bash", "zsh"] as const) {
+    const text = renderCompletion(shell, installed);
+    // Word boundary, never a substring: `--apply` is a real flag of backup/expose/watch/secrets
+    // and must not be read as `--app`.
+    check(`${shell}: the installed script mentions neither --app nor list --json`,
+      [/--app\b/.test(text), text.includes("list --json")], [false, false]);
+  }
+  const pwshInstalled = renderCompletion("pwsh", installed);
+  check("pwsh: the installed script's --app flag line is false", pwshInstalled.includes("$clawforgeApp = $false"), true);
+  check("pwsh: the installed script's data block names no --app",
+    /"--app"/.test(pwshInstalled.slice(0, pwshInstalled.indexOf("$clawforgeCompleter"))), false);
+  check("pwsh: --app's flag line is true where the gate has one",
+    renderCompletion("pwsh", data).includes("$clawforgeApp = $true"), true);
+}
+
+// --- 2. the reference model, scenario by scenario (R32-02 / R31-07 / R33-10) ------------------
+//
+// `words` is every token after the program name and `cword` the index of the word being
+// completed IN IT — so the tokens before the cursor are `words.slice(0, cword)` and the partial
+// word is never read as a typed command. A shell driver that prepends the program name (below)
+// passes one further along.
+
+function at(shape: typeof data, words: readonly string[], cword: number): readonly string[] {
+  return completionCandidates(shape, words, cword, appNames);
+}
+
+{
+  // R32-02: `clawforge sta<Tab>` used to see the command "sta"; only the words BEFORE the cursor
+  // pick the command, so a prefix typed anywhere still completes behind it.
+  check("a typed prefix at the top level still completes commands (R32-02)", at(data, ["sta"], 0).includes("status"), true);
+  check("a typed flag prefix completes --app", at(data, ["--ap"], 0).includes("--app"), true);
+  check("a typed prefix after a command completes an action word", at(data, ["backup", "l"], 1).includes("list"), true);
+  check("a typed prefix after watch completes install", at(data, ["watch", "in"], 1).includes("install"), true);
+
+  const trailing = at(data, ["backup", ""], 1);
+  check("backup's trailing space offers the action words and the create flags",
+    ["create", "install", "list", "prune-replaced", "uninstall", "--hot", "--dry-run"].every((word) => trailing.includes(word)), true);
+  check("a trailing space never offers command names",
+    data.top.filter((name) => trailing.includes(name) && !actionWordsOf("backup").includes(name)), []);
+
+  const afterApp = at(data, ["--app", "app-one", "backup", ""], 3);
+  check("after --app X backup still offers actions and create flags",
+    [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
+  check("--app's own value is the deployment list", [...at(data, ["--app", ""], 1)], ["app-one", "app-two"]);
+
+  const afterFlag = at(data, ["backup", "--hot", ""], 2);
   check("after backup --hot the create flags continue", [afterFlag.includes("--dry-run"), afterFlag.includes("--migrate")], [true, true]);
   check("after backup --hot no action word is offered (backup would reject it)", afterFlag.includes("list"), false);
 
-  check("an option with choices offers its values at the value position", candidates(["mcp-setup", "--client"], ""), ["claude", "codex", "both"]);
-  const kindValues = model.find((spec) => spec.name === "set")!.optionValues!["setforget--kind"]!;
-  check("an action-scoped option with choices offers its values there too", candidates(["set", "forget", "--kind"], ""), kindValues);
-  check("kind's value position does not offer flags", candidates(["set", "forget", "--kind"], "").includes("--kind"), false);
-  check("after the value is given, the command's flags return", candidates(["mcp-setup", "--client", "claude"], "").includes("--rewrite-launcher"), true);
+  check("mcp-setup --client's value position offers its choices",
+    [...at(data, ["mcp-setup", "--client", ""], 2)], ["claude", "codex", "both"]);
+  const kind = at(data, ["set", "forget", "--kind", ""], 3);
+  check("set forget --kind's value position is the kind values", [...kind].sort(), ["agent", "cron-job", "mcp-server"]);
+  check("kind's value position does not offer flags", kind.includes("--kind"), false);
+  check("set try --kind's value position offers no kind values (R33-10)",
+    ["agent", "cron-job", "mcp-server"].some((value) => at(data, ["set", "try", "--kind", ""], 3).includes(value)), false);
+  check("after the value is given the command's flags return",
+    at(data, ["mcp-setup", "--client", "claude", ""], 3).includes("--rewrite-launcher"), true);
 
-  const hostPosition = candidates(["host"], "");
-  check("host's positional choices are offered at its position", ["target", "engine", "local"].every((value) => hostPosition.includes(value)), true);
-  check("after host's positional is given, flags return", candidates(["host", "target"], "").includes("--confirm-root"), true);
+  const hostPosition = at(data, ["host", ""], 1);
+  check("host's positional choices are offered at its position",
+    ["target", "engine", "local"].every((value) => hostPosition.includes(value)), true);
+  check("after host's positional flags return", at(data, ["host", "target", ""], 2).includes("--confirm-root"), true);
 
-  check("help completes command names", [candidates(["help", "st"], "st").includes("status"), candidates(["help"], "").includes("backup")], [true, true]);
-  check("completion completes the shell names", candidates(["completion", "b"], "b").includes("bash"), true);
-  check("an installed gate without --app never offers it", candidates(["sta"], "sta", false).includes("--app"), false);
-  check("an unknown command completes to nothing", candidates(["zzz"], ""), []);
-  check("backup with the action word typed in full offers that action's flags", candidates(["watch", "install", "--int"], "--int").includes("--interval"), true);
+  check("help completes command names",
+    [at(data, ["help", "st"], 1).includes("status"), at(data, ["help", ""], 1).includes("backup")], [true, true]);
+  check("completion completes the shell names", at(data, ["completion", "b"], 1).includes("bash"), true);
+  check("an installed gate without --app never offers it",
+    [[...at(installed, ["--app", ""], 1)], at(installed, ["sta"], 0).includes("--app")], [[], false]);
+  check("an unknown command completes to nothing", [...at(data, ["zzz-nope-command", ""], 1)], []);
+  check("watch install --int completes --interval", at(data, ["watch", "install", "--int"], 2).includes("--interval"), true);
+
+  // --app is positional and must lead the command: past a command word the command's own flags
+  // come back instead of the deployment list (R33-10).
+  const afterAppFlag = at(data, ["status", "--app", ""], 2);
+  check("--app after a command offers that command's flags, not deployments",
+    [afterAppFlag.includes("--help"), afterAppFlag.includes("app-one")], [true, false]);
 }
 
-// --- the pwsh script: EXECUTED by a PowerShell-subset evaluator, differentially ---------------
+// --- 3. the differential: the same scenarios through a real bash and a real PowerShell -------
+//
+// The scenarios are GENERATED from the table (scenarios.ts), never hand-listed, so a command the
+// registry declares is covered because it is a row there. The expected answer is always the
+// model's; where a shell disagrees the check fails — that is the whole point of running two
+// real interpreters against one reference.
 
-const scenarios: Array<{ name: string; rest: string[]; word: string }> = [
-  { name: "a typed prefix at the top level", rest: ["sta"], word: "sta" },
-  { name: "a typed flag prefix", rest: ["--ap"], word: "--ap" },
-  { name: "--app's own value position", rest: ["--app"], word: "" },
-  { name: "backup's trailing space", rest: ["backup"], word: "" },
-  { name: "backup's action word typed in part", rest: ["backup", "l"], word: "l" },
-  { name: "past a typed action word", rest: ["watch", "install", "--int"], word: "--int" },
-  { name: "after a flag the command's flags continue", rest: ["backup", "--hot"], word: "" },
-  { name: "--app before the command", rest: ["--app", "app-one", "backup"], word: "" },
-  { name: "--app after a command (R33-10: flags, not deployments)", rest: ["status", "--app"], word: "" },
-  { name: "mcp-setup's --client value", rest: ["mcp-setup", "--client"], word: "" },
-  { name: "set forget's --kind value", rest: ["set", "forget", "--kind"], word: "" },
-  { name: "set try has no --kind values (R33-10)", rest: ["set", "try", "--kind"], word: "" },
-  { name: "set's action word typed in part", rest: ["set", "f"], word: "f" },
-  { name: "host's positional", rest: ["host"], word: "" },
-  { name: "past host's positional", rest: ["host", "target"], word: "" },
-  { name: "help's command names", rest: ["help", "st"], word: "st" },
-  { name: "completion's shell names", rest: ["completion", "b"], word: "b" },
-  { name: "an unknown command", rest: ["zzz"], word: "" },
-];
-
+const scenarios = completionScenarios(data);
 const norm = (values: readonly string[]): string[] => [...new Set(values)].sort();
-
-// Shells filter the candidate list by the word being typed (compgen/-like); the model does
-// not — the differential compares after that filter.
-const decision = (rest: string[], word: string, appFlag: boolean): string[] =>
-  norm(completionCandidates(model, rest, word, appFlag, ["app-one", "app-two"])).filter((value) => value.startsWith(word));
-
-{
-  for (const appFlag of [true, false]) {
-    const script = renderCompletion("pwsh", model, appFlag);
-    const walk = (rest: string[], word: string): string[] =>
-      norm(runPwshCompleter(script, rest, word, ["app-one", "app-two"]));
-    for (const scenario of scenarios) {
-      check(`pwsh (appFlag ${appFlag}): ${scenario.name} matches the model's decision`, walk(scenario.rest, scenario.word), decision(scenario.rest, scenario.word, appFlag));
-    }
-    // The R33-10 facts the differential must hold, stated on their own too.
-    check(`pwsh (appFlag ${appFlag}): --app after a command offers the command's flags, not deployments`,
-      [walk(["status", "--app"], "").includes("--help"), walk(["status", "--app"], "").includes("app-one")], [true, false]);
-    check(`pwsh (appFlag ${appFlag}): set try's --kind value position offers no kind values`,
-      walk(["set", "try", "--kind"], "").includes("agent"), false);
-    check(`pwsh (appFlag ${appFlag}): set forget's --kind value position offers the kind values`,
-      walk(["set", "forget", "--kind"], "").join(" "), "agent cron-job mcp-server");
-    check(`pwsh (appFlag ${appFlag}): --app's own value offers the deployments`,
-      walk(["--app"], "").sort().join(" "), appFlag ? "app-one app-two" : "");
-    check(`pwsh (appFlag ${appFlag}): rendering is deterministic`, renderCompletion("pwsh", model, appFlag), script);
-  }
-  check("pwsh without --app never mentions it", /--app\b/.test(renderCompletion("pwsh", model, false)), false);
+/** The model's answer for one scenario, after the filter the shells apply themselves (compgen
+ *  -W … -- "$cur", `-like "$wordToComplete*"`). Both sides are normalised, because bash's compgen
+ *  keeps the table's own order and pwsh's Sort-Object orders by culture: what is compared is the
+ *  SET of answers, never an ordering rule the model does not own. */
+function expected(scenario: CompletionScenario): string[] {
+  const partial = scenario.words[scenario.cword] ?? "";
+  return norm(completionCandidates(data, scenario.words, scenario.cword, appNames)).filter((value) => value.startsWith(partial));
 }
 
-// --- the bash script, actually sourced by a real bash -----------------------------------------
+// scenarios.ts names the cursor by the word being completed's index in `words`; every driver
+// below prepends the program name, so its own cursor index is one further along.
+check("every scenario's cword is the index of its last word, the one being completed",
+  scenarios.every((scenario) => scenario.cword === scenario.words.length - 1), true);
+
+/** Single-quoted for bash and for PowerShell: the words are command names, action words, option
+ *  names and the empty string, and a PowerShell single-quoted string is literal. */
+const quote = (word: string): string => `'${word.replaceAll("'", "'\\''")}'`;
+/** `<index>\t<joined replies>`, one line per scenario, from either driver. PowerShell's host
+ *  writes `\r\n`, so a trailing carriage return is not part of an answer. */
+function replies(stdout: string, separator: string): Map<string, string[]> {
+  const parsed = new Map<string, string[]>();
+  for (const raw of stdout.split("\n")) {
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const tab = line.indexOf("\t");
+    if (tab < 0) continue;
+    parsed.set(line.slice(0, tab), line.slice(tab + 1).split(separator).filter((word) => word !== ""));
+  }
+  return parsed;
+}
+
+/** ONE bash process for every scenario: the generated script is sourced once, then each scenario
+ *  sets COMP_WORDS/COMP_CWORD exactly as an interactive shell would — the program name FIRST,
+ *  which is what makes `"${COMP_WORDS[0]}" list --json …` reach the stub on PATH. */
+function bashDriver(scriptPath: string): string {
+  const runs = scenarios
+    .map((scenario, index) => `reply ${index} ${scenario.cword} ${scenario.words.map(quote).join(" ")}`)
+    .join("\n");
+  return [
+    `source ${quote(scriptPath.replaceAll("\\", "/"))}`,
+    "reply() {",
+    '  local index="$1" cword="$2"; shift 2',
+    '  COMP_WORDS=("clawforge" "$@")',
+    "  COMP_CWORD=$((cword + 1))",
+    "  COMPREPLY=()",
+    "  _clawforge_complete",
+    '  printf \'%s\\t%s\\n\' "$index" "${COMPREPLY[*]}"',
+    "}",
+    runs,
+    "",
+  ].join("\n");
+}
+
+/** ONE PowerShell process for every scenario: the generated script is dot-sourced once, then
+ *  TabExpansion2 answers each input script. A trailing space is literally the last element "",
+ *  so `words` joined by a space is the right input for every scenario — the shell completes a NEW
+ *  word, wordToComplete comes out empty and the tokens are the typed words only (verified on
+ *  powershell.exe 5.1). The path is written with forward slashes: a backslash is an escape in a
+ *  PowerShell double-quoted string, and the path reaches one. */
+function pwshDriver(scriptPath: string): string {
+  // PowerShell hashtable keys are CASE-INSENSITIVE ($clawforgeValues.ContainsKey) — every
+  // scenario word is lowercase already, so the key the completer builds is the key the table
+  // holds, and no casing rule of the model's own is being tested here.
+  const runs = scenarios
+    .map((scenario, index) => `Reply ${index} 'clawforge ${scenario.words.join(" ")}'`)
+    .join("\n");
+  return [
+    `. ${quote(scriptPath.replaceAll("\\", "/"))}`,
+    "function Reply($n, $inputScript) {",
+    "  $expansion = TabExpansion2 -inputScript $inputScript -cursorColumn $inputScript.Length",
+    // TabExpansion2 falls back to FILESYSTEM completion when the completer offers nothing (an
+    // unknown command), and no candidate this table holds is ever a path — so the fallback is
+    // dropped rather than mistaken for an answer.
+    "  $names = @($expansion.CompletionMatches | ForEach-Object { $_.CompletionText } | Where-Object { $_ -notmatch '[\\\\/]' })",
+    `  Write-Output ("$n" + [char]9 + (($names | Sort-Object -Unique) -join ','))`,
+    "}",
+    runs,
+    // The checkout shim: the completer registers both spellings, and ./clawforge must complete.
+    "Reply shim './clawforge sta'",
+    "",
+  ].join("\n");
+}
 
 // Whether a usable bash exists is a host fact, not a string to sniff: the `bash` capability
-// probe decides (and OC_CHECK_REQUIRE=bash turns the skip into a failure, which is what CI
-// does), replacing the manual "no usable bash" line this file used to print itself.
-await requires("bash", "the bash script sourced by a real bash", async () => {
+// probe decides (and OC_CHECK_REQUIRE=bash turns the skip into a failure, which is what CI does).
+await requires("bash", "the generated bash script, sourced by a real bash", async () => {
   const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
   try {
     const scriptPath = join(dir, "completion.sh");
-    await writeFile(scriptPath, renderCompletion("bash", model, true), "utf8");
-    // A stub `clawforge` on PATH answers --app's lazy `list --json` deterministically.
+    await writeFile(scriptPath, renderCompletion("bash", data), "utf8");
+    // A stub `clawforge` on PATH answers --app's lazy `list --json` deterministically — the
+    // hidden name included, which the script must filter out.
     const stub = join(dir, "clawforge");
-    await writeFile(stub, "#!/bin/sh\necho '[{\"name\":\"app-one\"},{\"name\":\"app-two\"}]'\n", "utf8");
+    await writeFile(stub, `#!/bin/sh\necho '${STUB_JSON}'\n`, "utf8");
     await chmod(stub, 0o755);
-    // Words + cursor -> COMPREPLY, exactly as an interactive shell would call it.
-    const scenario = (words: string[], cword: number): Promise<string[]> =>
-      new Promise((resolveScenario) => {
-        const wordsLit = `(${["clawforge", ...words].map((word) => JSON.stringify(word)).join(" ")})`;
-        const proc = spawnSync(
-          "bash",
-          ["-c", `source "${scriptPath}"\nCOMP_WORDS=${wordsLit}\nCOMP_CWORD=${cword}\n_clawforge_complete\nprintf '%s\n' "\${COMPREPLY[@]}"`],
-          { timeout: 30_000, env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` } },
-        );
-        resolveScenario(proc.stdout.toString().split("\n").filter((line) => line !== ""));
-      });
-    // Differential: every scenario through the REAL bash completer must equal the model.
-    const bashScenario = (scenarioSpec: { rest: string[]; word: string }): Promise<string[]> => {
-      const words = scenarioSpec.word === "" ? [...scenarioSpec.rest, ""] : scenarioSpec.rest;
-      return scenario(words, words.length);
-    };
-    for (const scenarioSpec of scenarios) {
-      const expected = decision(scenarioSpec.rest, scenarioSpec.word, true);
-      check(`bash: ${scenarioSpec.name} matches the model's decision`, norm(await bashScenario(scenarioSpec)), expected);
+    const driverPath = join(dir, "driver.sh");
+    await writeFile(driverPath, bashDriver(scriptPath), "utf8");
+    const proc = spawnSync("bash", [driverPath], {
+      timeout: 120_000, encoding: "utf8",
+      // The stub has to be found on PATH for `"${COMP_WORDS[0]}" list --json …` to answer.
+      env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` },
+    });
+    check("bash: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
+    const answers = replies(proc.stdout, " ");
+    for (const [index, scenario] of scenarios.entries()) {
+      check(`bash: ${scenario.name} matches the model's decision`, norm(answers.get(String(index)) ?? []), expected(scenario));
     }
-    check("bash: --app after a command offers flags, not deployments",
-      [(await bashScenario(scenarios[8]!)).includes("--help"), (await bashScenario(scenarios[8]!)).includes("app-one")], [true, false]);
-
-    check("bash: typed prefix completes status", (await scenario(["sta"], 1)).includes("status"), true);
-    check("bash: typed flag prefix completes --app", (await scenario(["--ap"], 1)).includes("--app"), true);
-    check("bash: typed prefix completes the list action word", (await scenario(["backup", "l"], 2)).includes("list"), true);
-    const trailing = await scenario(["backup"], 2);
-    check("bash: trailing space offers create and its flags", [trailing.includes("create"), trailing.includes("--hot")], [true, true]);
-    const afterApp = await scenario(["--app", "x", "backup"], 4);
-    check("bash: after --app x backup offers actions and create's flags", [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
-    const afterFlag = await scenario(["backup", "--hot"], 3);
-    check("bash: after backup --hot no action word is offered", [afterFlag.includes("--migrate"), afterFlag.includes("list")], [true, false]);
-    check("bash: --client's value position offers its choices", (await scenario(["mcp-setup", "--client"], 3)).sort().join(" "), "both claude codex");
-    check("bash: help completes command names", (await scenario(["help", "st"], 2)).includes("status"), true);
-    check("bash: completion completes the shell names", (await scenario(["completion", "b"], 2)).includes("bash"), true);
-    const hostValues = (await scenario(["host"], 2)).filter((word) => ["engine", "local", "target"].includes(word));
-    check("bash: host's positional choices are offered", hostValues.sort().join(" "), "engine local target");
-    check("bash: watch install's flags complete past the action", (await scenario(["watch", "install", "--int"], 3)).includes("--interval"), true);
     check("bash: the generated script parses (bash -n)", spawnSync("bash", ["-n", scriptPath], { timeout: 15_000 }).status, 0);
-    const body = (text: string): string => text.slice(text.indexOf("_clawforge_complete()"), text.indexOf("complete -F"));
-    check("bash: zsh shares the completer body verbatim", body(renderCompletion("zsh", model, true)), body(renderCompletion("bash", model, true)));
+    // zsh loads this SAME completer body through bashcompinit, so the two scripts cannot drift:
+    // everything from `_clawforge_lookup()` to the end is one text, byte for byte.
+    const body = (text: string): string => text.slice(text.indexOf("_clawforge_lookup()"));
+    check("zsh's completer body equals bash's byte for byte",
+      body(renderCompletion("zsh", data)), body(renderCompletion("bash", data)));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+await requires("pwsh", "the generated pwsh script, driven by a real PowerShell", async () => {
+  // pwshCommand() names the very binary the capability probe accepted — pwsh, or powershell.exe
+  // (5.1) on a Windows host without it.
+  const pwsh = await pwshCommand();
+  if (pwsh === undefined) return;
+  const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
+  try {
+    const scriptPath = join(dir, "completion.ps1");
+    await writeFile(scriptPath, renderCompletion("pwsh", data), "utf8");
+    // A PowerShell resolves a bare command name to the .ps1 whose directory LEADS PATH, and
+    // `& $tokens[0] …` cannot reach a .cmd stub on Windows — so the stub is a .ps1 and the
+    // directory is first in the child's PATH. Its JSON sits on one line, as the model expects.
+    await writeFile(join(dir, "clawforge.ps1"), `Write-Output '${STUB_JSON}'\n`, "utf8");
+    const driverPath = join(dir, "driver.ps1");
+    await writeFile(driverPath, pwshDriver(scriptPath), "utf8");
+    const proc = spawnSync(pwsh, ["-NoProfile", "-NonInteractive", "-File", driverPath], {
+      timeout: 180_000, encoding: "utf8",
+      env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` },
+    });
+    check("pwsh: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
+    const answers = replies(proc.stdout, ",");
+    for (const [index, scenario] of scenarios.entries()) {
+      check(`pwsh: ${scenario.name} matches the model's decision`, norm(answers.get(String(index)) ?? []), expected(scenario));
+    }
+    check("pwsh: the checkout shim ./clawforge completes too",
+      norm(answers.get("shim") ?? []).includes("status"), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// --- 4. interpreter invariance: two different tables, one grammar ---------------------------
+//
+// "Differs only in the data block" means precisely this: the `case` arms bash emits inside
+// `_clawforge_lookup` (the "top", "first <command>", "after <command> <word>" and
+// "values <command+scope+option>" rows), and what pwsh emits as `$clawforgeApp` plus the four
+// tables, are the ONLY things two renders of two different command sets disagree about. Every
+// other byte — the interpreter, the headers, the registrations — is a constant of the renderer,
+// which is also what lets zsh reuse the bash body verbatim.
+
+/** From the catch-all arm to the end of the script: the fixed interpreter and the registrations. */
+const PWSH_FIXED_FROM = "$clawforgeCompleter = {";
+const tail = (text: string, from: string): string => text.slice(text.indexOf(from));
+const slice = (text: string, from: string, to: string): string => text.slice(text.indexOf(from), text.indexOf(to));
+
+// bash's render is the header, `_clawforge_lookup`'s frame, the data `case` arms, the catch-all,
+// `_clawforge_complete` — with the gate's own `--app` snippets inside it where it has a selector
+// — and the two registrations. Two tables of two different gates differ in the arms and in those
+// snippets and NOWHERE else, which is what the three slices below pin down.
+const ARMS_FROM = '    "top")';
+const ARMS_TO = "    *) return 1 ;;";
+/** What the gate's own `--app` selector adds to the fixed interpreter, and nothing else: the
+ *  pair the command-word scan steps over, and the block that answers `--app`'s own value. An
+ *  installed single-deployment gate has no selector, so its render carries neither — which is
+ *  why these two are removed before two renders are compared, and why the check that they
+ *  really are the difference (the third list entry below) has to see them differ. */
+const withoutAppSelector = (text: string): string => text.split(APP_SKIP_PAIR).join("").split(APP_VALUES_BLOCK).join("");
+/** The script without its generated `case` arms: the header, the lookup's frame and the
+ *  interpreter — everything that is a constant of the renderer rather than of the table. */
+const withoutArms = (text: string): string => text.slice(0, text.indexOf(ARMS_FROM)) + text.slice(text.indexOf(ARMS_TO));
+{
+  const bashTrue = renderCompletion("bash", data);
+  const bashInstalled = renderCompletion("bash", installed);
+  check("bash: two tables differ only in the data arms and the --app selector's own lines",
+    [withoutArms(withoutAppSelector(bashTrue)) === withoutArms(withoutAppSelector(bashInstalled)),
+     slice(bashTrue, ARMS_FROM, ARMS_TO) !== slice(bashInstalled, ARMS_FROM, ARMS_TO),
+     bashTrue.includes(APP_SKIP_PAIR) && !bashInstalled.includes(APP_SKIP_PAIR)
+     && bashTrue.includes(APP_VALUES_BLOCK) && !bashInstalled.includes(APP_VALUES_BLOCK)],
+    [true, true, true]);
+  check("pwsh: two tables differ only in the data block, never in the interpreter",
+    [tail(renderCompletion("pwsh", data), PWSH_FIXED_FROM) === tail(renderCompletion("pwsh", installed), PWSH_FIXED_FROM),
+     renderCompletion("pwsh", data) !== renderCompletion("pwsh", installed)], [true, true]);
+}
 
 finish("completion behaviour");

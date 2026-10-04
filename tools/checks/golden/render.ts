@@ -35,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { COMPLETION_COMMAND_NAME, COMPLETION_SHELLS } from "#framework/integration/completion.ts";
+import { COMPLETION_COMMAND_NAME, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand } from "#framework/integration/gate.ts";

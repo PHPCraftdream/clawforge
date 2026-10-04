@@ -6,7 +6,6 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
-import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
@@ -76,33 +75,6 @@ import { check, finish } from "#checks/kit/harness.ts";
   );
   check("backup list --hot names create", (await outcome(["list", "--hot"])).includes("--hot applies to `create`, not `list`"), true);
 
-  const model = new Map(buildCompletionModel([]).map((spec) => [spec.name, spec]));
-  const backupSpec = model.get("backup")!;
-  check("completion offers create as an action word", backupSpec.action!.values.includes("create"), true);
-  check(
-    "completion offers the create flags under create",
-    backupSpec.action!.flags.create,
-    ["--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets"],
-  );
-  check(
-    "the no-action fallback offers the create flags, not just --help",
-    backupSpec.action!.fallback.includes("--hot") && backupSpec.action!.fallback.includes("--dry-run"),
-    true,
-  );
-  const bash = renderCompletion("bash", buildCompletionModel([]), false);
-  check("bash's *) arm after an action word offers the create fallback", /\*\) COMPREPLY=\( \$\(compgen -W "[^"]*--hot[^"]*"/.test(bash), true);
-  const pwsh = renderCompletion("pwsh", buildCompletionModel([]), false);
-  check("pwsh's fallback flag list offers the create flags", pwsh.includes('"backup" = @("--dry-run", "--help", "--hot"'), true);
-
-  // R31-07: the FIRST position after a command with an implicit default action offers the
-  // create flags too — `backup --h<Tab>` must complete --hot, not only --help.
-  const bashFirst = /backup\)\n      if \[\[ \$cword -eq \$\(\(idx \+ 1\)\) \]\]; then\n        COMPREPLY=\( \$\(compgen -W "([^"]*)"/.exec(bash)![1];
-  check("bash's first position after backup offers the action words and the create flags", ["create", "--dry-run", "--help", "--hot"].every((word) => bashFirst.split(" ").includes(word)), true);
-  const bashOtherFirst = /watch\)\n      if \[\[ \$cword -eq \$\(\(idx \+ 1\)\) \]\]; then\n        COMPREPLY=\( \$\(compgen -W "([^"]*)"/.exec(bash)![1];
-  check("a command without a default action keeps words + --help on the first position", bashOtherFirst.trim(), "check install status test uninstall --help");
-  check("pwsh offers actions plus flags at the action position", pwsh.includes("@($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]"), true);
-  check("pwsh's new-token and typed-word cases share the between-space scan", pwsh.includes("if ($between.Count -eq 0)"), true);
-  check("pwsh's position past a typed action word offers that action's own flags", pwsh.includes("$candidates = $clawforgeActions[$cmd][$between[0]]"), true);
 }
 
 // --- R31-02 / R32-10: the MCP schema shows the declaration's own text -------------------------

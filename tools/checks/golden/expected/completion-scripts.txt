@@ -1,12 +1,153 @@
 === ./clawforge completion bash ===
-# clawforge bash completion — generated from the live command declarations.
+# clawforge bash completion — generated from the command declarations.
 # Install: source <(./clawforge completion bash)
+_clawforge_lookup() {
+  case "$1" in
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --app" ;;
+    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
+    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawforge_reply="--help --json --profile" ;;
+    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawforge_reply="--help --json --quick" ;;
+    "first inspect") _clawforge_reply="--help --json" ;;
+    "first doctor") _clawforge_reply="--help --json" ;;
+    "first plan") _clawforge_reply="--help --json --set" ;;
+    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
+    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
+    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first status") _clawforge_reply="--help --json" ;;
+    "first lock") _clawforge_reply="--check --help --json" ;;
+    "first cli") _clawforge_reply="--help" ;;
+    "first exec") _clawforge_reply="--help" ;;
+    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawforge_reply="--help" ;;
+    "first cli-stop") _clawforge_reply="--help" ;;
+    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawforge_reply="--help" ;;
+    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
+    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
+    "first check") _clawforge_reply="--help --jobs --list --require" ;;
+    "first new-app") _clawforge_reply="--help" ;;
+    "first remove-app") _clawforge_reply="--help --yes" ;;
+    "first list") _clawforge_reply="--help --json --no-status" ;;
+    "first version") _clawforge_reply="--help --json --verbose" ;;
+    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawforge_reply="--help" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawforge_reply="--help --json" ;;
+    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawforge_reply="--help --json --profile" ;;
+    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawforge_reply="--help --json --quick" ;;
+    "after inspect *") _clawforge_reply="--help --json" ;;
+    "after doctor *") _clawforge_reply="--help --json" ;;
+    "after plan *") _clawforge_reply="--help --json --set" ;;
+    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawforge_reply="--help --json" ;;
+    "after expose *") _clawforge_reply="--help" ;;
+    "after watch check") _clawforge_reply="--help --json" ;;
+    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawforge_reply="--help --json" ;;
+    "after watch test") _clawforge_reply="--help --json" ;;
+    "after watch *") _clawforge_reply="--help" ;;
+    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after status *") _clawforge_reply="--help --json" ;;
+    "after lock *") _clawforge_reply="--check --help --json" ;;
+    "after cli *") _clawforge_reply="--help" ;;
+    "after exec *") _clawforge_reply="--help" ;;
+    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawforge_reply="--help" ;;
+    "after cli-stop *") _clawforge_reply="--help" ;;
+    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawforge_reply="--help --json" ;;
+    "after recipe import") _clawforge_reply="--help" ;;
+    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
+    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe status") _clawforge_reply="--help" ;;
+    "after recipe logs") _clawforge_reply="--help --tail" ;;
+    "after recipe *") _clawforge_reply="--help" ;;
+    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawforge_reply="--help" ;;
+    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
+    "after set build") _clawforge_reply="--help --json --name" ;;
+    "after set validate") _clawforge_reply="--help --json --name --set" ;;
+    "after set diff") _clawforge_reply="--from --help --json --to" ;;
+    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawforge_reply="--help" ;;
+    "after check *") _clawforge_reply="--help --jobs --list --require" ;;
+    "after new-app *") _clawforge_reply="--help" ;;
+    "after remove-app *") _clawforge_reply="--help --yes" ;;
+    "after list *") _clawforge_reply="--help --json --no-status" ;;
+    "after version *") _clawforge_reply="--help --json --verbose" ;;
+    "after completion *") _clawforge_reply="--help" ;;
+    "after control-mcp *") _clawforge_reply="--help" ;;
+    "after help *") _clawforge_reply="--help" ;;
+    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
+    "values pull--profile") _clawforge_reply="full migrate share" ;;
+    "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
+    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$_clawforge_reply"
+}
+
 _clawforge_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
   local cword=$COMP_CWORD
   local cmd="" idx=0 skip=0
+  local between=() scope="" reply=""
   for ((i = 1; i < cword; i++)); do
     local w="${words[i]}"
     if [[ $skip -eq 1 ]]; then skip=0; continue; fi
@@ -14,168 +155,36 @@ _clawforge_complete() {
     cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-  if [[ "$prev" == "--app" ]]; then
+    if [[ "$prev" == "--app" ]]; then
     COMPREPLY=( $(compgen -W "$("${COMP_WORDS[0]}" list --json --no-status 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | grep -v '^[.]')" -- "$cur") )
     return
   fi
-    COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --app" -- "$cur") )
+    if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
-  local between=() key="$cmd$prev"
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes the key; the option itself is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then key="$cmd${between[0]}$prev"; fi
-  case "$key" in
-    "backupcreate--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "mcp-setup--client") COMPREPLY=( $(compgen -W "claude codex both" -- "$cur") )
-      return
-      ;;
-    "pull--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "setforget--kind") COMPREPLY=( $(compgen -W "agent mcp-server cron-job" -- "$cur") )
-      return
-      ;;
-    "verify--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-  esac
-  case "$cmd" in
-    help) COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --help" -- "$cur") ) ;;
-    accept) COMPREPLY=( $(compgen -W "--help --json --set --with-model" -- "$cur") ) ;;
-    apply) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --expect --help --json --set" -- "$cur") ) ;;
-    apply-config) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --dump --force --help --json" -- "$cur") ) ;;
-    backup)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "create install list prune-replaced uninstall --dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        create) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        prune-replaced) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --json --keep" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    bootstrap) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --check --help --json --no-pull" -- "$cur") ) ;;
-    check) COMPREPLY=( $(compgen -W "--help --jobs --list --require" -- "$cur") ) ;;
-    cli) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-start) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-stop) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    completion)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "bash zsh pwsh --help" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--help" -- "$cur") )
-      fi
-      ;;
-    configure-provider) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --env --force --help --json --provider" -- "$cur") ) ;;
-    control-mcp) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    deploy) COMPREPLY=( $(compgen -W "--adopt --dry-run --help --json --no-bootstrap --path" -- "$cur") ) ;;
-    destroy) COMPREPLY=( $(compgen -W "--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" -- "$cur") ) ;;
-    doctor) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    down) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    exec) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    expose)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "ssh status tailscale --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        ssh) COMPREPLY=( $(compgen -W "--help --local-port --run" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        tailscale) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    help) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    host)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "target engine local --confirm-root --help --root" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--confirm-root --help --root" -- "$cur") )
-      fi
-      ;;
-    incident) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" -- "$cur") ) ;;
-    inspect) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    list) COMPREPLY=( $(compgen -W "--help --json --no-status" -- "$cur") ) ;;
-    lock) COMPREPLY=( $(compgen -W "--check --help --json" -- "$cur") ) ;;
-    logs) COMPREPLY=( $(compgen -W "--grep --help --since --tail" -- "$cur") ) ;;
-    mcp-creds) COMPREPLY=( $(compgen -W "--help --json --token" -- "$cur") ) ;;
-    mcp-serve) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    mcp-setup) COMPREPLY=( $(compgen -W "--client --help --json --rewrite-launcher" -- "$cur") ) ;;
-    new-app) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    operations) COMPREPLY=( $(compgen -W "--help --json --limit" -- "$cur") ) ;;
-    plan) COMPREPLY=( $(compgen -W "--help --json --set" -- "$cur") ) ;;
-    provision-agent) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --json" -- "$cur") ) ;;
-    pull) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" -- "$cur") ) ;;
-    push) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" -- "$cur") ) ;;
-    recipe)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "diagnose import install list logs new onboard remove status verify --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        diagnose) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --tail" -- "$cur") ) ;;
-        import) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force-disabled --help" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        logs) COMPREPLY=( $(compgen -W "--help --tail" -- "$cur") ) ;;
-        new) COMPREPLY=( $(compgen -W "--help --with-hooks" -- "$cur") ) ;;
-        onboard) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-        remove) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --volumes" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        verify) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    recover-env) COMPREPLY=( $(compgen -W "--adopt-runtime --dry-run --help --json" -- "$cur") ) ;;
-    remove-app) COMPREPLY=( $(compgen -W "--help --yes" -- "$cur") ) ;;
-    restart) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    restore) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" -- "$cur") ) ;;
-    rollback) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" -- "$cur") ) ;;
-    secrets) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" -- "$cur") ) ;;
-    set)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "build diff forget receipts try validate --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        build) COMPREPLY=( $(compgen -W "--help --json --name" -- "$cur") ) ;;
-        diff) COMPREPLY=( $(compgen -W "--from --help --json --to" -- "$cur") ) ;;
-        forget) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --kind --name" -- "$cur") ) ;;
-        receipts) COMPREPLY=( $(compgen -W "--help --json --receipt --set-id" -- "$cur") ) ;;
-        try) COMPREPLY=( $(compgen -W "--help --json --keep --set --with-model" -- "$cur") ) ;;
-        validate) COMPREPLY=( $(compgen -W "--help --json --name --set" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    smoke) COMPREPLY=( $(compgen -W "--help --json --quick" -- "$cur") ) ;;
-    status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    up) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    upgrade) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --image --json" -- "$cur") ) ;;
-    verify) COMPREPLY=( $(compgen -W "--help --json --profile" -- "$cur") ) ;;
-    version) COMPREPLY=( $(compgen -W "--help --json --verbose" -- "$cur") ) ;;
-    watch)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "check install status test uninstall --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        check) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        test) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    *) COMPREPLY=() ;;
-  esac
+  # The word after the command scopes an option's values; the option itself, last of
+  # `between`, is not a scope.
+  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
+  # The command's own first candidates; a command the table does not carry completes to
+  # nothing at all.
+  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  # An option's own values, keyed command + scope + option, take the value position.
+  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+    return
+  fi
+  # Nothing after the command: the word being completed IS its own first position, which
+  # the lookup above already answered.
+  if (( ${#between[@]} == 0 )); then return; fi
+  # Past a word after the command: that word's own list, else the command's fallback.
+  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  elif reply="$(_clawforge_lookup "after $cmd *")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  else
+    COMPREPLY=()
+  fi
 }
 complete -F _clawforge_complete clawforge
 complete -F _clawforge_complete ./clawforge
@@ -188,12 +197,153 @@ complete -F _clawforge_complete ./clawforge
 # source <(./clawforge completion zsh) in the current one.
 autoload -Uz bashcompinit
 bashcompinit
+_clawforge_lookup() {
+  case "$1" in
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --app" ;;
+    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
+    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawforge_reply="--help --json --profile" ;;
+    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawforge_reply="--help --json --quick" ;;
+    "first inspect") _clawforge_reply="--help --json" ;;
+    "first doctor") _clawforge_reply="--help --json" ;;
+    "first plan") _clawforge_reply="--help --json --set" ;;
+    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
+    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
+    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first status") _clawforge_reply="--help --json" ;;
+    "first lock") _clawforge_reply="--check --help --json" ;;
+    "first cli") _clawforge_reply="--help" ;;
+    "first exec") _clawforge_reply="--help" ;;
+    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawforge_reply="--help" ;;
+    "first cli-stop") _clawforge_reply="--help" ;;
+    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawforge_reply="--help" ;;
+    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
+    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
+    "first check") _clawforge_reply="--help --jobs --list --require" ;;
+    "first new-app") _clawforge_reply="--help" ;;
+    "first remove-app") _clawforge_reply="--help --yes" ;;
+    "first list") _clawforge_reply="--help --json --no-status" ;;
+    "first version") _clawforge_reply="--help --json --verbose" ;;
+    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawforge_reply="--help" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawforge_reply="--help --json" ;;
+    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawforge_reply="--help --json --profile" ;;
+    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawforge_reply="--help --json --quick" ;;
+    "after inspect *") _clawforge_reply="--help --json" ;;
+    "after doctor *") _clawforge_reply="--help --json" ;;
+    "after plan *") _clawforge_reply="--help --json --set" ;;
+    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawforge_reply="--help --json" ;;
+    "after expose *") _clawforge_reply="--help" ;;
+    "after watch check") _clawforge_reply="--help --json" ;;
+    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawforge_reply="--help --json" ;;
+    "after watch test") _clawforge_reply="--help --json" ;;
+    "after watch *") _clawforge_reply="--help" ;;
+    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after status *") _clawforge_reply="--help --json" ;;
+    "after lock *") _clawforge_reply="--check --help --json" ;;
+    "after cli *") _clawforge_reply="--help" ;;
+    "after exec *") _clawforge_reply="--help" ;;
+    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawforge_reply="--help" ;;
+    "after cli-stop *") _clawforge_reply="--help" ;;
+    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawforge_reply="--help --json" ;;
+    "after recipe import") _clawforge_reply="--help" ;;
+    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
+    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe status") _clawforge_reply="--help" ;;
+    "after recipe logs") _clawforge_reply="--help --tail" ;;
+    "after recipe *") _clawforge_reply="--help" ;;
+    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawforge_reply="--help" ;;
+    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
+    "after set build") _clawforge_reply="--help --json --name" ;;
+    "after set validate") _clawforge_reply="--help --json --name --set" ;;
+    "after set diff") _clawforge_reply="--from --help --json --to" ;;
+    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawforge_reply="--help" ;;
+    "after check *") _clawforge_reply="--help --jobs --list --require" ;;
+    "after new-app *") _clawforge_reply="--help" ;;
+    "after remove-app *") _clawforge_reply="--help --yes" ;;
+    "after list *") _clawforge_reply="--help --json --no-status" ;;
+    "after version *") _clawforge_reply="--help --json --verbose" ;;
+    "after completion *") _clawforge_reply="--help" ;;
+    "after control-mcp *") _clawforge_reply="--help" ;;
+    "after help *") _clawforge_reply="--help" ;;
+    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
+    "values pull--profile") _clawforge_reply="full migrate share" ;;
+    "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
+    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$_clawforge_reply"
+}
+
 _clawforge_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
   local cword=$COMP_CWORD
   local cmd="" idx=0 skip=0
+  local between=() scope="" reply=""
   for ((i = 1; i < cword; i++)); do
     local w="${words[i]}"
     if [[ $skip -eq 1 ]]; then skip=0; continue; fi
@@ -201,345 +351,234 @@ _clawforge_complete() {
     cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-  if [[ "$prev" == "--app" ]]; then
+    if [[ "$prev" == "--app" ]]; then
     COMPREPLY=( $(compgen -W "$("${COMP_WORDS[0]}" list --json --no-status 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | grep -v '^[.]')" -- "$cur") )
     return
   fi
-    COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --app" -- "$cur") )
+    if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
-  local between=() key="$cmd$prev"
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes the key; the option itself is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then key="$cmd${between[0]}$prev"; fi
-  case "$key" in
-    "backupcreate--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "mcp-setup--client") COMPREPLY=( $(compgen -W "claude codex both" -- "$cur") )
-      return
-      ;;
-    "pull--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "setforget--kind") COMPREPLY=( $(compgen -W "agent mcp-server cron-job" -- "$cur") )
-      return
-      ;;
-    "verify--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-  esac
-  case "$cmd" in
-    help) COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --help" -- "$cur") ) ;;
-    accept) COMPREPLY=( $(compgen -W "--help --json --set --with-model" -- "$cur") ) ;;
-    apply) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --expect --help --json --set" -- "$cur") ) ;;
-    apply-config) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --dump --force --help --json" -- "$cur") ) ;;
-    backup)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "create install list prune-replaced uninstall --dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        create) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        prune-replaced) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --json --keep" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    bootstrap) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --check --help --json --no-pull" -- "$cur") ) ;;
-    check) COMPREPLY=( $(compgen -W "--help --jobs --list --require" -- "$cur") ) ;;
-    cli) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-start) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-stop) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    completion)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "bash zsh pwsh --help" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--help" -- "$cur") )
-      fi
-      ;;
-    configure-provider) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --env --force --help --json --provider" -- "$cur") ) ;;
-    control-mcp) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    deploy) COMPREPLY=( $(compgen -W "--adopt --dry-run --help --json --no-bootstrap --path" -- "$cur") ) ;;
-    destroy) COMPREPLY=( $(compgen -W "--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" -- "$cur") ) ;;
-    doctor) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    down) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    exec) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    expose)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "ssh status tailscale --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        ssh) COMPREPLY=( $(compgen -W "--help --local-port --run" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        tailscale) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    help) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    host)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "target engine local --confirm-root --help --root" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--confirm-root --help --root" -- "$cur") )
-      fi
-      ;;
-    incident) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" -- "$cur") ) ;;
-    inspect) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    list) COMPREPLY=( $(compgen -W "--help --json --no-status" -- "$cur") ) ;;
-    lock) COMPREPLY=( $(compgen -W "--check --help --json" -- "$cur") ) ;;
-    logs) COMPREPLY=( $(compgen -W "--grep --help --since --tail" -- "$cur") ) ;;
-    mcp-creds) COMPREPLY=( $(compgen -W "--help --json --token" -- "$cur") ) ;;
-    mcp-serve) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    mcp-setup) COMPREPLY=( $(compgen -W "--client --help --json --rewrite-launcher" -- "$cur") ) ;;
-    new-app) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    operations) COMPREPLY=( $(compgen -W "--help --json --limit" -- "$cur") ) ;;
-    plan) COMPREPLY=( $(compgen -W "--help --json --set" -- "$cur") ) ;;
-    provision-agent) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --json" -- "$cur") ) ;;
-    pull) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" -- "$cur") ) ;;
-    push) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" -- "$cur") ) ;;
-    recipe)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "diagnose import install list logs new onboard remove status verify --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        diagnose) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --tail" -- "$cur") ) ;;
-        import) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force-disabled --help" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        logs) COMPREPLY=( $(compgen -W "--help --tail" -- "$cur") ) ;;
-        new) COMPREPLY=( $(compgen -W "--help --with-hooks" -- "$cur") ) ;;
-        onboard) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-        remove) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --volumes" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        verify) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    recover-env) COMPREPLY=( $(compgen -W "--adopt-runtime --dry-run --help --json" -- "$cur") ) ;;
-    remove-app) COMPREPLY=( $(compgen -W "--help --yes" -- "$cur") ) ;;
-    restart) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    restore) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" -- "$cur") ) ;;
-    rollback) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" -- "$cur") ) ;;
-    secrets) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" -- "$cur") ) ;;
-    set)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "build diff forget receipts try validate --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        build) COMPREPLY=( $(compgen -W "--help --json --name" -- "$cur") ) ;;
-        diff) COMPREPLY=( $(compgen -W "--from --help --json --to" -- "$cur") ) ;;
-        forget) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --kind --name" -- "$cur") ) ;;
-        receipts) COMPREPLY=( $(compgen -W "--help --json --receipt --set-id" -- "$cur") ) ;;
-        try) COMPREPLY=( $(compgen -W "--help --json --keep --set --with-model" -- "$cur") ) ;;
-        validate) COMPREPLY=( $(compgen -W "--help --json --name --set" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    smoke) COMPREPLY=( $(compgen -W "--help --json --quick" -- "$cur") ) ;;
-    status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    up) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    upgrade) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --image --json" -- "$cur") ) ;;
-    verify) COMPREPLY=( $(compgen -W "--help --json --profile" -- "$cur") ) ;;
-    version) COMPREPLY=( $(compgen -W "--help --json --verbose" -- "$cur") ) ;;
-    watch)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "check install status test uninstall --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        check) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        test) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    *) COMPREPLY=() ;;
-  esac
+  # The word after the command scopes an option's values; the option itself, last of
+  # `between`, is not a scope.
+  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
+  # The command's own first candidates; a command the table does not carry completes to
+  # nothing at all.
+  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  # An option's own values, keyed command + scope + option, take the value position.
+  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+    return
+  fi
+  # Nothing after the command: the word being completed IS its own first position, which
+  # the lookup above already answered.
+  if (( ${#between[@]} == 0 )); then return; fi
+  # Past a word after the command: that word's own list, else the command's fallback.
+  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  elif reply="$(_clawforge_lookup "after $cmd *")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  else
+    COMPREPLY=()
+  fi
 }
 complete -F _clawforge_complete clawforge
 complete -F _clawforge_complete ./clawforge
 
 === ./clawforge completion pwsh ===
-# clawforge PowerShell completion — generated from the live command declarations.
+# clawforge PowerShell completion — generated from the command declarations.
 # Install: ./clawforge completion pwsh | Out-String | Invoke-Expression
-$clawforgeCommands = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
-$clawforgeFlags = @{
-  "accept" = @("--help", "--json", "--set", "--with-model")
-  "apply" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
-  "apply-config" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
-  "backup" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
+$clawforgeApp = $true
+$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--app")
+$clawforgeFirst = @{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
-  "check" = @("--help", "--jobs", "--list", "--require")
-  "cli" = @("--help")
-  "cli-start" = @("--help")
-  "cli-stop" = @("--help")
-  "completion" = @("--help")
-  "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
-  "control-mcp" = @("--help")
-  "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
-  "destroy" = @("--backups", "--break-foreign-lock", "--break-lock", "--confirm-name", "--data", "--help", "--snapshots", "--yes")
-  "doctor" = @("--help", "--json")
+  "up" = @("--break-foreign-lock", "--break-lock", "--help")
+  "restart" = @("--break-foreign-lock", "--break-lock", "--help")
   "down" = @("--break-foreign-lock", "--break-lock", "--help")
-  "exec" = @("--help")
-  "expose" = @("--help")
-  "help" = @("--help")
-  "host" = @("--confirm-root", "--help", "--root")
-  "incident" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
-  "inspect" = @("--help", "--json")
-  "list" = @("--help", "--json", "--no-status")
-  "lock" = @("--check", "--help", "--json")
+  "destroy" = @("--backups", "--break-foreign-lock", "--break-lock", "--confirm-name", "--data", "--help", "--snapshots", "--yes")
   "logs" = @("--grep", "--help", "--since", "--tail")
-  "mcp-creds" = @("--help", "--json", "--token")
-  "mcp-serve" = @("--help")
-  "mcp-setup" = @("--client", "--help", "--json", "--rewrite-launcher")
-  "new-app" = @("--help")
-  "operations" = @("--help", "--json", "--limit")
-  "plan" = @("--help", "--json", "--set")
-  "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
+  "backup" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets", "create", "install", "list", "prune-replaced", "uninstall")
+  "restore" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json", "--no-start")
   "pull" = @("--break-foreign-lock", "--break-lock", "--help", "--hot", "--json", "--migrate", "--profile", "--share", "--with-secrets")
   "push" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json")
-  "recipe" = @("--help")
-  "recover-env" = @("--adopt-runtime", "--dry-run", "--help", "--json")
-  "remove-app" = @("--help", "--yes")
-  "restart" = @("--break-foreign-lock", "--break-lock", "--help")
-  "restore" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json", "--no-start")
-  "rollback" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
-  "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
-  "set" = @("--help")
-  "smoke" = @("--help", "--json", "--quick")
-  "status" = @("--help", "--json")
-  "up" = @("--break-foreign-lock", "--break-lock", "--help")
-  "upgrade" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--image", "--json")
   "verify" = @("--help", "--json", "--profile")
+  "upgrade" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--image", "--json")
+  "smoke" = @("--help", "--json", "--quick")
+  "inspect" = @("--help", "--json")
+  "doctor" = @("--help", "--json")
+  "plan" = @("--help", "--json", "--set")
+  "apply" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
+  "accept" = @("--help", "--json", "--set", "--with-model")
+  "rollback" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
+  "operations" = @("--help", "--json", "--limit")
+  "apply-config" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
+  "expose" = @("--help", "ssh", "status", "tailscale")
+  "watch" = @("--help", "check", "install", "status", "test", "uninstall")
+  "incident" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
+  "recover-env" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "status" = @("--help", "--json")
+  "lock" = @("--check", "--help", "--json")
+  "cli" = @("--help")
+  "exec" = @("--help")
+  "host" = @("--confirm-root", "--help", "--root", "engine", "local", "target")
+  "cli-start" = @("--help")
+  "cli-stop" = @("--help")
+  "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
+  "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
+  "recipe" = @("--help", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
+  "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
+  "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
+  "mcp-serve" = @("--help")
+  "mcp-setup" = @("--client", "--help", "--json", "--rewrite-launcher")
+  "mcp-creds" = @("--help", "--json", "--token")
+  "set" = @("--help", "build", "diff", "forget", "receipts", "try", "validate")
+  "check" = @("--help", "--jobs", "--list", "--require")
+  "new-app" = @("--help")
+  "remove-app" = @("--help", "--yes")
+  "list" = @("--help", "--json", "--no-status")
   "version" = @("--help", "--json", "--verbose")
-  "watch" = @("--help")
+  "completion" = @("--help", "bash", "pwsh", "zsh")
+  "control-mcp" = @("--help")
+  "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
 }
-$clawforgeActions = @{
-  "backup" = @{
-    "create" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
-    "install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
-    "list" = @("--help", "--json")
-    "prune-replaced" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--json", "--keep")
-    "uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
-  }
-  "expose" = @{
-    "ssh" = @("--help", "--local-port", "--run")
-    "status" = @("--help", "--json")
-    "tailscale" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
-  }
-  "recipe" = @{
-    "diagnose" = @("--break-foreign-lock", "--break-lock", "--help", "--tail")
-    "import" = @("--help")
-    "install" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force-disabled", "--help")
-    "list" = @("--help", "--json")
-    "logs" = @("--help", "--tail")
-    "new" = @("--help", "--with-hooks")
-    "onboard" = @("--break-foreign-lock", "--break-lock", "--help")
-    "remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
-    "status" = @("--help")
-    "verify" = @("--break-foreign-lock", "--break-lock", "--help")
-  }
-  "set" = @{
-    "build" = @("--help", "--json", "--name")
-    "diff" = @("--from", "--help", "--json", "--to")
-    "forget" = @("--break-foreign-lock", "--break-lock", "--help", "--kind", "--name")
-    "receipts" = @("--help", "--json", "--receipt", "--set-id")
-    "try" = @("--help", "--json", "--keep", "--set", "--with-model")
-    "validate" = @("--help", "--json", "--name", "--set")
-  }
-  "watch" = @{
-    "check" = @("--help", "--json")
-    "install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
-    "status" = @("--help", "--json")
-    "test" = @("--help", "--json")
-    "uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
-  }
+$clawforgeAfter = @{
+  "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
+  "up *" = @("--break-foreign-lock", "--break-lock", "--help")
+  "restart *" = @("--break-foreign-lock", "--break-lock", "--help")
+  "down *" = @("--break-foreign-lock", "--break-lock", "--help")
+  "destroy *" = @("--backups", "--break-foreign-lock", "--break-lock", "--confirm-name", "--data", "--help", "--snapshots", "--yes")
+  "logs *" = @("--grep", "--help", "--since", "--tail")
+  "backup list" = @("--help", "--json")
+  "backup prune-replaced" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--json", "--keep")
+  "backup install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
+  "backup uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
+  "backup create" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
+  "backup *" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
+  "restore *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json", "--no-start")
+  "pull *" = @("--break-foreign-lock", "--break-lock", "--help", "--hot", "--json", "--migrate", "--profile", "--share", "--with-secrets")
+  "push *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json")
+  "verify *" = @("--help", "--json", "--profile")
+  "upgrade *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--image", "--json")
+  "smoke *" = @("--help", "--json", "--quick")
+  "inspect *" = @("--help", "--json")
+  "doctor *" = @("--help", "--json")
+  "plan *" = @("--help", "--json", "--set")
+  "apply *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
+  "accept *" = @("--help", "--json", "--set", "--with-model")
+  "rollback *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
+  "operations *" = @("--help", "--json", "--limit")
+  "apply-config *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
+  "expose ssh" = @("--help", "--local-port", "--run")
+  "expose tailscale" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
+  "expose status" = @("--help", "--json")
+  "expose *" = @("--help")
+  "watch check" = @("--help", "--json")
+  "watch install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
+  "watch uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
+  "watch status" = @("--help", "--json")
+  "watch test" = @("--help", "--json")
+  "watch *" = @("--help")
+  "incident *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
+  "recover-env *" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "status *" = @("--help", "--json")
+  "lock *" = @("--check", "--help", "--json")
+  "cli *" = @("--help")
+  "exec *" = @("--help")
+  "host *" = @("--confirm-root", "--help", "--root")
+  "cli-start *" = @("--help")
+  "cli-stop *" = @("--help")
+  "configure-provider *" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
+  "secrets *" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
+  "recipe list" = @("--help", "--json")
+  "recipe import" = @("--help")
+  "recipe new" = @("--help", "--with-hooks")
+  "recipe verify" = @("--break-foreign-lock", "--break-lock", "--help")
+  "recipe onboard" = @("--break-foreign-lock", "--break-lock", "--help")
+  "recipe diagnose" = @("--break-foreign-lock", "--break-lock", "--help", "--tail")
+  "recipe install" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force-disabled", "--help")
+  "recipe remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
+  "recipe status" = @("--help")
+  "recipe logs" = @("--help", "--tail")
+  "recipe *" = @("--help")
+  "provision-agent *" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
+  "deploy *" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
+  "mcp-serve *" = @("--help")
+  "mcp-setup *" = @("--client", "--help", "--json", "--rewrite-launcher")
+  "mcp-creds *" = @("--help", "--json", "--token")
+  "set build" = @("--help", "--json", "--name")
+  "set validate" = @("--help", "--json", "--name", "--set")
+  "set diff" = @("--from", "--help", "--json", "--to")
+  "set receipts" = @("--help", "--json", "--receipt", "--set-id")
+  "set try" = @("--help", "--json", "--keep", "--set", "--with-model")
+  "set forget" = @("--break-foreign-lock", "--break-lock", "--help", "--kind", "--name")
+  "set *" = @("--help")
+  "check *" = @("--help", "--jobs", "--list", "--require")
+  "new-app *" = @("--help")
+  "remove-app *" = @("--help", "--yes")
+  "list *" = @("--help", "--json", "--no-status")
+  "version *" = @("--help", "--json", "--verbose")
+  "completion *" = @("--help")
+  "control-mcp *" = @("--help")
+  "help *" = @("--help")
 }
-$clawforgeChoiceValues = @{
+$clawforgeValues = @{
   "backupcreate--profile" = @("full", "migrate", "share")
-  "mcp-setup--client" = @("claude", "codex", "both")
   "pull--profile" = @("full", "migrate", "share")
-  "setforget--kind" = @("agent", "mcp-server", "cron-job")
   "verify--profile" = @("full", "migrate", "share")
+  "mcp-setup--client" = @("claude", "codex", "both")
+  "setforget--kind" = @("agent", "mcp-server", "cron-job")
 }
-$clawforgePositional = @{
-  "completion" = @("bash", "zsh", "pwsh")
-  "host" = @("target", "engine", "local")
-}
-Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock {
+$clawforgeCompleter = {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
-  $rest = if ($tokens.Count -gt 1) { $tokens[1..($tokens.Count - 1)] } else { @() }
-  # The word being completed is the last token whenever it is non-empty. Command discovery
-  # must scan only the words BEFORE it (R32-02: 'clawforge sta<Tab>' used to see the
-  # command "sta" and offer nothing).
+  $rest = @(if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() })
+  # Only the words BEFORE the word being completed pick the command — the partial word
+  # itself is not a typed command (R32-02: 'clawforge sta<Tab>' saw the command "sta").
   $scan = $rest
   if ($wordToComplete -ne '') {
-    if ($scan.Count -gt 1) { $scan = @($rest[0..($rest.Count - 2)]) } else { $scan = @() }
+    $scan = @(if ($rest.Count -gt 1) { @($rest[0..($rest.Count - 2)]) } else { @() })
   }
   $prev = $null
-  if ($wordToComplete -ne '') {
-    if ($rest.Count -ge 2) { $prev = $rest[$rest.Count - 2] }
-  } else {
-    if ($rest.Count -ge 1) { $prev = $rest[$rest.Count - 1] }
-  }
-  $cmd = $null
-  $idx = -1
-  $skip = $false
-  for ($i = 0; $i -lt $scan.Count; $i++) {
-    if ($skip) { $skip = $false; continue }
-    if ($scan[$i] -eq '--app') { $skip = $true; continue }
-    $cmd = $scan[$i]
-    $idx = $i
-    break
-  }
+  if ($scan.Count -ge 1) { $prev = $scan[$scan.Count - 1] }
+  # --app is positional and takes a value: the pair is skipped, so it is never read as the
+  # command (and a value that looks like a command name does not shadow the real one).
+  $i = 0
+  while ($clawforgeApp -and $i -lt $scan.Count -and $scan[$i] -eq '--app') { $i = $i + 2 }
   $candidates = @()
-  if (-not $cmd) {
-    if ($prev -eq '--app') {
-      # --app's own value — only while no command word has been typed: --app must come
-      # before the command, so past one the command's flags return (R33-10).
-      $names = try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() }
+  if ($i -ge $scan.Count) {
+    if ($clawforgeApp -and $prev -eq '--app') {
+      # --app's own value, lazily: only while no command word has been typed — --app must
+      # come before the command, so past one the command's flags return (R33-10). Whichever
+      # of the system-wide command or the checkout shim was typed makes the call.
+      $names = @(try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() })
       $names | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
       }
       return
     }
-    $candidates = $clawforgeCommands + @('--app')
+    $candidates = @($clawforgeTop)
   } else {
+    $cmd = $scan[$i]
     $between = @()
-    if ($scan.Count - $idx - 1 -gt 0) { $between = @($scan[($idx + 1)..($scan.Count - 1)]) }
-    # A value position keyed "cmd--flag", or "cmdACTION--flag" once the word after the
-    # command scopes it — the option itself is not a scope.
-    $key = "$cmd$prev"
-    if ($between.Count -gt 0 -and $between[0] -ne $prev) { $key = "$cmd$($between[0])$prev" }
-    if ($null -ne $prev -and $clawforgeChoiceValues.ContainsKey($key)) {
-      $candidates = $clawforgeChoiceValues[$key]
-    } elseif ($cmd -eq 'help') {
-      # help takes a command name.
-      $candidates = $clawforgeCommands + @('--help')
+    if ($scan.Count - $i - 1 -gt 0) { $between = @($scan[($i + 1)..($scan.Count - 1)]) }
+    # An option's values are keyed command + scope + option, where the scope is the word
+    # after the command; the option itself (last of `between` after a trailing space) is
+    # not a scope.
+    $scope = ''
+    if ($between.Count -gt 0 -and $between[0] -ne $prev) { $scope = $between[0] }
+    $key = "$cmd$scope$prev"
+    if ($prev -ne $null -and $prev.StartsWith('--') -and $clawforgeValues.ContainsKey($key)) {
+      $candidates = @($clawforgeValues[$key])
+    } elseif ($between.Count -eq 0) {
+      # An unknown command reaches `first` with nothing under that key: the @() keeps the
+      # type an array and the filter below drops the $null — nothing is offered.
+      $candidates = @($clawforgeFirst[$cmd])
     } else {
-      if ($clawforgeActions.ContainsKey($cmd)) {
-        if ($between.Count -eq 0) {
-          # The action word itself (whole or partial) is being typed; an implicit default
-          # action's flags are offered too.
-          $candidates = @($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]
-        } elseif ($clawforgeActions[$cmd].ContainsKey($between[0])) {
-          $candidates = $clawforgeActions[$cmd][$between[0]]
-        } else {
-          $candidates = $clawforgeFlags[$cmd]
-        }
-      } elseif ($clawforgePositional.ContainsKey($cmd) -and $between.Count -eq 0) {
-        $candidates = @($clawforgePositional[$cmd]) + $clawforgeFlags[$cmd]
+      $afterKey = "$cmd $($between[0])"
+      if ($clawforgeAfter.ContainsKey($afterKey)) {
+        $candidates = @($clawforgeAfter[$afterKey])
       } else {
-        $candidates = $clawforgeFlags[$cmd]
+        $candidates = @($clawforgeAfter["$cmd *"])
       }
     }
   }
@@ -547,176 +586,183 @@ Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBl
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }
 }
+Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock $clawforgeCompleter
 
 === clawforge completion bash (installed) ===
-# clawforge bash completion — generated from the live command declarations.
+# clawforge bash completion — generated from the command declarations.
 # Install: source <(clawforge completion bash)
+_clawforge_lookup() {
+  case "$1" in
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
+    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawforge_reply="--help --json --profile" ;;
+    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawforge_reply="--help --json --quick" ;;
+    "first inspect") _clawforge_reply="--help --json" ;;
+    "first doctor") _clawforge_reply="--help --json" ;;
+    "first plan") _clawforge_reply="--help --json --set" ;;
+    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
+    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
+    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first status") _clawforge_reply="--help --json" ;;
+    "first lock") _clawforge_reply="--check --help --json" ;;
+    "first cli") _clawforge_reply="--help" ;;
+    "first exec") _clawforge_reply="--help" ;;
+    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawforge_reply="--help" ;;
+    "first cli-stop") _clawforge_reply="--help" ;;
+    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawforge_reply="--help" ;;
+    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
+    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
+    "first init") _clawforge_reply="--help --local" ;;
+    "first version") _clawforge_reply="--help --json --verbose" ;;
+    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawforge_reply="--help" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawforge_reply="--help --json" ;;
+    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawforge_reply="--help --json --profile" ;;
+    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawforge_reply="--help --json --quick" ;;
+    "after inspect *") _clawforge_reply="--help --json" ;;
+    "after doctor *") _clawforge_reply="--help --json" ;;
+    "after plan *") _clawforge_reply="--help --json --set" ;;
+    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawforge_reply="--help --json" ;;
+    "after expose *") _clawforge_reply="--help" ;;
+    "after watch check") _clawforge_reply="--help --json" ;;
+    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawforge_reply="--help --json" ;;
+    "after watch test") _clawforge_reply="--help --json" ;;
+    "after watch *") _clawforge_reply="--help" ;;
+    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after status *") _clawforge_reply="--help --json" ;;
+    "after lock *") _clawforge_reply="--check --help --json" ;;
+    "after cli *") _clawforge_reply="--help" ;;
+    "after exec *") _clawforge_reply="--help" ;;
+    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawforge_reply="--help" ;;
+    "after cli-stop *") _clawforge_reply="--help" ;;
+    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawforge_reply="--help --json" ;;
+    "after recipe import") _clawforge_reply="--help" ;;
+    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
+    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe status") _clawforge_reply="--help" ;;
+    "after recipe logs") _clawforge_reply="--help --tail" ;;
+    "after recipe *") _clawforge_reply="--help" ;;
+    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawforge_reply="--help" ;;
+    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
+    "after set build") _clawforge_reply="--help --json --name" ;;
+    "after set validate") _clawforge_reply="--help --json --name --set" ;;
+    "after set diff") _clawforge_reply="--from --help --json --to" ;;
+    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawforge_reply="--help" ;;
+    "after init *") _clawforge_reply="--help --local" ;;
+    "after version *") _clawforge_reply="--help --json --verbose" ;;
+    "after completion *") _clawforge_reply="--help" ;;
+    "after control-mcp *") _clawforge_reply="--help" ;;
+    "after help *") _clawforge_reply="--help" ;;
+    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
+    "values pull--profile") _clawforge_reply="full migrate share" ;;
+    "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
+    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$_clawforge_reply"
+}
+
 _clawforge_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
   local cword=$COMP_CWORD
   local cmd="" idx=0 skip=0
+  local between=() scope="" reply=""
   for ((i = 1; i < cword; i++)); do
     local w="${words[i]}"
-    cmd="$w"; idx=$i; break
+        cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-    COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" -- "$cur") )
+        if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
-  local between=() key="$cmd$prev"
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes the key; the option itself is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then key="$cmd${between[0]}$prev"; fi
-  case "$key" in
-    "backupcreate--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "mcp-setup--client") COMPREPLY=( $(compgen -W "claude codex both" -- "$cur") )
-      return
-      ;;
-    "pull--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "setforget--kind") COMPREPLY=( $(compgen -W "agent mcp-server cron-job" -- "$cur") )
-      return
-      ;;
-    "verify--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-  esac
-  case "$cmd" in
-    help) COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --help" -- "$cur") ) ;;
-    accept) COMPREPLY=( $(compgen -W "--help --json --set --with-model" -- "$cur") ) ;;
-    apply) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --expect --help --json --set" -- "$cur") ) ;;
-    apply-config) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --dump --force --help --json" -- "$cur") ) ;;
-    backup)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "create install list prune-replaced uninstall --dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        create) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        prune-replaced) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --json --keep" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    bootstrap) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --check --help --json --no-pull" -- "$cur") ) ;;
-    cli) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-start) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-stop) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    completion)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "bash zsh pwsh --help" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--help" -- "$cur") )
-      fi
-      ;;
-    configure-provider) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --env --force --help --json --provider" -- "$cur") ) ;;
-    control-mcp) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    deploy) COMPREPLY=( $(compgen -W "--adopt --dry-run --help --json --no-bootstrap --path" -- "$cur") ) ;;
-    destroy) COMPREPLY=( $(compgen -W "--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" -- "$cur") ) ;;
-    doctor) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    down) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    exec) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    expose)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "ssh status tailscale --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        ssh) COMPREPLY=( $(compgen -W "--help --local-port --run" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        tailscale) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    help) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    host)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "target engine local --confirm-root --help --root" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--confirm-root --help --root" -- "$cur") )
-      fi
-      ;;
-    incident) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" -- "$cur") ) ;;
-    init) COMPREPLY=( $(compgen -W "--help --local" -- "$cur") ) ;;
-    inspect) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    lock) COMPREPLY=( $(compgen -W "--check --help --json" -- "$cur") ) ;;
-    logs) COMPREPLY=( $(compgen -W "--grep --help --since --tail" -- "$cur") ) ;;
-    mcp-creds) COMPREPLY=( $(compgen -W "--help --json --token" -- "$cur") ) ;;
-    mcp-serve) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    mcp-setup) COMPREPLY=( $(compgen -W "--client --help --json --rewrite-launcher" -- "$cur") ) ;;
-    operations) COMPREPLY=( $(compgen -W "--help --json --limit" -- "$cur") ) ;;
-    plan) COMPREPLY=( $(compgen -W "--help --json --set" -- "$cur") ) ;;
-    provision-agent) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --json" -- "$cur") ) ;;
-    pull) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" -- "$cur") ) ;;
-    push) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" -- "$cur") ) ;;
-    recipe)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "diagnose import install list logs new onboard remove status verify --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        diagnose) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --tail" -- "$cur") ) ;;
-        import) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force-disabled --help" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        logs) COMPREPLY=( $(compgen -W "--help --tail" -- "$cur") ) ;;
-        new) COMPREPLY=( $(compgen -W "--help --with-hooks" -- "$cur") ) ;;
-        onboard) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-        remove) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --volumes" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        verify) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    recover-env) COMPREPLY=( $(compgen -W "--adopt-runtime --dry-run --help --json" -- "$cur") ) ;;
-    restart) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    restore) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" -- "$cur") ) ;;
-    rollback) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" -- "$cur") ) ;;
-    secrets) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" -- "$cur") ) ;;
-    set)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "build diff forget receipts try validate --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        build) COMPREPLY=( $(compgen -W "--help --json --name" -- "$cur") ) ;;
-        diff) COMPREPLY=( $(compgen -W "--from --help --json --to" -- "$cur") ) ;;
-        forget) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --kind --name" -- "$cur") ) ;;
-        receipts) COMPREPLY=( $(compgen -W "--help --json --receipt --set-id" -- "$cur") ) ;;
-        try) COMPREPLY=( $(compgen -W "--help --json --keep --set --with-model" -- "$cur") ) ;;
-        validate) COMPREPLY=( $(compgen -W "--help --json --name --set" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    smoke) COMPREPLY=( $(compgen -W "--help --json --quick" -- "$cur") ) ;;
-    status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    up) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    upgrade) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --image --json" -- "$cur") ) ;;
-    verify) COMPREPLY=( $(compgen -W "--help --json --profile" -- "$cur") ) ;;
-    version) COMPREPLY=( $(compgen -W "--help --json --verbose" -- "$cur") ) ;;
-    watch)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "check install status test uninstall --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        check) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        test) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    *) COMPREPLY=() ;;
-  esac
+  # The word after the command scopes an option's values; the option itself, last of
+  # `between`, is not a scope.
+  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
+  # The command's own first candidates; a command the table does not carry completes to
+  # nothing at all.
+  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  # An option's own values, keyed command + scope + option, take the value position.
+  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+    return
+  fi
+  # Nothing after the command: the word being completed IS its own first position, which
+  # the lookup above already answered.
+  if (( ${#between[@]} == 0 )); then return; fi
+  # Past a word after the command: that word's own list, else the command's fallback.
+  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  elif reply="$(_clawforge_lookup "after $cmd *")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  else
+    COMPREPLY=()
+  fi
 }
 complete -F _clawforge_complete clawforge
 complete -F _clawforge_complete ./clawforge
@@ -729,336 +775,370 @@ complete -F _clawforge_complete ./clawforge
 # source <(clawforge completion zsh) in the current one.
 autoload -Uz bashcompinit
 bashcompinit
+_clawforge_lookup() {
+  case "$1" in
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
+    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawforge_reply="--help --json --profile" ;;
+    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawforge_reply="--help --json --quick" ;;
+    "first inspect") _clawforge_reply="--help --json" ;;
+    "first doctor") _clawforge_reply="--help --json" ;;
+    "first plan") _clawforge_reply="--help --json --set" ;;
+    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
+    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
+    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first status") _clawforge_reply="--help --json" ;;
+    "first lock") _clawforge_reply="--check --help --json" ;;
+    "first cli") _clawforge_reply="--help" ;;
+    "first exec") _clawforge_reply="--help" ;;
+    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawforge_reply="--help" ;;
+    "first cli-stop") _clawforge_reply="--help" ;;
+    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawforge_reply="--help" ;;
+    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
+    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
+    "first init") _clawforge_reply="--help --local" ;;
+    "first version") _clawforge_reply="--help --json --verbose" ;;
+    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawforge_reply="--help" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawforge_reply="--help --json" ;;
+    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawforge_reply="--help --json --profile" ;;
+    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawforge_reply="--help --json --quick" ;;
+    "after inspect *") _clawforge_reply="--help --json" ;;
+    "after doctor *") _clawforge_reply="--help --json" ;;
+    "after plan *") _clawforge_reply="--help --json --set" ;;
+    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawforge_reply="--help --json" ;;
+    "after expose *") _clawforge_reply="--help" ;;
+    "after watch check") _clawforge_reply="--help --json" ;;
+    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawforge_reply="--help --json" ;;
+    "after watch test") _clawforge_reply="--help --json" ;;
+    "after watch *") _clawforge_reply="--help" ;;
+    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after status *") _clawforge_reply="--help --json" ;;
+    "after lock *") _clawforge_reply="--check --help --json" ;;
+    "after cli *") _clawforge_reply="--help" ;;
+    "after exec *") _clawforge_reply="--help" ;;
+    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawforge_reply="--help" ;;
+    "after cli-stop *") _clawforge_reply="--help" ;;
+    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawforge_reply="--help --json" ;;
+    "after recipe import") _clawforge_reply="--help" ;;
+    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
+    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe status") _clawforge_reply="--help" ;;
+    "after recipe logs") _clawforge_reply="--help --tail" ;;
+    "after recipe *") _clawforge_reply="--help" ;;
+    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawforge_reply="--help" ;;
+    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
+    "after set build") _clawforge_reply="--help --json --name" ;;
+    "after set validate") _clawforge_reply="--help --json --name --set" ;;
+    "after set diff") _clawforge_reply="--from --help --json --to" ;;
+    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawforge_reply="--help" ;;
+    "after init *") _clawforge_reply="--help --local" ;;
+    "after version *") _clawforge_reply="--help --json --verbose" ;;
+    "after completion *") _clawforge_reply="--help" ;;
+    "after control-mcp *") _clawforge_reply="--help" ;;
+    "after help *") _clawforge_reply="--help" ;;
+    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
+    "values pull--profile") _clawforge_reply="full migrate share" ;;
+    "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
+    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$_clawforge_reply"
+}
+
 _clawforge_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
   local cword=$COMP_CWORD
   local cmd="" idx=0 skip=0
+  local between=() scope="" reply=""
   for ((i = 1; i < cword; i++)); do
     local w="${words[i]}"
-    cmd="$w"; idx=$i; break
+        cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-    COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" -- "$cur") )
+        if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
-  local between=() key="$cmd$prev"
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes the key; the option itself is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then key="$cmd${between[0]}$prev"; fi
-  case "$key" in
-    "backupcreate--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "mcp-setup--client") COMPREPLY=( $(compgen -W "claude codex both" -- "$cur") )
-      return
-      ;;
-    "pull--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-    "setforget--kind") COMPREPLY=( $(compgen -W "agent mcp-server cron-job" -- "$cur") )
-      return
-      ;;
-    "verify--profile") COMPREPLY=( $(compgen -W "full migrate share" -- "$cur") )
-      return
-      ;;
-  esac
-  case "$cmd" in
-    help) COMPREPLY=( $(compgen -W "accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --help" -- "$cur") ) ;;
-    accept) COMPREPLY=( $(compgen -W "--help --json --set --with-model" -- "$cur") ) ;;
-    apply) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --expect --help --json --set" -- "$cur") ) ;;
-    apply-config) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --dump --force --help --json" -- "$cur") ) ;;
-    backup)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "create install list prune-replaced uninstall --dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        create) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        prune-replaced) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --json --keep" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--dry-run --help --hot --migrate --native --profile --share --with-secrets" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    bootstrap) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --check --help --json --no-pull" -- "$cur") ) ;;
-    cli) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-start) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    cli-stop) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    completion)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "bash zsh pwsh --help" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--help" -- "$cur") )
-      fi
-      ;;
-    configure-provider) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --env --force --help --json --provider" -- "$cur") ) ;;
-    control-mcp) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    deploy) COMPREPLY=( $(compgen -W "--adopt --dry-run --help --json --no-bootstrap --path" -- "$cur") ) ;;
-    destroy) COMPREPLY=( $(compgen -W "--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" -- "$cur") ) ;;
-    doctor) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    down) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    exec) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    expose)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "ssh status tailscale --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        ssh) COMPREPLY=( $(compgen -W "--help --local-port --run" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        tailscale) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    help) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    host)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "target engine local --confirm-root --help --root" -- "$cur") )
-      else
-        COMPREPLY=( $(compgen -W "--confirm-root --help --root" -- "$cur") )
-      fi
-      ;;
-    incident) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" -- "$cur") ) ;;
-    init) COMPREPLY=( $(compgen -W "--help --local" -- "$cur") ) ;;
-    inspect) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    lock) COMPREPLY=( $(compgen -W "--check --help --json" -- "$cur") ) ;;
-    logs) COMPREPLY=( $(compgen -W "--grep --help --since --tail" -- "$cur") ) ;;
-    mcp-creds) COMPREPLY=( $(compgen -W "--help --json --token" -- "$cur") ) ;;
-    mcp-serve) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-    mcp-setup) COMPREPLY=( $(compgen -W "--client --help --json --rewrite-launcher" -- "$cur") ) ;;
-    operations) COMPREPLY=( $(compgen -W "--help --json --limit" -- "$cur") ) ;;
-    plan) COMPREPLY=( $(compgen -W "--help --json --set" -- "$cur") ) ;;
-    provision-agent) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --json" -- "$cur") ) ;;
-    pull) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" -- "$cur") ) ;;
-    push) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" -- "$cur") ) ;;
-    recipe)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "diagnose import install list logs new onboard remove status verify --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        diagnose) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --tail" -- "$cur") ) ;;
-        import) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force-disabled --help" -- "$cur") ) ;;
-        list) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        logs) COMPREPLY=( $(compgen -W "--help --tail" -- "$cur") ) ;;
-        new) COMPREPLY=( $(compgen -W "--help --with-hooks" -- "$cur") ) ;;
-        onboard) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-        remove) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --volumes" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        verify) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    recover-env) COMPREPLY=( $(compgen -W "--adopt-runtime --dry-run --help --json" -- "$cur") ) ;;
-    restart) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    restore) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" -- "$cur") ) ;;
-    rollback) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" -- "$cur") ) ;;
-    secrets) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" -- "$cur") ) ;;
-    set)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "build diff forget receipts try validate --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        build) COMPREPLY=( $(compgen -W "--help --json --name" -- "$cur") ) ;;
-        diff) COMPREPLY=( $(compgen -W "--from --help --json --to" -- "$cur") ) ;;
-        forget) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help --kind --name" -- "$cur") ) ;;
-        receipts) COMPREPLY=( $(compgen -W "--help --json --receipt --set-id" -- "$cur") ) ;;
-        try) COMPREPLY=( $(compgen -W "--help --json --keep --set --with-model" -- "$cur") ) ;;
-        validate) COMPREPLY=( $(compgen -W "--help --json --name --set" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    smoke) COMPREPLY=( $(compgen -W "--help --json --quick" -- "$cur") ) ;;
-    status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-    up) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-    upgrade) COMPREPLY=( $(compgen -W "--break-foreign-lock --break-lock --dry-run --help --image --json" -- "$cur") ) ;;
-    verify) COMPREPLY=( $(compgen -W "--help --json --profile" -- "$cur") ) ;;
-    version) COMPREPLY=( $(compgen -W "--help --json --verbose" -- "$cur") ) ;;
-    watch)
-      if [[ $cword -eq $((idx + 1)) ]]; then
-        COMPREPLY=( $(compgen -W "check install status test uninstall --help" -- "$cur") )
-      else
-        case "${words[$((idx + 1))]}" in
-        check) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        install) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help --interval" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        test) COMPREPLY=( $(compgen -W "--help --json" -- "$cur") ) ;;
-        uninstall) COMPREPLY=( $(compgen -W "--apply --break-foreign-lock --break-lock --help" -- "$cur") ) ;;
-          *) COMPREPLY=( $(compgen -W "--help" -- "$cur") ) ;;
-        esac
-      fi
-      ;;
-    *) COMPREPLY=() ;;
-  esac
+  # The word after the command scopes an option's values; the option itself, last of
+  # `between`, is not a scope.
+  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
+  # The command's own first candidates; a command the table does not carry completes to
+  # nothing at all.
+  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  # An option's own values, keyed command + scope + option, take the value position.
+  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+    return
+  fi
+  # Nothing after the command: the word being completed IS its own first position, which
+  # the lookup above already answered.
+  if (( ${#between[@]} == 0 )); then return; fi
+  # Past a word after the command: that word's own list, else the command's fallback.
+  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  elif reply="$(_clawforge_lookup "after $cmd *")"; then
+    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  else
+    COMPREPLY=()
+  fi
 }
 complete -F _clawforge_complete clawforge
 complete -F _clawforge_complete ./clawforge
 
 === clawforge completion pwsh (installed) ===
-# clawforge PowerShell completion — generated from the live command declarations.
+# clawforge PowerShell completion — generated from the command declarations.
 # Install: clawforge completion pwsh | Out-String | Invoke-Expression
-$clawforgeCommands = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
-$clawforgeFlags = @{
-  "accept" = @("--help", "--json", "--set", "--with-model")
-  "apply" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
-  "apply-config" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
-  "backup" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
+$clawforgeApp = $false
+$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
+$clawforgeFirst = @{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
-  "cli" = @("--help")
-  "cli-start" = @("--help")
-  "cli-stop" = @("--help")
-  "completion" = @("--help")
-  "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
-  "control-mcp" = @("--help")
-  "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
-  "destroy" = @("--backups", "--break-foreign-lock", "--break-lock", "--confirm-name", "--data", "--help", "--snapshots", "--yes")
-  "doctor" = @("--help", "--json")
+  "up" = @("--break-foreign-lock", "--break-lock", "--help")
+  "restart" = @("--break-foreign-lock", "--break-lock", "--help")
   "down" = @("--break-foreign-lock", "--break-lock", "--help")
-  "exec" = @("--help")
-  "expose" = @("--help")
-  "help" = @("--help")
-  "host" = @("--confirm-root", "--help", "--root")
-  "incident" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
-  "init" = @("--help", "--local")
-  "inspect" = @("--help", "--json")
-  "lock" = @("--check", "--help", "--json")
+  "destroy" = @("--backups", "--break-foreign-lock", "--break-lock", "--confirm-name", "--data", "--help", "--snapshots", "--yes")
   "logs" = @("--grep", "--help", "--since", "--tail")
-  "mcp-creds" = @("--help", "--json", "--token")
-  "mcp-serve" = @("--help")
-  "mcp-setup" = @("--client", "--help", "--json", "--rewrite-launcher")
-  "operations" = @("--help", "--json", "--limit")
-  "plan" = @("--help", "--json", "--set")
-  "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
+  "backup" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets", "create", "install", "list", "prune-replaced", "uninstall")
+  "restore" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json", "--no-start")
   "pull" = @("--break-foreign-lock", "--break-lock", "--help", "--hot", "--json", "--migrate", "--profile", "--share", "--with-secrets")
   "push" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json")
-  "recipe" = @("--help")
-  "recover-env" = @("--adopt-runtime", "--dry-run", "--help", "--json")
-  "restart" = @("--break-foreign-lock", "--break-lock", "--help")
-  "restore" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json", "--no-start")
-  "rollback" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
-  "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
-  "set" = @("--help")
-  "smoke" = @("--help", "--json", "--quick")
-  "status" = @("--help", "--json")
-  "up" = @("--break-foreign-lock", "--break-lock", "--help")
-  "upgrade" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--image", "--json")
   "verify" = @("--help", "--json", "--profile")
+  "upgrade" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--image", "--json")
+  "smoke" = @("--help", "--json", "--quick")
+  "inspect" = @("--help", "--json")
+  "doctor" = @("--help", "--json")
+  "plan" = @("--help", "--json", "--set")
+  "apply" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
+  "accept" = @("--help", "--json", "--set", "--with-model")
+  "rollback" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
+  "operations" = @("--help", "--json", "--limit")
+  "apply-config" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
+  "expose" = @("--help", "ssh", "status", "tailscale")
+  "watch" = @("--help", "check", "install", "status", "test", "uninstall")
+  "incident" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
+  "recover-env" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "status" = @("--help", "--json")
+  "lock" = @("--check", "--help", "--json")
+  "cli" = @("--help")
+  "exec" = @("--help")
+  "host" = @("--confirm-root", "--help", "--root", "engine", "local", "target")
+  "cli-start" = @("--help")
+  "cli-stop" = @("--help")
+  "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
+  "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
+  "recipe" = @("--help", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
+  "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
+  "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
+  "mcp-serve" = @("--help")
+  "mcp-setup" = @("--client", "--help", "--json", "--rewrite-launcher")
+  "mcp-creds" = @("--help", "--json", "--token")
+  "set" = @("--help", "build", "diff", "forget", "receipts", "try", "validate")
+  "init" = @("--help", "--local")
   "version" = @("--help", "--json", "--verbose")
-  "watch" = @("--help")
+  "completion" = @("--help", "bash", "pwsh", "zsh")
+  "control-mcp" = @("--help")
+  "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
 }
-$clawforgeActions = @{
-  "backup" = @{
-    "create" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
-    "install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
-    "list" = @("--help", "--json")
-    "prune-replaced" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--json", "--keep")
-    "uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
-  }
-  "expose" = @{
-    "ssh" = @("--help", "--local-port", "--run")
-    "status" = @("--help", "--json")
-    "tailscale" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
-  }
-  "recipe" = @{
-    "diagnose" = @("--break-foreign-lock", "--break-lock", "--help", "--tail")
-    "import" = @("--help")
-    "install" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force-disabled", "--help")
-    "list" = @("--help", "--json")
-    "logs" = @("--help", "--tail")
-    "new" = @("--help", "--with-hooks")
-    "onboard" = @("--break-foreign-lock", "--break-lock", "--help")
-    "remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
-    "status" = @("--help")
-    "verify" = @("--break-foreign-lock", "--break-lock", "--help")
-  }
-  "set" = @{
-    "build" = @("--help", "--json", "--name")
-    "diff" = @("--from", "--help", "--json", "--to")
-    "forget" = @("--break-foreign-lock", "--break-lock", "--help", "--kind", "--name")
-    "receipts" = @("--help", "--json", "--receipt", "--set-id")
-    "try" = @("--help", "--json", "--keep", "--set", "--with-model")
-    "validate" = @("--help", "--json", "--name", "--set")
-  }
-  "watch" = @{
-    "check" = @("--help", "--json")
-    "install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
-    "status" = @("--help", "--json")
-    "test" = @("--help", "--json")
-    "uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
-  }
+$clawforgeAfter = @{
+  "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
+  "up *" = @("--break-foreign-lock", "--break-lock", "--help")
+  "restart *" = @("--break-foreign-lock", "--break-lock", "--help")
+  "down *" = @("--break-foreign-lock", "--break-lock", "--help")
+  "destroy *" = @("--backups", "--break-foreign-lock", "--break-lock", "--confirm-name", "--data", "--help", "--snapshots", "--yes")
+  "logs *" = @("--grep", "--help", "--since", "--tail")
+  "backup list" = @("--help", "--json")
+  "backup prune-replaced" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--json", "--keep")
+  "backup install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
+  "backup uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
+  "backup create" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
+  "backup *" = @("--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets")
+  "restore *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json", "--no-start")
+  "pull *" = @("--break-foreign-lock", "--break-lock", "--help", "--hot", "--json", "--migrate", "--profile", "--share", "--with-secrets")
+  "push *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force", "--fresh-identity", "--help", "--json")
+  "verify *" = @("--help", "--json", "--profile")
+  "upgrade *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--image", "--json")
+  "smoke *" = @("--help", "--json", "--quick")
+  "inspect *" = @("--help", "--json")
+  "doctor *" = @("--help", "--json")
+  "plan *" = @("--help", "--json", "--set")
+  "apply *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
+  "accept *" = @("--help", "--json", "--set", "--with-model")
+  "rollback *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
+  "operations *" = @("--help", "--json", "--limit")
+  "apply-config *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
+  "expose ssh" = @("--help", "--local-port", "--run")
+  "expose tailscale" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
+  "expose status" = @("--help", "--json")
+  "expose *" = @("--help")
+  "watch check" = @("--help", "--json")
+  "watch install" = @("--apply", "--break-foreign-lock", "--break-lock", "--help", "--interval")
+  "watch uninstall" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
+  "watch status" = @("--help", "--json")
+  "watch test" = @("--help", "--json")
+  "watch *" = @("--help")
+  "incident *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
+  "recover-env *" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "status *" = @("--help", "--json")
+  "lock *" = @("--check", "--help", "--json")
+  "cli *" = @("--help")
+  "exec *" = @("--help")
+  "host *" = @("--confirm-root", "--help", "--root")
+  "cli-start *" = @("--help")
+  "cli-stop *" = @("--help")
+  "configure-provider *" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
+  "secrets *" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
+  "recipe list" = @("--help", "--json")
+  "recipe import" = @("--help")
+  "recipe new" = @("--help", "--with-hooks")
+  "recipe verify" = @("--break-foreign-lock", "--break-lock", "--help")
+  "recipe onboard" = @("--break-foreign-lock", "--break-lock", "--help")
+  "recipe diagnose" = @("--break-foreign-lock", "--break-lock", "--help", "--tail")
+  "recipe install" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force-disabled", "--help")
+  "recipe remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
+  "recipe status" = @("--help")
+  "recipe logs" = @("--help", "--tail")
+  "recipe *" = @("--help")
+  "provision-agent *" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
+  "deploy *" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
+  "mcp-serve *" = @("--help")
+  "mcp-setup *" = @("--client", "--help", "--json", "--rewrite-launcher")
+  "mcp-creds *" = @("--help", "--json", "--token")
+  "set build" = @("--help", "--json", "--name")
+  "set validate" = @("--help", "--json", "--name", "--set")
+  "set diff" = @("--from", "--help", "--json", "--to")
+  "set receipts" = @("--help", "--json", "--receipt", "--set-id")
+  "set try" = @("--help", "--json", "--keep", "--set", "--with-model")
+  "set forget" = @("--break-foreign-lock", "--break-lock", "--help", "--kind", "--name")
+  "set *" = @("--help")
+  "init *" = @("--help", "--local")
+  "version *" = @("--help", "--json", "--verbose")
+  "completion *" = @("--help")
+  "control-mcp *" = @("--help")
+  "help *" = @("--help")
 }
-$clawforgeChoiceValues = @{
+$clawforgeValues = @{
   "backupcreate--profile" = @("full", "migrate", "share")
-  "mcp-setup--client" = @("claude", "codex", "both")
   "pull--profile" = @("full", "migrate", "share")
-  "setforget--kind" = @("agent", "mcp-server", "cron-job")
   "verify--profile" = @("full", "migrate", "share")
+  "mcp-setup--client" = @("claude", "codex", "both")
+  "setforget--kind" = @("agent", "mcp-server", "cron-job")
 }
-$clawforgePositional = @{
-  "completion" = @("bash", "zsh", "pwsh")
-  "host" = @("target", "engine", "local")
-}
-Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock {
+$clawforgeCompleter = {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
-  $rest = if ($tokens.Count -gt 1) { $tokens[1..($tokens.Count - 1)] } else { @() }
-  # The word being completed is the last token whenever it is non-empty. Command discovery
-  # must scan only the words BEFORE it (R32-02: 'clawforge sta<Tab>' used to see the
-  # command "sta" and offer nothing).
+  $rest = @(if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() })
+  # Only the words BEFORE the word being completed pick the command — the partial word
+  # itself is not a typed command (R32-02: 'clawforge sta<Tab>' saw the command "sta").
   $scan = $rest
   if ($wordToComplete -ne '') {
-    if ($scan.Count -gt 1) { $scan = @($rest[0..($rest.Count - 2)]) } else { $scan = @() }
+    $scan = @(if ($rest.Count -gt 1) { @($rest[0..($rest.Count - 2)]) } else { @() })
   }
   $prev = $null
-  if ($wordToComplete -ne '') {
-    if ($rest.Count -ge 2) { $prev = $rest[$rest.Count - 2] }
-  } else {
-    if ($rest.Count -ge 1) { $prev = $rest[$rest.Count - 1] }
-  }
-  $cmd = $null
-  $idx = -1
-  $skip = $false
-  for ($i = 0; $i -lt $scan.Count; $i++) {
-    if ($skip) { $skip = $false; continue }
-    $cmd = $scan[$i]
-    $idx = $i
-    break
-  }
+  if ($scan.Count -ge 1) { $prev = $scan[$scan.Count - 1] }
+  # --app is positional and takes a value: the pair is skipped, so it is never read as the
+  # command (and a value that looks like a command name does not shadow the real one).
+  $i = 0
+  while ($clawforgeApp -and $i -lt $scan.Count -and $scan[$i] -eq '--app') { $i = $i + 2 }
   $candidates = @()
-  if (-not $cmd) {
-    $candidates = $clawforgeCommands
+  if ($i -ge $scan.Count) {
+    if ($clawforgeApp -and $prev -eq '--app') {
+      # --app's own value, lazily: only while no command word has been typed — --app must
+      # come before the command, so past one the command's flags return (R33-10). Whichever
+      # of the system-wide command or the checkout shim was typed makes the call.
+      $names = @(try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() })
+      $names | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+      }
+      return
+    }
+    $candidates = @($clawforgeTop)
   } else {
+    $cmd = $scan[$i]
     $between = @()
-    if ($scan.Count - $idx - 1 -gt 0) { $between = @($scan[($idx + 1)..($scan.Count - 1)]) }
-    # A value position keyed "cmd--flag", or "cmdACTION--flag" once the word after the
-    # command scopes it — the option itself is not a scope.
-    $key = "$cmd$prev"
-    if ($between.Count -gt 0 -and $between[0] -ne $prev) { $key = "$cmd$($between[0])$prev" }
-    if ($null -ne $prev -and $clawforgeChoiceValues.ContainsKey($key)) {
-      $candidates = $clawforgeChoiceValues[$key]
-    } elseif ($cmd -eq 'help') {
-      # help takes a command name.
-      $candidates = $clawforgeCommands + @('--help')
+    if ($scan.Count - $i - 1 -gt 0) { $between = @($scan[($i + 1)..($scan.Count - 1)]) }
+    # An option's values are keyed command + scope + option, where the scope is the word
+    # after the command; the option itself (last of `between` after a trailing space) is
+    # not a scope.
+    $scope = ''
+    if ($between.Count -gt 0 -and $between[0] -ne $prev) { $scope = $between[0] }
+    $key = "$cmd$scope$prev"
+    if ($prev -ne $null -and $prev.StartsWith('--') -and $clawforgeValues.ContainsKey($key)) {
+      $candidates = @($clawforgeValues[$key])
+    } elseif ($between.Count -eq 0) {
+      # An unknown command reaches `first` with nothing under that key: the @() keeps the
+      # type an array and the filter below drops the $null — nothing is offered.
+      $candidates = @($clawforgeFirst[$cmd])
     } else {
-      if ($clawforgeActions.ContainsKey($cmd)) {
-        if ($between.Count -eq 0) {
-          # The action word itself (whole or partial) is being typed; an implicit default
-          # action's flags are offered too.
-          $candidates = @($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]
-        } elseif ($clawforgeActions[$cmd].ContainsKey($between[0])) {
-          $candidates = $clawforgeActions[$cmd][$between[0]]
-        } else {
-          $candidates = $clawforgeFlags[$cmd]
-        }
-      } elseif ($clawforgePositional.ContainsKey($cmd) -and $between.Count -eq 0) {
-        $candidates = @($clawforgePositional[$cmd]) + $clawforgeFlags[$cmd]
+      $afterKey = "$cmd $($between[0])"
+      if ($clawforgeAfter.ContainsKey($afterKey)) {
+        $candidates = @($clawforgeAfter[$afterKey])
       } else {
-        $candidates = $clawforgeFlags[$cmd]
+        $candidates = @($clawforgeAfter["$cmd *"])
       }
     }
   }
@@ -1066,4 +1146,5 @@ Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBl
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }
 }
+Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock $clawforgeCompleter
 

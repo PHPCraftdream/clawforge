@@ -26,16 +26,26 @@
           "process.env.CLAWFORGE_INVOKED_AS = \"../../clawforge --app \" + basename(root);": 1
         }
       },
-      "tools/framework/integration/completion.ts": {
-        "reason": "registration of the command names in the generated completion scripts",
+      "tools/framework/integration/completion/bash.ts": {
+        "reason": "the generated script registers both spellings of the command",
         "lines": {
-          "\"complete -F _clawforge_complete ./clawforge\\n\"": 2,
-          "\"#compdef clawforge ./clawforge\\n\" +": 1,
-          "Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock {": 1
+          "\"complete -F _clawforge_complete ./clawforge\\n\";": 1
+        }
+      },
+      "tools/framework/integration/completion/index.ts": {
+        "reason": "the zsh script's #compdef header names both spellings",
+        "lines": {
+          "\"#compdef clawforge ./clawforge\\n\" +": 1
+        }
+      },
+      "tools/framework/integration/completion/pwsh.ts": {
+        "reason": "the PowerShell registration names the same two spellings, as bash's does",
+        "lines": {
+          "\"Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock $clawforgeCompleter\\n\"": 1
         }
       }
     },
-    "total": 11
+    "total": 10
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -78,14 +88,15 @@
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 13,
       "tools/checks/foundation/cli/cli-helper.check.ts": 7,
-      "tools/checks/foundation/cli/gate-commands.check.ts": 25,
+      "tools/checks/foundation/cli/gate-commands.check.ts": 19,
       "tools/checks/foundation/cli/gate-dispatch.check.ts": 14,
       "tools/checks/foundation/cli/help-groups.check.ts": 6,
       "tools/checks/foundation/cli/host.check.ts": 19,
       "tools/checks/foundation/core/archive.check.ts": 1,
+      "tools/checks/foundation/core/command/completion/completion-behaviour.check.ts": 7,
       "tools/checks/foundation/core/command/pipeline/execute.check.ts": 3,
       "tools/checks/foundation/core/command/spec/parse.check.ts": 3,
-      "tools/checks/foundation/core/command/spec/view.check.ts": 13,
+      "tools/checks/foundation/core/command/spec/view.check.ts": 10,
       "tools/checks/foundation/core/env.check.ts": 1,
       "tools/checks/foundation/hygiene/readme-quickstart.check.ts": 1,
       "tools/checks/foundation/hygiene/spawn-noise.check.ts": 5,
@@ -221,7 +232,7 @@
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 856
+    "total": 854
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
@@ -229,7 +240,7 @@
     "total": 0
   },
   "retiredSymbols": {
-    "comment": "stage 5 (rf5-completion C1, rf5-mcp): names the command registry and the declared-summary schema made structural that must not reappear anywhere under tools/ outside tools/checks/architecture/",
+    "comment": "stage 5 (rf5-completion C1/C3, rf5-mcp): names the command registry, the completion table and the declared-summary schema made structural that must not reappear anywhere under tools/ outside tools/checks/architecture/",
     "names": [
       "knownCommandNames",
       "controlMcpHelp",
@@ -240,7 +251,14 @@
       "SHORT_DESCRIPTION_LIMIT",
       "SHARED_SCHEMA_DESCRIPTIONS",
       "sharedSchemaDescription",
-      "splitActionScoped"
+      "splitActionScoped",
+      "buildCompletionModel",
+      "CommandCompletionSpec",
+      "bashCaseArm",
+      "bashFunctionBody",
+      "LIST_NAMES_JSON",
+      "runPwshCompleter",
+      "parsePwshTables"
     ],
     "total": 0
   }

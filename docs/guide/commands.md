@@ -158,11 +158,12 @@ its arguments and its one-line summary; the full text of any of them is
 
 ## Shell completion
 
-`./clawforge completion <bash|zsh|pwsh>` prints a completion script to stdout, generated from
-the same command declarations `--help` and the MCP schema come from — command names,
-per-command flags, and (for `backup`/`recipe`/`watch`/`expose`/`set`) which flags apply
-under which action. It never embeds a machine path: only the invoked name, `clawforge` or
-`./clawforge`, both registered so either spelling completes.
+`./clawforge completion <bash|zsh|pwsh>` prints a completion script to stdout: one fixed
+interpreter plus one table of the command names, flags and actions, generated from the
+command registry — the same registry `--help`, the MCP schema and the table above read. No
+per-command code lives in the script, so bash, zsh (which loads that same body through
+`bashcompinit`) and PowerShell behave identically. It never embeds a machine path: only the
+invoked name, `clawforge` or `./clawforge`, both registered so either spelling completes.
 
 ```bash
 source <(./clawforge completion bash)                       # current shell
@@ -174,6 +175,11 @@ In a monorepo checkout, `--app <name>`'s own value is completed too — lazily, 
 `<the name you typed> list --json --no-status` from inside the shell function only once
 something actually asks for it, never baked into the generated script. An installed, single-deployment checkout
 (`entry/bin.ts`) has no `--app` at all, and its own completion script never mentions it.
+
+After `help <command>` only `--help` is offered, where the command names used to be offered
+again at every word. A script saved to a file (`> "${fpath[1]}/_clawforge"`) has to be
+generated again after an upgrade; the `source <(…)` and `| Out-String | Invoke-Expression`
+forms pick up the new script by themselves.
 
 Not exposed over MCP, the same way `version` is not: it prints a script for a human's own
 shell profile, which a tool call has no shell to install into.

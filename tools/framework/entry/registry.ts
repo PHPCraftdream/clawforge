@@ -3,13 +3,13 @@
 // place, and a name-reading surface (help, completion, documentation, the structural checks)
 // reads surfaceRegistry — the one command registry — so there is no second hand list of gate
 // names to keep in step. Declarations live where they always did (entry/checkout-gate.ts,
-// integration/version.ts, integration/completion.ts, integration/deployment/init.ts); this only
+// integration/version.ts, integration/completion/, integration/deployment/init.ts); this only
 // sequences them and closes completion over the finished array, itself included.
 
 import { openclawCommands } from "../commands/interface/index.ts";
 import { checkoutGateCommands } from "./checkout-gate.ts";
 import { makeVersionGateCommand } from "../integration/version.ts";
-import { makeCompletionGateCommand } from "../integration/completion.ts";
+import { makeCompletionGateCommand } from "../integration/completion/index.ts";
 import { makeInitGateCommand, type InitPlacement } from "../integration/deployment/init.ts";
 import { commandRegistry, type CommandRegistry, type GateCommand } from "../integration/gate.ts";
 

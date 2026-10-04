@@ -199,6 +199,14 @@ call — `logs` follows on a terminal and returns a bounded tail under a sink. W
 tool at all is listed in `MCP_EXEMPTIONS` with its reason, and `mcp-mirror.check.ts` fails
 on anything that is neither mirrored nor listed. The promise is checked, not asserted.
 
+Every name the dispatcher resolves is an entry of one registry (`commandRegistry`, framework/integration/gate.ts):
+the deployment's commands, the gate's, and the two the dispatcher owns, `control-mcp` and `help`.
+`--help`, the unknown-command suggestion, the MCP schema's argument descriptions (each argument's declared
+`summary`), shell completion and the command table in docs/guide/commands.md all read it, so none of them has
+a hand-kept list of names. Completion is a data table built from the registry plus a fixed interpreter per
+shell, proven equal to a reference implementation by differential checks against real bash and PowerShell;
+the table in the guide is generated (`npm run docs:commands`) and compared byte for byte.
+
 ## The command spec: one body, one parser, one pipeline
 
 Declaring arguments once was the first step; the rule it left open was *who keeps the

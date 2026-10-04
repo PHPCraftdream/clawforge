@@ -19,7 +19,7 @@ import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidDefini
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
-import { hasDigest } from "#src/runtime/docker/image-ref.ts";
+import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 
 async function exists(path: string): Promise<boolean> {
   return access(path).then(
@@ -128,6 +128,11 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
 }
 
 async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Promise<void> {
+  // Grammar before pinning: only the image module's own parser decides what a reference is.
+  if (tryParse(manifest.requires.image) === undefined) {
+    problems.push(problem("SET_IMAGE_INVALID", invalidImageReference(manifest.requires.image)));
+    return;
+  }
   if (hasDigest(manifest.requires.image)) return;
   // One advice, shared with set build (set/advice.ts's imagePinAdvice): decided from the lock's
   // content, never from the file's existence — a committed lock travels in git, so it does

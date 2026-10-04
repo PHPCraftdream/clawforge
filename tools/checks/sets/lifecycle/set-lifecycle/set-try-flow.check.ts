@@ -15,6 +15,7 @@ import { setSourceDir } from "#framework/set/artifacts/source.ts";
 import { listReceipts } from "#framework/set/artifacts/receipt.ts";
 import { parseEnv, serializeEnvLine } from "#framework/core/env.ts";
 import { createFixture } from "./fixture.ts";
+import { packArtifact } from "#checks/sets/pack.ts";
 
 const fixture = await createFixture();
 const { root, sourceData, files, events, writeContents, ctx } = fixture;
@@ -143,6 +144,16 @@ try {
   assert.equal(files.get(`${sourceData}/workspace/MEMORY.md`), "keep me");
   assert.equal(setSourceDir(), undefined);
   fixture.state.failStop = false;
+  // I7: a requires.image the image module's grammar refuses is rejected by the pipeline
+  // before any trial is created — never a raw garbage string in a throwaway .env.
+  const crafted = join(root, "try-bad-image.tar.gz");
+  await packArtifact(root, { ...built.manifest, requires: { ...built.manifest.requires, image: "garbage image@sha256:zz" } }, crafted);
+  const protectedBeforeBadImage = privateDirectories.length;
+  const eventsBeforeBadImage = events.length;
+  const badImage = await fixture.captured(() => runSetTry(ctx, { artifact: crafted, withModel: false, keep: false, jsonOnly: true }, dependencies));
+  assert.match(badImage.error?.message ?? "", /SET_IMAGE_INVALID/);
+  assert.equal(privateDirectories.length, protectedBeforeBadImage, "an invalid image cannot create a trial");
+  assert.equal(events.length, eventsBeforeBadImage, "an invalid image cannot mutate target state");
   const kept = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: true, jsonOnly: true }, dependencies));
   assert.equal(kept.error, undefined, kept.error?.message);
   assert.ok(

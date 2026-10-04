@@ -7,12 +7,11 @@
 // Most broken variants go through the real `set build`: a tree with findings still builds
 // (validating is not build's task, R31-04) — that is exactly how users get such artifacts.
 // The two variants build refuses to pack (an unpinned image, an unparsable declaration) are
-// packed by the test-only assembler below, which writes the same set.json/tar layout the
-// packer writes; production code exports no unchecked packer.
+// packed by the shared test-only assembler (#checks/sets/pack.ts), which writes the same
+// set.json/tar layout the packer writes; production code exports no unchecked packer.
 
-import { mkdtemp, mkdir, access, rm, writeFile, readFile, copyFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { access, rm, writeFile, readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { loadSet, validateLoadedSet, collectManifest, ArtifactIntegrityError } from "#framework/set/load.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -21,9 +20,9 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { DESIRED_STATE_PATH, setManifestId } from "#framework/set/artifacts/model.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
-import { spawnLocal } from "#framework/runtime/transport/transport.ts";
-import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
 import type { Problem } from "#framework/service/inspection.ts";
+import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
+import { packArtifact } from "#checks/sets/pack.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
@@ -54,32 +53,6 @@ function sortedDetails(problems: readonly Problem[], dirs: readonly string[]): s
   return problems.map((entry) => `${entry.code}|${normalize(entry.detail, dirs)}`).sort();
 }
 
-/** Test-only assembler: packs `manifest` plus the files it inventories (read from `tree`)
- *  into an artifact with the same layout the packer writes. Used where build refuses to
- *  pack, so the artifact side of a variant can still be asked the same question. The caller
- *  owns `out` (a path inside the deployment keeps its lifetime simple). */
-async function packArtifact(tree: string, manifest: SetManifest, out: string): Promise<void> {
-  const contents = await mkdtemp(join(tmpdir(), "clawforge-set-parity-contents-"));
-  try {
-    await writeFile(resolve(contents, "set.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    for (const rel of Object.keys(manifest.files)) {
-      const source = rel === DESIRED_STATE_PATH ? resolve(tree, "config", "desired-state.json") : resolve(tree, ...rel.split("/"));
-      const target = resolve(contents, ...rel.split("/"));
-      await mkdir(resolve(target, ".."), { recursive: true });
-      // A tree with no declaration at all packs as an empty one — an artifact cannot carry
-      // a missing file, and the validator words both the same.
-      if (rel === DESIRED_STATE_PATH && !(await access(source).then(() => true, () => false))) await writeFile(target, "");
-      else await copyFile(source, target);
-    }
-    const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
-    let result = await spawnLocal("tar", [...forceLocal, "-czf", out, "-C", contents, "."], { allowFailure: true });
-    if (result.code !== 0) result = await spawnLocal("tar", ["-czf", out, "-C", contents, "."]);
-    if (result.code !== 0) throw new Error(`test assembler could not pack: ${(result.stderr || result.stdout).trim()}`);
-  } finally {
-    await rm(contents, { recursive: true, force: true });
-  }
-}
-
 /** The manifest the tree currently collects to (tolerating an unpinned image, which the
  *  validator reports as a finding rather than refusing). */
 async function collectedManifest(): Promise<SetManifest> {
@@ -95,6 +68,8 @@ interface Variant {
    *  gaps the tree's own collector cannot produce (it derives exactly what the declaration
    *  carries), applied identically to the tree question and the packed artifact. */
   crafted?: (healthy: SetManifest, deployment: string) => SetManifest | Promise<SetManifest>;
+  /** Codes the tree side must report — parity alone passes on two empty answers. */
+  readonly expectCodes?: readonly string[];
 }
 
 async function runVariant(variant: Variant): Promise<void> {
@@ -112,6 +87,7 @@ async function runVariant(variant: Variant): Promise<void> {
         await loadSet({ kind: "tree" }, { name: "demo-set", declaredImage: IMAGE, tolerateUnpinnedImage: true, reportInvalidDeclaration: true }),
       );
     }
+    if (variant.expectCodes !== undefined) check(`${variant.label}: the tree reports the expected finding`, codesOf(treeProblems), [...variant.expectCodes]);
 
     let artifact: string | undefined;
     if (variant.assembled !== true && crafted === undefined) {
@@ -172,6 +148,13 @@ await runVariant({
     await rm(resolve(deployment, "config", "deployment.lock.json"));
   },
   assembled: true,
+});
+
+await runVariant({
+  label: "a grammar-invalid image",
+  mutate: async () => {},
+  crafted: (healthy) => ({ ...healthy, requires: { ...healthy.requires, image: "garbage image@sha256:zz" } }),
+  expectCodes: ["SET_IMAGE_INVALID"],
 });
 
 await runVariant({

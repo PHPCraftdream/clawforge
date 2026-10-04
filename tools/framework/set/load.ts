@@ -30,7 +30,7 @@ import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, buildSetManifest, canonicalJson, setManifestId } from "./artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "./artifacts/model.ts";
 import { assertNoSecretValues, localSecretValues } from "#src/commands/sets/set-secrets-guard.ts";
-import { hasDigest } from "#src/runtime/docker/image-ref.ts";
+import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { imagePinAdvice } from "./advice.ts";
 import { withSetSource } from "./artifacts/source.ts";
 import type { Problem } from "#src/service/inspection.ts";
@@ -112,6 +112,9 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
  *  A recorded digest answers only for the reference it was proven under: a lock left over
  *  from a previous OPENCLAW_IMAGE must not pin this build to the wrong digest. */
 async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<string> {
+  // The image module's grammar, not a digest-suffix test: a garbage value with a digest
+  // shape must not pass as pinned.
+  if (tryParse(image) === undefined) die(invalidImageReference(image));
   if (hasDigest(image)) return image;
   const lock = await readLock();
   if (lock?.image.digest !== undefined) {

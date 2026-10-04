@@ -220,10 +220,10 @@ try {
   {
     fixture.state.running = true;
     const beforeMismatch = await readInstalledSet(ctx);
-    const mismatchedCtx = fixture.context({ ...baseEnv, OPENCLAW_IMAGE: "fixture@sha256:def" });
+    const mismatchedCtx = fixture.context({ ...baseEnv, OPENCLAW_IMAGE: `fixture@sha256:${"b".repeat(64)}` });
     const mismatched = await fixture.captured(() => apply(mismatchedCtx, ["--set", next.artifact, "--json"]));
     assert.match(mismatched.error?.message ?? "", /cannot be installed here/);
-    assert.match(mismatched.error?.message ?? "", /fixture@sha256:def/);
+    assert.match(mismatched.error?.message ?? "", /fixture@sha256:b{64}/);
     assert.equal(
       (await readInstalledSet(ctx))?.id,
       beforeMismatch?.id,

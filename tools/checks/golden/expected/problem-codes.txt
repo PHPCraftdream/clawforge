@@ -34,6 +34,7 @@ SET_SECRET_UNDECLARED	blocking	./clawforge set validate
 SET_DECLARATION_INVALID	blocking	./clawforge set validate
 SET_REQUIREMENT_UNMET	warning	./clawforge inspect
 SET_IMAGE_UNPINNED	blocking	./clawforge bootstrap
+SET_IMAGE_INVALID	blocking	./clawforge set validate
 SET_OBJECT_ORPHANED	warning	./clawforge plan
 SECURITY_AUDIT_CRITICAL	blocking	./clawforge cli security audit --json
 SECURITY_AUDIT_WARN	warning	./clawforge cli security audit --json

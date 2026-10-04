@@ -658,6 +658,21 @@
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
+=== problem code: SET_IMAGE_INVALID ===
+  checkout default (openclaw/default): ./clawforge set validate
+  --app openclaw: ./clawforge set validate
+  --app demo: ./clawforge --app demo set validate
+  OC_APP=demo: ./clawforge --app demo set validate
+  sole demo: ./clawforge --app demo set validate
+  cwd app1: ./clawforge set validate
+  gateway, no app yet: ./clawforge set validate
+  global (clawforge): clawforge set validate
+  global, handed to the checkout gate with --app demo: clawforge --app demo set validate
+  shim init (./clawforge, installed): ./clawforge set validate
+  local package: ./clawforge set validate
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
+  tool form: {"tool":"set","arguments":{"action":"validate"}}
+
 === problem code: SET_OBJECT_ORPHANED ===
   checkout default (openclaw/default): ./clawforge plan
   --app openclaw: ./clawforge plan

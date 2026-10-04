@@ -17,7 +17,7 @@ try {
   const manifest = {
     version: 1,
     name: "artifact-check",
-    requires: { framework: "0.1.0", image: "image@sha256:abc" },
+    requires: { framework: "0.1.0", image: `image@sha256:${"a".repeat(64)}` },
     files: { "config/desired-state.json": checksumOf("[]") },
     recipes: {},
     secrets: [],

@@ -55,6 +55,7 @@ export type ProblemCode =
   | "SET_SECRET_UNDECLARED"
   | "SET_DECLARATION_INVALID"
   | "SET_IMAGE_UNPINNED"
+  | "SET_IMAGE_INVALID"
   | "SET_REQUIREMENT_UNMET"
   | "SET_OBJECT_ORPHANED"
   | "SECURITY_AUDIT_CRITICAL"
@@ -313,6 +314,13 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // command that can pin. set validate overrides via lock.ts's imagePinAdvice, decided from
     // the lock's CONTENT (a committed lock does not imply a deployed instance).
     next: command("bootstrap"),
+  },
+  SET_IMAGE_INVALID: {
+    severity: "blocking",
+    // The grammar lives in runtime/docker/image-ref.ts; a reference it refuses would
+    // otherwise travel raw into set try's .env and every report.
+    summary: "the set's requires.image is not a valid image reference",
+    next: command("set validate"),
   },
   SET_OBJECT_ORPHANED: {
     severity: "warning",

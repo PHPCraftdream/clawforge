@@ -11,6 +11,7 @@ import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { format, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "#src/runtime/deployment.ts";
@@ -230,9 +231,10 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     if (!Array.isArray(manifest.secrets) || manifest.secrets.some((name) => typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
       die("this set has invalid secret names: use shell variable names such as WIKI_TOKEN");
     }
-    if (typeof manifest.requires?.image !== "string" || /[\r\n]/.test(manifest.requires.image)) {
-      die("this set has an invalid image reference");
-    }
+    // The image module's grammar, not a hand-rolled test — and the parsed value is what
+    // reaches the .env, the same format(ref) string the upgrade path guarantees.
+    const imageRef = typeof manifest.requires?.image === "string" ? tryParse(manifest.requires.image) : undefined;
+    if (imageRef === undefined) die(invalidImageReference(String(manifest.requires?.image ?? "")));
 
     const targetLines = manifest.secrets
       .filter((name) => name !== "OPENCLAW_GATEWAY_TOKEN" && secretValues[name] !== undefined)
@@ -259,7 +261,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       `export default defineApp({name:${JSON.stringify(tryName)},description:"temporary set instance",service:{name:"gateway"},mounts:mountPoints,commands:openclawCommands});\n`);
     await (dependencies.createPrivateFile ?? createPrivateFile)(
       join(tempDir, ".env"),
-      buildEnv({ port, token, image: manifest.requires.image, dataRoot, copiedFrom: realEnv }),
+      buildEnv({ port, token, image: format(imageRef), dataRoot, copiedFrom: realEnv }),
     );
 
     useDeployment(tempDir);

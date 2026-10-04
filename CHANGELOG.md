@@ -6,6 +6,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* `set validate`, `set build` and `set try` refuse a set whose image reference the image
+  grammar rejects (previously anything containing `@sha256:` passed); `set try`'s throwaway
+  `.env` carries the canonical form of the parsed reference.
 * `deploy`'s printed bootstrap lines quote the remote path (`cd '/srv/my app' && …`), so a
   path with a space pastes as one line instead of splitting; the `--app <name>` in advice
   lines and the `--app`-conflict refusal quote a deployment name the same way.

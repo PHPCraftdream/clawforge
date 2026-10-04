@@ -60,7 +60,7 @@ async function makeArtifact(root: string, suffix: string, page: string, prompt: 
   const manifest: SetManifest = {
     version: 1,
     name: "diff-check",
-    requires: { framework: "0.1.0", image: "image@sha256:abc" },
+    requires: { framework: "0.1.0", image: `image@sha256:${"a".repeat(64)}` },
     files: {
       "config/desired-state.json": checksumOf(desired),
       "recipes/demo/server.ts": served["server.ts"],

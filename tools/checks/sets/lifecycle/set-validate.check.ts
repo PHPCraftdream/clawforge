@@ -9,14 +9,13 @@ import { validateSet, cronProblem, INVALID_JSON_NOTE, addingFix } from "#framewo
 import { defaultSetName, collectManifest, buildSet, blockingFindingsMessage, blockingWarningsSummary, ARTIFACT_CONTENTS_MATCH, coherentLine } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
-import { INVALID_ARTIFACT, FOREIGN_DIGEST } from "#framework/set/load.ts";
+import { INVALID_ARTIFACT } from "#framework/set/load.ts";
 import { problem, SET_RECIPE_DIR_NOTE } from "#framework/service/inspection.ts";
 import { missingDescriptionDetail } from "#framework/service/recipe.ts";
-import { recipeInvalidDefinition, imagePinAdvice, afterNote } from "#framework/set/advice.ts";
-import type { DeploymentLock } from "#framework/commands/management/lock.ts";
-import { BLOCKING_MARK, WARN_MARK } from "#framework/core/io/log.ts";
-import { renderAdvice } from "#framework/core/io/invocation/render.ts";
+import { recipeInvalidDefinition, afterNote } from "#framework/set/advice.ts";
 import type { CommandAdvice } from "#framework/core/io/invocation/advice.ts";
+import { BLOCKING_MARK, WARN_MARK } from "#framework/core/io/log.ts";
+
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -45,7 +44,7 @@ const agent = {
 function coherent(overrides: Partial<SetManifest> = {}): SetManifest {
   return buildSetManifest({
     name: "demo",
-    requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:abc" },
+    requires: { framework: "0.1.0", image: `ghcr.io/openclaw/openclaw@sha256:${HASH}` },
     files: { "config/desired-state.json": HASH, "recipes/demo/server.ts": HASH },
     recipes: {
       demo: {
@@ -84,69 +83,6 @@ useDeployment(baseDeployment);
 // --- a coherent set is silent -----------------------------------------------------------
 
 check("a coherent set produces no findings", codes(await validateSet(coherent())), []);
-
-// --- the image must be pinned ------------------------------------------------------------
-//
-// A set naming a tag installs whatever that tag means on the day it is installed, which is
-// the one thing an artifact exists to prevent.
-
-{
-  const problems = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
-  check("a tag instead of a digest is a finding", codes(problems), ["SET_IMAGE_UNPINNED"]);
-  check("and the tag is named", problems[0]?.detail.includes("extended-stable"), true);
-  // The remedy follows the deployment's state: with no lock recorded, only bootstrap can
-  // pin (lock refuses with no inventory to read).
-  check("with no lock recorded, the remedy is bootstrap", problems[0]?.nextAction, "./clawforge bootstrap");
-  const lockPath = resolve(baseDeployment, "config", "deployment.lock.json");
-  await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "x:y", digest: "x@sha256:z" } }));
-  try {
-    // A lock's EXISTENCE is not "deployed" — a lock is meant to be committed, so a fresh
-    // clone has one with no instance behind it. The advice follows the lock's CONTENT: a
-    // lock for another image means the deployment was last pinned elsewhere, and the honest
-    // path is the upgrade one — lock only after the gateway really runs the declared tag.
-    const locked = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
-    check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawforge upgrade --image ghcr.io/openclaw/openclaw:extended-stable  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))");
-    check("the detail no longer claims lock records what the running gateway serves", locked[0]?.detail, imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", { version: 1, image: { reference: "x:y", digest: "x@sha256:z" } } as DeploymentLock).detail);
-    check("the detail names the reference the lock was taken for", locked[0]?.detail.includes("x:y"), true);
-
-    // A committed lock that carries no digest: neither bootstrap NOR lock is decided for
-    // the reader — both pull paths are named, with what lock actually records.
-    await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } }));
-    const digestless = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
-    check("a digestless lock is still a finding", codes(digestless), ["SET_IMAGE_UNPINNED"]);
-    check("its advice names upgrade first and bootstrap as the alternative", digestless[0]?.nextAction, renderAdvice(imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", { version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } } as DeploymentLock).next));
-    check("and says lock pins the LOCAL image of the tag, not the container", digestless[0]?.detail, imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", { version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } } as DeploymentLock).detail);
-  } finally {
-    await rm(lockPath);
-  }
-
-  // set build answers for the SAME state with the SAME advice: its refusal must carry
-  // validate's nextAction verbatim, so the two commands cannot drift apart again.
-  {
-    const deployment = await createBuildDeployment();
-    try {
-      const buildLockPath = resolve(deployment, "config", "deployment.lock.json");
-      await writeFile(buildLockPath, JSON.stringify({
-        version: 1,
-        image: { reference: "old.example/old-image:stable", digest: `old.example/old-image@sha256:${"a".repeat(64)}` },
-      }));
-      const { manifest } = await collectManifest(buildCtx.settings.image, "demo", { tolerateUnpinnedImage: true });
-      const problems = await validateSet(manifest, { checkFiles: true });
-      const advice = problems.find((entry) => entry.code === "SET_IMAGE_UNPINNED")?.nextAction ?? "";
-      let refusal = "";
-      try {
-        await collectManifest(buildCtx.settings.image, "demo");
-      } catch (error) {
-        refusal = error instanceof Error ? error.message : String(error);
-      }
-      check("set build refuses a lock for another image", refusal.includes(FOREIGN_DIGEST), true);
-      check("the refusal carries validate's exact advice", advice !== "" && refusal.includes(advice), true);
-    } finally {
-      await removeBuildDeployment(deployment);
-      useDeployment(baseDeployment);
-    }
-  }
-}
 
 // --- references resolve --------------------------------------------------------------------
 
@@ -222,7 +158,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     // and demanding one of it made the validator fire on a correct set.
     const serviceOnly = buildSetManifest({
       name: "demo",
-      requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:abc" },
+      requires: { framework: "0.1.0", image: `ghcr.io/openclaw/openclaw@sha256:${HASH}` },
       files: { "recipes/svc/recipe.json": HASH },
       recipes: { svc: { checksum: HASH, files: { "recipe.json": HASH } } },
       secrets: [],

@@ -238,7 +238,7 @@ export async function createFixture(): Promise<LifecycleFixture> {
   }
 
   await mkdir(join(root, "config"));
-  const baseEnv = { OC_DATA_DIR: sourceData, OC_BIND_ADDRESS: "127.0.0.1", OC_TARGET_LOCATION: process.platform === "win32" ? "wsl" : "local", OPENCLAW_IMAGE: "fixture@sha256:abc", OPENCLAW_GATEWAY_TOKEN: "fixture-token-12345" };
+  const baseEnv = { OC_DATA_DIR: sourceData, OC_BIND_ADDRESS: "127.0.0.1", OC_TARGET_LOCATION: process.platform === "win32" ? "wsl" : "local", OPENCLAW_IMAGE: `fixture@sha256:${"a".repeat(64)}`, OPENCLAW_GATEWAY_TOKEN: "fixture-token-12345" };
   await writeFile(join(root, ".env"), Object.entries(baseEnv).map(([key, value]) => `${key}=${value}`).join("\n"));
   await writeFile(join(root, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"local"},{"path":"gateway.controlUi.allowedOrigins","value":["http://127.0.0.1:18789"]}]');
   useDeployment(root);

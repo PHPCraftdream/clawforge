@@ -140,7 +140,7 @@ export async function bootstrapAndReport(
 ): Promise<void> {
   if (!runBootstrap) {
     log(`files synced to ${target}:${remotePath} (bootstrap skipped)`);
-    info(`bring it up there with: cd ${remotePath} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`);
+    info(`bring it up there with: cd ${quoted(remotePath)} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`);
     if (remotePathNote !== undefined) info(remotePathNote);
     return;
   }

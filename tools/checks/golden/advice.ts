@@ -13,6 +13,8 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
+import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
+import { versionGateCommand } from "#framework/integration/version.ts";
 import { entryRefusalAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
@@ -71,9 +73,14 @@ const REFINEMENT_ROWS: readonly AdviceRow[] = [
 ];
 
 /** Group 5 (rf4-sweep-cmds1): every {clawforge …} command token the declared help prose
- *  carries, collected from the declarations themselves — new prose needs no edit here. */
-const PROSE_ROWS: readonly AdviceRow[] = Object.entries(openclawCommands).flatMap(([name, declared]) => {
-  const details = (declared as { details?: string }).details;
+ *  carries, collected from the declarations themselves — new prose needs no edit here. The
+ *  checkout gate's own commands and the version gate read their prose the same way (they
+ *  render in real help under every invocation), so they are matrixed too. */
+const PROSE_ROWS: readonly AdviceRow[] = [
+  ...Object.entries(openclawCommands).map(([name, declared]): [string, string | undefined] => [name, (declared as { details?: string }).details]),
+  ...checkoutGateCommands.map((gate): [string, string | undefined] => [gate.name, gate.details]),
+  ["version", versionGateCommand.details],
+].flatMap(([name, details]) => {
   if (details === undefined) return [];
   return parseProse(details).flatMap((token) => {
     if (token.kind !== "command") return [];
@@ -158,7 +165,9 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
   { label: "global (clawforge)", invocation: { program: "clawforge", mode: "installed", audience: "terminal" } },
   { label: "global, handed to the checkout gate with --app demo", invocation: { program: "clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
   { label: "shim init (./clawforge, installed)", invocation: { program: SHIM_PROGRAM, mode: "installed", audience: "terminal" } },
-  { label: "local package", invocation: { program: "clawforge", mode: "local-package", audience: "terminal" } },
+  // entry/root.ts is the only writer of local-package and always pairs it with the shim
+  // spelling — the column shows the invocation a local-package run really holds.
+  { label: "local package", invocation: { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" } },
   { label: "checkout MCP launcher (../../clawforge, demo/flag)", invocation: { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" } },
   { label: TOOL_FORM_LABEL, cell: TOOL_FORM_CELL },
 ];

@@ -15,6 +15,7 @@ import { INVOCATION_ENV, invocation, serializeInvocation } from "../core/io/invo
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
 import { command } from "../core/io/invocation/advice.ts";
+import { renderArgument } from "../core/io/invocation/render.ts";
 import { nodeFs, checkoutGateIn, findCheckoutRootIn, frameworkOwner, strayCheckoutApp, importsCheckoutSourcesIn } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
@@ -75,7 +76,7 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
     reportError("--app needs a deployment name");
     process.exit(1);
   }
-  reportError(new UserError(`--app ${decision.typed} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — run this from the checkout root:`, { advice: [command([], { app: decision.typed })] }));
+  reportError(new UserError(`--app ${renderArgument(decision.typed, invocation().program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — run this from the checkout root:`, { advice: [command([], { app: decision.typed })] }));
   process.exit(1);
 }
 

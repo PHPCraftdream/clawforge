@@ -9,7 +9,7 @@
   global (clawforge): clawforge status
   global, handed to the checkout gate with --app demo: clawforge --app demo status
   shim init (./clawforge, installed): ./clawforge status
-  local package: clawforge status
+  local package: ./clawforge status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status
   tool form: {"tool":"status","arguments":{}}
 
@@ -24,7 +24,7 @@
   global (clawforge): clawforge new-app <name>
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
-  local package: clawforge new-app <name>
+  local package: ./clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -39,7 +39,7 @@
   global (clawforge): clawforge --app demo status
   global, handed to the checkout gate with --app demo: clawforge --app demo status
   shim init (./clawforge, installed): ./clawforge --app demo status
-  local package: clawforge --app demo status
+  local package: ./clawforge --app demo status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status
   tool form: —
 
@@ -54,7 +54,7 @@
   global (clawforge): clawforge logs --tail <n>
   global, handed to the checkout gate with --app demo: clawforge --app demo logs --tail <n>
   shim init (./clawforge, installed): ./clawforge logs --tail <n>
-  local package: clawforge logs --tail <n>
+  local package: ./clawforge logs --tail <n>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo logs --tail <n>
   tool form: {"tool":"logs","arguments":{"tail":"<n>"}}
 
@@ -69,7 +69,7 @@
   global (clawforge): clawforge up  (after the change)
   global, handed to the checkout gate with --app demo: clawforge --app demo up  (after the change)
   shim init (./clawforge, installed): ./clawforge up  (after the change)
-  local package: clawforge up  (after the change)
+  local package: ./clawforge up  (after the change)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up  (after the change)
   tool form: {"tool":"up","arguments":{}}
 
@@ -144,7 +144,7 @@
   global (clawforge): clawforge bootstrap
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap
   shim init (./clawforge, installed): ./clawforge bootstrap
-  local package: clawforge bootstrap
+  local package: ./clawforge bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
@@ -174,7 +174,7 @@
   global (clawforge): clawforge bootstrap --check
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap --check
   shim init (./clawforge, installed): ./clawforge bootstrap --check
-  local package: clawforge bootstrap --check
+  local package: ./clawforge bootstrap --check
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap --check
   tool form: {"tool":"bootstrap","arguments":{"check":true}}
 
@@ -189,7 +189,7 @@
   global (clawforge): clawforge up
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
-  local package: clawforge up
+  local package: ./clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -204,7 +204,7 @@
   global (clawforge): clawforge logs --tail 100
   global, handed to the checkout gate with --app demo: clawforge --app demo logs --tail 100
   shim init (./clawforge, installed): ./clawforge logs --tail 100
-  local package: clawforge logs --tail 100
+  local package: ./clawforge logs --tail 100
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo logs --tail 100
   tool form: {"tool":"logs","arguments":{"tail":"100"}}
 
@@ -219,7 +219,7 @@
   global (clawforge): clawforge logs --tail 100
   global, handed to the checkout gate with --app demo: clawforge --app demo logs --tail 100
   shim init (./clawforge, installed): ./clawforge logs --tail 100
-  local package: clawforge logs --tail 100
+  local package: ./clawforge logs --tail 100
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo logs --tail 100
   tool form: {"tool":"logs","arguments":{"tail":"100"}}
 
@@ -234,7 +234,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -249,7 +249,7 @@
   global (clawforge): clawforge secrets --apply
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --apply
   shim init (./clawforge, installed): ./clawforge secrets --apply
-  local package: clawforge secrets --apply
+  local package: ./clawforge secrets --apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --apply
   tool form: {"tool":"secrets","arguments":{"apply":true}}
 
@@ -264,7 +264,7 @@
   global (clawforge): clawforge configure-provider
   global, handed to the checkout gate with --app demo: clawforge --app demo configure-provider
   shim init (./clawforge, installed): ./clawforge configure-provider
-  local package: clawforge configure-provider
+  local package: ./clawforge configure-provider
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo configure-provider
   tool form: {"tool":"configure-provider","arguments":{}}
 
@@ -279,7 +279,7 @@
   global (clawforge): clawforge restart
   global, handed to the checkout gate with --app demo: clawforge --app demo restart
   shim init (./clawforge, installed): ./clawforge restart
-  local package: clawforge restart
+  local package: ./clawforge restart
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo restart
   tool form: {"tool":"restart","arguments":{}}
 
@@ -309,7 +309,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -324,7 +324,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -339,7 +339,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -354,7 +354,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -369,7 +369,7 @@
   global (clawforge): clawforge inspect
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
-  local package: clawforge inspect
+  local package: ./clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -384,7 +384,7 @@
   global (clawforge): clawforge cli channels status --json
   global, handed to the checkout gate with --app demo: clawforge --app demo cli channels status --json
   shim init (./clawforge, installed): ./clawforge cli channels status --json
-  local package: clawforge cli channels status --json
+  local package: ./clawforge cli channels status --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli channels status --json
   tool form: {"tool":"cli","arguments":{"args":["channels","status","--json"]}}
 
@@ -399,7 +399,7 @@
   global (clawforge): clawforge lock
   global, handed to the checkout gate with --app demo: clawforge --app demo lock
   shim init (./clawforge, installed): ./clawforge lock
-  local package: clawforge lock
+  local package: ./clawforge lock
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo lock
   tool form: {"tool":"lock","arguments":{}}
 
@@ -414,7 +414,7 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -429,7 +429,7 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -444,7 +444,7 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -459,7 +459,7 @@
   global (clawforge): clawforge recover-env
   global, handed to the checkout gate with --app demo: clawforge --app demo recover-env
   shim init (./clawforge, installed): ./clawforge recover-env
-  local package: clawforge recover-env
+  local package: ./clawforge recover-env
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo recover-env
   tool form: {"tool":"recover-env","arguments":{}}
 
@@ -474,7 +474,7 @@
   global (clawforge): clawforge inspect  (then edit .env: fix the line named)
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect  (then edit .env: fix the line named)
   shim init (./clawforge, installed): ./clawforge inspect  (then edit .env: fix the line named)
-  local package: clawforge inspect  (then edit .env: fix the line named)
+  local package: ./clawforge inspect  (then edit .env: fix the line named)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect  (then edit .env: fix the line named)
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -489,7 +489,7 @@
   global (clawforge): clawforge apply-config --dump
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config --dump
   shim init (./clawforge, installed): ./clawforge apply-config --dump
-  local package: clawforge apply-config --dump
+  local package: ./clawforge apply-config --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config --dump
   tool form: {"tool":"apply-config","arguments":{"dump":true}}
 
@@ -504,7 +504,7 @@
   global (clawforge): clawforge secrets --dump
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --dump
   shim init (./clawforge, installed): ./clawforge secrets --dump
-  local package: clawforge secrets --dump
+  local package: ./clawforge secrets --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --dump
   tool form: {"tool":"secrets","arguments":{"dump":true}}
 
@@ -519,7 +519,7 @@
   global (clawforge): clawforge upgrade
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade
   shim init (./clawforge, installed): ./clawforge upgrade
-  local package: clawforge upgrade
+  local package: ./clawforge upgrade
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade
   tool form: {"tool":"upgrade","arguments":{}}
 
@@ -534,7 +534,7 @@
   global (clawforge): clawforge upgrade
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade
   shim init (./clawforge, installed): ./clawforge upgrade
-  local package: clawforge upgrade
+  local package: ./clawforge upgrade
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade
   tool form: {"tool":"upgrade","arguments":{}}
 
@@ -549,7 +549,7 @@
   global (clawforge): clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   shim init (./clawforge, installed): ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
-  local package: clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
+  local package: ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -564,7 +564,7 @@
   global (clawforge): clawforge set validate  (after fixing the recipe's recipe.json)
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after fixing the recipe's recipe.json)
   shim init (./clawforge, installed): ./clawforge set validate  (after fixing the recipe's recipe.json)
-  local package: clawforge set validate  (after fixing the recipe's recipe.json)
+  local package: ./clawforge set validate  (after fixing the recipe's recipe.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after fixing the recipe's recipe.json)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -579,7 +579,7 @@
   global (clawforge): clawforge set validate
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
-  local package: clawforge set validate
+  local package: ./clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -594,7 +594,7 @@
   global (clawforge): clawforge set validate
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
-  local package: clawforge set validate
+  local package: ./clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -609,7 +609,7 @@
   global (clawforge): clawforge set validate
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
-  local package: clawforge set validate
+  local package: ./clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -624,7 +624,7 @@
   global (clawforge): clawforge set validate
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate
   shim init (./clawforge, installed): ./clawforge set validate
-  local package: clawforge set validate
+  local package: ./clawforge set validate
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -639,7 +639,7 @@
   global (clawforge): clawforge inspect
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
-  local package: clawforge inspect
+  local package: ./clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -654,7 +654,7 @@
   global (clawforge): clawforge bootstrap
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap
   shim init (./clawforge, installed): ./clawforge bootstrap
-  local package: clawforge bootstrap
+  local package: ./clawforge bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
@@ -669,7 +669,7 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -684,7 +684,7 @@
   global (clawforge): clawforge cli security audit --json
   global, handed to the checkout gate with --app demo: clawforge --app demo cli security audit --json
   shim init (./clawforge, installed): ./clawforge cli security audit --json
-  local package: clawforge cli security audit --json
+  local package: ./clawforge cli security audit --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli security audit --json
   tool form: {"tool":"cli","arguments":{"args":["security","audit","--json"]}}
 
@@ -699,7 +699,7 @@
   global (clawforge): clawforge cli security audit --json
   global, handed to the checkout gate with --app demo: clawforge --app demo cli security audit --json
   shim init (./clawforge, installed): ./clawforge cli security audit --json
-  local package: clawforge cli security audit --json
+  local package: ./clawforge cli security audit --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli security audit --json
   tool form: {"tool":"cli","arguments":{"args":["security","audit","--json"]}}
 
@@ -714,7 +714,7 @@
   global (clawforge): clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   global, handed to the checkout gate with --app demo: clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   shim init (./clawforge, installed): ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
-  local package: clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
+  local package: ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   tool form: {"tool":"expose","arguments":{"action":"status"}}
 
@@ -729,7 +729,7 @@
   global (clawforge): clawforge expose status
   global, handed to the checkout gate with --app demo: clawforge --app demo expose status
   shim init (./clawforge, installed): ./clawforge expose status
-  local package: clawforge expose status
+  local package: ./clawforge expose status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status
   tool form: {"tool":"expose","arguments":{"action":"status"}}
 
@@ -744,7 +744,7 @@
   global (clawforge): clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   global, handed to the checkout gate with --app demo: clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   shim init (./clawforge, installed): ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
-  local package: clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
+  local package: ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   tool form: {"tool":"expose","arguments":{"action":"status"}}
 
@@ -759,7 +759,7 @@
   global (clawforge): clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   shim init (./clawforge, installed): ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
-  local package: clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
+  local package: ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   tool form: {"tool":"secrets","arguments":{"apply":true}}
 
@@ -774,7 +774,7 @@
   global (clawforge): clawforge doctor  (check local filesystem access, then retry)
   global, handed to the checkout gate with --app demo: clawforge --app demo doctor  (check local filesystem access, then retry)
   shim init (./clawforge, installed): ./clawforge doctor  (check local filesystem access, then retry)
-  local package: clawforge doctor  (check local filesystem access, then retry)
+  local package: ./clawforge doctor  (check local filesystem access, then retry)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor  (check local filesystem access, then retry)
   tool form: {"tool":"doctor","arguments":{}}
 
@@ -789,7 +789,7 @@
   global (clawforge): clawforge backup
   global, handed to the checkout gate with --app demo: clawforge --app demo backup
   shim init (./clawforge, installed): ./clawforge backup
-  local package: clawforge backup
+  local package: ./clawforge backup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup
   tool form: {"tool":"backup","arguments":{}}
 
@@ -804,7 +804,7 @@
   global (clawforge): clawforge backup list
   global, handed to the checkout gate with --app demo: clawforge --app demo backup list
   shim init (./clawforge, installed): ./clawforge backup list
-  local package: clawforge backup list
+  local package: ./clawforge backup list
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup list
   tool form: {"tool":"backup","arguments":{"action":"list"}}
 
@@ -819,7 +819,7 @@
   global (clawforge): clawforge backup install --apply
   global, handed to the checkout gate with --app demo: clawforge --app demo backup install --apply
   shim init (./clawforge, installed): ./clawforge backup install --apply
-  local package: clawforge backup install --apply
+  local package: ./clawforge backup install --apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup install --apply
   tool form: {"tool":"backup","arguments":{"action":"install","apply":true}}
 
@@ -834,7 +834,7 @@
   global (clawforge): clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   global, handed to the checkout gate with --app demo: clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   shim init (./clawforge, installed): ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
-  local package: clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
+  local package: ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   tool form: {"tool":"backup","arguments":{"action":"list"}}
 
@@ -849,7 +849,7 @@
   global (clawforge): clawforge bootstrap
   global, handed to the checkout gate with --app demo: clawforge --app demo bootstrap
   shim init (./clawforge, installed): ./clawforge bootstrap
-  local package: clawforge bootstrap
+  local package: ./clawforge bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo bootstrap
   tool form: {"tool":"bootstrap","arguments":{}}
 
@@ -864,7 +864,7 @@
   global (clawforge): clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   shim init (./clawforge, installed): ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
-  local package: clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
+  local package: ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   tool form: {"tool":"upgrade","arguments":{"image":"<image>"}}
 
@@ -879,7 +879,7 @@
   global (clawforge): clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   global, handed to the checkout gate with --app demo: clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   shim init (./clawforge, installed): ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
-  local package: clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
+  local package: ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   tool form: {"tool":"upgrade","arguments":{"image":"<image>"}}
 
@@ -894,7 +894,7 @@
   global (clawforge): clawforge set validate  (after adding the missing file)
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after adding the missing file)
   shim init (./clawforge, installed): ./clawforge set validate  (after adding the missing file)
-  local package: clawforge set validate  (after adding the missing file)
+  local package: ./clawforge set validate  (after adding the missing file)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after adding the missing file)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -909,7 +909,7 @@
   global (clawforge): clawforge set build  (after rebuilding)
   global, handed to the checkout gate with --app demo: clawforge --app demo set build  (after rebuilding)
   shim init (./clawforge, installed): ./clawforge set build  (after rebuilding)
-  local package: clawforge set build  (after rebuilding)
+  local package: ./clawforge set build  (after rebuilding)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set build  (after rebuilding)
   tool form: {"tool":"set","arguments":{"action":"build"}}
 
@@ -924,7 +924,7 @@
   global (clawforge): clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   global, handed to the checkout gate with --app demo: clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   shim init (./clawforge, installed): ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
-  local package: clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
+  local package: ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   tool form: {"tool":"set","arguments":{"action":"build"}}
 
@@ -939,7 +939,7 @@
   global (clawforge): clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   global, handed to the checkout gate with --app demo: clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
   shim init (./clawforge, installed): ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
-  local package: clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
+  local package: ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
   tool form: {"tool":"set","arguments":{"action":"validate"}}
 
@@ -954,7 +954,7 @@
   global (clawforge): clawforge provision-agent <recipe>
   global, handed to the checkout gate with --app demo: clawforge --app demo provision-agent <recipe>
   shim init (./clawforge, installed): ./clawforge provision-agent <recipe>
-  local package: clawforge provision-agent <recipe>
+  local package: ./clawforge provision-agent <recipe>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo provision-agent <recipe>
   tool form: {"tool":"provision-agent","arguments":{"recipe":"<recipe>"}}
 
@@ -969,7 +969,7 @@
   global (clawforge): clawforge set forget --kind cron-job --name <name>
   global, handed to the checkout gate with --app demo: clawforge --app demo set forget --kind cron-job --name <name>
   shim init (./clawforge, installed): ./clawforge set forget --kind cron-job --name <name>
-  local package: clawforge set forget --kind cron-job --name <name>
+  local package: ./clawforge set forget --kind cron-job --name <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set forget --kind cron-job --name <name>
   tool form: {"tool":"set","arguments":{"action":"forget","kind":"cron-job","name":"<name>"}}
 
@@ -984,7 +984,7 @@
   global (clawforge): clawforge cli plugins install <package> --force
   global, handed to the checkout gate with --app demo: clawforge --app demo cli plugins install <package> --force
   shim init (./clawforge, installed): ./clawforge cli plugins install <package> --force
-  local package: clawforge cli plugins install <package> --force
+  local package: ./clawforge cli plugins install <package> --force
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli plugins install <package> --force
   tool form: {"tool":"cli","arguments":{"args":["plugins","install","<package>","--force"]}}
 
@@ -999,7 +999,7 @@
   global (clawforge): clawforge cli skills install <name> --force
   global, handed to the checkout gate with --app demo: clawforge --app demo cli skills install <name> --force
   shim init (./clawforge, installed): ./clawforge cli skills install <name> --force
-  local package: clawforge cli skills install <name> --force
+  local package: ./clawforge cli skills install <name> --force
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli skills install <name> --force
   tool form: {"tool":"cli","arguments":{"args":["skills","install","<name>","--force"]}}
 
@@ -1029,7 +1029,7 @@
   global (clawforge): clawforge cli security audit --json
   global, handed to the checkout gate with --app demo: clawforge --app demo cli security audit --json
   shim init (./clawforge, installed): ./clawforge cli security audit --json
-  local package: clawforge cli security audit --json
+  local package: ./clawforge cli security audit --json
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli security audit --json
   tool form: {"tool":"cli","arguments":{"args":["security","audit","--json"]}}
 
@@ -1044,7 +1044,7 @@
   global (clawforge): clawforge new-app <name>
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
-  local package: clawforge new-app <name>
+  local package: ./clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1074,7 +1074,7 @@
   global (clawforge): clawforge new-app <name>
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
-  local package: clawforge new-app <name>
+  local package: ./clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1089,7 +1089,7 @@
   global (clawforge): clawforge new-app demo
   global, handed to the checkout gate with --app demo: clawforge new-app demo
   shim init (./clawforge, installed): ./clawforge new-app demo
-  local package: clawforge new-app demo
+  local package: ./clawforge new-app demo
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app demo
   tool form: {"tool":"new-app","arguments":{"name":"demo"}}
 
@@ -1134,7 +1134,7 @@
   global (clawforge): clawforge new-app <name>
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
-  local package: clawforge new-app <name>
+  local package: ./clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1164,7 +1164,7 @@
   global (clawforge): clawforge init
   global, handed to the checkout gate with --app demo: clawforge init
   shim init (./clawforge, installed): ./clawforge init
-  local package: clawforge init
+  local package: ./clawforge init
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge init
   tool form: {"tool":"init","arguments":{}}
 
@@ -1194,7 +1194,7 @@
   global (clawforge): clawforge help
   global, handed to the checkout gate with --app demo: clawforge --app demo help
   shim init (./clawforge, installed): ./clawforge help
-  local package: clawforge help
+  local package: ./clawforge help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo help
   tool form: —
 
@@ -1209,7 +1209,7 @@
   global (clawforge): clawforge status --help
   global, handed to the checkout gate with --app demo: clawforge --app demo status --help
   shim init (./clawforge, installed): ./clawforge status --help
-  local package: clawforge status --help
+  local package: ./clawforge status --help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status --help
   tool form: —
 
@@ -1239,7 +1239,7 @@
   global (clawforge): clawforge --app <name> bootstrap
   global, handed to the checkout gate with --app demo: clawforge --app <name> bootstrap
   shim init (./clawforge, installed): ./clawforge --app <name> bootstrap
-  local package: clawforge --app <name> bootstrap
+  local package: ./clawforge --app <name> bootstrap
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> bootstrap
   tool form: —
 
@@ -1254,7 +1254,7 @@
   global (clawforge): clawforge --app <name> secrets --apply
   global, handed to the checkout gate with --app demo: clawforge --app <name> secrets --apply
   shim init (./clawforge, installed): ./clawforge --app <name> secrets --apply
-  local package: clawforge --app <name> secrets --apply
+  local package: ./clawforge --app <name> secrets --apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> secrets --apply
   tool form: —
 
@@ -1299,7 +1299,7 @@
   global (clawforge): clawforge up
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
-  local package: clawforge up
+  local package: ./clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1314,7 +1314,7 @@
   global (clawforge): clawforge remove-app
   global, handed to the checkout gate with --app demo: clawforge remove-app
   shim init (./clawforge, installed): ./clawforge remove-app
-  local package: clawforge remove-app
+  local package: ./clawforge remove-app
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge remove-app
   tool form: {"tool":"remove-app","arguments":{}}
 
@@ -1329,7 +1329,7 @@
   global (clawforge): clawforge help pull
   global, handed to the checkout gate with --app demo: clawforge --app demo help pull
   shim init (./clawforge, installed): ./clawforge help pull
-  local package: clawforge help pull
+  local package: ./clawforge help pull
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo help pull
   tool form: —
 
@@ -1344,7 +1344,7 @@
   global (clawforge): clawforge restore
   global, handed to the checkout gate with --app demo: clawforge --app demo restore
   shim init (./clawforge, installed): ./clawforge restore
-  local package: clawforge restore
+  local package: ./clawforge restore
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo restore
   tool form: {"tool":"restore","arguments":{}}
 
@@ -1359,7 +1359,7 @@
   global (clawforge): clawforge backup
   global, handed to the checkout gate with --app demo: clawforge --app demo backup
   shim init (./clawforge, installed): ./clawforge backup
-  local package: clawforge backup
+  local package: ./clawforge backup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup
   tool form: {"tool":"backup","arguments":{}}
 
@@ -1374,7 +1374,7 @@
   global (clawforge): clawforge pull --share
   global, handed to the checkout gate with --app demo: clawforge --app demo pull --share
   shim init (./clawforge, installed): ./clawforge pull --share
-  local package: clawforge pull --share
+  local package: ./clawforge pull --share
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo pull --share
   tool form: {"tool":"pull","arguments":{"share":true}}
 
@@ -1389,7 +1389,7 @@
   global (clawforge): clawforge lock
   global, handed to the checkout gate with --app demo: clawforge --app demo lock
   shim init (./clawforge, installed): ./clawforge lock
-  local package: clawforge lock
+  local package: ./clawforge lock
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo lock
   tool form: {"tool":"lock","arguments":{}}
 
@@ -1404,7 +1404,7 @@
   global (clawforge): clawforge apply-config
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config
   shim init (./clawforge, installed): ./clawforge apply-config
-  local package: clawforge apply-config
+  local package: ./clawforge apply-config
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config
   tool form: {"tool":"apply-config","arguments":{}}
 
@@ -1419,7 +1419,7 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -1434,7 +1434,7 @@
   global (clawforge): clawforge cli-start
   global, handed to the checkout gate with --app demo: clawforge --app demo cli-start
   shim init (./clawforge, installed): ./clawforge cli-start
-  local package: clawforge cli-start
+  local package: ./clawforge cli-start
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli-start
   tool form: {"tool":"cli-start","arguments":{}}
 
@@ -1449,7 +1449,7 @@
   global (clawforge): clawforge inspect
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
-  local package: clawforge inspect
+  local package: ./clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -1464,7 +1464,7 @@
   global (clawforge): clawforge inspect
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
-  local package: clawforge inspect
+  local package: ./clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -1479,7 +1479,7 @@
   global (clawforge): clawforge recover-env
   global, handed to the checkout gate with --app demo: clawforge --app demo recover-env
   shim init (./clawforge, installed): ./clawforge recover-env
-  local package: clawforge recover-env
+  local package: ./clawforge recover-env
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo recover-env
   tool form: {"tool":"recover-env","arguments":{}}
 
@@ -1494,7 +1494,7 @@
   global (clawforge): clawforge apply-config --dump
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config --dump
   shim init (./clawforge, installed): ./clawforge apply-config --dump
-  local package: clawforge apply-config --dump
+  local package: ./clawforge apply-config --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config --dump
   tool form: {"tool":"apply-config","arguments":{"dump":true}}
 
@@ -1509,7 +1509,7 @@
   global (clawforge): clawforge secrets --dump
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --dump
   shim init (./clawforge, installed): ./clawforge secrets --dump
-  local package: clawforge secrets --dump
+  local package: ./clawforge secrets --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --dump
   tool form: {"tool":"secrets","arguments":{"dump":true}}
 
@@ -1524,7 +1524,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -1539,7 +1539,7 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
 
@@ -1554,7 +1554,7 @@
   global (clawforge): clawforge operations
   global, handed to the checkout gate with --app demo: clawforge --app demo operations
   shim init (./clawforge, installed): ./clawforge operations
-  local package: clawforge operations
+  local package: ./clawforge operations
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo operations
   tool form: {"tool":"operations","arguments":{}}
 
@@ -1569,7 +1569,7 @@
   global (clawforge): clawforge secrets --dump
   global, handed to the checkout gate with --app demo: clawforge --app demo secrets --dump
   shim init (./clawforge, installed): ./clawforge secrets --dump
-  local package: clawforge secrets --dump
+  local package: ./clawforge secrets --dump
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --dump
   tool form: {"tool":"secrets","arguments":{"dump":true}}
 
@@ -1584,7 +1584,7 @@
   global (clawforge): clawforge apply-config --dry-run
   global, handed to the checkout gate with --app demo: clawforge --app demo apply-config --dry-run
   shim init (./clawforge, installed): ./clawforge apply-config --dry-run
-  local package: clawforge apply-config --dry-run
+  local package: ./clawforge apply-config --dry-run
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply-config --dry-run
   tool form: {"tool":"apply-config","arguments":{"dry-run":true}}
 
@@ -1599,7 +1599,7 @@
   global (clawforge): clawforge smoke
   global, handed to the checkout gate with --app demo: clawforge --app demo smoke
   shim init (./clawforge, installed): ./clawforge smoke
-  local package: clawforge smoke
+  local package: ./clawforge smoke
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo smoke
   tool form: {"tool":"smoke","arguments":{}}
 
@@ -1614,7 +1614,7 @@
   global (clawforge): clawforge doctor
   global, handed to the checkout gate with --app demo: clawforge --app demo doctor
   shim init (./clawforge, installed): ./clawforge doctor
-  local package: clawforge doctor
+  local package: ./clawforge doctor
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor
   tool form: {"tool":"doctor","arguments":{}}
 
@@ -1629,7 +1629,7 @@
   global (clawforge): clawforge apply
   global, handed to the checkout gate with --app demo: clawforge --app demo apply
   shim init (./clawforge, installed): ./clawforge apply
-  local package: clawforge apply
+  local package: ./clawforge apply
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply
   tool form: {"tool":"apply","arguments":{}}
 
@@ -1644,7 +1644,7 @@
   global (clawforge): clawforge push
   global, handed to the checkout gate with --app demo: clawforge --app demo push
   shim init (./clawforge, installed): ./clawforge push
-  local package: clawforge push
+  local package: ./clawforge push
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo push
   tool form: {"tool":"push","arguments":{}}
 
@@ -1659,7 +1659,7 @@
   global (clawforge): clawforge apply --set
   global, handed to the checkout gate with --app demo: clawforge --app demo apply --set
   shim init (./clawforge, installed): ./clawforge apply --set
-  local package: clawforge apply --set
+  local package: ./clawforge apply --set
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo apply --set
   tool form: —
 
@@ -1674,7 +1674,7 @@
   global (clawforge): clawforge rollback
   global, handed to the checkout gate with --app demo: clawforge --app demo rollback
   shim init (./clawforge, installed): ./clawforge rollback
-  local package: clawforge rollback
+  local package: ./clawforge rollback
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo rollback
   tool form: {"tool":"rollback","arguments":{}}
 
@@ -1689,7 +1689,7 @@
   global (clawforge): clawforge status
   global, handed to the checkout gate with --app demo: clawforge --app demo status
   shim init (./clawforge, installed): ./clawforge status
-  local package: clawforge status
+  local package: ./clawforge status
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo status
   tool form: {"tool":"status","arguments":{}}
 
@@ -1704,7 +1704,7 @@
   global (clawforge): clawforge up
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
-  local package: clawforge up
+  local package: ./clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1719,7 +1719,7 @@
   global (clawforge): clawforge mcp-creds
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-creds
   shim init (./clawforge, installed): ./clawforge mcp-creds
-  local package: clawforge mcp-creds
+  local package: ./clawforge mcp-creds
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-creds
   tool form: {"tool":"mcp-creds","arguments":{}}
 
@@ -1734,7 +1734,7 @@
   global (clawforge): clawforge doctor
   global, handed to the checkout gate with --app demo: clawforge --app demo doctor
   shim init (./clawforge, installed): ./clawforge doctor
-  local package: clawforge doctor
+  local package: ./clawforge doctor
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor
   tool form: {"tool":"doctor","arguments":{}}
 
@@ -1749,7 +1749,7 @@
   global (clawforge): clawforge accept
   global, handed to the checkout gate with --app demo: clawforge --app demo accept
   shim init (./clawforge, installed): ./clawforge accept
-  local package: clawforge accept
+  local package: ./clawforge accept
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo accept
   tool form: {"tool":"accept","arguments":{}}
 
@@ -1764,7 +1764,7 @@
   global (clawforge): clawforge inspect
   global, handed to the checkout gate with --app demo: clawforge --app demo inspect
   shim init (./clawforge, installed): ./clawforge inspect
-  local package: clawforge inspect
+  local package: ./clawforge inspect
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
@@ -1779,7 +1779,7 @@
   global (clawforge): clawforge cli config get gateway.mode
   global, handed to the checkout gate with --app demo: clawforge --app demo cli config get gateway.mode
   shim init (./clawforge, installed): ./clawforge cli config get gateway.mode
-  local package: clawforge cli config get gateway.mode
+  local package: ./clawforge cli config get gateway.mode
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli config get gateway.mode
   tool form: {"tool":"cli","arguments":{"args":["config","get","gateway.mode"]}}
 
@@ -1794,7 +1794,7 @@
   global (clawforge): clawforge cli-start
   global, handed to the checkout gate with --app demo: clawforge --app demo cli-start
   shim init (./clawforge, installed): ./clawforge cli-start
-  local package: clawforge cli-start
+  local package: ./clawforge cli-start
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli-start
   tool form: {"tool":"cli-start","arguments":{}}
 
@@ -1809,7 +1809,7 @@
   global (clawforge): clawforge cli --help
   global, handed to the checkout gate with --app demo: clawforge --app demo cli --help
   shim init (./clawforge, installed): ./clawforge cli --help
-  local package: clawforge cli --help
+  local package: ./clawforge cli --help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli --help
   tool form: {"tool":"cli","arguments":{"args":["--help"]}}
 
@@ -1824,7 +1824,7 @@
   global (clawforge): clawforge help cli
   global, handed to the checkout gate with --app demo: clawforge --app demo help cli
   shim init (./clawforge, installed): ./clawforge help cli
-  local package: clawforge help cli
+  local package: ./clawforge help cli
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo help cli
   tool form: —
 
@@ -1839,7 +1839,7 @@
   global (clawforge): clawforge cli -- --help
   global, handed to the checkout gate with --app demo: clawforge --app demo cli -- --help
   shim init (./clawforge, installed): ./clawforge cli -- --help
-  local package: clawforge cli -- --help
+  local package: ./clawforge cli -- --help
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli -- --help
   tool form: {"tool":"cli","arguments":{"args":["--help"]}}
 
@@ -1854,7 +1854,7 @@
   global (clawforge): clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   global, handed to the checkout gate with --app demo: clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
   shim init (./clawforge, installed): ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
-  local package: clawforge exec curl -fsS http://127.0.0.1:18789/healthz
+  local package: ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
   tool form: {"tool":"exec","arguments":{"args":["curl","-fsS","http://127.0.0.1:18789/healthz"]}}
 
@@ -1869,7 +1869,7 @@
   global (clawforge): clawforge exec cat /app/docs/channels/telegram.md
   global, handed to the checkout gate with --app demo: clawforge --app demo exec cat /app/docs/channels/telegram.md
   shim init (./clawforge, installed): ./clawforge exec cat /app/docs/channels/telegram.md
-  local package: clawforge exec cat /app/docs/channels/telegram.md
+  local package: ./clawforge exec cat /app/docs/channels/telegram.md
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo exec cat /app/docs/channels/telegram.md
   tool form: {"tool":"exec","arguments":{"args":["cat","/app/docs/channels/telegram.md"]}}
 
@@ -1884,7 +1884,7 @@
   global (clawforge): clawforge cli
   global, handed to the checkout gate with --app demo: clawforge --app demo cli
   shim init (./clawforge, installed): ./clawforge cli
-  local package: clawforge cli
+  local package: ./clawforge cli
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli
   tool form: {"tool":"cli","arguments":{}}
 
@@ -1899,7 +1899,7 @@
   global (clawforge): clawforge mcp-serve
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-serve
   shim init (./clawforge, installed): ./clawforge mcp-serve
-  local package: clawforge mcp-serve
+  local package: ./clawforge mcp-serve
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-serve
   tool form: {"tool":"mcp-serve","arguments":{}}
 
@@ -1914,7 +1914,7 @@
   global (clawforge): clawforge up
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
-  local package: clawforge up
+  local package: ./clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1929,7 +1929,7 @@
   global (clawforge): clawforge down
   global, handed to the checkout gate with --app demo: clawforge --app demo down
   shim init (./clawforge, installed): ./clawforge down
-  local package: clawforge down
+  local package: ./clawforge down
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo down
   tool form: {"tool":"down","arguments":{}}
 
@@ -1944,7 +1944,7 @@
   global (clawforge): clawforge cli
   global, handed to the checkout gate with --app demo: clawforge --app demo cli
   shim init (./clawforge, installed): ./clawforge cli
-  local package: clawforge cli
+  local package: ./clawforge cli
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli
   tool form: {"tool":"cli","arguments":{}}
 
@@ -1959,7 +1959,7 @@
   global (clawforge): clawforge mcp-serve
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-serve
   shim init (./clawforge, installed): ./clawforge mcp-serve
-  local package: clawforge mcp-serve
+  local package: ./clawforge mcp-serve
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-serve
   tool form: {"tool":"mcp-serve","arguments":{}}
 
@@ -1974,7 +1974,7 @@
   global (clawforge): clawforge up
   global, handed to the checkout gate with --app demo: clawforge --app demo up
   shim init (./clawforge, installed): ./clawforge up
-  local package: clawforge up
+  local package: ./clawforge up
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up
   tool form: {"tool":"up","arguments":{}}
 
@@ -1989,7 +1989,7 @@
   global (clawforge): clawforge mcp-setup
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-setup
   shim init (./clawforge, installed): ./clawforge mcp-setup
-  local package: clawforge mcp-setup
+  local package: ./clawforge mcp-setup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-setup
   tool form: {"tool":"mcp-setup","arguments":{}}
 
@@ -2004,7 +2004,7 @@
   global (clawforge): clawforge control-mcp
   global, handed to the checkout gate with --app demo: clawforge --app demo control-mcp
   shim init (./clawforge, installed): ./clawforge control-mcp
-  local package: clawforge control-mcp
+  local package: ./clawforge control-mcp
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo control-mcp
   tool form: —
 
@@ -2019,7 +2019,7 @@
   global (clawforge): clawforge cli-start
   global, handed to the checkout gate with --app demo: clawforge --app demo cli-start
   shim init (./clawforge, installed): ./clawforge cli-start
-  local package: clawforge cli-start
+  local package: ./clawforge cli-start
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo cli-start
   tool form: {"tool":"cli-start","arguments":{}}
 
@@ -2034,7 +2034,7 @@
   global (clawforge): clawforge mcp-setup
   global, handed to the checkout gate with --app demo: clawforge --app demo mcp-setup
   shim init (./clawforge, installed): ./clawforge mcp-setup
-  local package: clawforge mcp-setup
+  local package: ./clawforge mcp-setup
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo mcp-setup
   tool form: {"tool":"mcp-setup","arguments":{}}
 
@@ -2049,6 +2049,81 @@
   global (clawforge): clawforge plan
   global, handed to the checkout gate with --app demo: clawforge --app demo plan
   shim init (./clawforge, installed): ./clawforge plan
-  local package: clawforge plan
+  local package: ./clawforge plan
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo plan
   tool form: {"tool":"plan","arguments":{}}
+
+=== help prose: check smoke ===
+  checkout default (openclaw/default): ./clawforge smoke
+  --app openclaw: ./clawforge smoke
+  --app demo: ./clawforge --app demo smoke
+  OC_APP=demo: ./clawforge --app demo smoke
+  sole demo: ./clawforge --app demo smoke
+  cwd app1: ./clawforge smoke
+  gateway, no app yet: ./clawforge smoke
+  global (clawforge): clawforge smoke
+  global, handed to the checkout gate with --app demo: clawforge --app demo smoke
+  shim init (./clawforge, installed): ./clawforge smoke
+  local package: ./clawforge smoke
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo smoke
+  tool form: {"tool":"smoke","arguments":{}}
+
+=== help prose: check check gate ===
+  checkout default (openclaw/default): ./clawforge check gate
+  --app openclaw: ./clawforge check gate
+  --app demo: ./clawforge check gate
+  OC_APP=demo: ./clawforge check gate
+  sole demo: ./clawforge check gate
+  cwd app1: ./clawforge check gate
+  gateway, no app yet: ./clawforge check gate
+  global (clawforge): clawforge check gate
+  global, handed to the checkout gate with --app demo: clawforge check gate
+  shim init (./clawforge, installed): ./clawforge check gate
+  local package: ./clawforge check gate
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge check gate
+  tool form: {"tool":"check","arguments":{"filter":["gate"]}}
+
+=== help prose: new-app bootstrap ===
+  checkout default (openclaw/default): ./clawforge --app <name> bootstrap
+  --app openclaw: ./clawforge --app <name> bootstrap
+  --app demo: ./clawforge --app <name> bootstrap
+  OC_APP=demo: ./clawforge --app <name> bootstrap
+  sole demo: ./clawforge --app <name> bootstrap
+  cwd app1: ./clawforge --app <name> bootstrap
+  gateway, no app yet: ./clawforge --app <name> bootstrap
+  global (clawforge): clawforge --app <name> bootstrap
+  global, handed to the checkout gate with --app demo: clawforge --app <name> bootstrap
+  shim init (./clawforge, installed): ./clawforge --app <name> bootstrap
+  local package: ./clawforge --app <name> bootstrap
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> bootstrap
+  tool form: —
+
+=== help prose: remove-app list ===
+  checkout default (openclaw/default): ./clawforge list
+  --app openclaw: ./clawforge list
+  --app demo: ./clawforge list
+  OC_APP=demo: ./clawforge list
+  sole demo: ./clawforge list
+  cwd app1: ./clawforge list
+  gateway, no app yet: ./clawforge list
+  global (clawforge): clawforge list
+  global, handed to the checkout gate with --app demo: clawforge list
+  shim init (./clawforge, installed): ./clawforge list
+  local package: ./clawforge list
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge list
+  tool form: {"tool":"list","arguments":{}}
+
+=== help prose: remove-app destroy ===
+  checkout default (openclaw/default): ./clawforge --app <name> destroy
+  --app openclaw: ./clawforge --app <name> destroy
+  --app demo: ./clawforge --app <name> destroy
+  OC_APP=demo: ./clawforge --app <name> destroy
+  sole demo: ./clawforge --app <name> destroy
+  cwd app1: ./clawforge --app <name> destroy
+  gateway, no app yet: ./clawforge --app <name> destroy
+  global (clawforge): clawforge --app <name> destroy
+  global, handed to the checkout gate with --app demo: clawforge --app <name> destroy
+  shim init (./clawforge, installed): ./clawforge --app <name> destroy
+  local package: ./clawforge --app <name> destroy
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> destroy
+  tool form: —

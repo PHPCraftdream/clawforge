@@ -106,7 +106,7 @@ for (const { label, advice } of ADVICE_ROWS) {
 const SHIM_SPELLING = "./clawforge";
 const SINGLE_QUOTE = "'";
 const bareColumns = MATRIX_COLUMNS.filter((column) => "invocation" in column && column.invocation.program === "clawforge");
-checkTrue("the matrix has bare-program columns", bareColumns.length === 3);
+checkTrue("the matrix has bare-program columns", bareColumns.length === 2);
 for (const { label, advice } of ADVICE_ROWS) {
   for (const column of bareColumns) {
     if (!("invocation" in column)) continue;
@@ -140,6 +140,42 @@ check(
   renderAdvice(command(["status", "--reason", NEEDS_QUOTING]), BARE_PROGRAM),
   `clawforge status --reason "two words"`,
 );
+
+/** The `--app` name is a word the user pastes like any other, so it quotes by the same rule
+ *  (review R-A F5): a hand-over whose app name carries a space must not corrupt the line. */
+check(
+  "an app name that needs quoting is quoted under a path spelling",
+  renderAdvice(command(["status"], { app: NEEDS_QUOTING }), PATH_SPELLING),
+  `${SHIM_PROGRAM} --app 'two words' status`,
+);
+check(
+  "an app name that needs quoting is quoted under the bare program",
+  renderAdvice(command(["status"], { app: NEEDS_QUOTING }), BARE_PROGRAM),
+  `clawforge --app "two words" status`,
+);
+check(
+  "an inherited app name that needs quoting is quoted",
+  renderAdvice(command(["status"]), { ...PATH_SPELLING, app: { name: NEEDS_QUOTING, selectedBy: "flag" } }),
+  `${SHIM_PROGRAM} --app 'two words' status`,
+);
+
+/** The bare-program fallback quotes with double quotes only — the spelling cmd.exe and
+ *  PowerShell parse, but POSIX still expands `$` and backticks inside them (review R-A F2).
+ *  The limit is accepted and documented in render.ts; what must hold is that no golden
+ *  advice relies on the branch with a shell-active character — this fails the moment new
+ *  prose ships one, instead of the pasted line silently executing it. */
+const POSIX_ACTIVE = /[`$\\]/;
+const QUOTED_SPAN = /"(?:[^"\\]|\\.)*"/g;
+for (const { label, advice } of ADVICE_ROWS) {
+  if (advice.kind !== CLAWFORGE_KIND) continue;
+  for (const column of bareColumns) {
+    if (!("invocation" in column)) continue;
+    const line = withoutNote(renderAdvice(advice, column.invocation), advice);
+    for (const span of line.match(QUOTED_SPAN) ?? []) {
+      checkTrue(`${label} under ${column.label}: a double-quoted word carries no shell-active character`, !POSIX_ACTIVE.test(span.slice(1, -1)));
+    }
+  }
+}
 
 /** P3 — a `shell` line is byte for byte what the advice carries, note included, under every
  *  column: nothing in the output layer rewrites a line for another shell or host. */

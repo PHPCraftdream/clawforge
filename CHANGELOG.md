@@ -6,6 +6,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* `deploy`'s printed bootstrap lines quote the remote path (`cd '/srv/my app' && …`), so a
+  path with a space pastes as one line instead of splitting; the `--app <name>` in advice
+  lines and the `--app`-conflict refusal quote a deployment name the same way.
 * All 41 commands of the framework are declared once — arguments with their value rules, actions,
   effect and phases — and every command runs through one pipeline on the console and on MCP
   (parse, confirm, prepare, environment, context, run). What changes for users:

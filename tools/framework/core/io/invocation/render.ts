@@ -30,11 +30,17 @@ function isGateCommand(word: string | undefined): boolean {
 /** A word POSIX, cmd and pwsh leave as is without quoting (a path or an image reference included). */
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
-function renderArgument(word: string, program: string): string {
+/** One word's quoting, exported for refusals that print a value the user typed (the same
+ *  rule as the advice line, applied outside renderAdvice). */
+export function renderArgument(word: string, program: string): string {
   if (/^<.*>$/.test(word)) return word;                // a placeholder <…> stays bare
   if (SAFE_WORD.test(word)) return word;
   if (program.includes("/")) return shellQuote(word); // a path spelling: POSIX rules
-  return `"${word.replaceAll('"', '\\"')}"`;           // bare clawforge (cmd, pwsh): double quotes only
+  // Bare `clawforge` is typed in cmd.exe and PowerShell as often as in bash: double quotes
+  // are the only spelling all three parse. Accepted limit: POSIX would still expand `$` and
+  // backticks inside them, so no advice may reach this branch carrying a shell-active
+  // character — the matrix check in surfaces/advice-matrix.check.ts holds that rule.
+  return `"${word.replaceAll('"', '\\"')}"`;
 }
 
 export function renderAdvice(advice: Advice, on: Invocation = invocation()): string {
@@ -46,14 +52,14 @@ export function renderAdvice(advice: Advice, on: Invocation = invocation()): str
   }
   const parts = [on.program];
   if (advice.app !== undefined) {
-    parts.push("--app", advice.app);
+    parts.push("--app", renderArgument(advice.app, on.program));
   } else if (
     !isGateCommand(advice.argv[0]) &&
     on.app !== undefined &&
     on.app.name !== "openclaw" &&
     (on.app.selectedBy === "flag" || on.app.selectedBy === "env" || on.app.selectedBy === "sole")
   ) {
-    parts.push("--app", on.app.name);
+    parts.push("--app", renderArgument(on.app.name, on.program));
   }
   for (const argument of advice.argv) parts.push(renderArgument(argument, on.program));
   const line = parts.join(" ");

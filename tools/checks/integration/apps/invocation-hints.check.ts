@@ -85,8 +85,8 @@ try {
   // Lines copied into another shell or host are printed verbatim under any prefix.
   const cron = cronLine(60, { cwd: "/srv/app1", command: "./clawforge", args: ["--app", "app1", "backup"] }, "backup", "app1");
   const remote = [
-    `would bootstrap remotely afterwards: cd /opt/oc && ./clawforge --app staging bootstrap`,
-    `bring it up there with: cd /opt/oc && ./clawforge --app staging bootstrap`,
+    `would bootstrap remotely afterwards: cd '/opt/oc' && ./clawforge --app staging bootstrap`,
+    `bring it up there with: cd '/opt/oc' && ./clawforge --app staging bootstrap`,
     `provider keys are not copied — install them there: ./clawforge --app staging secrets --apply`,
     `  bash -lc "cd /srv/app1 && ./clawforge backup"`,
   ];
@@ -146,11 +146,17 @@ try {
     }
 
     const name = deploymentName();
-    const bootstrap = `cd /opt/openclaw && ./clawforge --app ${name} bootstrap`;
+    const bootstrap = `cd '/opt/openclaw' && ./clawforge --app ${name} bootstrap`;
     const dry = await capture(() => deploy(deployCtx, ["user@host", "--dry-run"]));
     check(`deploy --dry-run prints the remote bootstrap line verbatim ${at}`, dry.includes(`would bootstrap remotely afterwards: ${bootstrap}`), true);
     const skipped = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, false, undefined));
     check(`deploy's manual bootstrap hint is verbatim ${at}`, skipped.includes(`bring it up there with: ${bootstrap}`), true);
+    // A remote path with a space must survive the paste: the hint quotes it like the code's
+    // own remote execution does (review R-A F1).
+    const spacedDry = await capture(() => deploy({ ...deployCtx, settings: { remotePath: "/srv/my app", gatewayPort: 18789 } } as unknown as Context, ["user@host", "--dry-run"]));
+    check(`deploy --dry-run quotes a spaced remote path ${at}`, spacedDry.includes("would bootstrap remotely afterwards: cd '/srv/my app' &&"), true);
+    const spacedSkip = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/srv/my app", name, false, undefined));
+    check(`deploy's manual bootstrap hint quotes a spaced remote path ${at}`, spacedSkip.includes("bring it up there with: cd '/srv/my app' &&"), true);
     const done = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, true, undefined));
     check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`), true);
   }

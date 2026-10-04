@@ -48,7 +48,12 @@ export { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS, BACKUP_UNINST
  *  the preview touches nothing, so the call itself is one. */
 export const BACKUP_ARGUMENTS = [
   PROFILE_ARGUMENT,
-  { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+  {
+    name: "hot",
+    summary: "Do not stop the service",
+    description: "Do not stop the service (risks a partial write)",
+    kind: "flag",
+  },
   {
     name: "native",
     summary: "Consistent snapshot without stopping the gateway",

@@ -34,7 +34,12 @@ import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
 export const ACCEPT_ARGUMENTS = [
-  { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
+  {
+    name: "recipe",
+    summary: "Recipe to check",
+    description: "Recipe to check (default: every recipe that declares checks)",
+    kind: "positional",
+  },
   { name: "set", description: "Check the verified artifact and save an acceptance receipt", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },

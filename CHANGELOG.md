@@ -97,6 +97,9 @@ All notable changes to `@clawforge/framework` will be documented here.
     its `details` is no longer rewritten — what the declaration says is what prints.
   * The `exec` entry in the command list and its MCP tool description names `cli` without the
     program.
+* MCP tool schemas describe each argument with its declared summary — no heuristic shortening; the
+  `(value: <…>)` suffix is gone; `break-lock`/`break-foreign-lock` name the actions they apply to on backup, expose,
+  watch, recipe and set.
 
 ### Fixed
 

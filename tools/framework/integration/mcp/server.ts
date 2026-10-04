@@ -18,7 +18,7 @@
 
 import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
-import { commandRegistry, renderHelp, type GateCommand } from "../gate.ts";
+import { commandRegistry, renderHelp, HELP_COMMAND_DESCRIPTION, type GateCommand } from "../gate.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
@@ -52,7 +52,7 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
 const HELP_TOOL: Declared = {
   summary: "Full description, usage and argument list for one command, or the command list when none is given",
   arguments: [
-    { name: "command", description: "Command name; omit to list every command", kind: "option", valueName: "name" },
+    { name: "command", description: HELP_COMMAND_DESCRIPTION, kind: "option", valueName: "name" },
   ],
   readOnly: true,
 };

@@ -22,6 +22,7 @@ export const FORCE_ARGUMENT = {
 
 export const BREAK_LOCK_ARGUMENT = {
   name: "break-lock",
+  summary: "Take over a held instance lock",
   description: "Take over the instance lock held by another operation",
   kind: "flag",
 } as const;

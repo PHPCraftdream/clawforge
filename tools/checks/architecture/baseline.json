@@ -229,8 +229,19 @@
     "total": 0
   },
   "retiredSymbols": {
-    "comment": "stage 5 (rf5-completion C1): names the command registry made structural that must not reappear anywhere under tools/ outside tools/checks/architecture/",
-    "names": ["knownCommandNames", "controlMcpHelp", "builtinHelpLines", "declaredFromCompletion"],
+    "comment": "stage 5 (rf5-completion C1, rf5-mcp): names the command registry and the declared-summary schema made structural that must not reappear anywhere under tools/ outside tools/checks/architecture/",
+    "names": [
+      "knownCommandNames",
+      "controlMcpHelp",
+      "builtinHelpLines",
+      "declaredFromCompletion",
+      "shortenDescription",
+      "stripParentheticals",
+      "SHORT_DESCRIPTION_LIMIT",
+      "SHARED_SCHEMA_DESCRIPTIONS",
+      "sharedSchemaDescription",
+      "splitActionScoped"
+    ],
     "total": 0
   }
 }

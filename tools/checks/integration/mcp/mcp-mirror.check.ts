@@ -82,23 +82,24 @@ try {
 
   // tools/list's byte budget: an agent pays this in context before its first real call, every
   // session — each tool description is a one-line summary plus a pointer to `help`, not the
-  // whole `--help` text. inputSchema keeps argument names, choices, and a short (~60 char)
-  // clause per description instead of its full `--help` text — schema.ts's
-  // schemaArgumentDescription cuts each at its first sentence/clause boundary, drops
-  // parenthetical asides, and omits a description that only restates the argument's own
-  // name. outputSchema (STRUCTURED_OUTPUT_SCHEMA, declared once per structured command)
-  // carries types and required-ness only, not the ~90-byte prose per field that used to sit
-  // on every one of them identically — that meaning is in `help`'s output for a structured
-  // command now (STRUCTURED_ENVELOPE_HELP, checked below). `help <command>` (renderHelp) and
-  // the CLI `--help` still carry every argument description whole; only the copy sent up
-  // front in tools/list is shortened.
+  // whole `--help` text. inputSchema keeps argument names, choices, and each description whole
+  // as its declaration declares it — the `summary` where there is one, else the `description`
+  // — instead of its full `--help` text: schema.ts's schemaArgumentDescription only omits a
+  // description that merely restates the argument's own name, and how much text a description
+  // carries is the declaration's decision, not the schema's. outputSchema
+  // (STRUCTURED_OUTPUT_SCHEMA, declared once per structured command) carries types and
+  // required-ness only, not the ~90-byte prose per field that used to sit on every one of them
+  // identically — that meaning is in `help`'s output for a structured command now
+  // (STRUCTURED_ENVELOPE_HELP, checked below). `help <command>` (renderHelp) and the CLI
+  // `--help` still carry every argument description whole; the schema shows the declared text
+  // rather than a shortened one.
   //
-  // 30 KB (30720 bytes) was the target for this budget. Shortening inputSchema descriptions,
-  // outputSchema and the tool-description help pointer together reach ~31 KB — inputSchema's
-  // argument names/types/required/choices are what is left, and cutting those would mean a
-  // client can no longer tell a command's arguments apart without calling `help` first, which
-  // is the information `tools/list` exists to carry. The budget below sits just above what is
-  // reached, not at 30 KB.
+  // 30 KB (30720 bytes) was the target for this budget. Shortening outputSchema and the
+  // tool-description help pointer, the schema descriptions kept whole, still reach ~31 KB —
+  // inputSchema's argument names/types/required/choices are what is left, and cutting those
+  // would mean a client can no longer tell a command's arguments apart without calling `help`
+  // first, which is the information `tools/list` exists to carry. The budget below sits just
+  // above what is reached, not at 30 KB.
   const TOOLS_LIST_BUDGET = 32 * 1024;
   const toolsListBytes = Buffer.byteLength(JSON.stringify(response?.result ?? {}), "utf8");
   process.stderr.write(`  tools/list is ${toolsListBytes} bytes (budget ${TOOLS_LIST_BUDGET})\n`);
@@ -107,11 +108,22 @@ try {
   const overLong = fullTools.filter((tool) => (tool.description ?? "").length > 400).map((tool) => tool.name);
   check("every tool description is at most 400 characters", overLong, []);
 
-  // Every argument description in the schema is a short clause, not the `--help` paragraph
-  // it was cut from — guards the shortening itself, not just the total it adds up to. A
-  // composed description is the exception by design (R32-04): one clause per action, each
-  // carrying its own action list, so `set.json` reads whole instead of one action's claim.
+  // No heuristic survives on the surface: a description is the declaration's own text (or
+  // one action's own text per clause), never a cut — no ellipsis marking a truncation, no
+  // `(value: <…>)` tail repeating the option's own valueName. A composed description is the
+  // exception by design (R32-04): one clause per action, each carrying its own action list,
+  // so `set.json` reads whole instead of one action's claim.
   const perActionComposite = /^[^;()]+ \([a-z, -]+\)(; [^;()]+ \([a-z, -]+\))*$/;
+  const heuristicCut = fullTools.flatMap((tool) =>
+    Object.entries(tool.inputSchema?.properties ?? {})
+      .filter(([, property]) => {
+        const description = property.description ?? "";
+        return description.includes("…") || (description.includes("(value:") && description.includes("<"));
+      })
+      .map(([argumentName]) => `${tool.name}.${argumentName}`));
+  check("no argument description in the schema is a heuristic cut", heuristicCut, []);
+  // The declared text still has to stay short enough to be paid for per tool every session:
+  // a clause over 90 characters is a details paragraph that belongs in `help`.
   const overLongArguments = fullTools.flatMap((tool) =>
     Object.entries(tool.inputSchema?.properties ?? {})
       .filter(([, property]) => {

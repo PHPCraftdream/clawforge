@@ -49,7 +49,12 @@ export const RESTORE_ARGUMENTS = [
   { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
   { ...FORCE_ARGUMENT, setByConfirm: true },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
+  {
+    name: "fresh-identity",
+    summary: "Drop identity and paired devices",
+    description: "Drop identity and paired devices (cloning, not moving)",
+    kind: "flag",
+  },
   { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
   { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
   { name: "json", summary: "Emit restored data and the gateway startup outcome as JSON", description: "Emit restored data and actual gateway startup outcome as JSON", kind: "flag" },

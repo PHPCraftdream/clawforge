@@ -29,7 +29,7 @@ export type CommandGroup =
 export interface CommandArgument {
   readonly name: string;
   readonly description: string;
-  /** A shorter text for the MCP tool schema; absent: the schema shortens `description` itself. */
+  /** The text the MCP tool schema shows for this argument, verbatim; absent: the schema shows `description`. */
   readonly summary?: string;
   readonly required?: boolean;
   /** How the argument appears on a command line:

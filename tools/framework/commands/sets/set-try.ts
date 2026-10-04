@@ -43,7 +43,12 @@ export * from "./set-try-env.ts";
 
 export const SET_TRY_ARGUMENTS = [
   { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
-  { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
+  {
+    name: "with-model",
+    summary: "include acceptance checks that call the model",
+    description: "With try: include acceptance checks that call the model",
+    kind: "flag",
+  },
   {
     name: "keep",
     summary: "keep the throwaway instance running instead of removing it",

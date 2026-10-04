@@ -40,6 +40,7 @@ export const INCIDENT_ARGUMENTS = [
   { name: "keep-exposure", description: "Proceed with the gateway published on every interface", kind: "flag" },
   {
     name: "tail",
+    summary: "Lines of log to collect",
     description: "Lines of log to collect (default 500)",
     kind: "option",
     valueName: "n",

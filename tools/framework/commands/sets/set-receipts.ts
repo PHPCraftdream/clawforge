@@ -7,8 +7,20 @@ import type { Context } from "#src/core/context.ts";
 import { ArgumentError, defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
 export const SET_RECEIPTS_ARGUMENTS = [
-  { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option", valueName: "id" },
-  { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option", valueName: "id" },
+  {
+    name: "set-id",
+    summary: "filter by immutable set id",
+    description: "With receipts: filter by immutable set id",
+    kind: "option",
+    valueName: "id",
+  },
+  {
+    name: "receipt",
+    summary: "show this receipt; requires --set-id",
+    description: "With receipts: show this receipt; requires --set-id",
+    kind: "option",
+    valueName: "id",
+  },
   { name: "json", summary: "Emit the receipts as JSON", description: "Emit the receipts as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 

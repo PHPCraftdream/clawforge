@@ -28,7 +28,14 @@ function limitValue(): ValueParser<number> {
 
 export const OPERATIONS_ARGUMENTS = [
   { name: "id", description: "Operation id to show in full", kind: "positional" },
-  { name: "limit", description: "How many recent operations to list (default 10)", kind: "option", valueName: "n", parse: limitValue() },
+  {
+    name: "limit",
+    summary: "How many recent operations to list",
+    description: "How many recent operations to list (default 10)",
+    kind: "option",
+    valueName: "n",
+    parse: limitValue(),
+  },
   { name: "json", description: "Emit the record, or the list, as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 

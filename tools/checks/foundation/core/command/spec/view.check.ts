@@ -4,10 +4,9 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, type ArgumentSpec } from "#framework/core/command/index.ts";
+import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
-import { splitActionScoped } from "#framework/core/command/index.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
@@ -106,122 +105,50 @@ import { check, finish } from "#checks/kit/harness.ts";
   check("pwsh's position past a typed action word offers that action's own flags", pwsh.includes("$candidates = $clawforgeActions[$cmd][$between[0]]"), true);
 }
 
-// --- R31-02 / R32-10: every MCP schema description holds structurally, verified independently
+// --- R31-02 / R32-10: the MCP schema shows the declaration's own text -------------------------
 //
-// The oracle no longer recomputes the implementation's cut (the R32-10 hole: the same
-// algorithm can only confirm itself). It states properties a well-cut description has
-// regardless of how it was computed: the shown text is a prefix of the declaration's own
-// text (parentheticals aside), the cut lands on a clause boundary or is marked partial
-// with an ellipsis, nothing ends on a dangling word, and the short form keeps the budget.
+// Stage 5 (design 3.1): a schema description is the declared `summary` or the declared
+// `description`, whole, plus the actions a multi-action command's argument belongs to — no
+// cut, no dropped parenthetical, no `(value: <…>)` tail. The heuristic that produced all
+// three is gone, and with it the oracle that recomputed its cut (the R32-10 hole: one
+// algorithm could only confirm itself). What is asserted now is what a client sees: the text
+// is the declaration's, and no truncation survives anywhere on the surface.
 
 {
-  const DANGLING = new Set(["of", "is", "are", "a", "an", "the", "or", "and", "to", "for", "with", "than", "that", "from", "by", "at", "as", "be"]);
-  const BOUNDARIES = new Set([".", ";", ":", ",", "—"]);
-  // These names get fixed schema texts regardless of their declaration (the override is
-  // data, not cut logic); asserted directly below instead of through the oracle. A table
-  // value keys a description prefix: the same name carries different meanings per command.
-  const SHARED_OVERRIDE_NAMES = new Set(["break-lock", "break-foreign-lock", "jobs", "root"]);
-  const SHARED_OVERRIDE_PREFIXES: Readonly<Record<string, readonly string[]>> = {
-    args: ["Arguments passed to OpenClaw's CLI verbatim", "Command and arguments to run"],
-    json: ["Emit restored data"],
-  };
-  const isSharedOverride = (argument: { name: string; description: string }): boolean =>
-    SHARED_OVERRIDE_NAMES.has(argument.name) ||
-    (SHARED_OVERRIDE_PREFIXES[argument.name]?.some((prefix) => argument.description.startsWith(prefix)) ?? false);
-
-  function oracleShort(description: string): string {
-    // Nested parentheticals, stripped to a fixed point like the implementation.
-    let stripped = description.replace(/^With [\w/-]+: /, "");
-    for (;;) {
-      const next = stripped.replace(/\s*\([^()]*\)/g, "");
-      if (next === stripped) break;
-      stripped = next;
-    }
-    stripped = stripped.replace(/\s{2,}/g, " ").trim();
-    if (stripped.length <= 60) return stripped;
-    const head = stripped.slice(0, 60);
-    // Boundaries inside (), [] or quotes do not count — a "," inside a JSON example is
-    // not a clause edge (R32-04).
-    let depth = 0;
-    let quote: string | undefined;
-    let cut = -1;
-    for (let i = 0; i < head.length; i++) {
-      const character = head[i];
-      if (quote !== undefined) { if (character === quote) quote = undefined; continue; }
-      if (character === "\"") { quote = character; continue; }
-      if (character === "(" || character === "[") { depth += 1; continue; }
-      if (character === ")" || character === "]") { depth = Math.max(0, depth - 1); continue; }
-      if (depth > 0) continue;
-      // "e.g." / "i.e." periods are not boundaries — same exclusion the implementation makes.
-      const abbrev = head.slice(Math.max(0, i - 3), i + 1);
-      if (BOUNDARIES.has(character) && abbrev !== "e.g." && abbrev !== "i.e." && (i + 1 >= head.length || head[i + 1] === " ")) cut = i;
-    }
-    if (cut >= 8) return stripped.slice(0, cut).trim();
-    const lastSpace = head.lastIndexOf(" ");
-    return `${(lastSpace > 24 ? head.slice(0, lastSpace) : head).trim()}…`;
-  }
-
   const offenders: string[] = [];
   for (const [name, command] of Object.entries(openclawCommands)) {
     for (const argument of command.arguments ?? []) {
-      if (isSharedOverride(argument)) continue;
-      // A declared summary reaches the schema verbatim; the oracle only judges arguments
-      // the shortener still decides for.
-      if (argument.summary !== undefined) continue;
-      const actual = schemaArgumentDescription(argument);
+      const scopes = argumentScopes(command, argument.name);
+      const actual = schemaArgumentDescription(argument, scopes);
       if (actual === undefined) continue;
-      // A declared summary that IS the whole description (lead-in aside) is the stage-3 end
-      // state — the schema shows the full phrase instead of a heuristic cut (design 5.1's
-      // five "…" arguments, e.g. recipe's <new-name>). Compare it against the complete
-      // text, not the truncation.
-      if (argument.summary !== undefined) {
-        let complete = argument.description.replace(/^With [\w/-]+: /, "");
-        for (;;) {
-          const next = complete.replace(/\s*\([^()]*\)/g, "");
-          if (next === complete) break;
-          complete = next;
-        }
-        if (argument.summary === complete.replace(/\s{2,}/g, " ").trim()) continue;
+      if (actual.includes("…")) offenders.push(`${name}.${argument.name} is cut with an ellipsis: ${actual}`);
+      const valueTail = actual.includes("(value:") && actual.includes("<");
+      if (valueTail) offenders.push(`${name}.${argument.name} carries a value tail: ${actual}`);
+      // One clause per text the actions declare differently, each naming its own actions
+      // (R31-03, R32-04) — the parts `argumentsView` composes, read back rather than parsed
+      // out of the joined string again.
+      const clauses = actual.split("; ");
+      if (scopes === undefined) {
+        const base = argument.summary ?? argument.description;
+        const actions = argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`;
+        if (actual !== `${base}${actions}`) offenders.push(`${name}.${argument.name}: "${actual}" is not its declared text`);
+      } else if (clauses.length !== scopes.length) {
+        offenders.push(`${name}.${argument.name}: ${clauses.length} clauses for ${scopes.length} texts`);
+      } else {
+        clauses.forEach((clause, index) => {
+          const scope = scopes[index]!;
+          const base = scope.summary ?? scope.description;
+          if (clause !== `${base} (${scope.actions.join(", ")})`) offenders.push(`${name}.${argument.name}: clause "${clause}" is not ${base}`);
+        });
       }
-      // Suffixes are appended after shortening — rebuild them structurally, not by regex.
-      // A composed description ("X (build); Y (forget)") is shortened per part, each part
-      // keeping its own actions (R32-04).
-      const parts = splitActionScoped(argument.description, argument.actions);
-      // A declared summary is the schema text verbatim (stage 3): the oracle defers to it.
-      const short = argument.summary !== undefined
-        ? argument.summary + (argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`)
-        : parts === undefined
-        ? (() => {
-          const single = oracleShort(argument.description);
-          return argument.actions === undefined ? single : `${single} (${argument.actions.join(", ")})`;
-        })()
-        : parts.map(({ description, actions }) => `${oracleShort(description)} (${actions.join(", ")})`).join("; ");
-      const expected = argument.kind === "option" && argument.valueName !== undefined
-        ? `${short} (value: <${argument.valueName}>)`
-        : short;
-      if (actual !== expected) offenders.push(`${name}.${argument.name}: ${actual} (expected ${expected})`);
-      const lastWord = actual.replace(/\s*\([^()]*\)$/, "").trim().split(" ").pop()!.toLowerCase();
-      if (DANGLING.has(lastWord)) offenders.push(`${name}.${argument.name} ends on a dangling word: ${actual}`);
-      // Structural invariant: brackets and quotes stay balanced, so no cut lands inside
-      // a JSON example or a nested parenthetical.
-      let depth = 0;
-      let quote: string | undefined;
-      for (const character of actual) {
-        if (quote !== undefined) { if (character === quote) quote = undefined; continue; }
-        if (character === "\"") { quote = character; continue; }
-        if (character === "(" || character === "[") depth += 1;
-        if (character === ")" || character === "]") depth -= 1;
-        if (depth < 0) { offenders.push(`${name}.${argument.name} closes an unopened bracket: ${actual}`); break; }
-      }
-      if (depth !== 0 || quote !== undefined) offenders.push(`${name}.${argument.name} leaves brackets or quotes open: ${actual}`);
     }
   }
-  check("every schema description is a clean prefix of its declaration's text", offenders, []);
+  check("every schema description is the declaration's own text", offenders, []);
 
-  // The nine R31-02 offenders, by their observable schema text.
+  // The R31-02 offenders, by their observable schema text.
   const schemaOf = (commandName: string, argumentName: string): string =>
     (inputSchema(openclawCommands[commandName]) as { properties: Record<string, { description?: string }> }).properties[argumentName].description ?? "";
-  check("the shared break-lock override is the terse fixed text", schemaOf("bootstrap", "break-lock"), "Take over a held instance lock");
+  check("break-lock's schema line is the declared summary", schemaOf("bootstrap", "break-lock"), "Take over a held instance lock");
   check("recover-env.adopt-runtime is a complete clause", schemaOf("recover-env", "adopt-runtime"), "Take the running container as authoritative");
   check("expose.apply's summary is the full phrase, not the cut", schemaOf("expose", "apply"), "run the printed `tailscale serve` command on the target instead of only printing it (tailscale)");
   check("incident.keep-exposure is a complete phrase", schemaOf("incident", "keep-exposure"), "Proceed with the gateway published on every interface");
@@ -233,14 +160,30 @@ import { check, finish } from "#checks/kit/harness.ts";
   check("exec.args is the fixed text", schemaOf("exec", "args"), "Command and arguments to run");
   check("host.args is the fixed text", schemaOf("host", "args"), "Command and arguments to run");
   check("host.root is a complete phrase, not a cut at the colon", schemaOf("host", "root"), "Request root; one half of the elevation consent");
-  check("check.jobs keeps the parenthetical closed (a gate command's declared text)", schemaArgumentDescription({ name: "jobs", description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))", kind: "flag" }), "Concurrent check-file processes");
   check("restore.json fits the budget whole", schemaOf("restore", "json"), "Emit restored data and the gateway startup outcome as JSON");
-  check(
-    "check.filter (a gate command, not openclawCommands) is a complete phrase",
-    schemaArgumentDescription({ name: "filter", description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any", kind: "option", valueName: "text" }),
-    "Only run checks whose relative path contains this text (value: <text>)",
-  );
   check("secrets.json no longer reads as refused by itself", schemaOf("secrets", "json"), "Emit the default read-only report as JSON");
+  // The lock-takeover pair names the actions it applies to wherever it is scoped to some of
+  // them (backup, expose, watch, recipe, set): the tail the shared-description table used to
+  // swallow is what tells a client which action a flag belongs to.
+  check("backup.break-lock names the actions it applies to", schemaOf("backup", "break-lock"), "Take over a held instance lock (prune-replaced, install, uninstall)");
+  check("backup.break-foreign-lock names the actions it applies to", schemaOf("backup", "break-foreign-lock"), "Host id of an orphaned lock to take over (prune-replaced, install, uninstall)");
+  check("expose.break-lock names the actions it applies to", schemaOf("expose", "break-lock"), "Take over a held instance lock (tailscale)");
+  check("watch.break-lock names the actions it applies to", schemaOf("watch", "break-lock"), "Take over a held instance lock (install, uninstall)");
+  check("recipe.break-lock names the actions it applies to", schemaOf("recipe", "break-lock"), "Take over a held instance lock (verify, onboard, diagnose, install, remove)");
+  check("set.break-lock names the actions it applies to", schemaOf("set", "break-lock"), "Take over a held instance lock (forget)");
+  // A gate command's argument carries no `summary`: the declared description reaches the
+  // schema whole — the cut used to trim both of these, and the option used to gain a
+  // `(value: <…>)` tail naming its own valueName.
+  check(
+    "check.filter, a gate command's argument, is its declared description whole",
+    schemaArgumentDescription({ name: "filter", description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any", kind: "variadic" }),
+    "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any",
+  );
+  check(
+    "check.jobs keeps the parenthetical whole (a gate command's declared text)",
+    schemaArgumentDescription({ name: "jobs", description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))", kind: "flag" }),
+    "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))",
+  );
 
   const backupSchema = inputSchema(openclawCommands.backup) as { properties: Record<string, { description?: string }> };
   check("backup.action says what no action word means", backupSchema.properties.action.description, "Omit to create a backup");
@@ -263,7 +206,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   check(
     "set.name names the object for forget and the set for build/validate",
     setSchema.properties.name.description,
-    "Set name (build, validate); Object name (forget) (value: <name>)",
+    "Set name (build, validate); Object name (forget)",
   );
   check(
     "set.json's schema line keeps each part's own action, not one action's claim for all",

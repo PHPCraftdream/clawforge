@@ -262,7 +262,12 @@ export interface InitPlacement {
 }
 
 export const INIT_ARGUMENTS: CommandArgument[] = [
-  { name: "local", description: "Print the npm command for editor types (also in an already initialised directory)", kind: "flag" },
+  {
+    name: "local",
+    summary: "Print the npm command for editor types",
+    description: "Print the npm command for editor types (also in an already initialised directory)",
+    kind: "flag",
+  },
 ];
 
 /** The installed entry's own gate command, declared without side effects — the same shape

@@ -38,18 +38,21 @@ const LIST_ARGUMENTS: CommandArgument[] = [
 const checkArguments: CommandArgument[] = [
   {
     name: "filter",
+    summary: "Only run checks whose relative path contains this text",
     description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any",
     kind: "variadic",
   },
   { name: "list", description: "Print the matching check paths instead of running them", kind: "flag" },
   {
     name: "jobs",
+    summary: "Concurrent check-file processes",
     description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))",
     kind: "option",
     valueName: "n",
   },
   {
     name: "require",
+    summary: "Capabilities that must fail a check instead of skipping it",
     description:
       "Comma-separated capabilities (docker, wsl, posix-sh, rsync, linux-host) whose absence must fail a " +
       "check that needs them, instead of skipping it — merged with OC_CHECK_REQUIRE",

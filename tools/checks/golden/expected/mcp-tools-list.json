@@ -104,7 +104,7 @@
           },
           "confirm-name": {
             "type": "string",
-            "description": "Confirms the deployment's own name (value: <name>)"
+            "description": "Confirms the deployment's own name"
           },
           "break-lock": {
             "type": "boolean",
@@ -129,15 +129,15 @@
         "properties": {
           "tail": {
             "type": "string",
-            "description": "Lines to return when reading rather than following (value: <n>)"
+            "description": "Lines to return when reading rather than following"
           },
           "since": {
             "type": "string",
-            "description": "Only lines at or after this duration/timestamp (value: <duration|timestamp>)"
+            "description": "Only lines at or after this duration/timestamp"
           },
           "grep": {
             "type": "string",
-            "description": "Only lines matching this regular expression (value: <pattern>)"
+            "description": "Only lines matching this regular expression"
           }
         }
       }
@@ -161,7 +161,7 @@
           },
           "profile": {
             "type": "string",
-            "description": "full, migrate or share (create) (value: <profile>)",
+            "description": "full, migrate or share (create)",
             "enum": [
               "full",
               "migrate",
@@ -202,19 +202,19 @@
           },
           "keep": {
             "type": "string",
-            "description": "Keep this many newest copies instead of deleting all of them (prune-replaced) (value: <n>)"
+            "description": "Keep this many newest copies instead of deleting all of them (prune-replaced)"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take over a held instance lock (prune-replaced, install, uninstall)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Host id of an orphaned lock to take over (prune-replaced, install, uninstall)"
           },
           "interval": {
             "type": "string",
-            "description": "how often — 30m, 6h or 1d, explicit unit required (install) (value: <interval>)"
+            "description": "how often — 30m, 6h or 1d, explicit unit required (install)"
           },
           "confirm": {
             "type": "boolean",
@@ -276,7 +276,7 @@
         "properties": {
           "profile": {
             "type": "string",
-            "description": "full, migrate or share (value: <profile>)",
+            "description": "full, migrate or share",
             "enum": [
               "full",
               "migrate",
@@ -367,7 +367,7 @@
           },
           "profile": {
             "type": "string",
-            "description": "full, migrate or share (value: <profile>)",
+            "description": "full, migrate or share",
             "enum": [
               "full",
               "migrate",
@@ -392,7 +392,7 @@
         "properties": {
           "image": {
             "type": "string",
-            "description": "Upgrade to this image instead of the deployment's OPENCLAW_IMAGE (value: <ref>)"
+            "description": "Upgrade to this image instead of the deployment's OPENCLAW_IMAGE"
           },
           "dry-run": {
             "type": "boolean",
@@ -546,7 +546,7 @@
         "properties": {
           "set": {
             "type": "string",
-            "description": "Plan from a built set artifact instead of the working tree (value: <artifact>)"
+            "description": "Plan from a built set artifact instead of the working tree"
           },
           "json": {
             "type": "boolean",
@@ -602,11 +602,11 @@
         "properties": {
           "set": {
             "type": "string",
-            "description": "Install this built set artifact instead of the working tree (value: <artifact>)"
+            "description": "Install this built set artifact instead of the working tree"
           },
           "expect": {
             "type": "string",
-            "description": "Declaration checksum the plan was computed against (value: <checksum>)"
+            "description": "Declaration checksum the plan was computed against"
           },
           "dry-run": {
             "type": "boolean",
@@ -682,7 +682,7 @@
           },
           "set": {
             "type": "string",
-            "description": "Check the verified artifact and save an acceptance receipt (value: <artifact>)"
+            "description": "Check the verified artifact and save an acceptance receipt"
           },
           "with-model": {
             "type": "boolean",
@@ -742,7 +742,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "Operation id to undo (value: <id>)"
+            "description": "Operation id to undo"
           },
           "no-restart": {
             "type": "boolean",
@@ -826,7 +826,7 @@
           },
           "limit": {
             "type": "string",
-            "description": "How many recent operations to list (value: <n>)"
+            "description": "How many recent operations to list"
           },
           "json": {
             "type": "boolean",
@@ -924,7 +924,7 @@
           },
           "local-port": {
             "type": "string",
-            "description": "local port to bind (ssh) (value: <port>)"
+            "description": "local port to bind (ssh)"
           },
           "run": {
             "type": "boolean",
@@ -936,11 +936,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take over a held instance lock (tailscale)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Host id of an orphaned lock to take over (tailscale)"
           },
           "json": {
             "type": "boolean",
@@ -979,7 +979,7 @@
           },
           "interval": {
             "type": "string",
-            "description": "time between checks — a bare number is minutes (install) (value: <interval>)"
+            "description": "time between checks — a bare number is minutes (install)"
           },
           "apply": {
             "type": "boolean",
@@ -987,11 +987,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take over a held instance lock (install, uninstall)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Host id of an orphaned lock to take over (install, uninstall)"
           },
           "confirm": {
             "type": "boolean",
@@ -1019,7 +1019,7 @@
           },
           "tail": {
             "type": "string",
-            "description": "Lines of log to collect (value: <n>)"
+            "description": "Lines of log to collect"
           },
           "json": {
             "type": "boolean",
@@ -1283,11 +1283,11 @@
         "properties": {
           "provider": {
             "type": "string",
-            "description": "Provider id, for example openai (value: <id>)"
+            "description": "Provider id, for example openai"
           },
           "env": {
             "type": "string",
-            "description": "Secret variable, for example OPENAI_API_KEY (value: <var>)"
+            "description": "Secret variable, for example OPENAI_API_KEY"
           },
           "force": {
             "type": "boolean",
@@ -1336,7 +1336,7 @@
           },
           "store": {
             "type": "string",
-            "description": "Store name, e.g. local or prod (value: <name>)"
+            "description": "Store name, e.g. local or prod"
           },
           "force": {
             "type": "boolean",
@@ -1397,15 +1397,15 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take over a held instance lock (verify, onboard, diagnose, install, remove)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Host id of an orphaned lock to take over (verify, onboard, diagnose, install, remove)"
           },
           "tail": {
             "type": "string",
-            "description": "lines to return per service (diagnose, logs) (value: <n>)"
+            "description": "lines to return per service (diagnose, logs)"
           },
           "force-disabled": {
             "type": "boolean",
@@ -1477,7 +1477,7 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take over the instance lock held by another operation"
           },
           "break-foreign-lock": {
             "type": "string",
@@ -1505,7 +1505,7 @@
           },
           "path": {
             "type": "string",
-            "description": "Remote install directory (value: <path>)"
+            "description": "Remote install directory"
           },
           "no-bootstrap": {
             "type": "boolean",
@@ -1541,7 +1541,7 @@
         "properties": {
           "client": {
             "type": "string",
-            "description": "Client configuration to update (value: <client>)",
+            "description": "Client configuration to update",
             "enum": [
               "claude",
               "codex",
@@ -1635,7 +1635,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Set name (build, validate); Object name (forget) (value: <name>)"
+            "description": "Set name (build, validate); Object name (forget)"
           },
           "json": {
             "type": "boolean",
@@ -1643,23 +1643,23 @@
           },
           "set": {
             "type": "string",
-            "description": "Artifact instead of the working tree (validate, try) (value: <artifact>)"
+            "description": "Artifact instead of the working tree (validate, try)"
           },
           "from": {
             "type": "string",
-            "description": "original artifact (diff) (value: <artifact>)"
+            "description": "original artifact (diff)"
           },
           "to": {
             "type": "string",
-            "description": "replacement artifact (diff) (value: <artifact>)"
+            "description": "replacement artifact (diff)"
           },
           "set-id": {
             "type": "string",
-            "description": "filter by immutable set id (receipts) (value: <id>)"
+            "description": "filter by immutable set id (receipts)"
           },
           "receipt": {
             "type": "string",
-            "description": "show this receipt; requires --set-id (receipts) (value: <id>)"
+            "description": "show this receipt; requires --set-id (receipts)"
           },
           "with-model": {
             "type": "boolean",
@@ -1671,7 +1671,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "agent, mcp-server, or cron-job (forget) (value: <kind>)",
+            "description": "agent, mcp-server, or cron-job (forget)",
             "enum": [
               "agent",
               "mcp-server",
@@ -1680,11 +1680,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take over a held instance lock (forget)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Host id of an orphaned lock to take over (forget)"
           },
           "confirm": {
             "type": "boolean",
@@ -1758,7 +1758,7 @@
           },
           "require": {
             "type": "string",
-            "description": "Comma-separated capabilities whose absence must fail a… (value: <cap,...>)"
+            "description": "Capabilities that must fail a check instead of skipping it"
           }
         }
       }
@@ -1824,7 +1824,7 @@
         "properties": {
           "command": {
             "type": "string",
-            "description": "Command name; omit to list every command (value: <name>)"
+            "description": "Command name; omit to list every command"
           }
         }
       }

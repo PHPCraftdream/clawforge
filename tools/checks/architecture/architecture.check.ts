@@ -258,12 +258,17 @@ for (const command of Object.values(openclawCommands)) {
   if (command.changedWhen !== undefined) changedWhen += 1;
   if (command.requiresConfirmationWhen !== undefined) requiresConfirmationWhen += 1;
   // 4. Stage-3 (CommandSpec) counts, measured through the materialized declarations:
-  // legacyCommands — entries not yet carrying a spec body; unsummarizedDescriptions —
-  // arguments of the derived `arguments` view the MCP schema is built from whose text still
-  // needs the 60-character heuristic because no `summary` is declared.
+  // legacyCommands — entries not yet carrying a spec body.
   if (specOf(command) === undefined) legacyCount += 1;
-  for (const argument of command.arguments ?? []) {
-    argumentCount += 1;
+  argumentCount += (command.arguments ?? []).length;
+}
+
+// unsummarizedDescriptions — stage 5 (rf5-mcp) widened the scope from openclawCommands to
+// surfaceRegistry(): the schema is built for the gate commands and the help command too, so
+// an argument over 60 characters without a `summary` would need a heuristic back anywhere on
+// the surface, not only among the deployment's own commands.
+for (const entry of surfaceRegistry().entries) {
+  for (const argument of entry.arguments ?? []) {
     if (argument.description.length > 60 && argument.summary === undefined) unsummarized += 1;
   }
 }

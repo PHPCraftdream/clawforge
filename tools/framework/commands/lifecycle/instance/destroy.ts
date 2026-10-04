@@ -15,9 +15,24 @@ import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/gro
  *  never a free-form path — so "only remove what the deployment itself declared" is
  *  structural, not a check against user input. Default is a dry run (--yes performs it). */
 export const DESTROY_ARGUMENTS = [
-  { name: "data", description: "Remove the data directory (OC_DATA_DIR)", kind: "flag" },
-  { name: "backups", description: "Remove the backup directory (OC_BACKUP_DIR)", kind: "flag" },
-  { name: "snapshots", description: "Remove the snapshot directory (OC_SNAPSHOT_DIR)", kind: "flag" },
+  {
+    name: "data",
+    summary: "Remove the data directory",
+    description: "Remove the data directory (OC_DATA_DIR)",
+    kind: "flag",
+  },
+  {
+    name: "backups",
+    summary: "Remove the backup directory",
+    description: "Remove the backup directory (OC_BACKUP_DIR)",
+    kind: "flag",
+  },
+  {
+    name: "snapshots",
+    summary: "Remove the snapshot directory",
+    description: "Remove the snapshot directory (OC_SNAPSHOT_DIR)",
+    kind: "flag",
+  },
   { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy" },
   { name: "confirm-name", description: "Confirms the deployment's own name", kind: "option", valueName: "name" },
   ...LOCK_TAKEOVER_ARGUMENTS,

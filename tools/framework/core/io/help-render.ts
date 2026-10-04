@@ -5,7 +5,7 @@
 import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 import type { EffectDeclaration } from "../command/index.ts";
-import { effectProfile, splitActionScoped } from "../command/index.ts";
+import { effectProfile, argumentScopes } from "../command/index.ts";
 import { commandLine } from "./invocation/render.ts";
 import { renderProse } from "./invocation/prose.ts";
 
@@ -16,6 +16,8 @@ export interface HelpDeclaration {
   readonly summary: string;
   readonly details?: string;
   readonly arguments?: readonly CommandArgument[];
+  /** Only what `argumentScopes` reads of the declaration (a gate command has none). */
+  readonly run?: unknown;
 }
 
 /** Column an argument's description starts at, wide enough for the longest label this
@@ -50,12 +52,12 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
     const required = argument.required === true ? " (required)" : "";
     const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
     // A multi-action command's argument that belongs to only some of its actions (backup's
-    // own --keep, install-only) — see CommandArgument's `actions`. A composed description
-    // whose every part already ends with its own action list must not get the whole-command
-    // list added again (R32-04: the scope was printed twice).
-    const scoped = splitActionScoped(argument.description, argument.actions);
+    // own --keep, install-only) — see CommandArgument's `actions`. An argument whose actions
+    // describe it differently carries its own action list in each part of the composed
+    // description, so the whole-command list must not be added again (R32-04).
+    const scopes = argumentScopes(command, argument.name);
     const description = argument.description.replace(/^With [\w/-]+: /, "");
-    const scope = argument.actions === undefined || scoped !== undefined ? "" : ` (${argument.actions.join(", ")})`;
+    const scope = argument.actions === undefined || scopes !== undefined ? "" : ` (${argument.actions.join(", ")})`;
     info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${description}${scope}${choices}${required}`);
   }
   if (command.details !== undefined) {

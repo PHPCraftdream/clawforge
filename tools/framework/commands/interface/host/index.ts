@@ -41,6 +41,7 @@ export const HOST_ARGUMENTS = [
   },
   {
     name: "args",
+    summary: "Command and arguments to run",
     description: "Command and arguments to run, e.g. [\"resolvectl\", \"status\"]",
     kind: "variadic",
     verbatim: true,

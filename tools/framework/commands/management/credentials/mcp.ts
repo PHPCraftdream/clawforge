@@ -19,7 +19,7 @@ import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { ArgumentSpec } from "#src/core/command/index.ts";
 
 export const MCP_SETUP_ARGUMENTS = [
-  { name: "client", kind: "option", valueName: "client", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
+  { name: "client", kind: "option", valueName: "client", choices: ["claude", "codex", "both"], summary: "Client configuration to update", description: "Client configuration to update (default both)" },
   { name: "json", kind: "flag", description: "Report changed files as JSON" },
   { name: "rewrite-launcher", kind: "flag", summary: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME}`, description: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
 ] as const satisfies readonly ArgumentSpec[];

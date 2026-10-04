@@ -304,8 +304,20 @@ async function desiredState(staging: string): Promise<unknown> {
 }
 
 export const SET_DIFF_ARGUMENTS = [
-  { name: "from", kind: "option", description: "With diff: original artifact", valueName: "artifact" },
-  { name: "to", kind: "option", description: "With diff: replacement artifact", valueName: "artifact" },
+  {
+    name: "from",
+    kind: "option",
+    summary: "original artifact",
+    description: "With diff: original artifact",
+    valueName: "artifact",
+  },
+  {
+    name: "to",
+    kind: "option",
+    summary: "replacement artifact",
+    description: "With diff: replacement artifact",
+    valueName: "artifact",
+  },
   { name: "json", summary: "Emit JSON", kind: "flag", description: "Emit JSON" },
   { name: "artifacts", kind: "variadic", description: "Two positional artifacts" },
 ] as const satisfies readonly ArgumentSpec[];

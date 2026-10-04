@@ -139,6 +139,7 @@ function recipeName(values: { readonly name?: string }, action: string): string 
 
 const TAIL_ARGUMENT = {
   name: "tail",
+  summary: "lines to return per service",
   description: "With logs/diagnose: lines to return per service",
   kind: "option",
   valueName: "n",
@@ -147,6 +148,7 @@ const TAIL_ARGUMENT = {
 
 const DRY_RUN_ARGUMENT = {
   name: "dry-run",
+  summary: "show what would happen",
   description: "With install/remove: show what would happen",
   kind: "flag",
   effect: "read",
@@ -187,6 +189,7 @@ export const RECIPE = multiActionBody({
       summary: "Scaffold a recipes/<name>/ skeleton",
       arguments: [NAME_ARGUMENT, {
         name: "with-hooks",
+        summary: "add commented prepare.ts/verify.ts stubs",
         description: "With new: add commented prepare.ts/verify.ts stubs",
         kind: "flag",
       }],
@@ -212,6 +215,7 @@ export const RECIPE = multiActionBody({
       summary: "Build a recipe from source and start it",
       arguments: [NAME_ARGUMENT, {
         name: "force-disabled",
+        summary: "build a recipe marked disabled",
         description: "With install: build a recipe marked disabled",
         kind: "flag",
       }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
@@ -226,6 +230,7 @@ export const RECIPE = multiActionBody({
       summary: "Stop and remove a recipe's stack",
       arguments: [NAME_ARGUMENT, {
         name: "volumes",
+        summary: "delete its volumes too",
         description: "With remove: delete its volumes too",
         kind: "flag",
       }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],

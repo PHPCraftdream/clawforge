@@ -11,7 +11,12 @@ import type { GateCommand } from "./gate.ts";
 import type { CommandArgument } from "../core/app.ts";
 
 export const VERSION_ARGUMENTS: CommandArgument[] = [
-  { name: "json", description: "Emit { name, version, source, path } instead of the one-line text", kind: "flag" },
+  {
+    name: "json",
+    summary: "Emit {name, version, source, path} instead of text",
+    description: "Emit { name, version, source, path } instead of the one-line text",
+    kind: "flag",
+  },
   { name: "verbose", description: "Also print which copy runs and where", kind: "flag" },
 ];
 

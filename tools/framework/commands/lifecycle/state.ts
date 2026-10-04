@@ -34,7 +34,12 @@ export const PULL_ARGUMENTS = [
   { name: "share", description: "Shareable profile with verification", kind: "flag" },
   { name: "with-secrets", description: "Full profile: includes provider keys", kind: "flag" },
   { name: "migrate", summary: "Migrate profile", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
-  { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+  {
+    name: "hot",
+    summary: "Do not stop the service",
+    description: "Do not stop the service (risks a partial write)",
+    kind: "flag",
+  },
   ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
@@ -43,7 +48,12 @@ export const PUSH_ARGUMENTS = [
   { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
   { ...FORCE_ARGUMENT, setByConfirm: true },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
+  {
+    name: "fresh-identity",
+    summary: "Drop identity and paired devices",
+    description: "Drop identity and paired devices (cloning, not moving)",
+    kind: "flag",
+  },
   { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];

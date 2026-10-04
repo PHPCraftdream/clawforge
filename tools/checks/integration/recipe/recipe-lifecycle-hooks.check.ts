@@ -12,7 +12,8 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
+import { createBackup, BACKUP_REFUSED, SIDECARS_RUNNING, GATEWAY_LEFT_STOPPED } from "#framework/commands/lifecycle/backup/index.ts";
+import { WITHOUT_RESUME, QUIESCE_HOOK_FAILED, QUIESCED_FOR_SNAPSHOT, STILL_QUIESCED, INVALID_MANIFEST, timeoutMessage } from "#framework/commands/management/recipe/lifecycle.ts";
 import type { BackupOptions } from "#framework/commands/lifecycle/backup/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -39,6 +40,10 @@ interface Stub {
  *  runningRecipeStacks() makes. The archive step and the runtime transitions record into
  *  `events` — the same array the fixture hooks push to — so hook ordering against
  *  pause/tar/start is assertable as one sequence. */
+const PROBE_FAILURE = "simulated stack probe failure";
+
+const PAUSE_REFUSAL = "refuses to pause today";
+
 function stub(failProbe = false): Stub {
   const events: string[] = [];
   const probed: string[] = [];
@@ -62,7 +67,7 @@ function stub(failProbe = false): Stub {
         if (command === "tar" && args.includes("-tzf")) {
           return { code: 0, stdout: "data/\ndata/config/openclaw.json\n", stderr: "" };
         }
-        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
+        if (command === "sh" && args.some((arg) => arg.includes("-1t"))) {
           const archives = [...files].filter((path) => path.startsWith(`${backupDir}/`) && path.endsWith(".tar.gz"));
           return { code: 0, stdout: `${archives.join("\n")}\n`, stderr: "" };
         }
@@ -111,7 +116,7 @@ function stub(failProbe = false): Stub {
         probed.push(project);
         return {
           async isRunning(): Promise<boolean> {
-            if (failProbe) throw new Error("simulated stack probe failure");
+            if (failProbe) throw new Error(PROBE_FAILURE);
             return true;
           },
         };
@@ -125,7 +130,7 @@ function stub(failProbe = false): Stub {
 const HOOKS: Record<string, string> = {
   "hooked/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:hooked"); }\n`,
   "hooked/resume.ts": `export function resume() { globalThis.${HOOK_LOG}.push("resume:hooked"); }\n`,
-  "failing/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:failing"); throw new Error("refuses to pause today"); }\n`,
+  "failing/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:failing"); throw new Error("${PAUSE_REFUSAL}"); }\n`,
   "failing/resume.ts": `export function resume() { globalThis.${HOOK_LOG}.push("resume:failing"); }\n`,
   "hung/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:hung"); return new Promise(() => {}); }\n`,
   "hung/resume.ts": `export function resume() { globalThis.${HOOK_LOG}.push("resume:hung"); }\n`,
@@ -177,7 +182,7 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("a running sidecar with a malformed manifest blocks the backup", {}, ["broken-sidecar"], false, "broken-sidecar");
   check("the malformed live sidecar prevents archive publication", result.archive, undefined);
-  check("the backup explains why quiescing could not be confirmed", result.output.includes("invalid manifest") && result.output.includes("ports[0].host"), true);
+  check("the backup explains why quiescing could not be confirmed", result.output.includes(INVALID_MANIFEST) && result.output.includes("ports[0].host"), true);
   check("tar is never reached while the running sidecar is unknown", result.events.includes("tar"), false);
 }
 
@@ -185,7 +190,8 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("a failed resume is reported", {}, ["resume-fails"]);
   check("the failed compensation turns the operation into an error", result.archive, undefined);
-  check("the result explains that the recipe may remain stopped", result.output.includes("service may still be quiesced") && result.output.includes("resume refused"), true);
+  const resumeRefused = "resume refused";
+  check("the result explains that the recipe may remain stopped", result.output.includes(STILL_QUIESCED) && result.output.includes(resumeRefused), true);
   check("backup and resume were both attempted in order", result.events, ["pause", "quiesce:resume-fails", "tar", "start", "waitForHealth", "resume:resume-fails"]);
 }
 
@@ -194,7 +200,7 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("a failed sidecar probe restarts the gateway", {}, ["hooked"], true);
   check("the probe failure aborts the backup", result.archive, undefined);
-  check("the probe failure is reported", result.output.includes("simulated stack probe failure"), true);
+  check("the probe failure is reported", result.output.includes(PROBE_FAILURE), true);
   check("gateway compensation follows the failed probe", result.events, ["pause", "start", "waitForHealth"]);
 }
 
@@ -207,8 +213,10 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
     result.events,
     ["pause", "quiesce:hooked", "tar", "start", "waitForHealth", "resume:hooked"],
   );
-  check("the declared recipe is not named as uncovered", result.output.includes("not quiesced for this backup: hooked"), false);
-  check("the successful quiesce is announced", result.output.includes("hooked: quiesced for the snapshot"), true);
+  const uncoveredHooked = `${BACKUP_REFUSED}: hooked`;
+  const announcedHooked = `hooked: ${QUIESCED_FOR_SNAPSHOT}`;
+  check("the declared recipe is not named as uncovered", result.output.includes(uncoveredHooked), false);
+  check("the successful quiesce is announced", result.output.includes(announcedHooked), true);
 }
 
 // (2) A failed hook refuses the snapshot and runs resume because quiesce may have partially
@@ -216,7 +224,7 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("a failing quiesce hook aborts and compensates", {}, ["failing"]);
   check("the backup refuses the incomplete snapshot", result.archive, undefined);
-  check("the hook failure and refusal are reported", result.output.includes("quiesce hook failed") && result.output.includes("backup refused") && result.output.includes("refuses to pause today"), true);
+  check("the hook failure and refusal are reported", result.output.includes(QUIESCE_HOOK_FAILED) && result.output.includes(BACKUP_REFUSED) && result.output.includes(PAUSE_REFUSAL), true);
   check("resume runs after gateway restart", result.events, ["pause", "quiesce:failing", "start", "waitForHealth", "resume:failing"]);
 }
 
@@ -226,8 +234,9 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
   try {
     const result = await run("a hung quiesce aborts and compensates", {}, ["hung"]);
     check("the backup refuses the incomplete snapshot", result.archive, undefined);
-    check("the deadline is reported", result.output.includes("timed out after 250ms"), true);
-    check("the timeout refuses publication", result.output.includes("backup refused because recipe stack(s) could not be quiesced: hung"), true);
+    check("the deadline is reported", result.output.includes(timeoutMessage("recipe hung quiesce hook", 250)), true);
+    const refusedHung = `${BACKUP_REFUSED}: hung`;
+    check("the timeout refuses publication", result.output.includes(refusedHung), true);
     check("resume runs after gateway restart", result.events, ["pause", "quiesce:hung", "start", "waitForHealth", "resume:hung"]);
   } finally {
     delete process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS;
@@ -238,7 +247,7 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("a quiesce without resume.ts is refused", {}, ["no-resume"]);
   check("the quiesce never runs", result.events.includes("quiesce:no-resume"), false);
-  check("the missing resume and refused backup are reported", result.output.includes("without resume.ts") && result.output.includes("backup refused"), true);
+  check("the missing resume and refused backup are reported", result.output.includes(WITHOUT_RESUME) && result.output.includes(BACKUP_REFUSED), true);
   check("no resume event is recorded", result.events.filter((entry) => entry.startsWith("resume:")), []);
   check("the gateway restarts after preflight rejection", result.events, ["pause", "start", "waitForHealth"]);
 }
@@ -248,15 +257,15 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("leaveStopped owns the transaction and calls no hooks", { leaveStopped: true }, ["hooked"]);
   check("no hook runs when the caller owns the transaction", result.events, ["pause", "tar"]);
-  check("the gateway stays stopped for the caller", result.output.includes("leaving the gateway stopped"), true);
-  check("the caller is told sidecars remain running", result.output.includes("remain running during this transaction"), true);
+  check("the gateway stays stopped for the caller", result.output.includes(GATEWAY_LEFT_STOPPED), true);
+  check("the caller is told sidecars remain running", result.output.includes(SIDECARS_RUNNING), true);
 }
 
 // (6) --hot accepts a torn snapshot by definition: no pause, no hooks, warning kept.
 {
   const result = await run("a hot backup calls no hooks either", { hot: true }, ["hooked"]);
   check("a hot backup pauses nothing and calls no hooks", result.events, ["tar"]);
-  check("a hot backup names the running stack", result.output.includes("remain running during this transaction"), true);
+  check("a hot backup names the running stack", result.output.includes(SIDECARS_RUNNING), true);
 }
 
 finish("recipe lifecycle hook");

@@ -6,6 +6,8 @@ import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/arti
 import type { Context } from "#src/core/context.ts";
 import { ArgumentError, defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
+export const RECEIPT_NEEDS_SET_ID = "--receipt requires --set-id";
+
 export const SET_RECEIPTS_ARGUMENTS = [
   {
     name: "set-id",
@@ -26,7 +28,7 @@ export const SET_RECEIPTS_ARGUMENTS = [
 
 function receiptsPlan(values: Values<typeof SET_RECEIPTS_ARGUMENTS>): { setId?: string; receiptId?: string; json: boolean } {
   const { "set-id": setId, receipt: receiptId, json } = values;
-  if (receiptId !== undefined && setId === undefined) throw new ArgumentError("--receipt requires --set-id", "receipt");
+  if (receiptId !== undefined && setId === undefined) throw new ArgumentError(RECEIPT_NEEDS_SET_ID, "receipt");
   return { setId, receiptId, json };
 }
 

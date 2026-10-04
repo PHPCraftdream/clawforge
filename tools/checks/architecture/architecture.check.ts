@@ -56,6 +56,7 @@ interface Baseline {
   readonly declaredArguments: { readonly comment: string; readonly total: number };
   readonly imageStringOps: PerFileMetric;
   readonly prosePins: PerFileMetric;
+  readonly proseMatchers: { readonly comment: string; readonly total: number };
   readonly proseFlags: PerFileMetric;
   readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
 }
@@ -304,6 +305,21 @@ for (const file of checkFiles) {
   if (count > 0) proseAfter.set(file, count);
 }
 report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
+
+// 6b. The other prose forms — stage 5 (design 5.1): translation must not move a pin into
+// startsWith/endsWith/indexOf, a regex, or an equality with a literal that carries a space.
+// Equality ratchet: growth means the prose moved into another operator instead of structure.
+const PROSE_MATCHER =
+  /\.(startsWith|endsWith|indexOf)\((`|")[^`"]* [^`"]*(`|")\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(`|")[^`"]* [^`"]*(`|")/;
+let matcherCount = 0;
+for (const file of checkFiles) {
+  const content = await readFile(resolve(root, file), "utf8");
+  for (const line of content.split("\n")) {
+    if (PROSE_PIN.test(line)) continue;
+    if (PROSE_MATCHER.test(line)) matcherCount += 1;
+  }
+}
+report(ratchet("proseMatchers", baseline.proseMatchers.total, matcherCount, [], []));
 
 // 7. Retired symbols — stage 5 (rf5-completion C1): names the command registry made
 // structural that must not reappear anywhere under tools/ outside this check's own directory

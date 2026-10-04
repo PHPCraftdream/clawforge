@@ -46,6 +46,22 @@ async function directorySizeBytes(directory: string): Promise<number> {
  *  before anything about its contents is read. safeName's own alphabet (no `/`, `.`, `..`)
  *  already makes "outside apps/" unreachable through `name`; the symlink check covers the
  *  directory entry itself being a link planted at that name. */
+/** The refusals and reports remove-app prints; the checks assert them by name. */
+export const NOTHING_REMOVED = "nothing removed";
+
+export function notPresent(directory: string): string {
+  return `${directory} does not exist — nothing to remove`;
+}
+
+export function bootstrappedRefusal(name: string, state: string): string {
+  return `${name} still has a bootstrapped instance (${state}) — run ${commandLine(["destroy"], { app: name })} first ` +
+    "(and --data if the data should go too)";
+}
+
+export function instanceStateRefusal(name: string, state: string | undefined): string {
+  return `${name} instance state is ${state ?? "unknown"} — refusing to remove local configuration; confirm the target is reachable and run list again`;
+}
+
 async function resolveTargetDirectory(name: string, appsRoot: string): Promise<string> {
   safeName("deployment", name);
   const directory = resolve(appsRoot, name);
@@ -54,7 +70,7 @@ async function resolveTargetDirectory(name: string, appsRoot: string): Promise<s
   try {
     stat = await lstat(directory);
   } catch {
-    die(`${directory} does not exist — nothing to remove`);
+    die(notPresent(directory));
   }
   if (stat.isSymbolicLink()) {
     die(`${directory} is a symlink — refusing to remove it; remove the real directory it points at instead`);
@@ -95,13 +111,10 @@ export async function removeApp(name: string, args: string[], options: RemoveApp
   const directory = await resolveTargetDirectory(name, appsRoot);
   const state = await currentState(name, appsRoot, options.buildContext, options.listDeployments ?? listDeployments);
   if (state === "running" || state === "stopped") {
-    die(
-      `${name} still has a bootstrapped instance (${state}) — run ${commandLine(["destroy"], { app: name })} first ` +
-        "(and --data if the data should go too)",
-    );
+    die(bootstrappedRefusal(name, state));
   }
   if (state !== "not-bootstrapped") {
-    die(`${name} instance state is ${state ?? "unknown"} — refusing to remove local configuration; confirm the target is reachable and run list again`);
+    die(instanceStateRefusal(name, state));
   }
 
   const entries = (await readdir(directory, { withFileTypes: true })).map((entry) => entry.name).sort();
@@ -115,7 +128,7 @@ export async function removeApp(name: string, args: string[], options: RemoveApp
     if (ownGit) {
       warn(`${directory}/.git holds this deployment's own history — that goes too, including anything never committed there`);
     }
-    info("dry run — nothing removed. Pass --yes for a real run");
+    info(`dry run — ${NOTHING_REMOVED}. Pass --yes for a real run`);
     return 0;
   }
 

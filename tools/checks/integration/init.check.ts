@@ -9,8 +9,9 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { initApp } from "#framework/integration/deployment/init.ts";
-import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore } from "#framework/integration/deployment/deployment-template.ts";
+import { initApp, ALREADY_EXISTS, ALREADY_INITIALISED, NOT_EXIST, NEEDS_ESM, NOT_VALID_JSON, noSaveInstall } from "#framework/integration/deployment/init.ts";
+import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore, ROOT_OWNED } from "#framework/integration/deployment/deployment-template.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -61,7 +62,7 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     await writeFile(envFile, original, "utf8");
 
     const message = await run(root);
-    check("init refuses when .env already exists", message?.includes(".env") && message.includes("already exists"), true);
+    check("init refuses when .env already exists", message?.includes(".env") && message.includes(ALREADY_EXISTS), true);
     check("the existing .env is left untouched", await readFile(envFile, "utf8"), original);
   } finally {
     await rm(base, { recursive: true, force: true });
@@ -81,7 +82,7 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     await writeFile(desiredStateFile, original, "utf8");
 
     const message = await run(root);
-    check("init refuses when config/desired-state.json already exists", message?.includes("desired-state.json") && message.includes("already exists"), true);
+    check("init refuses when config/desired-state.json already exists", message?.includes("desired-state.json") && message.includes(ALREADY_EXISTS), true);
     check("the existing desired-state.json is left untouched", await readFile(desiredStateFile, "utf8"), original);
   } finally {
     await rm(base, { recursive: true, force: true });
@@ -162,9 +163,9 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
       },
     );
     check("init --local on an initialised directory does not refuse", message, undefined);
-    check("it prints the no-save npm install line", output.includes("npm install --no-save "), true);
+    check("it prints the no-save npm install line", output.includes(noSaveInstall("")), true);
     check("and writes nothing", await Promise.all(files.map((name) => readFile(resolve(root, name), "utf8"))), before);
-    check("plain init on the same directory still refuses", (await run(root))?.includes("already initialised"), true);
+    check("plain init on the same directory still refuses", (await run(root))?.includes(ALREADY_INITIALISED), true);
   } finally {
     await rm(base, { recursive: true, force: true });
   }
@@ -226,13 +227,13 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
 {
   const underSrv = nextStepsLines(".env", "/srv/openclaw/data", "./clawforge bootstrap");
   check("names the data directory the .env chose", underSrv.some((line) => line.includes("/srv/openclaw/data")), true);
-  check("an /srv default gets the root-owned hint", underSrv.some((line) => line.includes("usually root-owned")), true);
-  check("...pointing at bootstrap --check", underSrv.some((line) => line.includes("./clawforge bootstrap --check")), true);
+  check("an /srv default gets the root-owned hint", underSrv.some((line) => line.includes(ROOT_OWNED)), true);
+  check("...pointing at bootstrap --check", underSrv.some((line) => line.includes(commandLine(["bootstrap", "--check"]))), true);
   check("and bootstrap itself is still the final step", underSrv.at(-1), "  3. ./clawforge bootstrap");
 
   const elsewhere = nextStepsLines(".env", "/home/coder/openclaw-data", "./clawforge bootstrap");
-  check("a data directory NOT under /srv gets no root-owned hint", elsewhere.some((line) => line.includes("usually root-owned")), false);
-  check("but still points at bootstrap --check as the next step", elsewhere.some((line) => line.includes("./clawforge bootstrap --check")), true);
+  check("a data directory NOT under /srv gets no root-owned hint", elsewhere.some((line) => line.includes(ROOT_OWNED)), false);
+  check("but still points at bootstrap --check as the next step", elsewhere.some((line) => line.includes(commandLine(["bootstrap", "--check"]))), true);
 
   check("isUnderSrv: the bare root counts", isUnderSrv("/srv"), true);
   check("isUnderSrv: a child path counts", isUnderSrv("/srv/openclaw/data"), true);
@@ -255,7 +256,7 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     const dataDir = /^OC_DATA_DIR=(.*)$/m.exec(env)?.[1];
     check("a data directory was actually generated", typeof dataDir === "string" && dataDir !== "", true);
     check("init's own output names it", dataDir !== undefined && output.includes(dataDir), true);
-    check("and points at bootstrap --check before bootstrap itself", output.includes("./clawforge bootstrap --check"), true);
+    check("and points at bootstrap --check before bootstrap itself", output.includes(commandLine(["bootstrap", "--check"])), true);
     const checkStepIndex = output.indexOf("2. ./clawforge bootstrap --check");
     const bootstrapStepIndex = output.indexOf("3. ./clawforge bootstrap");
     check("bootstrap --check (step 2) is printed before plain bootstrap (step 3)", checkStepIndex !== -1 && bootstrapStepIndex !== -1 && checkStepIndex < bootstrapStepIndex, true);
@@ -352,7 +353,8 @@ async function gatewayPortOf(root: string): Promise<number> {
     check("CommonJS code without package.json exports before init", plain(before.output), "1");
 
     const message = await run(root);
-    check("init refuses existing code without package.json", message?.includes("package.json does not exist") && message.includes("legacy.js"), true);
+    const missingPackage = `package.json ${NOT_EXIST}`;
+    check("init refuses existing code without package.json", message?.includes(missingPackage) && message.includes("legacy.js"), true);
     check("the refusal does not create package.json", await readFile(resolve(root, "package.json"), "utf8").then(() => true, () => false), false);
     check("the refusal does not create app.ts", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), false);
 
@@ -413,7 +415,7 @@ async function gatewayPortOf(root: string): Promise<number> {
     const message = await run(root);
     check("a commonjs package with commonjs code in it is refused", message?.includes('"type": "commonjs"'), true);
     check("the refusal names the files that would change meaning", message?.includes("index.js"), true);
-    check("and explains the ESM requirement", message?.includes("declaration needs ESM"), true);
+    check("and explains the ESM requirement", message?.includes(NEEDS_ESM), true);
     check("the operator's package.json is left exactly as it was", await readFile(resolve(root, "package.json"), "utf8"), original);
     // Refused whole: a directory the deployment cannot run in must not be left half-written.
     check("and nothing was written into the directory", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), false);
@@ -470,7 +472,7 @@ async function gatewayPortOf(root: string): Promise<number> {
   try {
     await writeFile(resolve(root, "package.json"), "{ not json", "utf8");
     const message = await run(root);
-    check("a package.json that does not parse is refused rather than guessed at", message?.includes("not valid JSON"), true);
+    check("a package.json that does not parse is refused rather than guessed at", message?.includes(NOT_VALID_JSON), true);
     check("nothing is written in that case either", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), false);
   } finally {
     await rm(base, { recursive: true, force: true });

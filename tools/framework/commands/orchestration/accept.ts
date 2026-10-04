@@ -33,6 +33,8 @@ import { runSecurityAudit, type SecurityFinding, type SecurityAuditReport } from
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
+export const DID_NOT_PASS = "acceptance check(s) did not pass";
+
 export const ACCEPT_ARGUMENTS = [
   {
     name: "recipe",
@@ -564,6 +566,6 @@ async function acceptFromSource(ctx: Context, plan: AcceptPlan, verified?: Verif
 
   if (totals.failed > 0 || totals.couldNotCheck > 0 || securityBlocking > 0) {
     const securityNote = securityBlocking > 0 ? `; ${securityBlocking} blocking security finding(s)` : "";
-    throw new Error(`${totals.failed + totals.couldNotCheck} acceptance check(s) did not pass${securityNote}`);
+    throw new Error(`${totals.failed + totals.couldNotCheck} ${DID_NOT_PASS}${securityNote}`);
   }
 }

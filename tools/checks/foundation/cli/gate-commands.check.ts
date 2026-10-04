@@ -7,7 +7,25 @@
 // get, from the same functions.
 
 import { helpEntryLine } from "#framework/core/io/help-render.ts";
-import { runGateCommand, gateHelpLines, gateCommandHelp, helpWithoutDeployment, checkoutSubfolderReport, isDeploymentHelpRequest, missingDeploymentReport, type GateCommand } from "#framework/integration/gate.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
+import {
+  runGateCommand,
+  gateHelpLines,
+  gateCommandHelp,
+  helpWithoutDeployment,
+  checkoutSubfolderReport,
+  isDeploymentHelpRequest,
+  missingDeploymentReport,
+  unknownCommandMessage,
+  didYouMeanMessage,
+  OUTSIDE_APP,
+  outsideAppNote,
+  outsideAppRefusal,
+  CHECKOUT_ROOT_NOTE,
+  checkoutListNote,
+  NO_APP_TS,
+  type GateCommand,
+} from "#framework/integration/gate.ts";
 import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
@@ -15,7 +33,7 @@ import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
-import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/command/index.ts";
+import { parseDeclaredArgs, UnknownArgumentError, unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -54,9 +72,10 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
 {
   // A gate has no dispatcher above it to catch a throw: it would otherwise reach the top of
   // the process as an unhandled rejection instead of a reported error.
+  const thrown = "directory already exists";
   const command = sample({
     run: async () => {
-      throw new Error("directory already exists");
+      throw new Error(thrown);
     },
   });
   let reported = "";
@@ -65,7 +84,7 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
   }, async () => runGateCommand([command], ["new-app", "x"]));
 
   check("a throw becomes a failing exit code", code, 1);
-  check("and is reported rather than swallowed", reported.includes("directory already exists"), true);
+  check("and is reported rather than swallowed", reported.includes(thrown), true);
 }
 
 {
@@ -82,8 +101,9 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
 
   check("--help answers instead of running the command", ran, false);
   check("--help exits successfully", code, 0);
-  check("the help comes from the declaration", written.join("").includes("Writes apps/<name>/"), true);
-  check("and shows the declared argument", written.join("").includes("Deployment name"), true);
+  const declared = sample();
+  check("the help comes from the declaration", written.join("").includes(declared.details ?? ""), true);
+  check("and shows the declared argument", written.join("").includes(declared.arguments?.[0]?.description ?? ""), true);
 }
 
 // --- the command list ------------------------------------------------------------------------
@@ -163,7 +183,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const code = await withOutputSink((chunk) => written.push(chunk), async () =>
     runGateCommand([versionGateCommand], ["version", "extra-arg"]));
   check("version extra-arg is refused", code, 1);
-  check("with the standard unknown-argument message", written.join("").includes("unknown argument: extra-arg"), true);
+  check("with the standard unknown-argument message", written.join("").includes(unknownArgumentMessage("extra-arg")), true);
 }
 
 // --- completion: generated shell completion, no deployment needed -------------------------
@@ -202,14 +222,14 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   };
 
   const bare = await help([]);
-  check("no arguments outside an app lists the gate commands and exits 0", bare.code === 0 && bare.text.includes("Initialise this directory"), true);
+  check("no arguments outside an app lists the gate commands and exits 0", bare.code === 0 && bare.text.includes(gate[0]?.summary ?? ""), true);
   check("a command is no help request", helpWithoutDeployment(gate, ["status"], context), undefined);
 
   const unknown = await help(["help", "int"]);
-  check("help <unknown> outside an app is an unknown command, exit 1", unknown.code === 1 && unknown.text.includes("unknown command: int") && !unknown.text.includes("deployment command"), true);
-  check("and suggests the nearest known name", unknown.text.includes("did you mean:"), true);
+  check("help <unknown> outside an app is an unknown command, exit 1", unknown.code === 1 && unknown.text.includes(unknownCommandMessage("int")) && !unknown.text.includes(OUTSIDE_APP), true);
+  check("and suggests the nearest known name", unknown.text.includes(didYouMeanMessage("init")), true);
   const deployment = await help(["help", "status"]);
-  check("a real deployment command still says it needs an app folder", deployment.code === 1 && deployment.text.includes("needs an app folder"), true);
+  check("a real deployment command still says it needs an app folder", deployment.code === 1 && deployment.text.includes(outsideAppRefusal("status", undefined)), true);
 
   // R32-09: with a deploymentHelp renderer (the gates that carry openclawCommands), the same
   // request answers from the built-in declaration, with where the command runs appended.
@@ -222,38 +242,40 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   };
   const helpedStatus = await helped(["help", "status"]);
   check("help <deployment command> renders the declaration's help and exits 0", helpedStatus.code === 0 && helpedStatus.text.includes("HELP-BODY:status"), true);
-  check("and says where the command runs, outside an app", helpedStatus.text.includes('"status" runs inside an app folder') && helpedStatus.text.includes("clawforge init"), true);
+  check("and says where the command runs, outside an app", helpedStatus.text.includes(outsideAppNote("status", undefined)), true);
   const helpedFlagForm = await helped(["status", "--help"]);
   check("<deployment command> --help answers the same way", helpedFlagForm.code === 0 && helpedFlagForm.text.includes("HELP-BODY:status"), true);
   const bareDeployment = await helped(["status"]);
   check("a bare deployment command is still left to the caller", bareDeployment.code === undefined && bareDeployment.text === "", true);
   const helpedInCheckout = await helped(["help", "status"], { checkout: "/some/checkout" });
-  check("in a checkout the note points at apps/<name> instead of init", helpedInCheckout.code === 0 && helpedInCheckout.text.includes("run it from apps/<name>"), true);
+  check("in a checkout the note points at apps/<name> instead of init", helpedInCheckout.code === 0 && helpedInCheckout.text.includes(outsideAppNote("status", "/some/checkout")), true);
   check("a deployment command is still no typo in a checkout subfolder", checkoutSubfolderReport("status", "/some/checkout"), undefined);
 
   const inCheckout = await help(["help"], { checkout: "/some/checkout" });
-  check("in a checkout the list does not offer init", inCheckout.code === 0 && !inCheckout.text.includes("Initialise this directory") && !inCheckout.text.includes("clawforge init"), true);
-  check("and says it is a checkout whose root lists the commands", inCheckout.text.includes("ClawForge checkout") && inCheckout.text.includes("./clawforge help"), true);
+  check("in a checkout the list does not offer init", inCheckout.code === 0 && !inCheckout.text.includes(gate[0]?.summary ?? "") && !inCheckout.text.includes(commandLine(["init"])), true);
+  check("and says it is a checkout whose root lists the commands", inCheckout.text.includes(checkoutListNote("/some/checkout")), true);
   const checkoutTypo = await help(["help", "int"], { checkout: "/some/checkout" });
-  check("help <typo> in a checkout never suggests init", checkoutTypo.code === 1 && checkoutTypo.text.includes("unknown command: int") && !checkoutTypo.text.includes("did you mean: init"), true);
+  check("help <typo> in a checkout never suggests init", checkoutTypo.code === 1 && checkoutTypo.text.includes(unknownCommandMessage("int")) && !checkoutTypo.text.includes(didYouMeanMessage("init")), true);
   const typo = await help(["stauts"]);
-  check("a mistyped command outside an app is unknown, with a suggestion", typo.code === 1 && typo.text.includes("unknown command: stauts") && typo.text.includes("did you mean: status"), true);
+  check("a mistyped command outside an app is unknown, with a suggestion", typo.code === 1 && typo.text.includes(unknownCommandMessage("stauts")) && typo.text.includes(didYouMeanMessage("status")), true);
   check("an option is left to the caller", helpWithoutDeployment(gate, ["--json"], context), undefined);
   check("a gate command is left to the caller", helpWithoutDeployment(gate, ["version"], context), undefined);
   const checkoutCommand = await help(["help", "status"], { checkout: "/some/checkout" });
-  check("help <deployment command> in a checkout does not advise init", checkoutCommand.code === 1 && !checkoutCommand.text.includes("clawforge init"), true);
+  check("help <deployment command> in a checkout does not advise init", checkoutCommand.code === 1 && !checkoutCommand.text.includes(commandLine(["init"])), true);
   // `help <checkout command>` in a subfolder used to say "unknown command" — the same
   // regression R30-02 fixed for typing the command itself, one level deeper.
+  const subfolderNote = `list ${CHECKOUT_ROOT_NOTE}`;
   const helpedSubfolder = await help(["help", "list"], { checkout: "/some/checkout with spaces" });
   check(
     "help <checkout command> in a subfolder says it runs at the root, not unknown",
-    helpedSubfolder.code === 1 && helpedSubfolder.text.includes("list is a checkout command") && !helpedSubfolder.text.includes("unknown command"),
+    helpedSubfolder.code === 1 && helpedSubfolder.text.includes(subfolderNote) && !helpedSubfolder.text.includes(unknownCommandMessage("list")),
     true,
   );
   check("and the cd hint quotes a path with spaces", helpedSubfolder.text.includes('cd "/some/checkout with spaces"'), true);
   for (const command of CHECKOUT_GATE_COMMANDS) {
     const helped = await help(["help", command], { checkout: "/some/checkout" });
-    check(`help ${command} in a subfolder points to the checkout root too`, helped.code === 1 && helped.text.includes("checkout command"), true);
+    const note = `${command} ${CHECKOUT_ROOT_NOTE}`;
+    check(`help ${command} in a subfolder points to the checkout root too`, helped.code === 1 && helped.text.includes(note), true);
   }
 }
 
@@ -263,7 +285,8 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const checkout = "/some/checkout";
   for (const command of CHECKOUT_GATE_COMMANDS) {
     const report = checkoutSubfolderReport(command, checkout);
-    check(`${command} from a checkout subfolder is answered as a checkout command, not unknown`, report !== undefined && report.message.includes("checkout root") && JSON.stringify(report.advice).includes(checkout), true);
+    const note = `${command} ${CHECKOUT_ROOT_NOTE}`;
+    check(`${command} from a checkout subfolder is answered as a checkout command, not unknown`, report !== undefined && report.message === note && JSON.stringify(report.advice).includes(checkout), true);
   }
   checkTrue("an unknown word gets no checkout-subfolder report", checkoutSubfolderReport("stauts", checkout) === undefined);
   checkTrue("neither does a deployment command", checkoutSubfolderReport("status", checkout) === undefined);
@@ -281,7 +304,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("but -- beyond it ends the scan, like requestsHelp", isDeploymentHelpRequest([deployment, "--", "--help"], Object.keys(openclawCommands)), false);
 
   const empty = missingDeploymentReport(true, "emptyx", "/some/checkout/apps/emptyx", [], true);
-  check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.message.includes("exists but holds no app.ts") && JSON.stringify(empty.advice).includes("new-app") && JSON.stringify(empty.advice).includes("emptyx"), true);
+  check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.message.includes(NO_APP_TS) && JSON.stringify(empty.advice).includes("new-app") && JSON.stringify(empty.advice).includes("emptyx"), true);
 }
 
 // --- the declared checkout commands and the derived name list ---------------------------------

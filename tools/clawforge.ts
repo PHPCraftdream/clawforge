@@ -19,6 +19,7 @@ import {
   runGateCommand,
   gateHelpLines,
   reportUnknownCommand,
+  APP_ORDER,
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
@@ -84,7 +85,7 @@ switch (decision.kind) {
   case "refuse-misplaced-app-flag": {
     // The advice renders with the program as typed — `clawforge`, not the checkout spelling,
     // which a global (cmd/pwsh) invocation could not run.
-    reportError(new UserError("--app must come before the command", { advice: [command(["<command>"], { app: "<name>" })] }));
+    reportError(new UserError(APP_ORDER, { advice: [command(["<command>"], { app: "<name>" })] }));
     process.exit(1);
   }
   case "refuse-unknown-command": {

@@ -27,6 +27,13 @@ interface ActionScope {
  *  "applies to `create`" names a word the CLI actually takes. */
 export const NO_ACTION = "create";
 
+/** The refusals the parser prints; checks assert them by name. */
+export const APPLIES_TO = "applies to";
+
+export function missingArgumentMessage(prefix: string, label: string): string {
+  return `${prefix} needs ${label}`;
+}
+
 function formatActions(actions: readonly string[]): string {
   return actions.map((name) => `\`${name}\``).join(", ");
 }
@@ -132,7 +139,7 @@ export function tokenize(declared: readonly CommandArgument[], argv: readonly st
         if (key !== undefined && scope !== undefined) {
           const sibling = scope.siblings.find((candidate) => candidate.name === key);
           if (sibling?.actions !== undefined && !sibling.actions.includes(scope.action)) {
-            throw new UnknownArgumentError(`--${key} applies to ${formatActions(sibling.actions)}, not \`${scope.action}\``, key);
+            throw new UnknownArgumentError(`--${key} ${APPLIES_TO} ${formatActions(sibling.actions)}, not \`${scope.action}\``, key);
           }
         }
         const suggestion = key === undefined ? undefined : closestCommand(key, [...named.keys()]);
@@ -250,7 +257,7 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
     if (!absent) continue;
     const label = argument.kind === "option" ? `--${argument.name} <${argument.valueName ?? "value"}>`
       : argument.kind === "variadic" ? `<${argument.name}…>` : `<${argument.name}>`;
-    throw new ArgumentError(prefix === "" ? `${label} is required` : `${prefix} needs ${label}`, argument.name);
+    throw new ArgumentError(prefix === "" ? `${label} is required` : missingArgumentMessage(prefix, label), argument.name);
   }
   return values;
 }

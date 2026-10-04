@@ -36,12 +36,29 @@ function hookTimeoutMs(): number {
   return Number.isFinite(override) && override > 0 ? override : DEFAULT_HOOK_TIMEOUT_MS;
 }
 
+/** The lifecycle messages the checks assert by name; the print sites use the same symbols. */
+export const WITHOUT_RESUME = "declares quiesce.ts without resume.ts";
+
+export const QUIESCE_HOOK_FAILED = "quiesce hook failed";
+
+export const QUIESCED_FOR_SNAPSHOT = "quiesced for the snapshot";
+
+export const MAY_REMAIN_QUIESCED = "may remain quiesced";
+
+export const STILL_QUIESCED = "may still be quiesced";
+
+export const INVALID_MANIFEST = "has an invalid manifest";
+
+export function timeoutMessage(label: string, budgetMs: number): string {
+  return `${label} timed out after ${budgetMs}ms`;
+}
+
 /** Bounds one awaited hook call. The losing promise keeps running (no way to cancel inside
  *  someone else's module), but this caller stops waiting, and the .then subscription below
  *  handles its eventual rejection so a late failure can't surface unhandled. */
 function withDeadline<T>(operation: Promise<T>, budgetMs: number, label: string): Promise<T> {
   return new Promise<T>((settle, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${budgetMs}ms`)), budgetMs);
+    const timer = setTimeout(() => reject(new Error(timeoutMessage(label, budgetMs))), budgetMs);
     operation.then(
       (value) => { clearTimeout(timer); settle(value); },
       (error: unknown) => { clearTimeout(timer); reject(error); },
@@ -91,7 +108,7 @@ export async function quiesceRecipeStacks(ctx: Context, stacks: readonly Recipe[
   for (const { spec, quiesce, resume } of hooks) {
     if (quiesce !== undefined && resume === undefined) {
       unquiesced.push(spec);
-      warn(`recipe ${spec.name} declares quiesce.ts without resume.ts; backup cannot safely quiesce it`);
+      warn(`recipe ${spec.name} ${WITHOUT_RESUME}; backup cannot safely quiesce it`);
     } else if (quiesce === undefined) {
       unquiesced.push(spec);
     }
@@ -106,12 +123,12 @@ export async function quiesceRecipeStacks(ctx: Context, stacks: readonly Recipe[
       await runHook(ctx, spec, "quiesce", path);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      warn(`recipe ${spec.name} quiesce hook failed or timed out; resume compensation will run: ${message}`);
+      warn(`recipe ${spec.name} ${QUIESCE_HOOK_FAILED} or timed out; resume compensation will run: ${message}`);
       unquiesced.push(spec);
       quiesced.push(spec);
       continue;
     }
-    info(`${spec.name}: quiesced for the snapshot`);
+    info(`${spec.name}: ${QUIESCED_FOR_SNAPSHOT}`);
     quiesced.push(spec);
   }
   return { quiesced, unquiesced };
@@ -124,7 +141,7 @@ export async function resumeRecipeStacks(ctx: Context, quiesced: readonly Recipe
   for (const spec of quiesced) {
     const path = await declaredHook(spec, "resume");
     if (path === undefined) {
-      const message = `recipe ${spec.name} may remain quiesced: its resume.ts disappeared before compensation`;
+      const message = `recipe ${spec.name} ${MAY_REMAIN_QUIESCED}: its resume.ts disappeared before compensation`;
       warn(message);
       failures.push(new Error(message));
       continue;
@@ -133,7 +150,7 @@ export async function resumeRecipeStacks(ctx: Context, quiesced: readonly Recipe
       await runHook(ctx, spec, "resume", path);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const failure = new Error(`recipe ${spec.name} resume hook failed; its service may still be quiesced: ${message}`, { cause: error });
+      const failure = new Error(`recipe ${spec.name} resume hook failed; its service ${STILL_QUIESCED}: ${message}`, { cause: error });
       warn(failure.message);
       failures.push(failure);
       continue;

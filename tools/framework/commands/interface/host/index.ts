@@ -18,6 +18,23 @@ import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
 import { ArgumentError } from "#src/core/command/index.ts";
 import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
 
+/** The consent line the gate's refusal ends with; both flags must be spelled in argv. */
+export const ROOT_CONSENT = "add --root --confirm-root to consent";
+
+export const ROOT_ARRIVAL = "runs as root (uid 0)";
+
+export const IDENTITY_UNKNOWN = "identity is unknown";
+
+/** The gate's refusal: what the probe established, where, and the consent that unlocks it. */
+export function consentRefusal(context: string, arrivesAsRoot: boolean, description: string, evidence: string): string {
+  return `host ${context} ${arrivesAsRoot ? ROOT_ARRIVAL : IDENTITY_UNKNOWN} on this host (${description}) — ${evidence}: ${ROOT_CONSENT}`;
+}
+
+/** The failure report for a wrapped command that exited non-zero. */
+export function commandFailedMessage(context: string, command: readonly string[], code: number): string {
+  return `host ${context} ${command.join(" ")} failed (exit ${code})`;
+}
+
 export const HOST_ARGUMENTS = [
   {
     name: "context",
@@ -121,8 +138,7 @@ async function runInvocation(ctx: Context, parsed: HostInvocation, environment: 
   }
   if (!elevate && (!identityKnown || arrivesAsRoot)) {
     die(
-      `host ${parsed.context} ${arrivesAsRoot ? "runs as root (uid 0)" : "identity is unknown"} on this host (${execution.description}) — ` +
-      `${evidence}: add --root --confirm-root to consent`,
+      consentRefusal(parsed.context, arrivesAsRoot, execution.description, evidence),
     );
   }
 
@@ -146,6 +162,6 @@ async function runInvocation(ctx: Context, parsed: HostInvocation, environment: 
     if (result.code !== 0) emitRaw(result.stderr);
   }
   if (result.code !== 0) {
-    dieWithExitCode(`host ${parsed.context} ${parsed.command.join(" ")} failed (exit ${result.code})`, result.code);
+    dieWithExitCode(commandFailedMessage(parsed.context, parsed.command, result.code), result.code);
   }
 }

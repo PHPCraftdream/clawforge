@@ -12,6 +12,14 @@
 // `uninstall` are additional first positional actions; no action still creates an archive.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
+
+/** The quiescence and transaction messages the checks assert by name. */
+export const BACKUP_REFUSED = "backup refused because recipe stack(s) could not be quiesced";
+
+export const SIDECARS_RUNNING = "recipe stack(s) remain running during this transaction";
+
+export const GATEWAY_LEFT_STOPPED = "leaving the gateway stopped";
+
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseRetention } from "#src/core/env.ts";
@@ -475,11 +483,11 @@ async function writeAndPublishArchive(
     quiesced.push(...outcome.quiesced);
     if (outcome.unquiesced.length > 0) {
       throw new Error(
-        `backup refused because recipe stack(s) could not be quiesced: ${outcome.unquiesced.map((recipe) => recipe.name).join(", ")}`,
+        `${BACKUP_REFUSED}: ${outcome.unquiesced.map((recipe) => recipe.name).join(", ")}`,
       );
     }
   } else if (sidecars.length > 0) {
-    warn(`recipe stack(s) remain running during this transaction: ${sidecars.map((recipe) => recipe.name).join(", ")}`);
+    warn(`${SIDECARS_RUNNING}: ${sidecars.map((recipe) => recipe.name).join(", ")}`);
   }
 
   log(`writing ${archive}`);
@@ -552,7 +560,7 @@ async function settleBackupTransaction(
       compensationErrors.push(new Error("backup could not restore the gateway to its running state", { cause: error }));
     }
   } else if (options.leaveStopped === true && wasRunning) {
-    info("leaving the gateway stopped — the caller restarts it once its own transaction is done");
+    info(`${GATEWAY_LEFT_STOPPED} — the caller restarts it once its own transaction is done`);
   }
   if (quiesced.length > 0) compensationErrors.push(...await resumeRecipeStacks(ctx, quiesced));
 }

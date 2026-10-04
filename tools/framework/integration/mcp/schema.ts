@@ -74,8 +74,10 @@ export const STRUCTURED_OUTPUT_SCHEMA = {
 } as const;
 
 /** The tool description: one-line summary plus a pointer to the `help` tool for the full text. */
+export const FULL_TEXT_POINTER = "Full text: call help with command";
+
 export function toolDescription(name: string, command: Declared): string {
-  return `${command.summary}${destructiveMarker(command)}\n\nFull text: call help with command=${name}.`;
+  return `${command.summary}${destructiveMarker(command)}\n\n${FULL_TEXT_POINTER}=${name}.`;
 }
 
 /** True when the description only restates the argument name (exact or after "the/a/an"). */

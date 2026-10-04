@@ -82,10 +82,12 @@ export const GROUP_ORDER = Object.keys(GROUP_HEADINGS) as CommandGroup[];
  *  some invocations — derived from the command's effect profile, like every other surface.
  *  Minimal structural shape: AppCommand, a gate command and the MCP tool's Declared all
  *  satisfy it. */
+export const DESTRUCTIVE_SOME = " (destructive for some actions)";
+
 export function destructiveMarker(command: EffectDeclaration): string {
   const { destructive, alwaysDestroys } = effectProfile(command);
   if (!destructive) return "";
-  return alwaysDestroys ? " (destructive)" : " (destructive for some actions)";
+  return alwaysDestroys ? " (destructive)" : DESTRUCTIVE_SOME;
 }
 
 /** Short list marker: `!` destructive, `*` destructive for some actions; renderUsage's

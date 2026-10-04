@@ -4,7 +4,9 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, type ArgumentSpec } from "#framework/core/command/index.ts";
+import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
+import { RECEIPT_NEEDS_SET_ID } from "#framework/commands/sets/set-receipts.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -42,10 +44,10 @@ import { check, finish } from "#checks/kit/harness.ts";
   );
   check(
     "set forget parses its own slice — refuses the missing --kind as a required argument",
-    (await outcome(["forget"])).includes("set forget needs --kind <kind>"),
+    (await outcome(["forget"])).includes(missingArgumentMessage("set forget", "--kind <kind>")),
     true,
   );
-  check("a mistyped set action still gets the did-you-mean", (await outcome(["bild"])).includes("did you mean build?"), true);
+  check("a mistyped set action still gets the did-you-mean", (await outcome(["bild"])).includes(didYouMeanSuffix("build")), true);
 }
 
 // --- R30-05: backup's `create` is a real action word -----------------------------------------
@@ -67,7 +69,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     true,
   );
   check("a bare create parses exactly the same way", (await outcome(["--dry-run"])).startsWith("TypeError:"), true);
-  check("backup lst suggests list", (await outcome(["lst"])).includes("did you mean list?"), true);
+  check("backup lst suggests list", (await outcome(["lst"])).includes(didYouMeanSuffix("list")), true);
   check(
     "backup --keep 3 names the action --keep belongs to",
     (await outcome(["--keep", "3"])).includes("--keep applies to `prune-replaced`, not `create`"),
@@ -157,17 +159,21 @@ import { check, finish } from "#checks/kit/harness.ts";
     "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))",
   );
 
+  const declaredBackupInterval = (openclawCommands.backup.arguments ?? []).find((argument) => argument.name === "interval");
+  const intervalUnitRule = declaredBackupInterval?.summary ?? declaredBackupInterval?.description ?? "";
+  const declaredWatchInterval = (openclawCommands.watch.arguments ?? []).find((argument) => argument.name === "interval");
+  const intervalBareMinutes = declaredWatchInterval?.summary ?? declaredWatchInterval?.description ?? "";
   const backupSchema = inputSchema(openclawCommands.backup) as { properties: Record<string, { description?: string }> };
   check("backup.action says what no action word means", backupSchema.properties.action.description, "Omit to create a backup");
   check(
     "backup.interval keeps the explicit-unit rule",
-    (backupSchema.properties.interval.description ?? "").includes("explicit unit required"),
+    (backupSchema.properties.interval.description ?? "").includes(intervalUnitRule),
     true,
   );
   const watchSchema = inputSchema(openclawCommands.watch) as { properties: Record<string, { description?: string }> };
   check(
     "watch.interval keeps what a bare number means",
-    (watchSchema.properties.interval.description ?? "").includes("a bare number is minutes"),
+    (watchSchema.properties.interval.description ?? "").includes(intervalBareMinutes),
     true,
   );
 }
@@ -199,11 +205,12 @@ import { check, finish } from "#checks/kit/harness.ts";
       return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     }
   };
+  const usageSetTry = `usage: ${commandLine(["set", "try"])}`;
   check("set try --kind names forget", (await outcome(["try", "--set", "x.tar.gz", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set diff --kind names forget", (await outcome(["diff", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set receipts --set names validate/try", (await outcome(["receipts", "--set", "x.tar.gz"])).includes("--set applies to `validate`"), true);
-  check("set receipts still parses its own slice", (await outcome(["receipts", "--receipt", "r", "--json"])).includes("--receipt requires --set-id"), true);
-  check("set try still parses its own slice", (await outcome(["try"])).includes("usage: ./clawforge set try"), true);
+  check("set receipts still parses its own slice", (await outcome(["receipts", "--receipt", "r", "--json"])).includes(RECEIPT_NEEDS_SET_ID), true);
+  check("set try still parses its own slice", (await outcome(["try"])).includes(usageSetTry), true);
 
   // The drift check must drive the real dispatcher, not the registry against itself: with
   // watch's table declaring the WRONG slice for an action, the declaration offers a flag the
@@ -218,11 +225,11 @@ import { check, finish } from "#checks/kit/harness.ts";
       return error instanceof Error ? error.message : String(error);
     }
   };
-  check("watch status --json parses — refused only later, on its context", !(await watchOutcome(["status", "--json"])).includes("unknown argument"), true);
+  check("watch status --json parses — refused only later, on its context", !(await watchOutcome(["status", "--json"])).includes(UNKNOWN_ARGUMENT), true);
   // The unified other-action-flag text (design 5.6): the refusal names the action that owns
   // the flag, not "unknown argument".
   check("watch status --interval is refused as install's flag", (await watchOutcome(["status", "--interval", "5m"])).includes("--interval applies to `install`, not `status`"), true);
-  check("watch check --interval parses — refused only later, on its context", !(await watchOutcome(["check", "--interval", "5m"])).includes("unknown argument"), true);
+  check("watch check --interval parses — refused only later, on its context", !(await watchOutcome(["check", "--interval", "5m"])).includes(UNKNOWN_ARGUMENT), true);
 }
 
 // --- R32-10: declared = accepted, for every action command, through the real dispatcher ------
@@ -235,7 +242,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 
 {
   const ACTION_COMMANDS = ["backup", "watch", "expose", "set", "recipe"];
-  const parseRefusal = (message: string): boolean => message.includes("unknown argument") || message.includes("applies to");
+  const parseRefusal = (message: string): boolean => message.includes(UNKNOWN_ARGUMENT) || message.includes(APPLIES_TO);
   for (const name of ACTION_COMMANDS) {
     const command = openclawCommands[name]!;
     const run = command.run!;

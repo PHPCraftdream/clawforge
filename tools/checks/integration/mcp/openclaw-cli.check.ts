@@ -14,7 +14,12 @@ import {
   approveScopeUpgradeArgv,
   scopeUpgradeRequestId,
   withModelApproval,
+  SCOPE_UPGRADE_MARKER,
+  APPROVE_COMMAND,
+  NOT_JSON,
 } from "#framework/service/openclaw-cli.ts";
+import { DID_NOT_PASS } from "#framework/commands/orchestration/accept.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { accept } from "#framework/commands/orchestration/accept.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
@@ -26,6 +31,10 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const SCOPE_ERROR = "gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: abc)";
+
+const approveAbc = `devices approve abc`;
+const approveLatest = `devices approve --latest`;
+const unrelatedFailure = "some unrelated failure";
 
 function ctxWith(answer: (args: string[], attempt: number) => ExecResult) {
   const calls: string[][] = [];
@@ -52,7 +61,7 @@ check("isScopeUpgradePending recognizes the marker on a failing result", isScope
 check("isScopeUpgradePending ignores a successful result carrying the same text", isScopeUpgradePending({ code: 0, stdout: SCOPE_ERROR, stderr: "" }), false);
 check("isScopeUpgradePending ignores an unrelated failure", isScopeUpgradePending({ code: 1, stdout: "", stderr: "connection refused" }), false);
 check("the approval is asked of OpenClaw's own default agent", approveScopeUpgradeArgv("abc").slice(0, 3), ["agent", "--agent", "main"]);
-check("the approval message names the command to run", approveScopeUpgradeArgv("abc").some((a) => a.includes("devices approve")), true);
+check("the approval message names the command to run", approveScopeUpgradeArgv("abc").some((a) => a.includes(APPROVE_COMMAND)), true);
 
 // --- the approval targets our own request, never "whatever is newest" ----------------------
 //
@@ -63,12 +72,12 @@ check("the approval message names the command to run", approveScopeUpgradeArgv("
 
 check("the request id is read out of the gateway's own refusal", scopeUpgradeRequestId({ code: 1, stdout: "", stderr: SCOPE_ERROR }), "abc");
 check("a refusal without a request id yields nothing to approve", scopeUpgradeRequestId({ code: 1, stdout: "", stderr: "scope upgrade pending approval" }), undefined);
-check("the approval names that id", approveScopeUpgradeArgv("abc").some((a) => a.includes("devices approve abc")), true);
+check("the approval names that id", approveScopeUpgradeArgv("abc").some((a) => a.includes(approveAbc)), true);
 // The command itself, not the prose around it: the message deliberately spells out "do not
 // use --latest" to the agent, so a bare substring search would match our own instruction.
 check(
   "the command the agent is given never approves whatever is newest",
-  approveScopeUpgradeArgv("abc").some((a) => a.includes("devices approve --latest")),
+  approveScopeUpgradeArgv("abc").some((a) => a.includes(approveLatest)),
   false,
 );
 
@@ -131,7 +140,7 @@ check(
   );
   check(
     "the approval that was actually sent carries the refused request's id",
-    calls[1].some((arg) => arg.includes("devices approve abc")),
+    calls[1].some((arg) => arg.includes(approveAbc)),
     true,
   );
 }
@@ -147,8 +156,8 @@ check(
     message = (error as Error).message;
   }
   check("an unidentifiable scope refusal approves nothing at all", calls.length, 1);
-  check("it explains how to approve by hand instead", message.includes("devices approve <requestId>"), true);
-  check("and it carries the original refusal", message.includes("scope upgrade pending approval"), true);
+  check("it explains how to approve by hand instead", message.includes(commandLine(["cli", "devices", "approve", "<requestId>"])), true);
+  check("and it carries the original refusal", message.includes(SCOPE_UPGRADE_MARKER), true);
 }
 
 {
@@ -177,7 +186,7 @@ check(
     message = (error as Error).message;
   }
   check("an unrelated failure is thrown, not approved-and-retried", calls.length, 1);
-  check("the thrown message carries the complete output, not a truncated tail", message.includes("some unrelated failure"), true);
+  check("the thrown message carries the complete output, not a truncated tail", message.includes(unrelatedFailure), true);
 }
 
 // --- JSON helper ----------------------------------------------------------------------------
@@ -195,7 +204,7 @@ check(
   } catch (error) {
     message = (error as Error).message;
   }
-  check("a non-JSON answer is named as such, not left as a SyntaxError", message.includes("did not answer with JSON"), true);
+  check("a non-JSON answer is named as such, not left as a SyntaxError", message.includes(NOT_JSON), true);
 }
 
 // --- batch: temp-dir cleanup and an exit marker that never glues onto unterminated output ---
@@ -259,7 +268,7 @@ check(
     const noModelReport = JSON.parse(noModelOutput) as { couldNotCheck: number };
     check("accept without --with-model does not call an agent", noModel.calls.some((args) => args[0] === "agent"), false);
     check("accept reports the refused check as could-not-check", noModelReport.couldNotCheck, 1);
-    check("accept without --with-model exits nonzero", noModelError.includes("did not pass"), true);
+    check("accept without --with-model exits nonzero", noModelError.includes(DID_NOT_PASS), true);
 
     const optedIn = ctxWith(answer);
     let optedInOutput = "";

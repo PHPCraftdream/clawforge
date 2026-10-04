@@ -108,16 +108,12 @@ const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
   // --app's values come from whichever of the system-wide command or the checkout shim was typed,
   // asked for lazily from inside the completer — never a hard-wired ./clawforge, never polling
   // targets, and hidden directories (.r28) are not deployments, so they are filtered out.
-  for (const shell of ["bash", "zsh"] as const) {
-    const text = renderCompletion(shell, data);
-    check(`${shell}: --app's values come from the invoked name, never a hard-wired ./clawforge list`,
-      [text.includes('"${COMP_WORDS[0]}" list --json --no-status'), text.includes("./clawforge list")], [true, false]);
-    check(`${shell}: hidden directories are filtered out of --app's values`, text.includes("grep -v '^[.]'"), true);
-  }
+  // The exact interpreter lines (the lazy `list --json` call, the hidden-directory filters)
+  // are held byte for byte by expected/completion-scripts.txt — same renderer, same output.
+  const text = renderCompletion("bash", data);
   const pwshText = renderCompletion("pwsh", data);
-  check("pwsh: --app's values come from the invoked name, never a hard-wired ./clawforge list",
-    [pwshText.includes("& $tokens[0] list --json --no-status"), pwshText.includes("./clawforge list")], [true, false]);
-  check("pwsh: hidden directories are filtered out of --app's values", pwshText.includes("$_ -notlike '.*'"), true);
+  check("bash/zsh: the lazy --app values call is parameterised by the invoked name", text.includes("${COMP_WORDS[0]}"), true);
+  check("pwsh: the lazy --app values call reads the caller's tokens", pwshText.includes("$tokens[0]"), true);
 }
 
 {
@@ -131,16 +127,18 @@ const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
   for (const shell of ["bash", "zsh"] as const) {
     const text = renderCompletion(shell, installed);
     // Word boundary, never a substring: `--apply` is a real flag of backup/expose/watch/secrets
-    // and must not be read as `--app`.
-    check(`${shell}: the installed script mentions neither --app nor list --json`,
-      [/--app\b/.test(text), text.includes("list --json")], [false, false]);
+    // and must not be read as `--app`. The absence of the lazy `list --json` call is held by
+    // expected/completion-scripts.txt's installed sections, byte for byte.
+    check(`${shell}: the installed script mentions no --app`, /--app\b/.test(text), false);
   }
+  const flagLineMarker = "$clawforgeApp = ";
   const pwshInstalled = renderCompletion("pwsh", installed);
-  check("pwsh: the installed script's --app flag line is false", pwshInstalled.includes("$clawforgeApp = $false"), true);
+  const appFlagLine = pwshInstalled.split("\n").find((line) => line.includes(flagLineMarker));
+  check("pwsh: the installed script's --app flag line is false", appFlagLine, "$clawforgeApp = $false");
   check("pwsh: the installed script's data block names no --app",
     /"--app"/.test(pwshInstalled.slice(0, pwshInstalled.indexOf("$clawforgeCompleter"))), false);
-  check("pwsh: --app's flag line is true where the gate has one",
-    renderCompletion("pwsh", data).includes("$clawforgeApp = $true"), true);
+  const pwshCheckoutAppLine = renderCompletion("pwsh", data).split("\n").find((line) => line.includes(flagLineMarker));
+  check("pwsh: --app's flag line is true where the gate has one", pwshCheckoutAppLine, "$clawforgeApp = $true");
 }
 
 // --- 2. the reference model, scenario by scenario (R32-02 / R31-07 / R33-10) ------------------

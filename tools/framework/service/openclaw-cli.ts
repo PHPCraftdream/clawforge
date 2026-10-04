@@ -30,7 +30,11 @@ function mayApproveWithModel(): boolean {
   return modelApproval.getStore() === true;
 }
 
-const SCOPE_UPGRADE_MARKER = "scope upgrade pending approval";
+export const SCOPE_UPGRADE_MARKER = "scope upgrade pending approval";
+
+export const APPROVE_COMMAND = "devices approve";
+
+export const NOT_JSON = "did not answer with JSON";
 
 export function isScopeUpgradePending(result: ExecResult): boolean {
   return result.code !== 0 && `${result.stdout}\n${result.stderr}`.includes(SCOPE_UPGRADE_MARKER);
@@ -52,7 +56,7 @@ export function approveScopeUpgradeArgv(requestId: string): string[] {
   return [
     "agent", "--agent", APPROVAL_AGENT_ID,
     "-m",
-    `Run \`openclaw devices approve ${requestId} --json\` with your exec tool (same container/process) ` +
+    `Run \`openclaw ${APPROVE_COMMAND} ${requestId} --json\` with your exec tool (same container/process) ` +
       "— the Gateway is waiting on that scope-upgrade approval for the \"cli\" client. " +
       "Approve exactly this request id: do not use --latest and do not approve anything else, " +
       "another device may be waiting too. Reply with the exact command output.",
@@ -120,7 +124,7 @@ export async function openclawCliJson<T>(ctx: Context, args: string[]): Promise<
   try {
     return JSON.parse(result.stdout) as T;
   } catch {
-    throw new Error(`openclaw ${args.join(" ")} did not answer with JSON: ${result.stdout.trim().slice(0, 200)}`);
+    throw new Error(`openclaw ${args.join(" ")} ${NOT_JSON}: ${result.stdout.trim().slice(0, 200)}`);
   }
 }
 

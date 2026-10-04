@@ -8,7 +8,8 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { removeApp } from "#framework/integration/deployment/remove.ts";
+import { removeApp, NOTHING_REMOVED, notPresent, bootstrappedRefusal, instanceStateRefusal } from "#framework/integration/deployment/remove.ts";
+import { invalidNameMessage } from "#framework/core/values/names.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -64,7 +65,7 @@ async function captured(body: () => Promise<number>): Promise<{ code: number; te
   check("it names the directory", text.includes(directory), true);
   check("it lists top-level entries", [".env", "app.ts", "config", "secrets"].every((entry) => text.includes(entry)), true);
   check("it warns about the deployment's own git history", text.includes(".git"), true);
-  check("it says nothing was removed", text.includes("nothing removed"), true);
+  check("it says nothing was removed", text.includes(NOTHING_REMOVED), true);
 }
 
 // --- --yes: removes for real -------------------------------------------------------------------
@@ -85,7 +86,7 @@ async function captured(body: () => Promise<number>): Promise<{ code: number; te
     try { await removeApp("error-target", ["--yes"], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("an unreachable target blocks removal", message.includes("state is error"), true);
+  check("an unreachable target blocks removal", message.includes(instanceStateRefusal("error-target", "error")), true);
   check("local secret survives an unreachable target", await readFile(secretFile, "utf8"), "fixture-secret-sentinel");
 }
 
@@ -111,7 +112,7 @@ for (const state of ["unchecked", "missing"] as const) {
     try { await removeApp("running-app", ["--yes"], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("a running instance is refused", message.includes("destroy first"), true);
+  check("a running instance is refused", message.includes(bootstrappedRefusal("running-app", "running")), true);
   check("the directory survives the refusal", await exists(directory), true);
 }
 
@@ -121,7 +122,7 @@ for (const state of ["unchecked", "missing"] as const) {
     try { await removeApp("stopped-app", ["--yes"], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("a stopped-but-bootstrapped instance is refused the same way", message.includes("destroy first"), true);
+  check("a stopped-but-bootstrapped instance is refused the same way", message.includes(bootstrappedRefusal("stopped-app", "stopped")), true);
   check("the directory survives the refusal", await exists(directory), true);
 }
 
@@ -132,7 +133,7 @@ for (const state of ["unchecked", "missing"] as const) {
     try { await removeApp("running-dry", [], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("a running instance is refused even for a dry run", message.includes("destroy first"), true);
+  check("a running instance is refused even for a dry run", message.includes(bootstrappedRefusal("running-dry", "running")), true);
   check("directory untouched", await exists(directory), true);
 }
 
@@ -143,7 +144,7 @@ for (const state of ["unchecked", "missing"] as const) {
     try { await removeApp("../escape", [], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("a traversal name is refused", message.includes("invalid deployment name"), true);
+  check("a traversal name is refused", message.includes(invalidNameMessage("deployment", "../escape")), true);
 }
 
 {
@@ -151,7 +152,7 @@ for (const state of ["unchecked", "missing"] as const) {
     try { await removeApp("Not_Valid", [], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("an uppercase/underscore name is refused, same as new-app", message.includes("invalid deployment name"), true);
+  check("an uppercase/underscore name is refused, same as new-app", message.includes(invalidNameMessage("deployment", "Not_Valid")), true);
 }
 
 // --- refuses a directory that does not exist ----------------------------------------------------
@@ -161,7 +162,8 @@ for (const state of ["unchecked", "missing"] as const) {
     try { await removeApp("no-such-deployment", [], { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
-  check("a missing deployment is refused, not silently a no-op", message.includes("does not exist"), true);
+  const missing = resolve(root, "no-such-deployment");
+  check("a missing deployment is refused, not silently a no-op", message.includes(notPresent(missing)), true);
 }
 
 // --- refuses a symlinked deployment directory (skipped where this host cannot create one) ------

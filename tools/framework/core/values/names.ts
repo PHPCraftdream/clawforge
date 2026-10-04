@@ -9,14 +9,16 @@ const PATTERN = /^[a-z][a-z0-9-]*$/;
 const MAX_LENGTH = 64;
 
 /** Returns the name if it is safe to use as a path segment, throws otherwise. */
+export function invalidNameMessage(kind: string, value: string): string {
+  return `invalid ${kind} name "${value}" — use lowercase letters, digits and dashes, starting with a letter`;
+}
+
 export function safeName(kind: string, value: string): string {
   if (value.length > MAX_LENGTH) {
     throw new Error(`${kind} name is too long (max ${MAX_LENGTH} characters)`);
   }
   if (!PATTERN.test(value)) {
-    throw new Error(
-      `invalid ${kind} name "${value}" — use lowercase letters, digits and dashes, starting with a letter`,
-    );
+    throw new Error(invalidNameMessage(kind, value));
   }
   return value;
 }

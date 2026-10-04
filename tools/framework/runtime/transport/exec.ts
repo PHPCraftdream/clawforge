@@ -113,6 +113,8 @@ export interface Transport {
   clientInvocation(entryPath: string, args: string[]): { command: string; args: string[] };
 }
 
+export const STDIN_DELIVERY_FAILED = "failed to deliver stdin";
+
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function validateEnvNames(names: string[]): void {
@@ -308,7 +310,7 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
         return;
       }
       if (inputError !== undefined && result.code === 0) {
-        rejectPromise(new Error(`failed to deliver stdin: ${inputError.message}`));
+        rejectPromise(new Error(`${STDIN_DELIVERY_FAILED}: ${inputError.message}`));
         return;
       }
       resolvePromise(result);

@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix, describeInvocation } from "#framework/runtime/transport/transport.ts";
+import { cannotCheckMessage, cannotSearchMessage, SYMLINK_LOOP, PRESENCE_PROBE } from "#framework/runtime/transport/quoting.ts";
+import { STDIN_DELIVERY_FAILED } from "#framework/runtime/transport/exec.ts";
 import type { ExecResult, ExecOptions, CommandFailure } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -227,27 +229,27 @@ function execReturning(result: ExecResult) {
     { command: probeCalls[0]?.command, args: probeCalls[0]?.args },
     { command: "sh", args: ["-s", "--", "/srv/x"] },
   );
-  const probeInput = probeCalls[0]?.options.input;
-  check("remote: and the script itself arrives on stdin", typeof probeInput === "string" && probeInput.includes("blocked $parent"), true);
+  check("remote: and the script itself arrives on stdin", probeCalls[0]?.options.input === PRESENCE_PROBE, true);
   check("remote: the absent verdict is absent", await sshWith({ code: 0, stdout: "absent\n", stderr: "" }).exists("/srv/x"), false);
 
   // The verdict this whole probe exists for: the path may well be there, and the check was
   // simply not allowed to look. Answering "absent" here is what makes restore skip moving
   // the live data aside and then unpack the archive over it.
   const blocked = await refusal({ code: 0, stdout: "blocked /srv/clawforge/data\n", stderr: "" });
-  check("remote: a directory that cannot be entered is not an absent path", blocked.includes("could not check whether"), true);
-  check("remote: the refusal names the directory that blocked the walk", blocked.includes("/srv/clawforge/data cannot be searched"), true);
+  const probe = "/srv/clawforge/data/config/openclaw.json";
+  check("remote: a directory that cannot be entered is not an absent path", blocked.includes(cannotCheckMessage(probe)), true);
+  check("remote: the refusal names the directory that blocked the walk", blocked.includes(cannotSearchMessage(probe, "/srv/clawforge/data")), true);
 
   const unreachable = await refusal({ code: 255, stdout: "", stderr: "ssh: connect to host example.invalid port 22: Network is unreachable" });
-  check("remote: a connection failure is not an answer", unreachable.includes("could not check whether"), true);
+  check("remote: a connection failure is not an answer", unreachable.includes(cannotCheckMessage("/srv/clawforge/data/config/openclaw.json")), true);
   check("remote: the refusal names the path it could not check", unreachable.includes("/srv/clawforge/data/config/openclaw.json"), true);
   check("remote: and carries what the transport actually said", unreachable.includes("Network is unreachable"), true);
 
   const brokenDistro = await refusal({ code: 1, stdout: "", stderr: "There is no distribution with the supplied name." });
-  check("remote: a transport failure is the check failing, not an absent path", brokenDistro.includes("could not check whether"), true);
+  check("remote: a transport failure is the check failing, not an absent path", brokenDistro.includes(cannotCheckMessage("/srv/clawforge/data/config/openclaw.json")), true);
 
   const silent = await refusal({ code: 0, stdout: "", stderr: "" });
-  check("remote: a probe that ran but said nothing is not a present path", silent.includes("could not check whether"), true);
+  check("remote: a probe that ran but said nothing is not a present path", silent.includes(cannotCheckMessage("/srv/clawforge/data/config/openclaw.json")), true);
 }
 
 // --- exists: the same question asked of a real shell and a real directory ----------------
@@ -289,9 +291,10 @@ if (process.platform === "win32") {
       }
     }
 
-    const underBlocked = await refusedBy(resolve(blockedDir, "inner", "openclaw.json"));
-    check("shell: a file under a directory this user cannot enter is not reported absent", underBlocked.includes("could not check whether"), true);
-    check("shell: and the refusal names the directory that blocked it", underBlocked.includes(`${blockedDir} cannot be searched`), true);
+    const probePath = resolve(blockedDir, "inner", "openclaw.json");
+    const underBlocked = await refusedBy(probePath);
+    check("shell: a file under a directory this user cannot enter is not reported absent", underBlocked.includes(cannotCheckMessage(probePath)), true);
+    check("shell: and the refusal names the directory that blocked it", underBlocked.includes(cannotSearchMessage(probePath, blockedDir)), true);
 
     // A symlink moves the question somewhere else entirely: walking the components of the
     // path as written says nothing about what the link points at. This is the shape the
@@ -308,15 +311,17 @@ if (process.platform === "win32") {
     check("shell: a symlink to a reachable file exists", await existsVia(shell, resolve(dir, "into-reachable.json")), true);
     check("shell: a symlink to nothing at all is absent", await existsVia(shell, resolve(dir, "dangling.json")), false);
 
-    const throughLink = await refusedBy(resolve(dir, "into-blocked.json"));
-    check("shell: a symlink into a directory this user cannot enter is not absent either", throughLink.includes("could not check whether"), true);
-    check("shell: and the refusal names the directory, not the link", throughLink.includes(`${blockedDir} cannot be searched`), true);
+    const linkPath = resolve(dir, "into-blocked.json");
+    const throughLink = await refusedBy(linkPath);
+    check("shell: a symlink into a directory this user cannot enter is not absent either", throughLink.includes(cannotCheckMessage(linkPath)), true);
+    check("shell: and the refusal names the directory, not the link", throughLink.includes(cannotSearchMessage(linkPath, blockedDir)), true);
 
-    const throughLinkedDir = await refusedBy(resolve(dir, "blocked-dir-link", "openclaw.json"));
-    check("shell: a symlinked directory is walked like any other", throughLinkedDir.includes(`${blockedDir} cannot be searched`), true);
+    const linkedDirPath = resolve(dir, "blocked-dir-link", "openclaw.json");
+    const throughLinkedDir = await refusedBy(linkedDirPath);
+    check("shell: a symlinked directory is walked like any other", throughLinkedDir.includes(cannotSearchMessage(linkedDirPath, blockedDir)), true);
 
     const loop = await refusedBy(resolve(dir, "loop-a"));
-    check("shell: a symlink loop is an error, not an absent path", loop.includes("symlink loop"), true);
+    check("shell: a symlink loop is an error, not an absent path", loop.includes(SYMLINK_LOOP), true);
   } finally {
     await chmod(blockedDir, 0o755).catch(() => {});
     await rm(dir, { recursive: true, force: true });
@@ -378,7 +383,7 @@ if (process.platform === "win32") {
   try {
     await spawnLocal(process.execPath, ["-e", "process.exit(0)"], { input });
   } catch (error) {
-    delivered = !(error as Error).message.includes("failed to deliver stdin");
+    delivered = !(error as Error).message.includes(STDIN_DELIVERY_FAILED);
   }
   check("local: code zero with undelivered stdin is not success", delivered, false);
 

@@ -20,7 +20,11 @@ import { createApp, appsDir } from "#framework/integration/deployment/scaffold.t
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { callFactsFor } from "#framework/core/command/index.ts";
+import { callFactsFor, CONFIRM_REQUIRED } from "#framework/core/command/index.ts";
+import { DESTRUCTIVE_SOME } from "#framework/core/io/help-render.ts";
+import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
+
+const IMPORT_NOTE = "imported recipe", NOTES_TEXT = "plain notes", progressMasked = "progress mentions ***", gateMasked = "gate says ***";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { hasDocker, hasGnuUserland } from "#checks/kit/capabilities/capabilities.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -119,7 +123,7 @@ try {
   check("recipe import succeeds over MCP", imported?.isError, undefined);
   check("recipe import answers in the declared envelope", imported?.structuredContent !== undefined, true);
   check("recipe import reports that it changed something", imported?.structuredContent?.changed, true);
-  check("recipe import keeps its own text beside the envelope", String(imported?.content?.[0]?.text ?? "").includes("imported recipe"), true);
+  check("recipe import keeps its own text beside the envelope", String(imported?.content?.[0]?.text ?? "").includes(IMPORT_NOTE), true);
 
   // --- structured results are declared, so a client knows the shape before calling -------
 
@@ -175,8 +179,8 @@ try {
     };
 
     check("recipe MCP calls keep the server alive", result.code, 0);
-    check("recipe remove without confirm is rejected", textOf(1).includes("pass confirm: true"), true);
-    check("recipe remove with confirm false is rejected", textOf(2).includes("pass confirm: true"), true);
+    check("recipe remove without confirm is rejected", textOf(1).includes(CONFIRM_REQUIRED), true);
+    check("recipe remove with confirm false is rejected", textOf(2).includes(CONFIRM_REQUIRED), true);
     check("read-only recipe list remains available without confirmation", isEmptyRecipeCatalog(textOf(3)), true);
     check("bare recipe with no action runs the list default instead of demanding confirmation", isEmptyRecipeCatalog(textOf(5)), true);
 
@@ -184,8 +188,8 @@ try {
       .find((tool) => tool.name === "recipe"));
     check("recipe MCP schema leaves conditional confirmation optional", (recipeTool?.inputSchema?.required ?? []).includes("confirm"), false);
     check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
-    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes("(destructive for some actions)"), true);
-    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes("(destructive for some actions)"), true);
+    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes(DESTRUCTIVE_SOME), true);
+    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes(DESTRUCTIVE_SOME), true);
     const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
     check("declaration and generated schema agree", required.includes("confirm"), false);
     check("bare recipe arguments are read-only for MCP gating", callFactsFor(openclawCommands.recipe!, []).effect, "read");
@@ -197,19 +201,20 @@ try {
   check("recipe diagnose is mutating for MCP gating, same reason as verify", callFactsFor(openclawCommands.recipe!, ["diagnose"]).effect, "destroy");
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
+  const recipePointer = `${FULL_TEXT_POINTER}=recipe`;
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
     ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"],
   );
-  check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes("call help with command=recipe"), true);
+  check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
     check("recipe install remains destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["install"]).effect, "destroy");
     check("recipe remove remains destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["remove"]).effect, "destroy");
 
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
-    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes("(destructive for some actions)"), true);
+    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes(DESTRUCTIVE_SOME), true);
     check("set build is mutable without confirmation", callFactsFor(openclawCommands.set!, ["build"]).effect, "change");
     check("set try remains destructive for MCP gating", callFactsFor(openclawCommands.set!, ["try"]).effect, "destroy");
     check("lock check is read-only for MCP gating", callFactsFor(openclawCommands.lock!, ["--check"]).effect, "read");
@@ -332,7 +337,7 @@ try {
     const byId = new Map(responses.map((response) => [response.id, response]));
     const textOf = (id: number): string => String(((byId.get(id)?.result as { content?: Array<{ text?: string }> } | undefined)?.content ?? [])[0]?.text ?? "");
 
-    check("recipe verify without confirm is refused like onboard", textOf(1).includes("pass confirm: true"), true);
+    check("recipe verify without confirm is refused like onboard", textOf(1).includes(CONFIRM_REQUIRED), true);
     check("the refusal is a tool error reply", (byId.get(1)?.result as { isError?: boolean } | undefined)?.isError, true);
     checkLocked("confirmed recipe verify succeeds", byId.get(2)?.error, undefined);
     const structured = (byId.get(2)?.result as { structuredContent?: { changed?: boolean } } | undefined)?.structuredContent;
@@ -516,6 +521,7 @@ function conforms(
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
     const { log, info } = await import(${JSON.stringify(moduleUrl("core/io/log"))});
+    const NOTES_TEXT = ${JSON.stringify(NOTES_TEXT)};
     const { emit } = await import(${JSON.stringify(moduleUrl("core/io/output"))});
     const outputs = {
       list: () => { log("available recipes"); info("sidecar          a probe service"); },
@@ -534,7 +540,7 @@ function conforms(
       name: "sweep",
       commands: {
         recipe: { ...managementCommands.recipe, run: async (_ctx, args) => { (outputs[args[0] ?? "list"] ?? outputs.list)(); } },
-        notes: { summary: "a text-only tool that declares no envelope", run: async () => { log("plain notes"); } },
+        notes: { summary: "a text-only tool that declares no envelope", run: async () => { log(NOTES_TEXT); } },
       },
     });
   `;
@@ -587,7 +593,7 @@ function conforms(
 
     const notes = byId.get(actionChoices.length + 1)?.result as { structuredContent?: unknown; content?: Array<{ text?: string }> } | undefined;
     check("a tool that declares no schema returns no structuredContent", notes?.structuredContent, undefined);
-    check("and its plain text is the whole answer", String(notes?.content?.[0]?.text ?? "").includes("plain notes"), true);
+    check("and its plain text is the whole answer", String(notes?.content?.[0]?.text ?? "").includes(NOTES_TEXT), true);
   } finally {
     await rm(sweepRoot, { recursive: true, force: true });
   }
@@ -665,7 +671,7 @@ function conforms(
     const probe = answerOf(2);
     check("probe: the echo command still succeeds", probe?.isError, undefined);
     check("probe: the raw token is gone from the text", probe?.text.includes(secret), false);
-    check("probe: masked, not dropped, in the progress text", probe?.text.includes("progress mentions ***"), true);
+    check("probe: masked, not dropped, in the progress text", probe?.text.includes(progressMasked), true);
     check("probe: the raw token is gone from the envelope", probe?.structured.includes(secret), false);
     check("probe: a masked key keeps its shape", probe?.structured.includes("***_endpoint"), true);
     check("probe: a masked value keeps its neighbourhood", probe?.structured.includes("token=***"), true);
@@ -675,7 +681,7 @@ function conforms(
     const gateOk = answerOf(4);
     check("gate-echo: the healthy gate answer is a success", gateOk?.isError, undefined);
     check("gate-echo: the raw token is gone from the text", gateOk?.text.includes(secret), false);
-    check("gate-echo: masked, not dropped, in the gate output", gateOk?.text.includes("gate says ***"), true);
+    check("gate-echo: masked, not dropped, in the gate output", gateOk?.text.includes(gateMasked), true);
     const gateErr = answerOf(5);
     check("gate-fail: the failing gate answer is an error", gateErr?.isError, true);
     check("gate-fail: and it masks the token too", gateErr?.text.includes(secret), false);

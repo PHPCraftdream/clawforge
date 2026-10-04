@@ -20,7 +20,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main, runApp } from "#framework/entry/cli.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
-import { commandBody, defineAction, materializeCommands, multiActionBody } from "#framework/core/command/index.ts";
+import { commandBody, defineAction, materializeCommands, multiActionBody, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { PORT_RANGE } from "#framework/core/values/value.ts";
 import { toArgv } from "#framework/integration/mcp/call.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
@@ -145,14 +147,15 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
 // --- the console surface still reports an unknown argument with the --help pointer -------------
 
 {
+  const helpPointer = `run ${commandLine(["recover-env", "--help"])}`;
   const app: AppDefinition = {
     name: "argsfirst-fixture",
     description: "fixture",
     commands: { "recover-env": operateCommands["recover-env"] },
   };
   const { output } = await capture(() => runApp(app, ["recover-env", "--zzz"]));
-  checkTrue("recover-env --zzz is reported as an unknown argument", output.includes("unknown argument: --zzz"));
-  checkTrue("recover-env --zzz points at its own --help", output.includes("run ./clawforge recover-env --help"));
+  checkTrue("recover-env --zzz is reported as an unknown argument", output.includes(unknownArgumentMessage("--zzz")));
+  checkTrue("recover-env --zzz points at its own --help", output.includes(helpPointer));
 }
 
 // --- expose ssh: the port is a port ------------------------------------------------------------
@@ -164,7 +167,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
     paths: { toContainer: (path: string) => path, toTarget: async (path: string) => path },
   } as unknown as Context;
   const { error } = await capture(() => exposeSsh(fixed, ["--local-port", "99999"]));
-  checkTrue("expose ssh --local-port 99999 is refused", error.includes("must be a port number between 1 and 65535"));
+  checkTrue("expose ssh --local-port 99999 is refused", error.includes(PORT_RANGE));
 }
 
 // --- legacy commands: same pipeline, argv as is, still no contact on a typo ---------------------

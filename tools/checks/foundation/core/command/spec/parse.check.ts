@@ -4,6 +4,8 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
+import { unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import {
   parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, specOf, specShape, type CallShape,
@@ -366,14 +368,15 @@ check(
   }
   check("parseDeclaredArgs throws UnknownArgumentError, not a plain UserError", caught instanceof UnknownArgumentError, true);
 
+  const backupPointer = `run ${commandLine(["backup", "--help"])}`;
   let printed = "";
   await withOutputSink((chunk) => {
     printed += chunk;
   }, async () => {
     reportUnknownArgument("backup", caught as UnknownArgumentError);
   });
-  check("reportUnknownArgument prints the refusal, did-you-mean included", printed.includes("unknown argument: --pth (did you mean --path?)"), true);
-  check("reportUnknownArgument points at the command's own --help", printed.includes("run ./clawforge backup --help"), true);
+  check("reportUnknownArgument prints the refusal, did-you-mean included", printed.includes(unknownArgumentMessage("--pth", "--path")), true);
+  check("reportUnknownArgument points at the command's own --help", printed.includes(backupPointer), true);
 }
 
 // --- dieUnknownAction: parity for a sub-action dispatcher's own unknown-action refusal ------
@@ -400,13 +403,14 @@ check(
     "unknown action: insatll (expected check, install, uninstall, status or test) (did you mean install?)",
   );
 
+  const watchPointer = `run ${commandLine(["watch", "--help"])}`;
   let printed = "";
   await withOutputSink((chunk) => {
     printed += chunk;
   }, async () => {
     reportUnknownArgument("watch", caught as UnknownArgumentError);
   });
-  check("reported through the same path as an unknown flag, --help pointer included", printed.includes("run ./clawforge watch --help"), true);
+  check("reported through the same path as an unknown flag, --help pointer included", printed.includes(watchPointer), true);
 }
 
 check(

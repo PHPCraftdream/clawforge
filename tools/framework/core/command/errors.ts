@@ -63,10 +63,20 @@ export class UnknownArgumentError extends ArgumentError {
   name = "UnknownArgumentError";
 }
 
+export const UNKNOWN_ARGUMENT = "unknown argument";
+
+export function didYouMeanSuffix(suggestion: string): string {
+  return `(did you mean ${suggestion}?)`;
+}
+
+export function unknownArgumentMessage(token: string, suggestion?: string): string {
+  return suggestion === undefined
+    ? `${UNKNOWN_ARGUMENT}: ${token}`
+    : `${UNKNOWN_ARGUMENT}: ${token} ${didYouMeanSuffix(suggestion)}`;
+}
+
 export function dieUnknownArgument(token: string, suggestion?: string): never {
-  throw new UnknownArgumentError(
-    suggestion === undefined ? `unknown argument: ${token}` : `unknown argument: ${token} (did you mean ${suggestion}?)`,
-  );
+  throw new UnknownArgumentError(unknownArgumentMessage(token, suggestion));
 }
 
 /** An unknown sub-action word; an UnknownArgumentError so entry/cli.ts adds the --help pointer. */
@@ -77,13 +87,15 @@ export class UnknownActionError extends UnknownArgumentError {
 /** Refuses an unknown sub-action with `message` plus a did-you-mean guess from `choices`. */
 export function dieUnknownAction(action: string, message: string, choices: readonly string[], argument?: string): never {
   const suggestion = closestCommand(action, choices);
-  throw new UnknownActionError(suggestion === undefined ? message : `${message} (did you mean ${suggestion}?)`, argument);
+  throw new UnknownActionError(suggestion === undefined ? message : `${message} ${didYouMeanSuffix(suggestion)}`, argument);
 }
 
 /** An MCP call to a command that replaces or destroys state, made without confirm: true. */
 export class ConfirmationRequiredError extends UserError {
   name = "ConfirmationRequiredError";
   constructor(command: string) {
-    super(`${command} replaces or destroys state — pass confirm: true`);
+    super(`${command} replaces or destroys state — ${CONFIRM_REQUIRED}`);
   }
 }
+
+export const CONFIRM_REQUIRED = "pass confirm: true";

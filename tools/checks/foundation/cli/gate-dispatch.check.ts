@@ -30,7 +30,15 @@ import {
   reportUnknownCommand,
   soleDeploymentFallback,
   missingDeploymentReport,
+  unknownCommandMessage,
+  didYouMeanMessage,
+  UNKNOWN_COMMAND,
+  NOT_FOUND,
+  APP_ORDER,
 } from "#framework/integration/gate.ts";
+import { unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { GROUP_HEADINGS } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { command, manual } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
@@ -124,9 +132,9 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
     reportUnknownCommand("statsu", candidates);
   });
   const text = written.join("");
-  check("reports the unknown name", text.includes("unknown command: statsu"), true);
-  check("suggests the close match", text.includes("did you mean: status"), true);
-  check("points at help instead of dumping it", text.includes("./clawforge help"), true);
+  check("reports the unknown name", text.includes(unknownCommandMessage("statsu")), true);
+  check("suggests the close match", text.includes(didYouMeanMessage("status")), true);
+  check("points at help instead of dumping it", text.includes(commandLine(["help"])), true);
 }
 
 // --- the real gate: a typo is answered as a typo, not as a missing deployment -----------
@@ -135,16 +143,16 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   const neverCreated = `gate-dispatch-check-missing-${randomBytes(4).toString("hex")}`;
   const typo = await runGate(["--app", neverCreated, "statsu"]);
   check("a typo exits non-zero", typo.code === 0, false);
-  check("a typo is answered as unknown, not as a missing deployment", typo.stdout.includes("unknown command: statsu"), true);
-  check("the deployment is never mentioned for a plain typo", typo.stdout.includes("not found"), false);
-  check("a spelling suggestion is offered", typo.stdout.includes("did you mean: status"), true);
-  check("the full command list is not dumped for a typo", typo.stdout.includes("Start & stop:"), false);
+  check("a typo is answered as unknown, not as a missing deployment", typo.stdout.includes(unknownCommandMessage("statsu")), true);
+  check("the deployment is never mentioned for a plain typo", typo.stdout.includes(NOT_FOUND), false);
+  check("a spelling suggestion is offered", typo.stdout.includes(didYouMeanMessage("status")), true);
+  check("the full command list is not dumped for a typo", typo.stdout.includes(GROUP_HEADINGS["start-stop"]), false);
 
   // A real command name still gets the old, accurate answer: the command is fine, the
   // deployment genuinely is not there.
   const realCommand = await runGate(["--app", neverCreated, "status"]);
-  check("a real command name with no matching deployment still says so", realCommand.stdout.includes("not found"), true);
-  check("and is not misreported as an unknown command", realCommand.stdout.includes("unknown command"), false);
+  check("a real command name with no matching deployment still says so", realCommand.stdout.includes(NOT_FOUND), true);
+  check("and is not misreported as an unknown command", realCommand.stdout.includes(UNKNOWN_COMMAND), false);
 }
 
 // --- the real gate: --app after the command name is that command's own argument --------
@@ -157,7 +165,7 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   const leaked = await runGate(["new-app", "--app", "not-a-flag-here", "extra"]);
   check(
     "--app after the command name is new-app's own first argument, not stripped by the gate",
-    leaked.stdout.includes("unknown argument: --app"),
+    leaked.stdout.includes(unknownArgumentMessage("--app")),
     true,
   );
 
@@ -167,7 +175,7 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   check("a misplaced --app exits non-zero", misplaced.code === 0, false);
   check(
     "and is answered as an ordering mistake, not run against another deployment",
-    misplaced.stdout.includes("--app must come before the command"),
+    misplaced.stdout.includes(APP_ORDER),
     true,
   );
 
@@ -178,12 +186,12 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   const passedThrough = await runGate(["--app", neverCreatedForExec, "exec", "--", "echo", "--app", "not-a-deployment"]);
   check(
     "--app after a passthrough command is not treated as misplaced",
-    passedThrough.stdout.includes("--app must come before the command"),
+    passedThrough.stdout.includes(APP_ORDER),
     false,
   );
   check(
     "exec still runs against the named (missing) deployment, not a --app found in its own args",
-    passedThrough.stdout.includes("not found"),
+    passedThrough.stdout.includes(NOT_FOUND),
     true,
   );
 }
@@ -213,7 +221,7 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
 
     const extra = await runGate(["version", "extra-arg"], { cwd: empty });
     check("version extra-arg exits non-zero", extra.code === 0, false);
-    check("version extra-arg is refused in the standard argv error style", extra.stdout.includes("unknown argument: extra-arg"), true);
+    check("version extra-arg is refused in the standard argv error style", extra.stdout.includes(unknownArgumentMessage("extra-arg")), true);
   } finally {
     await rm(empty, { recursive: true, force: true });
   }

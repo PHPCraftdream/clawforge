@@ -82,11 +82,14 @@ export function isUnderSrv(dataDir: string): boolean {
  *  invoked. Names the data directory rather than pointing at the file and leaving the
  *  reader to find it in a troubleshooting table. Points at `bootstrap --check` rather than
  *  guessing a `sudo install -d` line here: this runs before any target exists to ask. */
+/** The /srv hint: a fresh host keeps those directories out of the operator's hands. */
+export const ROOT_OWNED = "usually root-owned";
+
 export function nextStepsLines(envFile: string, dataDir: string, bootstrapCommand: string): string[] {
   const lines = [`  1. data directory: ${dataDir}  (also check ${envFile} for the port and image)`];
   if (isUnderSrv(dataDir)) {
     lines.push(
-      `     it is under /srv, usually root-owned on a fresh host — ${bootstrapCommand} --check reports ` +
+      `     it is under /srv, ${ROOT_OWNED} on a fresh host — ${bootstrapCommand} --check reports ` +
         "exactly what it needs, including the sudo install -d line if one is needed",
     );
   }

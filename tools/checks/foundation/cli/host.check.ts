@@ -23,11 +23,12 @@
 //   - the MCP schema/argv contract, including the toArgv -> parseCall round trip;
 //   - full dispatch through a recording transport, and one real bare-machine run.
 
-import { host, rootElevationRequested } from "#framework/commands/interface/host/index.ts";
-import { ENGINE_DISTRO, parseWslDistroListing, probeUidAnswer, realHostEnvironment, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
+import { host, rootElevationRequested, ROOT_CONSENT, ROOT_ARRIVAL, IDENTITY_UNKNOWN, commandFailedMessage, HOST_ARGUMENTS } from "#framework/commands/interface/host/index.ts";
+import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, engineDistroNote, probeAnsweredEvidence, probeNoAnswerEvidence, parseWslDistroListing, probeUidAnswer, realHostEnvironment, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
+import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { CommandFailedError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -110,7 +111,7 @@ function envWith(platform: NodeJS.Platform, distros: string[], localIdentity: Id
 {
   check("no context at all is refused by the parser", (await deathOf(() => host(ctxWith({}), []))).includes("<context>"), true);
   const unknownContext = await deathOf(() => host(ctxWith({}), ["vm", "whoami"]));
-  check("an unknown context is refused with the three valid ones", unknownContext.includes("target, engine, local"), true);
+  check("an unknown context is refused with the three valid ones", unknownContext.includes(HOST_ARGUMENTS[0].choices.join(", ")), true);
   check("a context with nothing after it refuses the missing command", (await deathOf(() => host(ctxWith({}), ["local"]))).includes("<args"), true);
 }
 
@@ -169,7 +170,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
     localIdentity: async () => unprivilegedHere,
   });
   check("off windows engine collapses onto local", execution.description, "local");
-  check("and says the two are the same machine", execution.note?.includes("same machine"), true);
+  check("and says the two are the same machine", execution.note?.includes(SAME_MACHINE), true);
   check("the collapse onto local runs here as well", execution.runsHere, true);
 }
 
@@ -180,7 +181,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
     localIdentity: async () => unprivilegedHere,
   });
   check("on windows without docker-desktop engine collapses onto local too", execution.description, "local");
-  check("and names the distro it looked for", execution.note?.includes("same machine") === true && execution.note?.includes("docker-desktop"), true);
+  check("and names the distro it looked for", execution.note?.includes(SAME_MACHINE) === true && execution.note?.includes(ENGINE_DISTRO), true);
 }
 
 {
@@ -199,7 +200,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
     listWslDistros: async () => [],
     localIdentity: async () => unprivilegedHere,
   });
-  check("local on windows refuses elevation outright", (await deathOf(() => execution.elevate("whoami", [], {}))).includes("no root"), true);
+  check("local on windows refuses elevation outright", (await deathOf(() => execution.elevate("whoami", [], {}))).includes(NO_LOCAL_ROOT), true);
   check("local runs here, so its identity is this process's own", execution.runsHere, true);
 }
 
@@ -217,7 +218,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
     localIdentity: async () => unprivilegedHere,
   });
   check("the docker-desktop engine declares what the audit found: it arrives as root", execution.arrivesAsRoot, true);
-  check("and says so before anything runs", execution.note?.includes("root (uid 0)") === true && execution.note?.includes("no other login user"), true);
+  check("and says so before anything runs", execution.note === engineDistroNote("wsl:Ubuntu-24.04"), true);
   check("the docker-desktop engine runs away from this process too", execution.runsHere, false);
   check("the collapse off windows is not declared root", (await resolveHostContext(ctxWith(recordingTransport().transport), "engine", { platform: "linux", listWslDistros: async () => [], localIdentity: async () => unprivilegedHere })).arrivesAsRoot, undefined);
   check("nor the engine without docker-desktop", (await resolveHostContext(ctxWith(recordingTransport().transport), "engine", { platform: "win32", listWslDistros: async () => ["Ubuntu-24.04"], localIdentity: async () => unprivilegedHere })).arrivesAsRoot, undefined);
@@ -229,7 +230,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
   // before anything can spawn, so the fake environment is safe to resolve for real.
   const stub = recordingTransport();
   const message = await deathOf(() => host(ctxWith(stub.transport), ["engine", "--", "id", "-u"], { platform: "win32", listWslDistros: async () => ["docker-desktop"], localIdentity: async () => unprivilegedHere }));
-  check("an unconsented engine command is refused, naming the privilege", message.includes("root (uid 0)") && message.includes("--root --confirm-root"), true);
+  check("an unconsented engine command is refused, naming the privilege", message.includes(ROOT_ARRIVAL) && message.includes(ROOT_CONSENT), true);
   check("refusal is not a downgrade: nothing ran", stub.calls.length, 0);
 }
 
@@ -242,7 +243,7 @@ if (realEngineDistro) {
   const probe = await execution.exec("id", ["-u"], { input: "", allowFailure: true, timeoutMs: 120_000 });
   const uid = probe.stdout.trim().split("\n").at(-1)?.trim() ?? "";
   check("the real engine path arrives as root (uid 0), exactly as declared", uid === "0" && execution.arrivesAsRoot === true, true);
-  check("the real gate refuses the same command without consent", (await deathOf(() => host(ctxWith(recordingTransport().transport), ["engine", "--", "id", "-u"]))).includes("--root --confirm-root"), true);
+  check("the real gate refuses the same command without consent", (await deathOf(() => host(ctxWith(recordingTransport().transport), ["engine", "--", "id", "-u"]))).includes(ROOT_CONSENT), true);
   // The consented leg, end to end and for real: both flags, then the same read-only probe
   // through the command itself.
   const written: string[] = [];
@@ -266,8 +267,8 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
 {
   const stub = recordingTransport(0, "0\n");
   const message = await deathOf(() => host(ctxWith(stub.transport), ["target", "--", "whoami"]));
-  check("a target whose probe answers uid 0 refuses the command without consent", message.includes("root (uid 0)") && message.includes("--root --confirm-root"), true);
-  check("the refusal names where the uid answer came from", message.includes("id -u"), true);
+  check("a target whose probe answers uid 0 refuses the command without consent", message.includes(ROOT_ARRIVAL) && message.includes(ROOT_CONSENT), true);
+  check("the refusal names where the uid answer came from", message.includes(probeAnsweredEvidence("0", "wsl:Ubuntu-24.04")), true);
   check("before consent only the identity probe touched the target", stub.calls, [
     { command: "id", args: ["-u"], options: { input: "", allowFailure: true, timeoutMs: 30000 } },
   ]);
@@ -275,9 +276,9 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
 
 {
   const wslRoot = recordingTransport(0, "0\n", "", "wsl:Ubuntu-24.04");
-  check("a WSL target whose default user is root is gated by the same probe", (await deathOf(() => host(ctxWith(wslRoot.transport), ["target", "--", "whoami"]))).includes("--root --confirm-root"), true);
+  check("a WSL target whose default user is root is gated by the same probe", (await deathOf(() => host(ctxWith(wslRoot.transport), ["target", "--", "whoami"]))).includes(ROOT_CONSENT), true);
   const sshRoot = recordingTransport(0, "0\n", "", "ssh:root@deploy");
-  check("and an ssh target logged in as root is gated by it too", (await deathOf(() => host(ctxWith(sshRoot.transport), ["target", "--", "whoami"]))).includes("--root --confirm-root"), true);
+  check("and an ssh target logged in as root is gated by it too", (await deathOf(() => host(ctxWith(sshRoot.transport), ["target", "--", "whoami"]))).includes(ROOT_CONSENT), true);
 }
 
 {
@@ -310,8 +311,8 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
     },
   };
   const message = await deathOf(() => host(ctxWith(transport), ["target", "--", "whoami"]));
-  check("a target with unknown identity refuses to run without consent", message.includes("identity is unknown") && message.includes("--root --confirm-root"), true);
-  check("the unknown refusal names the failed probe", message.includes("id -u"), true);
+  check("a target with unknown identity refuses to run without consent", message.includes(IDENTITY_UNKNOWN) && message.includes(ROOT_CONSENT), true);
+  check("the unknown refusal names the failed probe", message.includes(probeNoAnswerEvidence("wsl:Ubuntu-24.04")), true);
   check("unknown identity is refused before the command runs", calls.map((call) => call.command), ["id"]);
   await withOutputSink(() => {}, async () => {
     await host(ctxWith(transport), ["target", "--root", "--confirm-root", "--", "whoami"]);
@@ -322,13 +323,13 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
 {
   const env = envWith("linux", [], rootHere);
   const message = await deathOf(() => host(ctxWith(recordingTransport().transport), ["local", "--", "whoami"], env));
-  check("a local context that already runs as root refuses without consent", message.includes("--root --confirm-root"), true);
+  check("a local context that already runs as root refuses without consent", message.includes(ROOT_CONSENT), true);
 }
 
 {
   const env = envWith("win32", [], elevatedWindows);
   const message = await deathOf(() => host(ctxWith(recordingTransport().transport), ["local", "--", "whoami"], env));
-  check("an elevated windows shell is root's equivalent: local refuses without consent", message.includes("--root --confirm-root"), true);
+  check("an elevated windows shell is root's equivalent: local refuses without consent", message.includes(ROOT_CONSENT), true);
   check("and the refusal says what made it root", message.includes("administrator"), true);
 }
 
@@ -409,7 +410,9 @@ try {
   {
     // A failure must reach the caller as a failure carrying its own output — the exit code,
     // the partial stdout, and the stderr that is the actual reason.
-    const stub = recordingTransport(3, "partial answer\n", "the real reason\n");
+    const partial = "partial answer";
+    const reason = "the real reason";
+    const stub = recordingTransport(3, `${partial}\n`, `${reason}\n`);
     const written: string[] = [];
     let message: string | undefined;
     await withOutputSink((chunk) => written.push(chunk), async () => {
@@ -419,9 +422,9 @@ try {
         message = (error as Error).message;
       }
     });
-    check("a failing command reports its exit code", message?.includes("exit 3"), true);
-    check("its stdout is still handed back", written.join("").includes("partial answer"), true);
-    check("and its stderr, which on a failure is the reason", written.join("").includes("the real reason"), true);
+    check("a failing command reports its exit code", message === commandFailedMessage("target", ["cat", "/etc/resolv.conf"], 3), true);
+    check("its stdout is still handed back", written.join("").includes(partial), true);
+    check("and its stderr, which on a failure is the reason", written.join("").includes(reason), true);
   }
 
   // U7: the wrapped command's own exit status reaches process.exitCode (via CommandFailedError,
@@ -499,7 +502,8 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   check("validate passes a bad context's shape through to the parser", validate(openclawCommands.host, { context: "vm" }), []);
   check("validate leaves the missing arguments to the parser", validate(openclawCommands.host, {}), []);
   const hostDescription = toolDescription("host", openclawCommands.host);
-  check("the schema shows the client the contexts; the description points to help for the rest", JSON.stringify(properties.context?.enum) === JSON.stringify(["target", "engine", "local"]) && hostDescription.includes("call help with command=host"), true);
+  const pointer = `${FULL_TEXT_POINTER}=host`;
+  check("the schema shows the client the contexts; the description points to help for the rest", JSON.stringify(properties.context?.enum) === JSON.stringify(["target", "engine", "local"]) && hostDescription.includes(pointer), true);
   check("the schema exposes the root gate", (inputSchema(openclawCommands.host).properties as Record<string, unknown>)["confirm-root"] !== undefined, true);
 }
 

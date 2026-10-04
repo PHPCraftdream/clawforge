@@ -114,13 +114,15 @@ function readinessProblemDetail(problems: { missing: string[]; notRunning: strin
   ].filter((entry): entry is string => entry !== undefined).join("; ");
 }
 
+import { timeoutMessage } from "./lifecycle.ts";
+
 /** Bounds one awaited operation to `budgetMs`: a hung service-state probe must not outwait
  *  the readiness deadline bounding the whole loop. The operation keeps running past the
  *  timeout (no way to cancel it), but this caller stops waiting on it. */
 function bounded<T>(operation: Promise<T>, budgetMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const wait = Math.max(1, budgetMs);
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${wait}ms`)), wait);
+    const timer = setTimeout(() => reject(new Error(timeoutMessage(label, wait))), wait);
     operation.then(
       (value) => { clearTimeout(timer); resolve(value); },
       (error: unknown) => { clearTimeout(timer); reject(error); },

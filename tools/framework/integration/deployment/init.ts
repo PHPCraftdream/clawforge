@@ -179,7 +179,7 @@ async function moduleTypeAction(root: string): Promise<ModuleTypeAction> {
     die(
       `${file} ${declaration}, and this directory already holds ` +
         `${dependents.length} file(s) read under it (${dependents.slice(0, 3).join(", ")}${dependents.length > 3 ? ", …" : ""}).\n` +
-        `The deployment declaration needs ESM, and ${reason}. Set "type": "module" yourself once they can take it,\n` +
+        `The deployment declaration ${NEEDS_ESM}, and ${reason}. Set "type": "module" yourself once they can take it,\n` +
         "or initialise this deployment in a directory of its own.",
     );
   };
@@ -192,7 +192,7 @@ async function moduleTypeAction(root: string): Promise<ModuleTypeAction> {
       const dependents = await typeSensitiveFiles(root);
       if (dependents.length > 0) {
         refuseForDependents(
-          "does not exist",
+          NOT_EXIST,
           "adding a package.json with \"type\": \"module\" would change how those files are read",
           dependents,
         );
@@ -207,7 +207,7 @@ async function moduleTypeAction(root: string): Promise<ModuleTypeAction> {
     parsed = JSON.parse(raw);
   } catch (error) {
     return die(
-      `${file} is not valid JSON (${(error as Error).message}) — init needs to know whether this ` +
+      `${file} ${NOT_VALID_JSON} (${(error as Error).message}) — init needs to know whether this ` +
         'directory is ESM, and a file it cannot parse is not an answer. Fix it, or add "type": "module" by hand.',
     );
   }
@@ -256,6 +256,22 @@ async function applyModuleType(root: string, action: ModuleTypeAction): Promise<
 /** The placement decision the installed entry already made — how far inside a ClawForge
  *  checkout it is and whether its types are local — which `init` reads to decide where to
  *  print the editor-types line (see resolveInstalledEntry). */
+/** The refusals init prints when the target directory already holds deployment state. */
+export const ALREADY_EXISTS = "already exists";
+
+export const ALREADY_INITIALISED = "already initialised";
+
+export const NOT_EXIST = "does not exist";
+
+export const NEEDS_ESM = "needs ESM";
+
+export const NOT_VALID_JSON = "is not valid JSON";
+
+/** Printed, never run: the editor-types install line. */
+export function noSaveInstall(spec: string): string {
+  return `npm install --no-save ${spec}`;
+}
+
 export interface InitPlacement {
   readonly localTypesOnly?: boolean;
   readonly ancestor?: string;
@@ -312,7 +328,7 @@ export async function localTypesLines(): Promise<string[]> {
   const directory = (await frameworkPackage())?.dir;
   const spec = directory === undefined ? "@clawforge/framework" : `"${directory}"`;
   return [
-    `editor types: run  npm install --no-save ${spec}`,
+    `editor types: run  ${noSaveInstall(spec)}`,
     "  (not on the registry yet; once it is: npm install --save-dev @clawforge/framework)",
   ];
 }
@@ -340,7 +356,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
     for (const line of await localTypesLines()) info(line);
     return;
   }
-  if (exists) die(`${appFile} already exists — this directory is already initialised`);
+  if (exists) die(`${appFile} ${ALREADY_EXISTS} — this directory is ${ALREADY_INITIALISED}`);
 
   // Checked BEFORE anything is written: app.ts isn't the only leftover state init could
   // overwrite — an .env or desired-state.json from a failed prior init must be refused by name.
@@ -348,7 +364,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   const desiredStateFile = resolve(root, "config", "desired-state.json");
   for (const conflict of [envFile, desiredStateFile]) {
     const conflictExists = await access(conflict).then(() => true, () => false);
-    if (conflictExists) die(`${conflict} already exists — refusing to overwrite it. Remove it (or move it aside) first if this directory should be re-initialised.`);
+    if (conflictExists) die(`${conflict} ${ALREADY_EXISTS} — refusing to overwrite it. Remove it (or move it aside) first if this directory should be re-initialised.`);
   }
 
   // Read before the first write for the same reason as the conflicts above: a directory this

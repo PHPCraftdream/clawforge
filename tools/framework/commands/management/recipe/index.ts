@@ -47,6 +47,8 @@ import {
   runStatusAction,
   runVerifyAction,
 } from "./actions.ts";
+import { INVALID_MANIFEST } from "./lifecycle.ts";
+
 function describe(recipe: Recipe): void {
   const state = recipe.enabled ? "" : "  [disabled]";
   info(`${recipe.name.padEnd(16)} ${recipe.description}${state}`);
@@ -303,7 +305,7 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
       const stack = recipeStack(ctx, entry.name, resolve(directory, "compose.yml"));
       if (await stack.isRunning()) {
         const detail = error instanceof Error ? error.message : String(error);
-        throw new Error(`running recipe "${entry.name}" has an invalid manifest; backup cannot confirm it is quiesced: ${detail}`);
+        throw new Error(`running recipe "${entry.name}" ${INVALID_MANIFEST}; backup cannot confirm it is quiesced: ${detail}`);
       }
       continue;
     }

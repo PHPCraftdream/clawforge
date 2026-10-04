@@ -113,7 +113,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
     for (const line of gateHelpLines(offered)) info(line);
     info("");
     if (checkout === undefined) info(`The full command list appears inside an initialised app folder (create one with: ${commandLine(["init"])})`);
-    else info(`This is a ClawForge checkout (${checkout}): ${commandLine(["help"])} at its root lists every command, apps/<name> holds the deployments.`);
+    else info(checkoutListNote(checkout));
     return 0;
   }
   const command = commands.find((entry) => entry.name === target);
@@ -139,26 +139,50 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
     return 0;
   }
   if (context.deploymentCommands.includes(target)) {
-    reportError(
-      checkout === undefined
-        ? `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — run: ${commandLine(["init"])}`
-        : `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`,
-    );
+    reportError(outsideAppRefusal(target, checkout));
     return 1;
   }
   reportUnknownCommand(target, candidates);
   return 1;
 }
 
+/** The head of reportUnknownCommand's answer. */
+export const UNKNOWN_COMMAND = "unknown command";
+
+export function unknownCommandMessage(name: string): string {
+  return `${UNKNOWN_COMMAND}: ${name}`;
+}
+
+export const NOT_FOUND = "not found";
+
+/** A misplaced `--app` is an ordering mistake, not a deployment choice. */
+export const APP_ORDER = "--app must come before the command";
+
+export function didYouMeanMessage(suggestion: string): string {
+  return `did you mean: ${suggestion}`;
+}
+
+/** The refusal for a deployment command typed where no deployment lives: the shared body the
+ *  two checkout variants extend. */
+export const OUTSIDE_APP = "is a deployment command: it needs an app folder, and there is no app.ts here";
+
+export function outsideAppRefusal(target: string, checkout: string | undefined): string {
+  return checkout === undefined
+    ? `"${target}" ${OUTSIDE_APP} — run: ${commandLine(["init"])}`
+    : `"${target}" ${OUTSIDE_APP} — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`;
+}
+
 /** The one line after a deployment command's help, rendered without a deployment: where
  *  the command actually runs — the refusal's advice, one level deeper. */
+export function outsideAppNote(name: string, checkout: string | undefined): string {
+  return checkout === undefined
+    ? `"${name}" runs inside an app folder — there is no app.ts here; run: ${commandLine(["init"])}`
+    : `"${name}" runs inside an app folder — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`;
+}
+
 function deploymentHelpNote(name: string, checkout: string | undefined): void {
   info("");
-  info(
-    checkout === undefined
-      ? `"${name}" runs inside an app folder — there is no app.ts here; run: ${commandLine(["init"])}`
-      : `"${name}" runs inside an app folder — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`,
-  );
+  info(outsideAppNote(name, checkout));
 }
 
 /** The monorepo gate's own commands, which are real in any folder of a checkout — just run
@@ -168,6 +192,14 @@ function deploymentHelpNote(name: string, checkout: string | undefined): void {
 export { CHECKOUT_GATE_COMMANDS } from "../entry/checkout-gate.ts";
 import { CHECKOUT_GATE_COMMANDS } from "../entry/checkout-gate.ts";
 
+/** The message body of checkoutSubfolderReport. */
+export const CHECKOUT_ROOT_NOTE = "is a checkout command — run it from the checkout root:";
+
+/** The checkout-root line of the bare help screen: where the full list lives instead. */
+export function checkoutListNote(checkout: string): string {
+  return `This is a ClawForge checkout (${checkout}): ${commandLine(["help"])} at its root lists every command, apps/<name> holds the deployments.`;
+}
+
 /** The refusal for a checkout gate command typed from a checkout subfolder: the command is
  *  real there too, it just runs at the root — not an unknown command. The cd line is for
  *  another shell, so it is shell advice: nothing rewrites it. */
@@ -175,7 +207,7 @@ export function checkoutSubfolderReport(first: string, checkout: string): UserEr
   if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
   // Quoted: a path with spaces breaks unquoted in any shell, and Windows backslashes read
   // as escapes in the Git Bash this hint is most likely pasted into.
-  return new UserError(`${first} is a checkout command — run it from the checkout root:`, {
+  return new UserError(`${first} ${CHECKOUT_ROOT_NOTE}`, {
     advice: [shellLine("posix", `cd "${checkout}"`)],
   });
 }
@@ -232,9 +264,9 @@ export function misplacedAppFlag(
 /** The standard answer to a command name nothing declares: the typo, a nearby spelling
  *  guess, and a pointer to the real list — never the full help screen. */
 export function reportUnknownCommand(name: string, candidates: readonly string[]): void {
-  reportError(`unknown command: ${name}`);
+  reportError(unknownCommandMessage(name));
   const suggestion = closestCommand(name, candidates);
-  if (suggestion !== undefined) info(`did you mean: ${suggestion}`);
+  if (suggestion !== undefined) info(didYouMeanMessage(suggestion));
   info(`run ${commandLine(["help"])} to list every command`);
 }
 
@@ -362,6 +394,9 @@ export function renderHelp(
   return false;
 }
 
+/** The directory-is-there-but-empty refusal: the shared body the advice extends. */
+export const NO_APP_TS = "exists but holds no app.ts — if the directory is empty:";
+
 /** The deployment to use when the requested one is missing: the lone deployment under apps/,
  *  but only when nobody named one explicitly (--app or OC_APP); otherwise undefined. */
 export function soleDeploymentFallback(explicit: boolean, available: readonly string[]): string | undefined {
@@ -383,14 +418,14 @@ export function missingDeploymentReport(
     return new UserError(`several deployments (${available.join(", ")}) — pick one with --app <name> or OC_APP`);
   }
   if (directoryExists) {
-    return new UserError(`${deploymentDir} exists but holds no app.ts — if the directory is empty:`, {
+    return new UserError(`${deploymentDir} ${NO_APP_TS}`, {
       advice: [
         command(["new-app", name]),
         manual(`otherwise remove it or pick another name${available.length === 0 ? "" : ` (available: ${available.join(", ")})`}`),
       ],
     });
   }
-  return new UserError(`deployment "${name}" not found at ${deploymentDir}`, {
+  return new UserError(`deployment "${name}" ${NOT_FOUND} at ${deploymentDir}`, {
     advice: available.length === 0
       ? [command(["new-app", "<name>"])]
       : [manual(`available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with:`), command(["new-app", "<name>"])],

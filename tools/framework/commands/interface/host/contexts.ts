@@ -13,6 +13,16 @@ export type HostContextName = "target" | "engine" | "local";
 
 export const ENGINE_DISTRO = "docker-desktop";
 
+/** Where the engine context collapses onto the bare machine — the note the command prints. */
+export const SAME_MACHINE = "engine and local are the same machine on this host";
+
+export const NO_LOCAL_ROOT = "the local context on windows has no root to elevate to — run the command from an elevated shell yourself";
+
+/** Docker Desktop's engine distro: the note naming why every command there arrives as root. */
+export function engineDistroNote(targetDescription: string): string {
+  return `engine runs in Docker Desktop's ${ENGINE_DISTRO} WSL2 distro — not the target's ${targetDescription} — as its default user, root (uid 0): the distro has no other login user`;
+}
+
 export interface HostExecution {
   /** Where the command actually runs, in the transport's own naming ("wsl:docker-desktop", "local", "wsl:Ubuntu-24.04"...). */
   readonly description: string;
@@ -116,12 +126,21 @@ export function probeUidAnswer(result: ExecResult): string | undefined {
  *  — read-only, the auditors' own probe — against a WSL distro (its default user may be
  *  root) or an SSH host (root logins exist). Anything short of a definite uid is
  *  "unknown", never "not root". */
+/** Evidence wording of the transport identity probe: where the uid answer came from. */
+export function probeAnsweredEvidence(uid: string, description: string): string {
+  return `the identity probe id -u answered uid ${uid} on ${description}`;
+}
+
+export function probeNoAnswerEvidence(description: string): string {
+  return `the identity probe (id -u) got no usable answer from ${description}`;
+}
+
 export async function probeTransportIdentity(exec: HostExecution["exec"], description: string): Promise<IdentityProbe> {
   try {
     const uid = probeUidAnswer(await exec("id", ["-u"], uidProbeOptions()));
     return uid === undefined
-      ? { arrivesAsRoot: undefined, evidence: `the identity probe (id -u) got no usable answer from ${description}` }
-      : { arrivesAsRoot: uid === "0", evidence: `the identity probe id -u answered uid ${uid} on ${description}` };
+      ? { arrivesAsRoot: undefined, evidence: probeNoAnswerEvidence(description) }
+      : { arrivesAsRoot: uid === "0", evidence: probeAnsweredEvidence(uid, description) };
   } catch {
     return { arrivesAsRoot: undefined, evidence: `the identity probe (id -u) could not run against ${description}` };
   }
@@ -175,7 +194,7 @@ function localExecution(platform: NodeJS.Platform, note?: string): HostExecution
     runsHere: true,
     exec: (command, args, options) => spawnLocal(command, args, options),
     elevate: platform === "win32"
-      ? () => die("the local context on windows has no root to elevate to — run the command from an elevated shell yourself")
+      ? () => die(NO_LOCAL_ROOT)
       : (command, args, options) => {
         const sudo = sudoCommand(command, args);
         return spawnLocal(sudo.command, sudo.args, options);
@@ -209,17 +228,17 @@ export async function resolveHostContext(ctx: Context, name: HostContextName, en
           };
           return {
             description: `wsl:${ENGINE_DISTRO}`,
-            note: `engine runs in Docker Desktop's ${ENGINE_DISTRO} WSL2 distro — not the target's ${ctx.transport.description} — as its default user, root (uid 0): the distro has no other login user`,
+            note: engineDistroNote(ctx.transport.description),
             arrivesAsRoot: true,
             runsHere: false,
             exec: viaWsl(false),
             elevate: viaWsl(true),
           };
         }
-        return localExecution("win32", `no "${ENGINE_DISTRO}" WSL distro found — engine and local are the same machine on this host`);
+        return localExecution("win32", `no "${ENGINE_DISTRO}" WSL distro found — ${SAME_MACHINE}`);
       }
       // A future platform branch (macOS / Docker Desktop for Linux bridge their VM differently) is the intended extension point.
-      return localExecution(environment.platform, `no separate engine VM is reachable on ${environment.platform} yet — engine and local are the same machine on this host`);
+      return localExecution(environment.platform, `no separate engine VM is reachable on ${environment.platform} yet — ${SAME_MACHINE}`);
     }
   }
 }

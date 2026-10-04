@@ -74,7 +74,7 @@ export function withEnvPrefix(
  *  credentials one caller later. `readlink`, not `readlink -f`, so a broken chain names the
  *  actual failing link. Fed to `sh -s` on stdin, since wsl.exe re-parses the command line and
  *  a multi-line argument wouldn't survive. */
-const PRESENCE_PROBE = `
+export const PRESENCE_PROBE = `
 p=$1
 if [ -e "$p" ]; then echo exists; exit 0; fi
 case $p in
@@ -130,20 +130,31 @@ export async function existsVia(
     if (verdict === "exists") return true;
     if (verdict === "absent") return false;
     if (verdict.startsWith("blocked ")) {
-      throw new Error(
-        `could not check whether ${path} exists: ${verdict.slice("blocked ".length)} cannot be searched by the target user`,
-      );
+      throw new Error(cannotSearchMessage(path, verdict.slice("blocked ".length)));
     }
     if (verdict.startsWith("loop ")) {
-      throw new Error(`could not check whether ${path} exists: ${verdict.slice("loop ".length)} is a symlink loop`);
+      throw new Error(`${cannotCheckMessage(path)}: ${verdict.slice("loop ".length)} ${SYMLINK_LOOP}`);
     }
     if (verdict.startsWith("unreadable ")) {
       throw new Error(
-        `could not check whether ${path} exists: ${verdict.slice("unreadable ".length)} is a symlink whose target could not be read`,
+        `${cannotCheckMessage(path)}: ${verdict.slice("unreadable ".length)} is a symlink whose target could not be read`,
       );
     }
   }
 
   const detail = result.stderr.trim() === "" ? verdict : result.stderr.trim();
-  throw new Error(`could not check whether ${path} exists (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
+  throw new Error(`${cannotCheckMessage(path)} (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
 }
+
+/** The third answer the probe must never be read as "absent": the check itself could not run. */
+export function cannotCheckMessage(path: string): string {
+  return `could not check whether ${path} exists`;
+}
+
+/** The probe walked into a directory it may not enter: named, so the refusal says which
+ *  directory blocked the walk. */
+export function cannotSearchMessage(path: string, dir: string): string {
+  return `${cannotCheckMessage(path)}: ${dir} cannot be searched by the target user`;
+}
+
+export const SYMLINK_LOOP = "is a symlink loop";

@@ -94,14 +94,12 @@ for (const location of ["wsl", "local", "auto"]) {
   );
 }
 
-check(
-  "the gateway token is unchanged by the tunnel — only the URL changes",
-  await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []),
-  await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []),
-);
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []);
-  checkTrue("and says so explicitly", output.includes(TOKEN_UNCHANGED_NOTE));
+  checkTrue(
+    "the gateway token is unchanged by the tunnel — the URL alone, and it says so explicitly",
+    output.includes(TOKEN_UNCHANGED_NOTE) && output.includes("http://127.0.0.1:18789"),
+  );
 }
 
 checkTrue(

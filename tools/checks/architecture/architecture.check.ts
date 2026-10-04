@@ -307,10 +307,11 @@ for (const file of checkFiles) {
 report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
 
 // 6b. The other prose forms — stage 5 (design 5.1): translation must not move a pin into
-// startsWith/endsWith/indexOf, a regex, or an equality with a literal that carries a space.
+// startsWith/endsWith/indexOf, a regex, or an equality with a literal that carries a space,
+// nor split one pin across a string join (`includes("a" + " b")`).
 // Equality ratchet: growth means the prose moved into another operator instead of structure.
 const PROSE_MATCHER =
-  /\.(startsWith|endsWith|indexOf)\((`|")[^`"]* [^`"]*(`|")\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(`|")[^`"]* [^`"]*(`|")/;
+  /\.(startsWith|endsWith|indexOf)\((`|")[^`"]* [^`"]*(`|")\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(`|")[^`"]* [^`"]*(`|")|includes\([^\n]*" \+ "/;
 let matcherCount = 0;
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");

@@ -8,7 +8,7 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { compareLock, COMMIT_ADVICE, COMMIT_ADVICE_TARGET, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, PREDATES_PLUGIN_PINNING, PREDATES_SKILL_PINNING, LOCK_NOT_WRITTEN, COULD_NOT_COMPARE, REASON_NOT_RUNNING, REASON_NEVER_BOOTSTRAPPED, DIFFERENCES_PHRASE, UNREAD_PHRASE, versionMismatchDetail, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
+import { compareLock, COMMIT_ADVICE, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, PREDATES_PLUGIN_PINNING, PREDATES_SKILL_PINNING, LOCK_NOT_WRITTEN, COULD_NOT_COMPARE, REASON_NOT_RUNNING, REASON_NEVER_BOOTSTRAPPED, DIFFERENCES_PHRASE, UNREAD_PHRASE, versionMismatchDetail, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
 import { gitInitAdvice, GIT_INIT_STEP } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
@@ -284,7 +284,8 @@ check(
 // that ignore rule makes impossible. Both sides name the same model: a deployment directory
 // is meant to become its own git repository.
 
-check("lock's advice names the deployment's own repository, not an unqualified one", COMMIT_ADVICE.includes(COMMIT_ADVICE_TARGET), true);
+// Asserted against the command's actual printed output below (the fixture writes a lock on
+// the human path), not against the constants' own relationship.
 
 const initAdvice = gitInitAdvice("demo");
 check("new-app's own note explains why (apps/ is gitignored here)", initAdvice.includes("gitignore"), true);
@@ -480,6 +481,11 @@ check("and confirms secrets are already kept out of that new repository", initAd
     const restored = JSON.parse(await readFile(lockFile(), "utf8")) as DeploymentLock;
     check("successful inventory retains plugin identity and version", restored.plugins, baseline.plugins);
     check("successful inventory retains skill identity", restored.skills, baseline.skills);
+    let writtenText = "";
+    const realWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { writtenText += String(chunk); return true; }) as typeof process.stderr.write;
+    try { await lock(ctx, []); } finally { process.stderr.write = realWrite; }
+    check("lock's advice names the deployment's own repository, not an unqualified one", writtenText.includes(COMMIT_ADVICE), true);
   } finally {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(resolve(monorepoRoot, "apps", "example app"));

@@ -169,9 +169,8 @@ try {
 
   // The committed ./clawforge shim is bash; on Windows that is Git Bash, never WSL's bash.exe.
   const bash = windows ? ["C:\\Program Files\\Git\\bin\\bash.exe"].find((path) => existsSync(path)) : "bash";
-  if (bash === undefined) {
-    process.stderr.write("  skip ./clawforge shim fallback (no Git Bash)\n");
-  } else {
+  await requires("bash", "the committed ./clawforge shim fallback", async () => {
+    if (bash === undefined) throw new Error("bash capability present but no bash binary resolved");
     const shimmed = await run(bash, ["./clawforge", "version"], fresh, { env });
     tail(shimmed);
     check("without a local package the ./clawforge shim hands over to the system-wide command", shimmed.output.trim(), `clawforge ${expected}`);
@@ -194,7 +193,7 @@ try {
       tail(viaGlobalPackage);
       check(`the shim runs the global package next to a global command that cannot run itself (${label})`, viaGlobalPackage.output.trim(), "stub status");
     }
-  }
+  });
 
   // --- an app pinning its own local package --------------------------------------------------
   const pinned = join(outside, "cf-pinned");
@@ -295,13 +294,13 @@ try {
   });
 
   // The file system may not tell apps from APPS; the hand-over must not depend on the spelling.
-  if (windows) {
+  await requires("windows-host", "APPS/<name> hands over like apps/<name>", async () => {
     const upper = join(monorepoRoot, "APPS", checkoutApp);
     const upperInfo = lastJson(await clawforge(["version", "--json"], upper));
     check("from APPS/<name> the hand-over to the checkout gate still happens", upperInfo.source, "checkout");
     const upperStatus = await clawforge(["help"], upper);
     check("and its gate answers there too", upperStatus.code === 0 && upperStatus.output.includes("new-app"), true);
-  }
+  });
 
   // An app.ts importing a checkout's framework sources outside apps/<name> is not loaded as a second copy.
   const strayDir = resolve(appsDir, `.${checkoutApp}-stray`, "nested");

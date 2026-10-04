@@ -6,10 +6,10 @@
 // because the assertion is specifically about a process that never called useDeployment()
 // at all, not just this file's own fresh module registry.
 
-import { randomBytes } from "node:crypto";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
-import { resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   deploymentDir,
@@ -57,7 +57,8 @@ async function checkNeverSelectedThrows(): Promise<void> {
     "}",
   ].join("\n");
 
-  const scriptFile = resolve(monorepoRoot, `.deployment-dir-guard-check-${randomBytes(4).toString("hex")}.ts`);
+  const scratch = await mkdtemp(join(tmpdir(), "clawforge-deployment-names-"));
+  const scriptFile = join(scratch, "deployment-dir-guard.ts");
   await writeFile(scriptFile, script, "utf8");
   try {
     const { stdout } = await new Promise<{ code: number | null; stdout: string }>((resolvePromise) => {
@@ -76,7 +77,7 @@ async function checkNeverSelectedThrows(): Promise<void> {
       "THROW:no deployment selected — the entry point must call useDeployment()",
     );
   } finally {
-    await rm(scriptFile, { force: true });
+    await rm(scratch, { recursive: true, force: true });
   }
 }
 

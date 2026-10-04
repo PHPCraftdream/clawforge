@@ -15,6 +15,11 @@ export function expect(condition: boolean, detail: string): void {
   if (!condition) throw new Error(detail);
 }
 
+/** The could-not-check wording, shared with the checks that prove it. */
+export function couldNotDo(doing: string, message: string): string {
+  return `could not ${doing}: ${message}`;
+}
+
 /** Runs one of the calls a check makes to reach the instance. A throw from these is not a
  *  verdict about the deployment — Docker, the transport or the container did not answer, so
  *  the property under check was never evaluated (could-not-check). Assertions made on what
@@ -24,7 +29,7 @@ export async function reach<T>(doing: string, call: () => Promise<T>): Promise<T
     return await call();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new CouldNotCheck(`could not ${doing}: ${message}`);
+    throw new CouldNotCheck(couldNotDo(doing, message));
   }
 }
 

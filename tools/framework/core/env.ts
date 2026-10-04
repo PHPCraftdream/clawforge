@@ -417,9 +417,11 @@ function assertSafeSiblingDir(name: "OC_BACKUP_DIR" | "OC_SNAPSHOT_DIR", directo
   if (segments.length < 2) die(`${name} "${directory}" is a top-level directory`);
 }
 
+export const DATA_DIR_UNSET = "OC_DATA_DIR is not set in .env";
+
 export function toSettings(env: Env): Settings {
   const dataDir = env.OC_DATA_DIR;
-  if (!dataDir) die("OC_DATA_DIR is not set in .env");
+  if (!dataDir) die(DATA_DIR_UNSET);
   assertSafeDataDir(dataDir);
 
   const bindAddress = env.OC_BIND_ADDRESS ?? "127.0.0.1";

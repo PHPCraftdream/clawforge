@@ -19,6 +19,8 @@ import {
   STALE_AFTER_MS,
   type LockHolder,
 } from "#framework/runtime/lock/instance-lock.ts";
+import { breakLockAdvice, liveWaitLine, DEAD_HERE_LINE } from "#framework/runtime/lock/lock-claim.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { machineName } from "#framework/runtime/lock/process-identity.ts";
 import { stubContext } from "./fixture.ts";
 import { readFile } from "node:fs/promises";
@@ -115,9 +117,9 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
   const supported = refusalMessage(holder, Date.now(), true);
   const unsupported = refusalMessage(holder, Date.now(), false);
   check("supported: advises --break-lock", supported.includes("--break-lock"), true);
-  check("unsupported: never tells the reader to take it over here", unsupported.includes("take it over with --break-lock"), false);
-  check("unsupported: says so plainly", unsupported.includes("does not accept --break-lock"), true);
-  check("unsupported: still names a command that does", unsupported.includes("./clawforge up --break-lock"), true);
+  check("unsupported: never tells the reader to take it over here", unsupported.includes(breakLockAdvice(true)), false);
+  check("unsupported: says so plainly", unsupported.includes(breakLockAdvice(false)), true);
+  check("unsupported: still names a command that does", unsupported.includes(commandLine(["up", "--break-lock"])), true);
   // The example named above must itself actually accept the flag, or this message would repeat
   // exactly the bug it exists to fix.
   check("and that example command really does declare it", declaresBreakLock("up"), true);
@@ -133,13 +135,13 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
   const message = refusalMessage(holder);
   check("a live heartbeat overrides an old takenAt", isStale(holder), false);
   check("and is never advised to break its own lock", message.includes("--break-lock"), false);
-  check("it is told to wait instead", message.includes("Wait for it to finish"), true);
+  check("it is told to wait instead", message.includes(liveWaitLine("op-live-fresh")), true);
 }
 
 {
   const unsupported = unreadableLockMessage({ settings: { dataDir: "/srv/clawforge" } } as unknown as Context, false);
-  check("unreadable-holder message respects unsupported too", unsupported.includes("does not accept --break-lock"), true);
-  check("and never bare-advises --break-lock", unsupported.includes("take it over with --break-lock"), false);
+  check("unreadable-holder message respects unsupported too", unsupported.includes(breakLockAdvice(false)), true);
+  check("and never bare-advises --break-lock", unsupported.includes(breakLockAdvice(true)), false);
 }
 
 // --- a holder provably dead on THIS machine is named as such, never guessed at ----------------
@@ -150,7 +152,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
     takenAt: new Date().toISOString(), host: machineName(), pid: 99999999,
   };
   const message = refusalMessage(holder);
-  check("a pid that does not exist on this machine is reported as gone", message.includes("not running on this machine"), true);
+  check("a pid that does not exist on this machine is reported as gone", message.includes(DEAD_HERE_LINE), true);
   check("and --break-lock is still the advice, not an automatic takeover", message.includes("--break-lock"), true);
 }
 
@@ -162,7 +164,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
     takenAt: new Date().toISOString(), host: `${machineName()}-not-this-one`, pid: 99999999,
   };
   const message = refusalMessage(holder);
-  check("a pid recorded on another machine is never called dead from here", message.includes("not running on this machine"), false);
+  check("a pid recorded on another machine is never called dead from here", message.includes(DEAD_HERE_LINE), false);
 }
 
 {
@@ -172,7 +174,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
     takenAt: new Date().toISOString(), host: machineName(), pid: process.pid,
   };
   const message = refusalMessage(holder);
-  check("this process's own live pid is never called dead", message.includes("not running on this machine"), false);
+  check("this process's own live pid is never called dead", message.includes(DEAD_HERE_LINE), false);
 }
 
 // --- bootstrap/pull: the parser itself, not just the declaration, now accepts --break-lock ----

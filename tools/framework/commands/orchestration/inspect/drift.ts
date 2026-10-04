@@ -156,7 +156,11 @@ export async function observeSecretStore(
     (entry) => entry.required && entry.present && (values[entry.name] ?? "").trim() === "",
   );
   for (const entry of missing) {
-    problems.push(problem("STORE_INCOMPLETE", `${entry.name} (${entry.usedBy}) is present on the target but has no value in ${store}`));
+    problems.push(problem("STORE_INCOMPLETE", storeIncompleteDetail(entry.name, entry.usedBy, store)));
   }
   return { file: store, missing: missing.map((entry) => entry.name) };
+}
+
+export function storeIncompleteDetail(name: string, usedBy: string, store: string): string {
+  return `${name} (${usedBy}) is present on the target but has no value in ${store}`;
 }

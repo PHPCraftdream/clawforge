@@ -36,11 +36,13 @@ export const DEPLOY_ARGUMENTS = [
  *
  *  Exported with the root as a parameter so both branches can be checked against real
  *  directories, not just the one this checkout happens to be in. */
+export const INSTALLED_PACKAGE_MODE = "the framework is running from an installed package";
+
 export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<string> {
   if (!(await isMonorepoCheckout(root))) {
     die(
       "deploy mirrors a ClawForge checkout to the server with rsync, and there is no " +
-        "checkout here — the framework is running from an installed package.\n" +
+        `checkout here — ${INSTALLED_PACKAGE_MODE}\n` +
         "Deploying in this mode means installing @clawforge/framework on the server and " +
         "sending only this deployment's own files, which is a different command and does " +
         "not exist yet. Deploy from a checkout, or copy this deployment's directory across " +

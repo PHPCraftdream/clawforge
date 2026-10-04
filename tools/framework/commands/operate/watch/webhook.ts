@@ -46,6 +46,10 @@ function isLocalhostHostname(hostname: string): boolean {
  *  inbound posture (loopback by default). The message never repeats the value, only that
  *  the variable is invalid, so a mistyped scheme is never echoed back into logs. Shared by
  *  both URLs so they can never quietly diverge. */
+export function webhookUrlRefusal(envName: string): string {
+  return `${envName} must be https, or http only against localhost/127.0.0.1`;
+}
+
 function parseSecretUrl(envName: string, raw: string): URL {
   let url: URL;
   try {
@@ -55,7 +59,7 @@ function parseSecretUrl(envName: string, raw: string): URL {
   }
   if (url.protocol === "https:") return url;
   if (url.protocol === "http:" && isLocalhostHostname(url.hostname)) return url;
-  throw new Error(`${envName} must be https, or http only against localhost/127.0.0.1`);
+  throw new Error(webhookUrlRefusal(envName));
 }
 
 /** Throws rather than dying directly: the caller (check.ts) decides how the refusal is
@@ -198,8 +202,12 @@ function capToLimit(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
+export function webhookRespondedWith(status: number): string {
+  return `webhook responded with ${status}`;
+}
+
 /** "new: X, Y" / "cleared: X" / both; undefined when no code moved. */
-function codesChangeLine(added: readonly string[], cleared: readonly string[]): string | undefined {
+export function codesChangeLine(added: readonly string[], cleared: readonly string[]): string | undefined {
   if (added.length === 0 && cleared.length === 0) return undefined;
   const parts: string[] = [];
   if (added.length > 0) parts.push(`new: ${added.join(", ")}`);
@@ -258,7 +266,7 @@ async function deliverWebhook(target: WatchWebhookTarget, body: string): Promise
     throw new Error(`webhook request failed: ${(error as Error).message}`);
   }
   if (!response.ok) {
-    throw new Error(`webhook responded with ${response.status}`);
+    throw new Error(webhookRespondedWith(response.status));
   }
   if (target.format === "telegram" && !(await telegramDelivered(response))) {
     throw new Error("webhook responded 2xx but telegram reported ok:false");

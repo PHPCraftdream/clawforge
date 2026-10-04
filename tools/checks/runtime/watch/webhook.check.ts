@@ -29,11 +29,15 @@ import { runWatchCycle } from "#framework/commands/operate/watch/index.ts";
 import {
   WATCH_TELEGRAM_CHAT_ID_ENV,
   WATCH_WEBHOOK_FORMAT_ENV,
+  codesChangeLine,
+  describeTransition,
   postTestAlert,
   postWebhookAlert,
   resolveWebhookTarget,
   transitionPayload,
+  webhookRespondedWith,
 } from "#framework/commands/operate/watch/webhook.ts";
+import { ALERT_NOT_DELIVERED } from "#framework/commands/operate/watch/check.ts";
 import type { WatchWebhookTarget } from "#framework/commands/operate/watch/webhook.ts";
 import { readWatchState, watchStateFile, writeWatchState } from "#framework/commands/operate/watch/state.ts";
 import type { WatchState } from "#framework/commands/operate/watch/state.ts";
@@ -173,7 +177,7 @@ try {
     await postWebhookAlert(target, payload);
     const body = calls[0]?.body as { text?: string };
     check("slack posts a bare {text} object", Object.keys(body ?? {}), ["text"]);
-    check("the text names the deployment and the transition", typeof body?.text === "string" && body.text.includes("ok → down"), true);
+    check("the text names the deployment and the transition", typeof body?.text === "string" && body.text.includes(describeTransition("ok", "down", [], [])), true);
     check("the text names the reason code", typeof body?.text === "string" && body.text.includes("GATEWAY_DOWN"), true);
     check("the text names when", typeof body?.text === "string" && body.text.includes(payload.at), true);
   }
@@ -184,7 +188,7 @@ try {
     await postWebhookAlert(target, payload);
     const body = calls[0]?.body as { content?: string };
     check("discord posts a bare {content} object", Object.keys(body ?? {}), ["content"]);
-    check("the content names the transition", typeof body?.content === "string" && body.content.includes("ok → down"), true);
+    check("the content names the transition", typeof body?.content === "string" && body.content.includes(describeTransition("ok", "down", [], [])), true);
   }
 
   {
@@ -194,7 +198,7 @@ try {
     const body = calls[0]?.body as { chat_id?: string; text?: string };
     check("telegram posts {chat_id, text}", Object.keys(body ?? {}).sort(), ["chat_id", "text"]);
     check("chat_id is exactly OC_WATCH_TELEGRAM_CHAT_ID's value", body?.chat_id, "-100123");
-    check("the text names the transition", typeof body?.text === "string" && body.text.includes("ok → down"), true);
+    check("the text names the transition", typeof body?.text === "string" && body.text.includes(describeTransition("ok", "down", [], [])), true);
   }
 
   // --- transitionPayload(): codesAdded/codesCleared, and the chat formats make a
@@ -234,7 +238,7 @@ try {
     const slackAdded = calls[0]?.body as { text?: string };
     check(
       "slack's text is readable for a same-level codes-only change: from → to, plus the new code",
-      typeof slackAdded?.text === "string" && slackAdded.text.includes("degraded → degraded") && slackAdded.text.includes("new: DISK_LOW"),
+      typeof slackAdded?.text === "string" && slackAdded.text.includes(describeTransition("degraded", "degraded", [], [])) && slackAdded.text.includes(codesChangeLine(["DISK_LOW"], []) ?? ""),
       true,
     );
 
@@ -244,7 +248,7 @@ try {
     const discordCleared = calls[0]?.body as { content?: string };
     check(
       "discord's text names a cleared code too",
-      typeof discordCleared?.content === "string" && discordCleared.content.includes("cleared: DISK_LOW"),
+      typeof discordCleared?.content === "string" && discordCleared.content.includes(codesChangeLine([], ["DISK_LOW"]) ?? ""),
       true,
     );
 
@@ -314,7 +318,7 @@ try {
     nextResponse = () => new Response(null, { status: 500 });
     const message = await deathOf(() =>
       postTestAlert({ url: new URL("https://hooks.example/x"), format: "generic" }, at));
-    check("a failed test delivery is reported the same way a real alert's is", message.includes("webhook responded with 500"), true);
+    check("a failed test delivery is reported the same way a real alert's is", message.includes(webhookRespondedWith(500)), true);
   }
 
   // --- Telegram's own success contract: 2xx + ok:false is NOT delivered ------------------
@@ -353,7 +357,7 @@ try {
     nextResponse = () => new Response(JSON.stringify({ ok: false, description: "chat not found" }), { status: 200 });
     const target: WatchWebhookTarget = { url: new URL("https://api.telegram.org/botX/sendMessage"), format: "telegram", telegramChatId: "-100123" };
     const message = await deathOf(() => runWatchCycle(target, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], false));
-    check("a telegram ok:false transition is reported as not delivered", message.includes("was not delivered"), true);
+    check("a telegram ok:false transition is reported as not delivered", message.includes(ALERT_NOT_DELIVERED), true);
     const after = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
     check(
       "level/reasons/checkedAt/changedAt are left exactly as they were, same as a failed generic POST",
@@ -386,7 +390,7 @@ try {
     ];
     const firstMessage = await deathOf(() => runWatchCycle(target, "degraded", reasons, false));
     check("a codes-only change's failed delivery is still attempted exactly once", calls.length, 1);
-    check("and is reported the same way a level transition's failure is", firstMessage.includes("was not delivered"), true);
+    check("and is reported the same way a level transition's failure is", firstMessage.includes(ALERT_NOT_DELIVERED), true);
     const after1 = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
     check(
       "level/reasons/checkedAt/changedAt are kept at the pre-change snapshot, not advanced",

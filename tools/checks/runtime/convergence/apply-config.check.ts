@@ -5,7 +5,8 @@
 // instance fail for no reason — so it must not write that shared file: a dry run concurrent
 // with a real apply would replace the payload the real one is about to hand to the CLI.
 
-import { appliedHeadline, stagedFileName } from "#framework/commands/orchestration/config.ts";
+import { appliedHeadline, stagedFileName, declarationExistsRefusal, missingLiveConfigRefusal, RECOVERED_VALUES_NOTE, RESTART_ADVICE } from "#framework/commands/orchestration/config.ts";
+import { desiredStateFile } from "#framework/runtime/deployment.ts";
 import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -191,7 +192,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     } catch (error) {
       refusal = (error as Error).message;
     }
-    check("a dump onto an existing declaration is refused", refusal.includes("already exists"), true);
+    check("a dump onto an existing declaration is refused", refusal.includes(declarationExistsRefusal(desiredStateFile())), true);
     check("and the refusal names the way past it", refusal.includes("--force"), true);
     check("and the refused attempt leaves the file byte-identical", await readFile(desiredState, "utf8"), recovered);
 
@@ -211,7 +212,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     check("and the omitted ones are not emitted as null", partialContent.includes("null"), false);
     check("nor as undefined", partialContent.includes("undefined"), false);
     check("each omission is named in the output", partial.includes("gateway.bind"), true);
-    check("beside the note that recovered values are not the original declaration", partial.includes("not the original declaration"), true);
+    check("beside the note that recovered values are not the original declaration", partial.includes(RECOVERED_VALUES_NOTE), true);
     check("and that recipes are not part of the file", partial.includes("recipes"), true);
 
     targetHasConfig = false;
@@ -222,7 +223,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     } catch (error) {
       missing = (error as Error).message;
     }
-    check("a target with no live config is refused even under --force", missing.includes("not found"), true);
+    check("a target with no live config is refused even under --force", missing.includes(missingLiveConfigRefusal("/srv/clawforge")), true);
     check("and the declaration survives the refused dump", await readFile(desiredState, "utf8"), beforeMissing);
   } finally {
     await rm(deployment, { recursive: true, force: true });
@@ -291,7 +292,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     // Without --force the same refusal fires, not the existing-declaration one: validation
     // precedes the dump's own checks, so the answer never depends on the file's state.
     const dryDump = await refusal("--dry-run", "--dump");
-    check("--dry-run --dump refuses before the --force question even arises", [dryDump.includes("--dry-run"), dryDump.includes("already exists")], [true, false]);
+    check("--dry-run --dump refuses before the --force question even arises", [dryDump.includes("--dry-run"), dryDump.includes(declarationExistsRefusal(desiredStateFile()))], [true, false]);
     check("and the declaration survives byte-identical", await untouched(), declared);
 
     // --break-lock is meaningful only where a lock is taken; --force only where an existing
@@ -335,7 +336,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 // --- the restart advice is suppressed exactly when a caller starts/restarts itself -----------
 
 check("by default (a bare ./clawforge apply-config), the restart advice is printed", appliedHeadline(true), "desired state applied — restart to pick it up: ./clawforge restart");
-check("with restartAdvice: false, it is not — the caller starts/restarts itself", appliedHeadline(false).includes("restart to pick it up"), false);
+check("with restartAdvice: false, it is not — the caller starts/restarts itself", appliedHeadline(false).includes(RESTART_ADVICE), false);
 check("...but the headline still confirms the write happened", appliedHeadline(false), "desired state applied");
 
 {

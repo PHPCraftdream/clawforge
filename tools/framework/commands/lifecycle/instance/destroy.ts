@@ -154,16 +154,19 @@ async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstra
   } else log(NEVER_BOOTSTRAPPED);
   for (const target of bootstrapped ? targets : targets.filter((entry) => entry.flag !== "data")) {
     const size = await sizeReport(ctx, target.path);
-    info(size === "absent" ? `${target.path} (${target.envName}) absent — nothing to remove` : `would remove ${target.path} (${target.envName}, ${size})`);
+    info(size === "absent" ? `${target.path} (${target.envName}) absent — nothing to remove` : `${WOULD_REMOVE} ${target.path} (${target.envName}, ${size})`);
   }
   if (targets.length === 0 && bootstrapped) {
     info("no --data/--backups/--snapshots given — only the containers/network/volumes above would go");
   }
-  if (!bootstrapped && !anyPresent) info("dry run — nothing to remove");
-  else info("dry run — nothing removed. Pass --yes and --confirm-name <deployment name> for a real run");
+  if (!bootstrapped && !anyPresent) info(DRY_RUN_NOTHING_TO_REMOVE);
+  else info(DRY_RUN_REAL_RUN_HINT);
 }
 
-const NEVER_BOOTSTRAPPED = "nothing to destroy: never bootstrapped — no containers, network, volumes or data directory";
+export const WOULD_REMOVE = "would remove";
+export const DRY_RUN_NOTHING_TO_REMOVE = "dry run — nothing to remove";
+export const DRY_RUN_REAL_RUN_HINT = "dry run — nothing removed. Pass --yes and --confirm-name <deployment name> for a real run";
+export const NEVER_BOOTSTRAPPED = "nothing to destroy: never bootstrapped — no containers, network, volumes or data directory";
 
 /** containers/network/volumes first, always (when bootstrapped); the declared directories
  *  after, in destroyTargets' fixed order. */
@@ -180,6 +183,10 @@ async function destroyLocked(ctx: Context, targets: PreparedDestroyTarget[], boo
 }
 
 interface DestroyValues extends Values<typeof DESTROY_ARGUMENTS> {}
+
+export function confirmNameMismatch(confirmName: string): string {
+  return `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`;
+}
 interface DestroyPlan extends DestroyValues {
   /** Set only when a real run was asked for and the name matched. */
   readonly confirmName?: string;
@@ -207,7 +214,7 @@ export const DESTROY = commandBody({
         throw new ArgumentError(
           confirmName === undefined
             ? "--yes needs --confirm-name <deployment name> too — this refuses a typo removing the wrong instance"
-            : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
+            : confirmNameMismatch(confirmName),
           "confirm-name",
         );
       }

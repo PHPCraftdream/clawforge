@@ -235,11 +235,19 @@ function humanShortAge(ms: number): string {
 
 /** Every command that supports break-lock must actually accept it. A command that doesn't
  *  passes `false` here so the advice never names a flag it would then reject as unknown. */
-function breakLockAdvice(breakLockSupported: boolean): string {
+export function breakLockAdvice(breakLockSupported: boolean): string {
   return breakLockSupported
     ? "take it over with --break-lock"
     : `this command does not accept --break-lock — run one that does (for example ${commandLine(["up", "--break-lock"])}) to take it over`;
 }
+
+/** The stale holder's heartbeat line, shared with the checks that prove it. */
+export function staleHeartbeatLine(ageMs: number): string {
+  return `not refreshed for ${humanAge(ageMs)}.`;
+}
+
+/** The takeover lost to a concurrent one. */
+export const TAKEOVER_LOST_LINE = "Another operation already took it over. Re-run if the instance is still locked.";
 
 /** The message a blocked run gets. Exported so the checks can assert what it tells the
  *  reader — a refusal that does not say who holds the lock leaves them with nothing to do
@@ -256,20 +264,27 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
   const deadHere = isProvablyDeadHere(holder);
   lines.push(
     stale
-      ? `not refreshed for ${humanAge(heartbeatAgeMs(holder, now))}.`
+      ? staleHeartbeatLine(heartbeatAgeMs(holder, now))
       : `refreshed ${humanShortAge(heartbeatAgeMs(holder, now))} ago — the operation is still running.`,
   );
   if (deadHere) {
-    lines.push("Its recorded process is not running on this machine anymore — not a guess, the pid itself is gone.");
+    lines.push(DEAD_HERE_LINE);
   }
   lines.push(
     // --break-lock is offered only once one of the two facts above supports it — a live,
     // recently-refreshed holder is never told to break its own lock.
     stale || deadHere
       ? `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`
-      : `Wait for it to finish, or run ${commandLine(["operations", holder.operationId])} to see what it is doing.`,
+      : liveWaitLine(holder.operationId),
   );
   return lines.join("\n");
+}
+
+export const DEAD_HERE_LINE = "Its recorded process is not running on this machine anymore — not a guess, the pid itself is gone.";
+
+/** A live holder is waited out, never broken. */
+export function liveWaitLine(operationId: string): string {
+  return `Wait for it to finish, or run ${commandLine(["operations", operationId])} to see what it is doing.`;
 }
 
 /** Held by something that never said what it was. Worth its own message: the reader needs to
@@ -326,7 +341,7 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
     // and this attempt — refused like a fresh claim against a directory still there.
     die(
       `could not take over the instance lock at ${lockPath(ctx)}: ${takeover.detail === "" ? "the lock changed during takeover" : takeover.detail}\n` +
-        "Another operation already took it over. Re-run if the instance is still locked.",
+        TAKEOVER_LOST_LINE,
     );
   }
 

@@ -24,7 +24,9 @@ export interface RestorePlan {
 
 /** The ordered steps a real restore runs, described rather than executed — kept in sync
  *  with index.ts's performRestore()/reportRestoreOutcome() by hand. */
-function restorePlanSteps(options: RestoreOptions): string[] {
+export const NATIVE_MANIFEST_DEFERRED = "embedded native manifest verification, if present";
+
+export function restorePlanSteps(options: RestoreOptions): string[] {
   const steps = [
     "confirm recipe ownership and running-stack inventory under the instance lock (refuse unknown or pending cutover)",
     "stop the gateway, if it is running",
@@ -46,7 +48,7 @@ export async function buildRestorePlan(ctx: Context, prepared: PreparedRestore, 
   const stat = archiveValidationDeferred ? undefined : await fileStat(ctx, archive);
   const checksDeferred = [];
   if (archiveValidationDeferred) checksDeferred.push("beforeRestore hook and validation of its resulting archive");
-  if (nativeManifestPresent !== false) checksDeferred.push("embedded native manifest verification, if present");
+  if (nativeManifestPresent !== false) checksDeferred.push(NATIVE_MANIFEST_DEFERRED);
   checksDeferred.push("repeat recipe ownership and running-stack inventory under the instance lock");
   return {
     archive,
@@ -63,15 +65,27 @@ export async function buildRestorePlan(ctx: Context, prepared: PreparedRestore, 
   };
 }
 
+export function identityLine(included: boolean | null): string {
+  return `identity: ${included === null ? "unknown until beforeRestore runs" : included ? "included in the archive" : "not included in the archive"}`;
+}
+
+export function restoreStepsHeader(count: number): string {
+  return `${count} step(s) a real restore would run, in order:`;
+}
+
+export function restorePlanHeader(dataDir: string, archiveName: string): string {
+  return `restore --dry-run: would restore ${dataDir} from ${archiveName}`;
+}
+
 export function printRestorePlan(plan: RestorePlan): void {
-  log(`restore --dry-run: would restore ${plan.dataDir} from ${plan.archiveName}`);
+  log(restorePlanHeader(plan.dataDir, plan.archiveName));
   info(`archive: ${plan.archive} — ${humanSize(plan.archiveSizeBytes)}, ${plan.archiveModifiedAt ?? "modification time unknown"}`);
   info(plan.checksDeferred.some((check) => check.startsWith("beforeRestore"))
     ? "validation deferred: beforeRestore may select another archive"
     : "verified: structure and links checked");
   for (const check of plan.checksDeferred) info(`real restore only: ${check}`);
-  info(`identity: ${plan.includesIdentity === null ? "unknown until beforeRestore runs" : plan.includesIdentity ? "included in the archive" : "not included in the archive"}`);
+  info(identityLine(plan.includesIdentity));
   info(`would move aside: ${plan.dataDir} -> ${plan.movedTo}`);
-  log(`${plan.steps.length} step(s) a real restore would run, in order:`);
+  log(restoreStepsHeader(plan.steps.length));
   plan.steps.forEach((step, index) => info(`${index + 1}. ${step}`));
 }

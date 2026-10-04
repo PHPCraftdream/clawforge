@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   DEFAULT_WATCH_INTERVAL_MINUTES,
+  NOTHING_INSTALLED,
   cronLine,
   cronSchedule,
   displayCommandLine,
@@ -18,7 +19,20 @@ import {
   watchUninstall,
   withoutMarkedLine,
 } from "#framework/commands/operate/watch/install.ts";
-import { schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import {
+  CRONTAB_FAILURES,
+  MANUAL_INSTALL_HEADER,
+  NO_FAITHFUL_ENCODING,
+  PERCENT_REFUSAL,
+  REFUSING_APPLY,
+  SCHEDULER_TRANSACTION_FAILED,
+  WSL_SCHEDULING_REASON,
+  crontabUpdateFailure,
+  nearestValidIntervals,
+  schedulerIdentity,
+  withScheduleRunner,
+} from "#framework/commands/operate/schedule.ts";
+import { INTERVAL_GRAMMAR, NEAREST_VALID } from "#framework/core/values/durations.ts";
 import { readScheduledWatchState } from "#framework/commands/operate/watch/state.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -88,7 +102,7 @@ function ctxWith(description: string, extra: Record<string, unknown> = {}): Cont
 
 check("ssh is schedulable — a real, always-on machine deploy already mirrored the checkout to", schedulingSupport(ctxWith("ssh:user@host")).supported, true);
 check("a WSL Docker host is not — not proven to also run this tooling's own node + checkout", schedulingSupport(ctxWith("wsl:Ubuntu-24.04")).supported, false);
-check("wsl explains why, in the reason", schedulingSupport(ctxWith("wsl:Ubuntu-24.04")).reason?.includes("container host"), true);
+check("wsl explains why, in the reason", schedulingSupport(ctxWith("wsl:Ubuntu-24.04")).reason?.includes(WSL_SCHEDULING_REASON), true);
 check("local reflects whether THIS platform is POSIX (no crontab/systemd on Windows)", schedulingSupport(ctxWith("local")).supported, process.platform !== "win32");
 
 // --- the idempotent install/uninstall cycle, against a stub crontab + the real lock -----
@@ -160,7 +174,7 @@ try {
     calls.length = 0;
     const unsupported = { ...ctx, settings: { ...ctx.settings, remotePath } };
     const error = await deathOf(() => withOutputSink(() => {}, () => watchInstall(unsupported, ["--apply"])));
-    check("percent paths fail before scheduling", error.includes("does not support %"), true);
+    check("percent paths fail before scheduling", error.includes(PERCENT_REFUSAL), true);
     check("percent refusal touches no target command", calls.length, 0);
   }
 
@@ -198,16 +212,16 @@ try {
   {
     calls.length = 0;
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "90"])));
-    check("--interval 90 is refused", message.includes("no faithful encoding"), true);
+    check("--interval 90 is refused", message.includes(NO_FAITHFUL_ENCODING), true);
     check("and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "1441"])));
-    check("--interval beyond a day is refused", message.includes("no faithful encoding"), true);
+    check("--interval beyond a day is refused", message.includes(NO_FAITHFUL_ENCODING), true);
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "45"])));
-    check("--interval 45 (would fire unevenly, */45) is refused", message.includes("no faithful encoding"), true);
+    check("--interval 45 (would fire unevenly, */45) is refused", message.includes(NO_FAITHFUL_ENCODING), true);
   }
 
   // the same grammar as `backup install`: 10m / 6h / 1d print like their bare-minute forms.
@@ -218,11 +232,11 @@ try {
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "45m"])));
-    check("--interval 45m names non-empty valid alternatives in its own spelling", message.includes("nearest valid: 30m, 1h"), true);
+    check("--interval 45m names non-empty valid alternatives in its own spelling", message.includes(`${NEAREST_VALID}${nearestValidIntervals(45).join(", ")}`), true);
     const malformed = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "soon"])));
-    check("a malformed --interval names both spellings", malformed.includes("number of minutes or look like 30m"), true);
-    const empty = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", ""])));
-    check("an empty --interval is refused, as for backup install", empty.includes("number of minutes or look like 30m"), true);
+    check("a malformed --interval names both spellings", malformed.includes(INTERVAL_GRAMMAR), true);
+    const empty = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval",""])));
+    check("an empty --interval is refused, as for backup install", empty.includes(INTERVAL_GRAMMAR), true);
   }
 
   // uninstall --apply: removes only OUR marked line.
@@ -237,14 +251,14 @@ try {
   calls.length = 0;
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), () => watchUninstall(ctx, ["--apply"]));
-  check("a second uninstall reports nothing to remove", written.join("").includes("nothing to remove"), true);
+  check("a second uninstall reports nothing to remove", written.join("").includes(NOTHING_INSTALLED), true);
   check("and never re-writes the crontab", calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 
   const unreadableInitial = `${FOREIGN}\n`;
   const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
   const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
   const readError = await deathOf(() => withOutputSink(() => {}, () => watchInstall(unreadableCtx, ["--apply"])));
-  check("watch install aborts on crontab read failure", readError.includes("could not read crontab"), true);
+  check("watch install aborts on crontab read failure", readError.includes(crontabUpdateFailure("ssh:user@host", 28, CRONTAB_FAILURES[28] ?? SCHEDULER_TRANSACTION_FAILED)), true);
   check("watch install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
   check("watch install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 
@@ -264,7 +278,7 @@ try {
     () => watchInstall(ctx, []),
     "win32",
   ));
-  check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes("Run this yourself"), true);
+  check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes(MANUAL_INSTALL_HEADER), true);
 
   {
     check("...and, on an actual Windows host, a ready schtasks command too", written.join("").includes("schtasks"), true);
@@ -312,11 +326,11 @@ try {
         () => watchInstall(localCtx, ["--apply"]),
         "win32",
       )));
-    check("a local context on Windows refuses --apply and schedules nothing", [localMessage.includes("refusing --apply"), localRecorded.length], [true, 0]);
+    check("a local context on Windows refuses --apply and schedules nothing", [localMessage.includes(REFUSING_APPLY), localRecorded.length], [true, 0]);
   }
   if (process.platform !== "win32") {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--apply"])));
-    check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
+    check("--apply refuses outright on an unsupported, non-Windows transport", message.includes(REFUSING_APPLY), true);
   }
 }
 } finally {

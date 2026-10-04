@@ -9,10 +9,24 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  CMD_EXE_ONLY_NOTE,
+  CMD_EXE_UNSAFE_NOTE,
+  CRONTAB_ENTRY_ONE_LINE,
+  CRONTAB_ENTRY_OWNED,
+  CRONTAB_FAILURES,
+  MANUAL_INSTALL_HEADER,
+  NO_FAITHFUL_ENCODING,
+  PERCENT_REFUSAL,
+  REFUSING_APPLY,
+  SCHEDULER_TRANSACTION_FAILED,
   cronLine,
   cronSchedule,
+  crontabConfirmFailure,
+  crontabReadFailure,
+  crontabUpdateFailure,
   displayCommandLine,
   jobMarker,
+  nearestValidIntervals,
   parseIntervalToMinutes,
   posixTargetInvocation,
   printSchedulingInstructions,
@@ -26,6 +40,7 @@ import {
   withoutMarkedLine,
   withScheduleRunner,
 } from "#framework/commands/operate/schedule.ts";
+import { INTERVAL_GRAMMAR, NEAREST_VALID } from "#framework/core/values/durations.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { shellQuote } from "#framework/core/io/shell.ts";
@@ -70,7 +85,7 @@ const quoted = cronLine(5, { cwd: "/owner's app", command: "./clawforge", args: 
 check("an owned line with a quoted path and explicit deployment is removed", withoutMarkedLine(`${quoted}\n`, "watch", "myapp"), []);
 
 for (const path of ["/srv/project%blue", "/srv/project\\%blue", "/srv/project\\\\%blue"]) {
-  check("percent paths are refused even with a preceding backslash", (await deathOf(() => cronLine(5, { cwd: path, command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp"))).includes("does not support %"), true);
+  check("percent paths are refused even with a preceding backslash", (await deathOf(() => cronLine(5, { cwd: path, command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp"))).includes(PERCENT_REFUSAL), true);
   const legacy = owned.replace("'/x'", shellQuote(path));
   check("unsupported legacy percent rows are preserved", withoutMarkedLine(`${legacy}\n`, "watch", "myapp"), [legacy]);
 }
@@ -78,9 +93,9 @@ for (const invocation of [
   { cwd: "/x", command: "./clawforge%", args: ["watch", "check"] },
   { cwd: "/x", command: "./clawforge", args: ["watch", "%"] },
 ]) {
-  check("percent in commands or arguments is refused", (await deathOf(() => cronLine(5, invocation, "watch", "myapp"))).includes("does not support %"), true);
+  check("percent in commands or arguments is refused", (await deathOf(() => cronLine(5, invocation, "watch", "myapp"))).includes(PERCENT_REFUSAL), true);
 }
-check("percent in markers is refused", (await deathOf(() => cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "my%app"))).includes("does not support %"), true);
+check("percent in markers is refused", (await deathOf(() => cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "my%app"))).includes(PERCENT_REFUSAL), true);
 
 // --- cronSchedule(): only true divisors of 60 (minutes) or 24 (hours) fire evenly — shared
 // by both jobs, and by schtasksSchedule()'s own range check ---------------------------------
@@ -113,15 +128,15 @@ check("1d -> 1440 minutes", parseIntervalToMinutes("1d"), 1440);
 check("a bare number is minutes (watch's historical form)", [parseIntervalToMinutes("30"), parseIntervalToMinutes("120"), parseIntervalToMinutes("1440")], [30, 120, 1440]);
 check("60m and 1h are the same interval", [parseIntervalToMinutes("60m"), parseIntervalToMinutes("1h")], [60, 60]);
 // backup install passes { bareMinutes: false }: a cadence that stops the gateway must carry a unit.
-check("a bare number is refused when bare minutes are disallowed, naming valid explicit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes("nearest valid: 6m"), true);
+check("a bare number is refused when bare minutes are disallowed, naming valid explicit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes(`${NEAREST_VALID}${nearestValidIntervals(6).join(", ")}`), true);
 check("an explicit unit is still accepted when bare minutes are disallowed", [parseIntervalToMinutes("6m", { bareMinutes: false }), parseIntervalToMinutes("6h", { bareMinutes: false })], [6, 360]);
-check("an empty value is refused even when bare minutes are allowed", (await deathOf(() => parseIntervalToMinutes(""))).includes("look like 30m"), true);
+check("an empty value is refused even when bare minutes are allowed", (await deathOf(() => parseIntervalToMinutes(""))).includes(INTERVAL_GRAMMAR), true);
 for (const malformed of ["", "abc", "1.5h", "-5", "5 m", "10mm"]) {
-  check(`"${malformed}" is refused, naming both spellings`, (await deathOf(() => parseIntervalToMinutes(malformed))).includes("number of minutes or look like 30m"), true);
+  check(`"${malformed}" is refused, naming both spellings`, (await deathOf(() => parseIntervalToMinutes(malformed))).includes(INTERVAL_GRAMMAR), true);
 }
-check("5h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("5h"))).includes("no faithful encoding"), true);
-check("7h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("no faithful encoding"), true);
-check("the refusal names the nearest valid values in the flag's own spelling", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("nearest valid: 6h, 8h"), true);
+check("5h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("5h"))).includes(NO_FAITHFUL_ENCODING), true);
+check("7h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("7h"))).includes(NO_FAITHFUL_ENCODING), true);
+check("the refusal names the nearest valid values in the flag's own spelling", (await deathOf(() => parseIntervalToMinutes("7h"))).includes(`${NEAREST_VALID}${nearestValidIntervals(420).join(", ")}`), true);
 
 // Every refusal's "nearest valid" list is non-empty and each entry parses back through the
 // same parser — it never offers a value the command itself would reject.
@@ -219,13 +234,13 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
   check("the known no-crontab diagnostic means an empty table", empty.error, "");
   check("crontab diagnostics use the stable C locale", empty.env, { LC_ALL: "C" });
   const denied = await listing(1, "", "permission denied");
-  check("an unreadable crontab is surfaced instead of treated as empty", denied.error.includes("could not read crontab"), true);
+  check("an unreadable crontab is surfaced instead of treated as empty", denied.error.includes(crontabReadFailure("ssh:user@host", 1)), true);
   const transportFailure = await listing(255, "", "connection lost");
-  check("a transport failure is surfaced instead of treated as empty", transportFailure.error.includes("exit 255"), true);
+  check("a transport failure is surfaced instead of treated as empty", transportFailure.error.includes(crontabReadFailure("ssh:user@host", 255)), true);
   const privateListing = await listing(1, "SCHEDULER_PRIVATE_FIXTURE", "");
   check("failed partial listings are never echoed", privateListing.error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
   const partialEmpty = await listing(1, "SCHEDULER_PRIVATE_FIXTURE", "no crontab for user");
-  check("partial stdout prevents a contradictory empty-table result", partialEmpty.error.includes("could not read"), true);
+  check("partial stdout prevents a contradictory empty-table result", partialEmpty.error.includes(crontabReadFailure("ssh:user@host", 1)), true);
   check("contradictory empty-table diagnostics never echo private content", partialEmpty.error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
 }
 
@@ -239,19 +254,19 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
     },
   } as unknown as Context;
   const wrongJob = cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp");
-  check("an install cannot insert another job's entry", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", wrongJob))).includes("must match"), true);
-  check("multiline input is refused before target execution", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", `${owned}\nforeign`))).includes("exactly one line"), true);
+  check("an install cannot insert another job's entry", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", wrongJob))).includes(CRONTAB_ENTRY_OWNED), true);
+  check("multiline input is refused before target execution", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", `${owned}\nforeign`))).includes(CRONTAB_ENTRY_ONE_LINE), true);
   check("invalid entries never reach the target", calls, 0);
   answer = { code: 26, stdout: "", stderr: "could not acquire scheduler account lock" };
-  check("account lock refusal reaches the operator", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes("could not acquire"), true);
+  check("account lock refusal reaches the operator", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes(crontabUpdateFailure("ssh:user@host", 26, CRONTAB_FAILURES[26] ?? SCHEDULER_TRANSACTION_FAILED)), true);
   for (const code of [28, 33, 255]) {
     answer = { code, stdout: "SCHEDULER_PRIVATE_FIXTURE", stderr: "SCHEDULER_PRIVATE_FIXTURE" };
     const error = await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned));
     check("scheduler failure never echoes target stdout/stderr", error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
-    check("scheduler failure keeps its exit code", error.includes(`exit ${code}`), true);
+    check("scheduler failure keeps its exit code", error.includes(crontabUpdateFailure("ssh:user@host", code, CRONTAB_FAILURES[code] ?? SCHEDULER_TRANSACTION_FAILED)), true);
   }
   answer = { code: 0, stdout: "unexpected output", stderr: "" };
-  check("success requires transaction confirmation", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes("could not confirm"), true);
+  check("success requires transaction confirmation", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes(crontabConfirmFailure("ssh:user@host")), true);
 }
 
 
@@ -281,7 +296,7 @@ try {
 
   const printed: string[] = [];
   await withOutputSink((chunk) => printed.push(chunk), () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], false));
-  check("printing without --apply names the manual command, on every platform", printed.join("").includes("Run this yourself"), true);
+  check("printing without --apply names the manual command, on every platform", printed.join("").includes(MANUAL_INSTALL_HEADER), true);
 
   if (process.platform === "win32") {
     check("...and shows the schtasks command on an actual Windows host", printed.join("").includes("schtasks"), true);
@@ -311,7 +326,7 @@ try {
     check("a failing schtasks call is reported, not swallowed", message.includes("access denied"), true);
   } else {
     const message = await deathOf(() => withOutputSink(() => {}, () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], true)));
-    check("--apply on a non-Windows host refuses outright — no scheduler here to drive", message.includes("refusing --apply"), true);
+    check("--apply on a non-Windows host refuses outright — no scheduler here to drive", message.includes(REFUSING_APPLY), true);
   }
 
   // The printed schtasks line, parsed the way cmd.exe + CommandLineToArgvW would, is exactly
@@ -336,9 +351,9 @@ try {
     if (pasteable) {
       check(`${entryPath}: the /tr is bash with no && or cmd.exe operator`, applied[0]?.[applied[0].indexOf("/tr") + 1]?.includes("&"), false);
       check(`${entryPath}: the printed line, parsed by cmd.exe, is the --apply argv`, cmdExeArgv(line?.trim() ?? ""), ["schtasks", ...(applied[0] ?? [])]);
-      check(`${entryPath}: the line is labelled for cmd.exe`, out.join("").includes("cmd.exe only"), true);
+      check(`${entryPath}: the line is labelled for cmd.exe`, out.join("").includes(CMD_EXE_ONLY_NOTE), true);
     } else {
-      check(`${entryPath}: a path cmd.exe cannot carry gets no pasteable line, only --apply`, [line, out.join("").includes("use --apply")], [undefined, true]);
+      check(`${entryPath}: a path cmd.exe cannot carry gets no pasteable line, only --apply`, [line, out.join("").includes(CMD_EXE_UNSAFE_NOTE)], [undefined, true]);
     }
   }
 

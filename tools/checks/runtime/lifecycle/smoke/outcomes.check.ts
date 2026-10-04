@@ -1,6 +1,7 @@
 // Smoke verdict classification, exit behavior, and HTTP probe results.
 
-import { checks, report, runChecks } from "#framework/commands/lifecycle/smoke/index.ts";
+import { checks, report, runChecks, probeRefusal, providerMissingDetail, smokeDidNotPassMessage, smokePassedMessage } from "#framework/commands/lifecycle/smoke/index.ts";
+import { couldNotDo } from "#framework/commands/lifecycle/smoke/verdict.ts";
 import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke/index.ts";
 import { CouldNotCheck, NotChecked } from "#framework/commands/check-outcome.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -37,18 +38,20 @@ check("could-not-check is not a species of not-checked — the run gate depends 
 
 {
   const seen: SmokeResult[] = [];
+  const unreachableReason = "could not reach the instance: no transport";
+  const inapplicableReason = "no drift-safe setting declared";
   const summary = await runChecks(stubContext({}), [
     { name: "sails through", run: async () => {} },
     { name: "assertion misses", run: () => { throw new Error("the property does not hold"); } },
-    { name: "inapplicable here", run: () => { throw new NotChecked("no drift-safe setting declared"); } },
-    { name: "instance unreachable", run: () => { throw new CouldNotCheck("could not reach the instance: no transport"); } },
+    { name: "inapplicable here", run: () => { throw new NotChecked(inapplicableReason); } },
+    { name: "instance unreachable", run: () => { throw new CouldNotCheck(unreachableReason); } },
   ] satisfies Check[], (result) => seen.push(result));
 
   check("all four outcomes are reachable in one run, spelled as themselves", summary.results.map((result) => result.status), ["passed", "failed", "not-checked", "could-not-check"]);
   check("each outcome is counted once, as itself", [summary.passed, summary.failed, summary.notChecked, summary.couldNotCheck], [1, 1, 1, 1]);
   check("every check reported as it finished, not at the end", seen.map((result) => result.name), ["sails through", "assertion misses", "inapplicable here", "instance unreachable"]);
-  check("a verdict-less check carries its reason", summary.results[3].detail?.includes("could not reach the instance"), true);
-  check("an inapplicable check carries its reason too", summary.results[2].detail?.includes("no drift-safe setting"), true);
+  check("a verdict-less check carries its reason", summary.results[3].detail, unreachableReason);
+  check("an inapplicable check carries its reason too", summary.results[2].detail, inapplicableReason);
 }
 
 // --- the exit contract: unreachable checks cannot pass ---------------------------------------
@@ -60,8 +63,8 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
-  check("a run whose check could not be checked does not pass", message.includes("did not pass"), true);
-  check("and says so in the shared vocabulary", message.includes("could not be checked"), true);
+  check("a run whose check could not be checked does not pass", message.includes(smokeDidNotPassMessage(1, 0, 1, ["instance unreachable"])), true);
+  check("and says so in the shared vocabulary", message, smokeDidNotPassMessage(1, 0, 1, ["instance unreachable"]));
 
   let failedMessage = "";
   try {
@@ -69,7 +72,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   } catch (error) {
     failedMessage = error instanceof Error ? error.message : String(error);
   }
-  check("an outright failed check still fails the run", failedMessage.includes("1 failed"), true);
+  check("an outright failed check still fails the run", failedMessage.includes(smokeDidNotPassMessage(1, 1, 0, ["assertion misses"])), true);
 
   let refused = false;
   try {
@@ -80,7 +83,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   check("a run whose only non-passes are deliberate not-checked ones still passes", refused, false);
 
   const line = capture(() => report({ results: [{ name: "inapplicable here", status: "not-checked" }], passed: 7, failed: 0, notChecked: 1, couldNotCheck: 0 }, false));
-  check("the summary line speaks the shared vocabulary, not the old SKIP", line.includes("not checked") && !line.includes("skipped"), true);
+  check("the summary line speaks the shared vocabulary, not the old SKIP", line.includes(smokePassedMessage(7, 1)) && !line.includes("skipped"), true);
 }
 
 // --- real probe bodies against a stub runtime ------------------------------------------------
@@ -95,11 +98,11 @@ check("could-not-check is not a species of not-checked — the run gate depends 
 
   const lying = await runChecks(stubContext({ probe: async () => 404 }), [probes], () => {});
   check("a probe answered with something other than 200 is a failed verdict", lying.results.map((result) => result.status), ["failed"]);
-  check("naming the endpoint and the code", lying.results[0].detail?.includes("healthz returned 404"), true);
+  check("naming the endpoint and the code", lying.results[0].detail?.includes(probeRefusal("healthz", 404)), true);
 
   const unreachable = await runChecks(stubContext({ probe: () => { throw new Error("docker unreachable"); } }), [probes], () => {});
   check("a runtime that cannot even run the probe is could-not-check, not failed", unreachable.results.map((result) => result.status), ["could-not-check"]);
-  check("naming what it could not do", unreachable.results[0].detail?.includes("could not probe healthz"), true);
+  check("naming what it could not do", unreachable.results[0].detail?.includes(couldNotDo("probe healthz", "docker unreachable")), true);
   check("and such a run refuses to report success", (() => {
     try { report(unreachable, false); return false; } catch { return true; }
   })(), true);
@@ -132,15 +135,15 @@ check("could-not-check is not a species of not-checked — the run gate depends 
     } as unknown as Context;
   }
 
-  const noProvider = await runChecks(agentContext({ models: { providers: {} } }, "(no reply)"), [agent], () => {});
+  const silentReply = "(no reply)";
+  const noProvider = await runChecks(agentContext({ models: { providers: {} } }, silentReply), [agent], () => {});
   check("a silent agent with no provider configured fails", noProvider.results.map((result) => result.status), ["failed"]);
-  check("naming PROVIDER_MISSING's own remedy", noProvider.results[0].detail?.includes("./clawforge configure-provider"), true);
-  check("and the cause in plain words", noProvider.results[0].detail?.includes("no model provider is configured"), true);
+  check("naming PROVIDER_MISSING's own remedy and the cause in plain words", noProvider.results[0].detail, providerMissingDetail(new Error(`agent replied: ${silentReply}`)));
 
-  const configured = await runChecks(agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, "(no reply)"), [agent], () => {});
+  const configured = await runChecks(agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, silentReply), [agent], () => {});
   check("a silent agent with a provider configured fails on the plain symptom instead", configured.results.map((result) => result.status), ["failed"]);
   check("without inventing a provider cause that does not apply", configured.results[0].detail?.includes("configure-provider"), false);
-  check("naming what the agent actually said", configured.results[0].detail?.includes("(no reply)"), true);
+  check("naming what the agent actually said", configured.results[0].detail, `agent replied: ${silentReply}`);
 
   const answered = await runChecks(agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, "SMOKE-OK"), [agent], () => {});
   check("an agent that actually answers still passes", answered.results.map((result) => result.status), ["passed"]);
@@ -161,7 +164,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   // The real bug report (docs/first-hour-acceptance.md, 2026-09-27 run): the CLI itself
   // failed before ever replying, so the check never reached the verdict branch above — the
   // hint must still apply on THIS failure path, not just a silent reply.
-  function unreachableAgentContext(liveConfig: unknown): Context {
+  function unreachableAgentContext(liveConfig: unknown, symptom: string): Context {
     return {
       settings: { dataDir: "/srv/openclaw/data" },
       transport: {
@@ -171,17 +174,21 @@ check("could-not-check is not a species of not-checked — the run gate depends 
         },
       },
       runtime: {
-        runOneOff: async () => { throw new Error("docker compose --profile cli run --rm -T cli agent ... failed (exit 1)"); },
+        runOneOff: async () => { throw new Error(symptom); },
       },
     } as unknown as Context;
   }
 
-  const unreachableNoProvider = await runChecks(unreachableAgentContext({ models: { providers: {} } }), [agent], () => {});
+  const symptom = "docker compose --profile cli run --rm -T cli agent ... failed (exit 1)";
+  const unreachableNoProvider = await runChecks(unreachableAgentContext({ models: { providers: {} } }, symptom), [agent], () => {});
   check("an unreachable agent stays could-not-check, not failed", unreachableNoProvider.results.map((result) => result.status), ["could-not-check"]);
-  check("but still names PROVIDER_MISSING when the config really has none", unreachableNoProvider.results[0].detail?.includes("./clawforge configure-provider"), true);
-  check("keeping the real symptom alongside it", unreachableNoProvider.results[0].detail?.includes("could not ask the agent"), true);
+  check(
+    "but still names PROVIDER_MISSING, keeping the real symptom alongside it",
+    unreachableNoProvider.results[0].detail,
+    providerMissingDetail(new CouldNotCheck(couldNotDo("ask the agent", symptom))),
+  );
 
-  const unreachableConfigured = await runChecks(unreachableAgentContext({ models: { providers: { zai: { apiKey: "k" } } } }), [agent], () => {});
+  const unreachableConfigured = await runChecks(unreachableAgentContext({ models: { providers: { zai: { apiKey: "k" } } } }, symptom), [agent], () => {});
   check("an unreachable agent with a provider configured stays could-not-check too", unreachableConfigured.results.map((result) => result.status), ["could-not-check"]);
   check("without inventing a provider cause that does not apply", unreachableConfigured.results[0].detail?.includes("configure-provider"), false);
 }

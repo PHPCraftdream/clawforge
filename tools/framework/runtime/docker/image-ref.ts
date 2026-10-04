@@ -50,11 +50,16 @@ function splitReference(value: string): ImageRef | undefined {
   return { registry, repository, tag, digest };
 }
 
+/** The grammar refusal, shared with the checks that prove it names the input. */
+export function invalidImageReference(value: string): string {
+  return `"${value}" is not a valid image reference — expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]`;
+}
+
 /** Parses a reference, throwing a UserError that names the input on anything else. */
 export function parse(value: string): ImageRef {
   const ref = tryParse(value);
   if (ref === undefined) {
-    throw new UserError(`"${value}" is not a valid image reference — expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]`);
+    throw new UserError(invalidImageReference(value));
   }
   return ref;
 }

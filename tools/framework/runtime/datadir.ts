@@ -18,6 +18,8 @@ export const OWNER = "1000:1000";
  *  tree before creating, chmod-ing or deleting through them. */
 export const DATA_SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 
+export const SUDO_PASSWORD_REFUSAL = "sudo asks for a password, which cannot be typed here";
+
 /** Provenance marker written by ensureDataDirs into a data root it created or adopted: its
  *  presence licenses narrow drift re-owning on later runs; its absence makes ensureDataDirs
  *  refuse to re-own anything. Exported for the check fixtures. */
@@ -77,7 +79,7 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
   if (availability === "password") {
     const advice = await prepareFamilyAdvice(ctx);
     die(
-      `${probe} needs root and sudo asks for a password, which cannot be typed here.\n` +
+      `${probe} needs root and ${SUDO_PASSWORD_REFUSAL}.\n` +
         "Prepare it once on the target — everything this deployment will need, not just this path:\n" +
         advice.map((line) => `  ${line}`).join("\n") +
         "\nor point OC_DATA_DIR (and OC_BACKUP_DIR/OC_SNAPSHOT_DIR) in the deployment's .env at directories you already own.",
@@ -93,7 +95,7 @@ export async function sudoForRead(ctx: Context, path: string): Promise<string[]>
   if (readable.code === 0) return [];
   const availability = await sudoAvailability(ctx);
   if (availability !== "usable") {
-    const why = availability === "password" ? "sudo asks for a password, which cannot be typed here" : "sudo is not available on the target";
+    const why = availability === "password" ? SUDO_PASSWORD_REFUSAL : "sudo is not available on the target";
     die(`${path} is not readable by this user and ${why} — run as its owner (uid 1000) or allow passwordless sudo`);
   }
   return ["sudo", "-n"];

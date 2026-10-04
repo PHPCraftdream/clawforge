@@ -45,6 +45,7 @@ const JOB = "watch";
  *  `watch install --apply` — a documented default (also in docs/guide/monitoring-and-access.md),
  *  never guessed silently per call. */
 export const DEFAULT_WATCH_INTERVAL_MINUTES = 5;
+export const NOTHING_INSTALLED = "no watch schedule was installed for this deployment — nothing to remove";
 
 /** The slice of `watch`'s declaration `install`'s own argv actually uses. `--apply` is the
  *  one mutating flag: its effect raises the call to destroy. */
@@ -168,7 +169,7 @@ async function runUninstall(ctx: Context, values: Values<typeof WATCH_UNINSTALL_
   await guardedWith(ctx, "watch uninstall --apply", takeoverOf(values), async () => {
     if (!await updateCrontab(ctx, JOB, identity, undefined, { name, invocation })) {
       await recordWatchSchedule(ctx, undefined);
-      info("no watch schedule was installed for this deployment — nothing to remove");
+      info(NOTHING_INSTALLED);
       return;
     }
     await recordWatchSchedule(ctx, undefined);

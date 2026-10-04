@@ -12,7 +12,9 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
-useDeployment(resolve(monorepoRoot, "apps", "example app"));
+export const FIXTURE_APP = "example app";
+
+useDeployment(resolve(monorepoRoot, "apps", FIXTURE_APP));
 
 export const ctx = {
   settings: { gatewayPort: "18789", remotePath: "/opt/openclaw" },

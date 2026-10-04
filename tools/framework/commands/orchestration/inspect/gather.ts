@@ -43,6 +43,8 @@ export const INSPECT_ARGUMENTS = [
   { name: "json", description: "Emit the whole inspection as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
+export const RECREATE_SWITCHES_IMAGES = "the next recreate (up, restart after compose changes, apply) would switch images";
+
 /** gatherInspection's opt-in extras; a caller that omits this gets the inspection it always did. */
 export interface GatherInspectionOptions {
   /** Also gather `channels status --json` in observeLive's batched CLI call, exposed as
@@ -230,7 +232,7 @@ async function gatherRunningInspection(
         problem(
           "IMAGE_TAG_MOVED",
           `the local tag "${declared.image}" now resolves to ${localTagDigest}, but the running container is ${runningDigestList[0]} — ` +
-            "the next recreate (up, restart after compose changes, apply) would switch images",
+            RECREATE_SWITCHES_IMAGES,
         ),
       );
     }

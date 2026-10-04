@@ -16,6 +16,9 @@ import { registerSecret } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { runWatchCycle, watchCheck } from "#framework/commands/operate/watch/check.ts";
+import { NO_CHECK_YET, NO_SUCCESSFUL_CYCLE_YET, LAST_ERROR_PREFIX, watchLevelLine, staleRunLine, alertPendingLine } from "#framework/commands/operate/watch/status.ts";
+import { describeTransition, webhookRespondedWith, webhookUrlRefusal } from "#framework/commands/operate/watch/webhook.ts";
+import { unknownArgumentMessage } from "#framework/core/command/errors.ts";
 
 /** `watch status` through the command: parse, then run on the given context. */
 const watchStatus = (ctx: Context, args: string[]): Promise<void> => openclawCommands.watch!.run(ctx, ["status", ...args]);
@@ -59,7 +62,7 @@ const WEBHOOK = `https://hooks.example/${MARKER}`;
 
 check(
   "a bad argument is refused",
-  (await deathOf(() => watchStatus({ settings: { env: {} } } as unknown as Context, ["--bogus"]))).includes("unknown argument: --bogus"),
+  (await deathOf(() => watchStatus({ settings: { env: {} } } as unknown as Context, ["--bogus"]))).includes(unknownArgumentMessage("--bogus")),
   true,
 );
 
@@ -84,7 +87,7 @@ try {
     check("the default threshold is 3x the documented default interval", parsed.staleThresholdMinutes, DEFAULT_WATCH_INTERVAL_MINUTES * 3);
 
     const text = await textOf({ settings: { env: {} } } as unknown as Context);
-    check("text mode says plainly that nothing has run yet", text.includes("no check has run yet"), true);
+    check("text mode says plainly that nothing has run yet", text.includes(NO_CHECK_YET), true);
   }
 
   // --- a real state: level, both timestamps, every reason and the heartbeat fields ------
@@ -154,10 +157,11 @@ try {
     check("alertPending names the transition and since", parsed.alertPending, { from: "ok", to: "down", since: "2026-02-01T00:05:00.000Z" });
 
     const text = await textOf(ctx);
-    check("text mode warns about the last error", text.includes("last error: webhook responded with 500"), true);
+    const expectedLastError = `${LAST_ERROR_PREFIX}${webhookRespondedWith(500)}`;
+    check("text mode warns about the last error", text.includes(expectedLastError), true);
     check(
       "text mode warns about the undelivered alert, naming the transition and since",
-      text.includes("alert pending since 2026-02-01T00:05:00.000Z: ok → down"),
+      text.includes(alertPendingLine("2026-02-01T00:05:00.000Z", describeTransition("ok", "down", [], []))),
       true,
     );
   }
@@ -173,7 +177,7 @@ try {
     check("and the error that stopped it", parsed.lastError, "OC_WATCH_WEBHOOK is not a valid URL");
 
     const text = await textOf(ctx);
-    check("text mode says there is no successful cycle yet, not that nothing ever ran", text.includes("no successful check cycle yet"), true);
+    check("text mode says there is no successful cycle yet, not that nothing ever ran", text.includes(NO_SUCCESSFUL_CYCLE_YET), true);
     check("and still names when the last attempt ran", text.includes("2026-03-01T00:00:00.000Z"), true);
   }
 
@@ -189,7 +193,7 @@ try {
     check("20 minutes since the last run, at a 5-minute interval (15-minute threshold), reads stale", parsed.stale, true);
     check("the threshold reflects the recorded interval, not the default", parsed.staleThresholdMinutes, 15);
     const text = await textOf(ctx);
-    check("text mode warns about the stale run", text.includes("the scheduled check may not be"), true);
+    check("text mode warns about the stale run", text.includes(staleRunLine(old, 15)), true);
   }
 
   {
@@ -217,7 +221,7 @@ try {
     check("a check this old reads as stale under the default threshold", parsed.stale, true);
 
     const text = await textOf(ctx);
-    check("text mode renders a legacy file without crashing", text.includes("watch: ok"), true);
+    check("text mode renders a legacy file without crashing", text.includes(watchLevelLine("ok")), true);
   }
   // Two distinct filesystems: target scheduled history is never the operator's ad-hoc one.
   {
@@ -271,7 +275,7 @@ try {
       await withOperatorWatchState(ctx, () => runWatchCycle(undefined, "ok", [], true));
       await deathOf(() => watchCheck({ ...ctx, settings: { ...ctx.settings, env: { OC_WATCH_WEBHOOK: "ftp://operator-invalid" } } }, []));
       const operatorError = await withOperatorWatchState(ctx, readWatchState);
-      check("an SSH operator configuration error is marked in separate ad-hoc history", operatorError?.lastError?.includes("must be https"), true);
+      check("an SSH operator configuration error is marked in separate ad-hoc history", operatorError?.lastError?.includes(webhookUrlRefusal("OC_WATCH_WEBHOOK")), true);
       const { parsed } = await jsonOf(ctx, ["--json"]);
       check("operator status reads the target down state and delivery diagnostics", [parsed.level, parsed.lastError, parsed.alertPending], ["down", pending?.lastError, pending?.alertPending]);
       check("target interval controls staleness, not the local default/history", [parsed.historyLocation, parsed.historyKnown, parsed.staleThresholdMinutes, parsed.stale], ["target", true, 90, false]);

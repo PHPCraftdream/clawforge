@@ -6,7 +6,7 @@ import type { ExecResult } from "../runtime/transport/transport.ts";
 import { docsUrl } from "../core/io/docs-url.ts";
 import { machineName, removeEmptyDirectory } from "../runtime/lock/process-identity.ts";
 
-interface MutationOwner {
+export interface MutationOwner {
   readonly generation: string;
   readonly pid: number;
   readonly machine: string;
@@ -32,12 +32,17 @@ function foreignTakeoverLog(ctx: Context): string {
   return `${locksDir(ctx.settings.dataDir)}/foreign-lock-takeovers.jsonl`;
 }
 
+/** Who a foreign-lock takeover is recorded as — shared with the check that reads the log. */
+export function foreignTakeoverBy(): string {
+  return `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${machineName()} pid ${process.pid}`;
+}
+
 /** Best-effort append: a confirmed override of someone else's orphaned guard must not go
  *  unrecorded when writable, but must never be the reason the takeover itself fails. */
 async function recordForeignTakeover(ctx: Context, confirmedHost: string, foreignOwner: MutationOwner): Promise<void> {
   const entry = {
     at: new Date().toISOString(),
-    by: `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${machineName()} pid ${process.pid}`,
+    by: foreignTakeoverBy(),
     confirmedHost,
     foreignOwner,
   };
@@ -99,7 +104,9 @@ function processIsAlive(owner: MutationOwner): boolean | undefined {
   }
 }
 
-function busy(path: string, owner?: MutationOwner): Error {
+/** The refusal a caller sees while another instance-lock change owns the mutation guard.
+ *  Exported so the checks can assert the whole message, advice included. */
+export function mutationBusyMessage(path: string, owner?: MutationOwner): Error {
   const identity = owner === undefined ? "an unnamed operation" : `pid ${owner.pid} on ${owner.machine}`;
   const advice = owner === undefined
     ? "if no lock change is active, retry with --break-lock"
@@ -141,7 +148,7 @@ async function claimFreshGuard(
   }
   await ctx.transport.remove(marker).catch(() => {});
   await removeEmptyDirectory(ctx, guard);
-  throw busy(guard, await readOwner(ctx, ownerPath(ctx)));
+  throw mutationBusyMessage(guard, await readOwner(ctx, ownerPath(ctx)));
 }
 
 /** Whether an existing guard can be taken over, before any marker is written: a live owner
@@ -154,17 +161,17 @@ function resolveGuardOwner(
   breakForeignLockHost: string | undefined,
 ): boolean {
   if (current === undefined) {
-    if (!breakLock) throw busy(guard);
+    if (!breakLock) throw mutationBusyMessage(guard);
     return false;
   }
   const alive = processIsAlive(current);
-  if (alive === true) throw busy(guard, current);
+  if (alive === true) throw mutationBusyMessage(guard, current);
   if (alive === undefined) {
     // processIsAlive returns undefined for two reasons: a genuinely foreign machine, or a
     // probe error on THIS machine that proves nothing. Only the first is what
     // --break-foreign-lock is for — an owner already recorded as this machine is never
     // treated as foreign.
-    if (current.machine === machineName() || breakForeignLockHost === undefined) throw busy(guard, current);
+    if (current.machine === machineName() || breakForeignLockHost === undefined) throw mutationBusyMessage(guard, current);
     if (breakForeignLockHost !== current.machine) {
       throw new Error(
         `refusing to take over the instance-lock guard at ${guard}: its recorded owner is on ` +
@@ -196,7 +203,7 @@ async function retireDeadCompetitors(
   for (const other of otherClaims) {
     const otherOwner = await readOwner(ctx, other);
     const alive = otherOwner === undefined ? undefined : processIsAlive(otherOwner);
-    if (alive === true || alive === undefined) await abortClaim(ctx, marker, busy(guard, otherOwner ?? current));
+    if (alive === true || alive === undefined) await abortClaim(ctx, marker, mutationBusyMessage(guard, otherOwner ?? current));
     await ctx.transport.remove(other).catch(() => {});
   }
 }
@@ -211,10 +218,10 @@ async function parkCurrentOwner(
   ownerFile: string,
 ): Promise<void> {
   const latest = await readOwner(ctx, ownerFile);
-  if (latest?.generation !== current.generation) await abortClaim(ctx, marker, busy(guard, latest));
+  if (latest?.generation !== current.generation) await abortClaim(ctx, marker, mutationBusyMessage(guard, latest));
   const parked = `${guard}/.stale-owner-${current.generation}`;
   const moved = await ctx.transport.exec("mv", [ownerFile, parked], { allowFailure: true });
-  if (moved.code !== 0) await abortClaim(ctx, marker, busy(guard, await readOwner(ctx, ownerFile)));
+  if (moved.code !== 0) await abortClaim(ctx, marker, mutationBusyMessage(guard, await readOwner(ctx, ownerFile)));
 }
 
 /** No current owner, but other claim markers were left behind — an ownerless guard is only
@@ -239,7 +246,7 @@ async function retireStaleUnclaimedMarkers(ctx: Context, guard: string, marker: 
       break;
     }
   }
-  if (!claimed) await abortClaim(ctx, marker, busy(guard));
+  if (!claimed) await abortClaim(ctx, marker, mutationBusyMessage(guard));
 }
 
 /** Publishes the marker as owner.json via `ln`, rolling the parked stale owner back if that
@@ -262,7 +269,7 @@ async function publishClaim(
       if (restored.code === 0) await ctx.transport.remove(parked).catch(() => {});
     }
     if (await readOwner(ctx, ownerFile) !== undefined) await ctx.transport.remove(marker).catch(() => {});
-    throw busy(guard, await readOwner(ctx, ownerFile));
+    throw mutationBusyMessage(guard, await readOwner(ctx, ownerFile));
   }
   await ctx.transport.remove(marker).catch(() => {});
   if (current !== undefined) await ctx.transport.remove(`${guard}/.stale-owner-${current.generation}`).catch(() => {});
@@ -293,7 +300,7 @@ async function claimExistingGuard(
   const confirmedForeignTakeover = resolveGuardOwner(guard, current, breakLock, breakForeignLockHost);
 
   const marker = claimPath(ctx, generation);
-  if (!(await writeExclusive(ctx, marker, content))) throw busy(guard, current);
+  if (!(await writeExclusive(ctx, marker, content))) throw mutationBusyMessage(guard, current);
 
   await retireDeadCompetitors(ctx, guard, marker, current);
   if (current !== undefined) {

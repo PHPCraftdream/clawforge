@@ -4,6 +4,7 @@
 // never touch runtime.stop/start, whether the archive validates or not.
 
 import { restoreDryRun, restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
+import { NATIVE_MANIFEST_DEFERRED, identityLine, restorePlanHeader, restorePlanSteps, restoreStepsHeader } from "#framework/commands/lifecycle/restore/plan.ts";
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -83,7 +84,7 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   const plan = JSON.parse(output) as { nativeManifestPresent: boolean; nativeManifestVerified: boolean; checksDeferred: string[] };
   check("preview sees the native manifest", plan.nativeManifestPresent, true);
   check("preview does not claim native verification", plan.nativeManifestVerified, false);
-  check("plan identifies native verification as real-restore only", plan.checksDeferred.some((item) => item.includes("native manifest")), true);
+  check("plan identifies native verification as real-restore only", plan.checksDeferred.some((item) => item.includes(NATIVE_MANIFEST_DEFERRED)), true);
   check("native preview never extracts or writes", calls.some((call) => MUTATING.has(call.command) || (call.command === "tar" && call.args.includes("-xzf"))), false);
 }
 
@@ -112,10 +113,10 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   check("no mutating command was issued", calls.some((call) => MUTATING.has(call.command)), false);
   check("no extraction was attempted", calls.some((call) => call.command === "tar" && call.args.includes("-xzf")), false);
   check("the plan names the archive", output.includes("openclaw-x.tar.gz"), true);
-  check("the plan says identity is included", output.includes("identity: included"), true);
+  check("the plan says identity is included", output.includes(identityLine(true)), true);
   check("the plan names the moved-aside pattern", output.includes(`${DATA_DIR}.replaced-<timestamp>`), true);
-  check("the plan lists the ordered steps", output.includes("step(s) a real restore would run"), true);
-  check("the plan says the gateway would start", output.includes("start the gateway"), true);
+  check("the plan lists the ordered steps", output.includes(restoreStepsHeader(restorePlanSteps({}).length)), true);
+  check("the plan says the gateway would start", output.includes(restorePlanSteps({}).at(-1) ?? ""), true);
 }
 
 // --- an archive missing identity: reported as such ------------------------------------------
@@ -124,7 +125,7 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   const { ctx } = makeCtx(NO_IDENTITY_ENTRIES);
   let output = "";
   await withOutputSink((line) => { output += line; }, () => restoreDryRun(ctx, ARCHIVE, { force: true }));
-  check("the plan says identity is not included", output.includes("identity: not included"), true);
+  check("the plan says identity is not included", output.includes(identityLine(false)), true);
 }
 
 // --- --no-start / --fresh-identity change the reported steps, not the validation -----------
@@ -135,8 +136,9 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   await withOutputSink((line) => { output += line; }, () =>
     restoreDryRun(ctx, ARCHIVE, { force: true, noStart: true, freshIdentity: true }),
   );
-  check("--no-start is reflected in the plan", output.includes("leave the gateway stopped"), true);
-  check("--fresh-identity is reflected in the plan", output.includes("drop identity and paired devices"), true);
+  const plannedSteps = restorePlanSteps({ noStart: true, freshIdentity: true });
+  check("--no-start is reflected in the plan", output.includes(plannedSteps.at(-2) ?? ""), true);
+  check("--fresh-identity is reflected in the plan", output.includes(plannedSteps.at(-3) ?? ""), true);
 }
 
 // --- a validation failure gives the same refusal a real restore gives, and still nothing
@@ -177,7 +179,7 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
     try { await openclawCommands.restore.run(ctx, [ARCHIVE, "--dry-run"]); } catch { threw = true; }
   });
   check("restore --dry-run does not ask for confirmation", threw, false);
-  check("restore --dry-run reports a plan", output.includes("would restore"), true);
+  check("restore --dry-run reports a plan", output.includes(restorePlanHeader(DATA_DIR, "openclaw-x.tar.gz")), true);
   check("restore --dry-run issues no mutating command", calls.some((call) => MUTATING.has(call.command)), false);
 }
 

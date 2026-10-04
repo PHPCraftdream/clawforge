@@ -16,20 +16,22 @@ export interface IntervalOptions {
   readonly nearestUnit?: (bareMinutes: number) => string;
 }
 
+export const INTERVAL_GRAMMAR_WITH_UNIT = "--interval must look like 30m, 6h or 1d (an explicit unit is required)";
+export const INTERVAL_GRAMMAR = "--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days)";
+export const NEAREST_VALID = " — nearest valid: ";
+
 /** `--interval`: "30m" / "6h" / "1d", or — unless requireUnit — a bare number of minutes
  *  ("10" = "10m", watch's historical form). An empty or malformed value is refused, naming
  *  the input; the scheduler's own range check stays with the caller. */
 export function parseInterval(raw: string, options: IntervalOptions = {}): { minutes: number; bare: boolean } {
-  const grammar = options.requireUnit === true
-    ? `--interval must look like 30m, 6h or 1d (an explicit unit is required)`
-    : `--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days)`;
+  const grammar = options.requireUnit === true ? INTERVAL_GRAMMAR_WITH_UNIT : INTERVAL_GRAMMAR;
   if (raw.trim() === "") throw new UserError(`${grammar} — got "${raw}"`);
   const match = INTERVAL_PATTERN.exec(raw.trim());
   if (match === null) throw new UserError(`${grammar} — got "${raw}"`);
   const value = Number(match[1]);
   const unit = match[2];
   if (unit === "" && options.requireUnit === true) {
-    const nearest = options.nearestUnit === undefined ? "" : ` — nearest valid: ${options.nearestUnit(value)}`;
+    const nearest = options.nearestUnit === undefined ? "" : `${NEAREST_VALID}${options.nearestUnit(value)}`;
     throw new UserError(`--interval needs an explicit unit${nearest}; a bare number is minutes only for watch install — got "${raw}"`);
   }
   return { minutes: unit === "" ? value : value * INTERVAL_UNIT_MINUTES[unit], bare: unit === "" };

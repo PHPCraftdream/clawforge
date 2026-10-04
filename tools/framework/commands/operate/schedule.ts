@@ -20,7 +20,7 @@ import { posix, resolve } from "node:path";
 import { die, info, regexEscape } from "../../core/io/log.ts";
 import { SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import { monorepoRoot } from "../../core/env.ts";
-import { parseInterval } from "../../core/values/durations.ts";
+import { NEAREST_VALID, parseInterval } from "../../core/values/durations.ts";
 import { ValueError, type ValueParser } from "../../core/values/value.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
 import { spawnLocal, SshTransport } from "../../runtime/transport/transport.ts";
@@ -84,11 +84,13 @@ function formatInterval(minutes: number): string {
   return minutes === 1440 ? "1d" : `${minutes / 60}h`;
 }
 
-function nearestValidIntervals(minutes: number): string[] {
+export function nearestValidIntervals(minutes: number): string[] {
   const below = [...VALID_INTERVAL_MINUTES].reverse().find((value) => value <= minutes);
   const above = VALID_INTERVAL_MINUTES.find((value) => value >= minutes);
   return [...new Set([below, above].filter((value): value is number => value !== undefined))].map(formatInterval);
 }
+
+export const NO_FAITHFUL_ENCODING = "--interval has no faithful encoding: minutes must divide 60";
 
 export function cronSchedule(minutes: number): string {
   if (Number.isInteger(minutes) && MINUTE_DIVISORS.includes(minutes)) return `*/${minutes} * * * *`;
@@ -100,7 +102,7 @@ export function cronSchedule(minutes: number): string {
   }
   const nearest = nearestValidIntervals(minutes).join(", ");
   throw new Error(
-    `--interval has no faithful encoding: minutes must divide 60 (${MINUTE_DIVISORS.map(formatInterval).join(",")}), hours must divide a day (${HOUR_DIVISORS.map((hours) => formatInterval(hours * 60)).join(",")}) — nearest valid: ${nearest}`,
+    `${NO_FAITHFUL_ENCODING} (${MINUTE_DIVISORS.map(formatInterval).join(",")}), hours must divide a day (${HOUR_DIVISORS.map((hours) => formatInterval(hours * 60)).join(",")})${NEAREST_VALID}${nearest}`,
   );
 }
 
@@ -121,9 +123,11 @@ export function parseIntervalToMinutes(raw: string, options?: { bareMinutes?: bo
   return result.minutes;
 }
 
+export const PERCENT_REFUSAL = "cron scheduling does not support % in the working directory, command, arguments or marker";
+
 export function cronLine(minutes: number, invocation: ScheduledInvocation, job: string, name: string): string {
   if ([invocation.cwd, invocation.command, ...invocation.args, jobMarker(job, name)].some((part) => part.includes("%"))) {
-    throw new Error("cron scheduling does not support % in the working directory, command, arguments or marker");
+    throw new Error(PERCENT_REFUSAL);
   }
   const args = invocation.args.map((arg) => SshTransport.quote(arg)).join(" ");
   return `${cronSchedule(minutes)} cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${args} >/dev/null 2>&1 ${jobMarker(job, name)}`;
@@ -162,15 +166,19 @@ function ownedCronLine(line: string, job: string, name: string): boolean {
 }
 
 /** Only a known no-crontab diagnostic means the table is empty; other failures must stop writes. */
+export function crontabReadFailure(description: string, code: number): string {
+  return `could not read crontab on ${description} (exit ${code}); table unchanged`;
+}
+
 export async function readCrontab(ctx: Context): Promise<string> {
   const listing = await ctx.transport.exec("crontab", ["-l"], { allowFailure: true, env: { LC_ALL: "C" } });
   if (listing.code === 0) return listing.stdout;
   const diagnostic = (listing.stderr || listing.stdout).trim();
   if (listing.code === 1 && /^(?:crontab:\s*)?no crontab for .+$/i.test(diagnostic) && (listing.stderr.trim() === "" || listing.stdout.trim() === "")) return "";
-  die(`could not read crontab on ${ctx.transport.description} (exit ${listing.code}); table unchanged`);
+  die(crontabReadFailure(ctx.transport.description, listing.code));
 }
 
-const CRONTAB_FAILURES: Readonly<Record<number, string>> = {
+export const CRONTAB_FAILURES: Readonly<Record<number, string>> = {
   20: "crontab is not available",
   21: "flock is required to serialize scheduler updates",
   22: "could not identify scheduler account",
@@ -235,20 +243,32 @@ fi
 printf 'updated\\n'
 `;
 
+export const CRONTAB_ENTRY_ONE_LINE = "a scheduled crontab entry must be exactly one line";
+export const CRONTAB_ENTRY_OWNED = "a scheduled crontab entry must match its job and deployment";
+export const SCHEDULER_TRANSACTION_FAILED = "target scheduler transaction failed";
+
+export function crontabUpdateFailure(description: string, code: number, reason: string): string {
+  return `could not update crontab on ${description} (exit ${code}): ${reason}`;
+}
+
+export function crontabConfirmFailure(description: string): string {
+  return `could not confirm crontab update on ${description}: unexpected transaction response`;
+}
+
 /** Updates one owned job under a target-account flock, independent of instance data paths. */
 export async function updateCrontab(ctx: Context, job: string, name: string, line?: string, prior?: PriorSchedule): Promise<boolean> {
-  if (line !== undefined && /[\r\n]/.test(line)) die("a scheduled crontab entry must be exactly one line");
-  if (line !== undefined && !ownedCronLine(line, job, name)) die("a scheduled crontab entry must match its job and deployment");
+  if (line !== undefined && /[\r\n]/.test(line)) die(CRONTAB_ENTRY_ONE_LINE);
+  if (line !== undefined && !ownedCronLine(line, job, name)) die(CRONTAB_ENTRY_OWNED);
   const result = await ctx.transport.exec("sh", [
     "-c", CRONTAB_TRANSACTION, "clawforge-crontab-update", ownedCronPattern(job, name, prior), line ?? "", line === undefined ? "uninstall" : "install",
   ], { allowFailure: true });
   if (result.code !== 0) {
-    const reason = CRONTAB_FAILURES[result.code] ?? "target scheduler transaction failed";
-    die(`could not update crontab on ${ctx.transport.description} (exit ${result.code}): ${reason}`);
+    const reason = CRONTAB_FAILURES[result.code] ?? SCHEDULER_TRANSACTION_FAILED;
+    die(crontabUpdateFailure(ctx.transport.description, result.code, reason));
   }
   if (result.stdout.trim() === "updated") return true;
   if (result.stdout.trim() === "unchanged") return false;
-  die(`could not confirm crontab update on ${ctx.transport.description}: unexpected transaction response`);
+  die(crontabConfirmFailure(ctx.transport.description));
 }
 
 export interface SchedulingSupport {
@@ -259,6 +279,10 @@ export interface SchedulingSupport {
 /** ssh and a POSIX `local` are real, always-on machines this framework already knows how to
  *  reach unattended; a WSL Docker host has no crontab/systemd this tooling can trust to be
  *  there. A `local` target on Windows is refused by createTransport, so it never gets here. */
+export const WSL_SCHEDULING_REASON =
+  "the WSL distro Docker runs in is a container host, not a place this tooling's own node + checkout are " +
+  "proven to also run — a crontab entry installed there cannot be trusted to find either one unattended";
+
 export function schedulingSupport(ctx: Context): SchedulingSupport {
   const description = ctx.transport.description;
   if (description.startsWith("ssh:")) return { supported: true };
@@ -266,9 +290,7 @@ export function schedulingSupport(ctx: Context): SchedulingSupport {
   if (description.startsWith("wsl:")) {
     return {
       supported: false,
-      reason:
-        "the WSL distro Docker runs in is a container host, not a place this tooling's own node + checkout are " +
-        "proven to also run — a crontab entry installed there cannot be trusted to find either one unattended",
+      reason: WSL_SCHEDULING_REASON,
     };
   }
   return { supported: false, reason: "this target has no crontab this command can install into" };
@@ -372,6 +394,13 @@ export async function withScheduleRunner<T>(substitute: ScheduleRunner, body: ()
   }
 }
 
+export const MANUAL_INSTALL_HEADER = "no unattended install exists for this target from here. Run this yourself, on a scheduler that can reach it:";
+export const REFUSING_APPLY = "refusing --apply";
+export const CMD_EXE_UNSAFE_NOTE =
+  "on Windows, Task Scheduler can run this instead, but a path here has a character (% & | < > ^) that cannot be pasted into cmd.exe; use --apply";
+export const CMD_EXE_ONLY_NOTE =
+  "on Windows, Task Scheduler can run this instead — paste it into cmd.exe only (not PowerShell or Git Bash; use --apply there). `/f` replaces the same named task on a re-run:";
+
 /** Prints — and, with `apply` on an actual Windows host, also runs through scheduleRunner —
  *  what an operator-side scheduler needs on a transport schedulingSupport() already said no
  *  to. ssh/local-POSIX never reach here. On Windows only a WSL target does; on any other
@@ -390,13 +419,13 @@ export async function printSchedulingInstructions(
   const posixArgs = installed ? [...jobArgs] : ["--app", name, ...jobArgs];
   const entryTarget = await ctx.paths.toTarget(entryHost);
   const invocation = ctx.transport.clientInvocation(entryTarget, posixArgs);
-  info("no unattended install exists for this target from here. Run this yourself, on a scheduler that can reach it:");
+  info(MANUAL_INSTALL_HEADER);
   info(`  ${displayCommandLine(invocation.command, invocation.args)}`);
 
   // Only a WSL target on a Windows host has a schtasks line to offer (local is refused on Windows).
   if (schedulerPlatform !== "win32" || !ctx.transport.description.startsWith("wsl:")) {
     info("on Windows that means wiring it into Task Scheduler by hand — this command never creates or touches one.");
-    if (apply) die("refusing --apply: no correct unattended install exists for this target (see above)");
+    if (apply) die(`${REFUSING_APPLY}: no correct unattended install exists for this target (see above)`);
     return false;
   }
 
@@ -409,9 +438,9 @@ export async function printSchedulingInstructions(
   }
   const pasteable = cmdExeLine(create.command, create.args);
   if (pasteable === undefined) {
-    info("on Windows, Task Scheduler can run this instead, but a path here has a character (% & | < > ^) that cannot be pasted into cmd.exe; use --apply");
+    info(CMD_EXE_UNSAFE_NOTE);
   } else {
-    info("on Windows, Task Scheduler can run this instead — paste it into cmd.exe only (not PowerShell or Git Bash; use --apply there). `/f` replaces the same named task on a re-run:");
+    info(CMD_EXE_ONLY_NOTE);
     info(`  ${pasteable}`);
   }
   if (!apply) {
@@ -428,7 +457,7 @@ export async function printSchedulingInstructions(
 export async function printUnschedulingInstructions(ctx: Context, job: string, apply: boolean): Promise<boolean> {
   if (schedulerPlatform !== "win32") {
     info(`remove any entry you wired in yourself (e.g. Windows Task Scheduler): ${scheduledTaskName(job, await schedulerIdentity(ctx))}`);
-    if (apply) die("refusing --apply: no correct unattended uninstall exists for this target");
+    if (apply) die(`${REFUSING_APPLY}: no correct unattended uninstall exists for this target`);
     return false;
   }
 

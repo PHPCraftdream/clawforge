@@ -4,12 +4,14 @@
 
 import { runSteps } from "#framework/commands/orchestration/apply.ts";
 import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
-import { planActions, printPlanActions } from "#framework/commands/orchestration/plan.ts";
+import { planActions, printPlanActions, planSummaryLine } from "#framework/commands/orchestration/plan.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
+import { declarationExistsRefusal } from "#framework/commands/orchestration/config.ts";
+import { storeExistsRefusal } from "#framework/commands/management/secrets.ts";
 import { problem } from "#framework/service/inspection.ts";
 import { Journal } from "#framework/service/operations.ts";
 import type { OperationRecord } from "#framework/service/operations.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useDeployment, desiredStateFile, secretStoreFile } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
 import { mkdir, mkdtemp, readFile, readdir, writeFile, access, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -110,7 +112,7 @@ function localTransport(): {
     check("the file keeps the port it started with", (await readFile(resolve(deployment, ".env"), "utf8")).includes("OPENCLAW_GATEWAY_PORT=9999"), true);
     check("and the token line passes through untouched", (await readFile(resolve(deployment, ".env"), "utf8")).includes("OPENCLAW_GATEWAY_TOKEN=tok-apply-check-value"), true);
     check("the refusal is a failed step, not a silent pass", [outcomes[2].id, outcomes[2].status], ["apply-config-dump", "failed"]);
-    check("the refusal names the file and the way past it", [(outcomes[2].detail ?? "").includes("already exists"), (outcomes[2].detail ?? "").includes("--force")], [true, true]);
+    check("the refusal names the file and the way past it", [(outcomes[2].detail ?? "").includes(declarationExistsRefusal(desiredStateFile())), (outcomes[2].detail ?? "").includes("--force")], [true, true]);
     check("the refused dump leaves the declaration byte-identical", await readFile(resolve(deployment, "config", "desired-state.json"), "utf8"), declarationBefore);
     check("what did not run is blocked, and says so", outcomes[3], { id: "up", status: "blocked", detail: "an earlier step failed" });
 
@@ -132,7 +134,7 @@ function localTransport(): {
       },
     );
     check("the store refusal is a failed step too", storeRefusal.map((step) => [step.id, step.status]), [["secrets-dump", "failed"]]);
-    check("it names the store and --force", [(storeRefusal[0].detail ?? "").includes("already exists"), (storeRefusal[0].detail ?? "").includes("--force")], [true, true]);
+    check("it names the store and --force", [(storeRefusal[0].detail ?? "").includes(storeExistsRefusal(secretStoreFile("local"))), (storeRefusal[0].detail ?? "").includes("--force")], [true, true]);
     check("and the store survives byte-identical", await readFile(resolve(deployment, "secrets", "local.env"), "utf8"), storeBefore);
   } finally {
     await rm(deployment, { recursive: true, force: true });
@@ -203,15 +205,16 @@ function localTransport(): {
 
 {
   // Unbootstrapped-like: the one step a never-bootstrapped deployment plans, wholly advisory.
+  const advisoryText = "this deployment has never been bootstrapped";
   const onlyAdvisory = planActions({
     declared: { deployment: "example", config: [], image: "example/image:tag", recipes: [] },
     observed: { running: false, health: undefined, probes: {}, config: {}, secrets: [], agents: [], mcpServers: [], cronJobs: [], foreignObjects: [] },
-    problems: [problem("NOT_BOOTSTRAPPED", "this deployment has never been bootstrapped")],
+    problems: [problem("NOT_BOOTSTRAPPED", advisoryText)],
   });
   let out = "";
   await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions(onlyAdvisory); });
-  check("an all-advisory plan counts zero executable, not the action count", out.includes("1 step(s) — 0 that ./clawforge apply will run"), true);
-  check("and the advisory step's own text is printed, not silently dropped", out.includes("this deployment has never been bootstrapped"), true);
+  check("an all-advisory plan counts zero executable, not the action count", out.includes(planSummaryLine(1, 0)), true);
+  check("and the advisory step's own text is printed, not silently dropped", out.includes(advisoryText), true);
   check("the advisory marker still appears alongside the text", out.includes("(you)"), true);
 }
 
@@ -222,15 +225,15 @@ function localTransport(): {
   ];
   let out = "";
   await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions(mixed); });
-  check("a mixed plan counts exactly its executable steps", out.includes("2 step(s) — 1 that ./clawforge apply will run"), true);
-  check("the executable step's own command is printed", out.includes("./clawforge secrets --apply"), true);
-  check("the advisory step prints its own text instead of the executable step's command", out.includes("review the difference from the lock"), true);
+  check("a mixed plan counts exactly its executable steps", out.includes(planSummaryLine(2, 1)), true);
+  check("the executable step's own command is printed", out.includes(mixed[0]?.command ?? ""), true);
+  check("the advisory step prints its own text instead of the executable step's command", out.includes(mixed[1]?.summary ?? ""), true);
 }
 
 {
   let out = "";
   await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions([]); });
-  check("an empty plan states zero of zero", out.includes("0 step(s) — 0 that ./clawforge apply will run"), true);
+  check("an empty plan states zero of zero", out.includes(planSummaryLine(0, 0)), true);
 }
 
 finish("apply recovery");

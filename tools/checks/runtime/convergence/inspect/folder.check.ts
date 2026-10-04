@@ -9,7 +9,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gatherInspection, renderJson, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson, printProblem, RECREATE_SWITCHES_IMAGES } from "#framework/commands/orchestration/inspect/gather.ts";
+import { storeIncompleteDetail } from "#framework/commands/orchestration/inspect/drift.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { status } from "#framework/commands/interface/status.ts";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
@@ -133,13 +135,14 @@ try {
 
   {
     await reset();
-    await writeEnv(`${MATCHING_ENV}\nMY KEY=oops\n`);
+    const badKey = "MY KEY";
+    await writeEnv(`${MATCHING_ENV}\n${badKey}=oops\n`);
     await writeStore(COMPLETE_STORE);
     const inspection = await gatherInspection(folderContext(CLEAN, CONTAINER_FACTS));
     allJson += JSON.stringify(renderJson(inspection));
     check("a key with interior whitespace is ENV_LINE_INVALID", codes(inspection.problems), ["ENV_LINE_INVALID"]);
     check("the finding is advisory", inspection.problems.map((entry) => entry.severity), ["warning"]);
-    check("it names the bad key, not any value", inspection.problems[0]?.detail.includes("MY KEY") ?? false, true);
+    check("it names the bad key, not any value", inspection.problems[0]?.detail.includes(badKey) ?? false, true);
     check("no .env value reaches the answer", JSON.stringify(renderJson(inspection)).includes(TOKEN), false);
   }
 
@@ -221,7 +224,7 @@ try {
     const detail = findings[0]?.detail ?? "";
     check("a store that exists missing a required value is STORE_INCOMPLETE", codes(inspection.problems), ["STORE_INCOMPLETE"]);
     check("the finding is advisory", findings.map((entry) => entry.severity), ["warning"]);
-    check("it names the secret, what uses it, and where the copy belongs", detail.includes("ZAI_API_KEY") && detail.includes("provider zai") && detail.includes(secretStoreFile("local")), true);
+    check("it names the secret, what uses it, and where the copy belongs", detail.includes(storeIncompleteDetail("ZAI_API_KEY", "provider zai", secretStoreFile("local"))), true);
     check("a matching .env adds no ENV_STALE beside it", inspection.problems.some((entry) => entry.code === "ENV_STALE"), false);
   }
 
@@ -256,9 +259,9 @@ try {
     const payload = JSON.parse(outcome.output) as { problems: { code: string }[] };
     const payloadCodes = payload.problems.map((entry) => entry.code);
     check("the payload still reports all three", ["DECLARATION_MISSING", "ENV_STALE", "STORE_INCOMPLETE"].every((code) => payloadCodes.includes(code)), true);
-    check("the stale .env points at recover-env", outcome.output.includes("./clawforge recover-env"), true);
-    check("the missing declaration points at apply-config --dump", outcome.output.includes("./clawforge apply-config --dump"), true);
-    check("the incomplete store points at secrets --dump", outcome.output.includes("./clawforge secrets --dump"), true);
+    check("the stale .env points at recover-env", outcome.output.includes(commandLine(["recover-env"])), true);
+    check("the missing declaration points at apply-config --dump", outcome.output.includes(commandLine(["apply-config", "--dump"])), true);
+    check("the incomplete store points at secrets --dump", outcome.output.includes(commandLine(["secrets", "--dump"])), true);
     check("no .env value reaches the doctor output", outcome.output.includes(TOKEN), false);
     await writeFile(DECLARATION_PATH, DECLARATION);
   }
@@ -385,7 +388,7 @@ try {
     const moved = inspection.problems.find((entry) => entry.code === "IMAGE_TAG_MOVED");
     check("the moved finding names the tag", moved?.detail.includes(TAG) ?? false, true);
     check("and both digests — what it now resolves to, and what is actually running", [moved?.detail.includes(MOVED_DIGEST), moved?.detail.includes(RUNNING_DIGEST)], [true, true]);
-    check("and explains what a recreate would do", moved?.detail.includes("next recreate") ?? false, true);
+    check("and explains what a recreate would do", moved?.detail.includes(RECREATE_SWITCHES_IMAGES) ?? false, true);
     check("both findings are warnings, not blocking", inspection.problems.every((entry) => entry.severity === "warning"), true);
     // Restored for every case after this one.
     await writeFile(lockFile(), `${JSON.stringify(await currentComposition(stubContext({})), null, 2)}\n`, "utf8");
@@ -488,7 +491,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
         doctorError = caught instanceof Error ? caught.message : String(caught);
       }
       check("doctor fails (NOT_BOOTSTRAPPED is blocking)", doctorError !== "", true);
-      check("doctor's refusal names the code and the remedy", doctorError.includes("NOT_BOOTSTRAPPED") && doctorError.includes("./clawforge bootstrap"), true);
+      check("doctor's refusal names the code and the remedy", doctorError.includes("NOT_BOOTSTRAPPED") && doctorError.includes(commandLine(["bootstrap"])), true);
       check("doctor's refusal never carries the raw transport error", doctorError.includes("Permission denied"), false);
       const payload = JSON.parse(doctorOutput) as { problems: { code: string }[] };
       check("the JSON payload carries exactly the one finding", payload.problems.map((entry) => entry.code), ["NOT_BOOTSTRAPPED"]);

@@ -28,6 +28,9 @@ import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import { validate } from "#framework/integration/mcp/call.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { DATA_DIR_UNSET } from "#framework/core/env.ts";
+import { unknownArgumentMessage } from "#framework/core/command/errors.ts";
+import { NOT_RUNNING_CAUSE, RECOVERABLE_ONLY_FROM_RUNNING } from "#framework/commands/operate/recover-env/index.ts";
 import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
@@ -130,10 +133,10 @@ try {
     const { error } = await capture(() => runApp(recoverApp, ["recover-env"]));
     check(
       "the dispatcher reached recovery: the refusal is recovery's own, not the settings parser's",
-      error.includes("not running") || error.includes("could not be inspected"),
+      error.includes(NOT_RUNNING_CAUSE),
       true,
     );
-    check("the settings parser's OC_DATA_DIR refusal never appears", error.includes("OC_DATA_DIR is not set"), false);
+    check("the settings parser's OC_DATA_DIR refusal never appears", error.includes(DATA_DIR_UNSET), false);
     check("a refused recovery leaves .env byte-identical", await readFile(envFile(), "utf8"), seedWithoutDataDir);
   }
 
@@ -146,7 +149,7 @@ try {
       commands: { noop: { summary: "noop", run: async () => {} } },
     };
     const { error } = await capture(() => runApp(plainApp, ["noop"]));
-    check("a command without the recovery dispatch still dies on the missing fact", error.includes("OC_DATA_DIR is not set"), true);
+    check("a command without the recovery dispatch still dies on the missing fact", error.includes(DATA_DIR_UNSET), true);
   }
 
   // --- (1) --help answers before anything is built, from the shared declaration ----------
@@ -321,13 +324,13 @@ try {
 
     const adopted = responses.find((response) => response.id === 2);
     const adoptedText = adopted?.result?.content?.[0]?.text ?? "";
-    check("tools/call with adopt-runtime is not rejected as an unknown argument", adoptedText.includes("unknown argument: adopt-runtime"), false);
-    check("MCP recovery reaches its own missing-container refusal with OC_DATA_DIR absent", adoptedText.includes("connection facts are recoverable only from a running container"), true);
-    check("MCP recovery never reaches the settings parser's refusal", adoptedText.includes("OC_DATA_DIR is not set"), false);
+    check("tools/call with adopt-runtime is not rejected as an unknown argument", adoptedText.includes(unknownArgumentMessage("adopt-runtime")), false);
+    check("MCP recovery reaches its own missing-container refusal with OC_DATA_DIR absent", adoptedText.includes(RECOVERABLE_ONLY_FROM_RUNNING), true);
+    check("MCP recovery never reaches the settings parser's refusal", adoptedText.includes(DATA_DIR_UNSET), false);
 
     const rejected = responses.find((response) => response.id === 3);
     const rejectedText = rejected?.result?.content?.[0]?.text ?? "";
-    check("tools/call with an undeclared argument IS still rejected", rejectedText.includes("unknown argument: no-such"), true);
+    check("tools/call with an undeclared argument IS still rejected", rejectedText.includes(unknownArgumentMessage("no-such")), true);
 
     // A spec command's choices and required refusals come from the parser, in one voice
     // with the console — and as a bare tool error, without an envelope (the call never ran).
@@ -374,7 +377,8 @@ try {
     check("one reply for the call", responses.length, 1);
     const reply = responses[0]?.result as { isError?: boolean; content?: Array<{ text?: string }> } | undefined;
     checkTrue("a throw past the pipeline is a tool error reply, not a JSON-RPC error", reply?.isError === true);
-    checkTrue("the tool error carries the masked failure text", (reply?.content?.[0]?.text ?? "").includes("predicate exploded"));
+    const maskedFailure = "predicate exploded";
+    checkTrue("the tool error carries the masked failure text", (reply?.content?.[0]?.text ?? "").includes(maskedFailure));
   }
 } finally {
   if (previous !== undefined) useDeployment(previous);

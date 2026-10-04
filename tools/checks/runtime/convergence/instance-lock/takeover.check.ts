@@ -8,10 +8,16 @@
 
 import { hostname } from "node:os";
 import { machineName, localLiveness } from "#framework/runtime/lock/process-identity.ts";
-import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, guardedWith, STALE_AFTER_MS } from "#framework/runtime/lock/instance-lock.ts";
+import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, guardedWith, STALE_AFTER_MS, heartbeatAgeMs } from "#framework/runtime/lock/instance-lock.ts";
+import { breakLockAdvice, staleHeartbeatLine, TAKEOVER_LOST_LINE } from "#framework/runtime/lock/lock-claim.ts";
+import { mutationBusyMessage, foreignTakeoverBy } from "#framework/security/instance-mutation-guard.ts";
 import { stubContext, refused } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+
+function mutationGuardPath(ctx: Context): string {
+  return `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+}
 
 // --- stale locks are described, not stolen ------------------------------------------------------
 
@@ -26,7 +32,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 
   const message = await refused(() => takeLock(ctx, "apply", "op-new"));
   check("but it still refuses rather than taking it", message !== "", true);
-  check("saying it has not been refreshed", message.includes("not refreshed for"), true);
+  check("saying it has not been refreshed", message.includes(staleHeartbeatLine(heartbeatAgeMs(holder))), true);
   check("and that the reader is the one who decides", message.includes("--break-lock"), true);
   check("the dead holder is still in place", (await readLockHolder(ctx))?.operationId, "op-dead");
 
@@ -56,10 +62,11 @@ import { check, finish } from "#checks/kit/harness.ts";
   const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "dead", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
-  ctx.transport.listFiles = async () => { throw new Error("guard listing failed"); };
+  const listingFailure = "guard listing failed";
+  ctx.transport.listFiles = async () => { throw new Error(listingFailure); };
 
   const message = await refused(() => takeLock(ctx, "apply", "op-list-failure"));
-  check("a guard listing failure is reported, not treated as no claims", message.includes("guard listing failed"), true);
+  check("a guard listing failure is reported, not treated as no claims", message.includes(listingFailure), true);
   check("listing failure preserves the original guard owner", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "dead");
   check("listing failure removes its temporary claim", [...files.keys()].some((path) => path.includes(".claim-")), false);
 }
@@ -72,7 +79,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "live", pid: process.pid, machine, takenAt: new Date().toISOString() }));
 
   const message = await refused(() => takeLock(ctx, "apply", "op-must-wait", { breakLock: true }));
-  check("--break-lock cannot break a live mutation guard", message.includes("in progress"), true);
+  check("--break-lock cannot break a live mutation guard", message, mutationBusyMessage(guard, { generation: "live", pid: process.pid, machine, takenAt: "" }).message);
   check("a live guard is left untouched", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "live");
   check("a refused live guard creates no instance lock", dirs.has(lockPath(ctx)), false);
 }
@@ -85,7 +92,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "remote", pid: 99999999, machine: `${machine}-other`, takenAt: new Date().toISOString() }));
 
   const message = await refused(() => takeLock(ctx, "apply", "op-unverifiable", { breakLock: true }));
-  check("--break-lock keeps a guard owned by an unverifiable host", message.includes("in progress"), true);
+  check("--break-lock keeps a guard owned by an unverifiable host", message, mutationBusyMessage(guard, { generation: "remote", pid: 99999999, machine: `${machine}-other`, takenAt: "" }).message);
   check("an unverifiable guard is not replaced", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
   // The recovery path from here is --break-foreign-lock, not --break-lock — the refusal
   // names the exact flag, the recorded host id, and the runbook that says how to verify first.
@@ -129,7 +136,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   check("naming the confirmed host", entries[0]?.confirmedHost, `${machine}-other`);
   check("and the exact foreign owner it replaced", entries[0]?.foreignOwner, foreignOwner);
   check("recording when it happened", typeof entries[0]?.at === "string" && (entries[0].at as string).length > 0, true);
-  check("recording who did it", typeof entries[0]?.by === "string" && (entries[0].by as string).includes(`@${machine} `), true);
+  check("recording who did it", typeof entries[0]?.by === "string" && (entries[0].by as string).includes(foreignTakeoverBy()), true);
 
   await held.release();
 }
@@ -148,7 +155,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   } finally {
     process.kill = originalKill;
   }
-  check("a process probe error does not prove the owner is dead", message.includes("in progress"), true);
+  check("a process probe error does not prove the owner is dead", message, mutationBusyMessage(guard, { generation: "uncertain", pid: 99999999, machine, takenAt: "" }).message);
   check("a process probe error preserves the guard", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain");
 }
 
@@ -170,7 +177,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   } finally {
     process.kill = originalKill;
   }
-  check("--break-foreign-lock naming this machine does not rescue a local probe error", message.includes("in progress"), true);
+  check("--break-foreign-lock naming this machine does not rescue a local probe error", message, mutationBusyMessage(guard, { generation: "uncertain-local", pid: 99999999, machine, takenAt: "" }).message);
   check("the guard is preserved", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain-local");
 }
 
@@ -242,7 +249,8 @@ import { check, finish } from "#checks/kit/harness.ts";
   await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {})
     .catch((error: Error) => { fastError = error; });
   check("another takeover cannot enter while the first owns the mutation guard", fastError !== undefined, true);
-  check("the competing caller is told the lock change is in progress", fastError?.message.includes("in progress"), true);
+  check("the competing caller is told the lock change is in progress", fastError?.message,
+    mutationBusyMessage(mutationGuardPath(ctx), { generation: "", pid: process.pid, machine: machineName(), takenAt: "" }).message);
 
   releaseStalled();
   await stalled;
@@ -292,11 +300,12 @@ import { check, finish } from "#checks/kit/harness.ts";
   await displacedRead;
 
   const thirdCaller = await refused(() => takeLock(ctx, "apply", "op-third"));
-  check("a third caller is refused while the takeover owns the mutation guard", thirdCaller.includes("in progress"), true);
+  check("a third caller is refused while the takeover owns the mutation guard", thirdCaller,
+    mutationBusyMessage(mutationGuardPath(ctx), { generation: "", pid: process.pid, machine: machineName(), takenAt: "" }).message);
   releaseRead();
   await takeover;
 
-  check("the generation mismatch refuses takeover", takeoverError?.message.includes("already took it over"), true);
+  check("the generation mismatch refuses takeover", takeoverError?.message.includes(TAKEOVER_LOST_LINE), true);
   check("the live lock is restored before the guard is released", dirs.has(lockPath(ctx)), true);
   check("the restored lock holder remains readable", (await readLockHolder(ctx))?.operationId, "op-live");
   check("a refused takeover leaves no displaced directory", [...dirs].some((path) => path.includes(".stale-")), false);
@@ -327,7 +336,8 @@ import { check, finish } from "#checks/kit/harness.ts";
   let takeoverError: Error | undefined;
   await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {})
     .catch((error: Error) => { takeoverError = error; });
-  check("a takeover cannot race a release mutation", takeoverError?.message.includes("in progress"), true);
+  check("a takeover cannot race a release mutation", takeoverError?.message,
+    mutationBusyMessage(mutationGuardPath(ctx), { generation: "", pid: process.pid, machine: machineName(), takenAt: "" }).message);
   releaseOwnership();
   await releasing;
   check("the release removes its own lock after the guard clears", dirs.has(lockPath(ctx)), false);
@@ -359,9 +369,9 @@ import { check, finish } from "#checks/kit/harness.ts";
 
   const refusedOutcome = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body));
   check("no takeover: a stale lock is refused, not taken", refusedOutcome.startsWith("another operation"), true);
-  check("no takeover: the refusal advises --break-lock", refusedOutcome.includes("take it over with --break-lock"), true);
+  check("no takeover: the refusal advises --break-lock", refusedOutcome.includes(breakLockAdvice(true)), true);
   const unsupported = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body, { breakLockSupported: false }));
-  check("breakLockSupported: false never advises a --break-lock the command refuses", unsupported.includes("does not accept --break-lock"), true);
+  check("breakLockSupported: false never advises a --break-lock the command refuses", unsupported.includes(breakLockAdvice(false)), true);
   check("and it still refuses the stale lock", unsupported.startsWith("another operation"), true);
   const taken = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: true }, body));
   check("breakLock: takes the stale lock and runs", taken.startsWith("ran"), true);

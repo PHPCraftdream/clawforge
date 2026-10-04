@@ -399,11 +399,15 @@ export const PLAN = commandBody({
  *  fixtures): the same declaration, parsed and run on a context they already hold. */
 export const plan = (ctx: Context, args: string[]): Promise<void> => runOnContext(PLAN, ctx, args);
 
+export function planSummaryLine(total: number, executable: number): string {
+  return `${total} step(s) — ${executable} that ${commandLine("apply")} will run`;
+}
+
 /** The step list `plan` and `apply --dry-run` both print; the executable count is the filter
  *  `apply` runs. */
 export function printPlanActions(actions: readonly PlanAction[]): void {
   const executable = actions.filter((action) => action.advisory !== true);
-  log(`${actions.length} step(s) — ${executable.length} that ${commandLine("apply")} will run`);
+  log(planSummaryLine(actions.length, executable.length));
   actions.forEach((action, index) => {
     info(`${index + 1}. ${action.summary}`);
     info(`     ${action.advisory === true ? "(you)" : action.command}   because ${action.because.join(", ")}`);

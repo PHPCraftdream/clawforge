@@ -36,6 +36,25 @@ function isStale(reference: string | undefined, intervalMinutes: number | undefi
   return Date.now() - last > staleThresholdMinutes(intervalMinutes) * 60_000;
 }
 
+export const NO_CHECK_YET = "watch: no check has run yet";
+export const NO_SUCCESSFUL_CYCLE_YET = "watch: no successful check cycle yet";
+export const LAST_ERROR_PREFIX = "last error: ";
+
+export function watchLevelLine(level: string): string {
+  return `watch: ${level}`;
+}
+
+export function staleRunLine(lastRunAt: string, thresholdMinutes: number): string {
+  return (
+    `last run was ${lastRunAt} — over ${thresholdMinutes} minutes ago; the scheduled check may not be ` +
+    `running (see ${commandLine(["watch", "install"])}, or ${commandLine(["watch", "test"])} to check delivery)`
+  );
+}
+
+export function alertPendingLine(since: string, transition: string): string {
+  return `alert pending since ${since}: ${transition} has not been delivered yet`;
+}
+
 async function runStatus(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMENTS>): Promise<void> {
   const jsonOnly = values.json === true;
 
@@ -80,32 +99,29 @@ async function runStatus(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMEN
     return;
   }
   if (lastRunAt === undefined) {
-    log("watch: no check has run yet");
+    log(NO_CHECK_YET);
     info(`run ${commandLine(["watch", "check"])}, or schedule it with ${commandLine(["watch", "install"])}`);
   } else if (state?.level === undefined) {
-    log("watch: no successful check cycle yet");
+    log(NO_SUCCESSFUL_CYCLE_YET);
     info(`last run      ${lastRunAt}`);
   } else {
-    log(`watch: ${state.level}`);
+    log(watchLevelLine(state.level));
     if (state.checkedAt !== undefined) info(`last checked  ${state.checkedAt}`);
     if (state.changedAt !== undefined) info(`last changed  ${state.changedAt}`);
     if (state.lastRunAt !== undefined && state.lastRunAt !== state.checkedAt) info(`last run      ${state.lastRunAt}`);
     for (const reason of state.reasons ?? []) info(`${reason.code}  ${reason.detail}`);
   }
   if (stale) {
-    warn(
-      `last run was ${lastRunAt} — over ${thresholdMinutes} minutes ago; the scheduled check may not be ` +
-        `running (see ${commandLine(["watch", "install"])}, or ${commandLine(["watch", "test"])} to check delivery)`,
-    );
+    warn(staleRunLine(lastRunAt ?? "", thresholdMinutes));
   }
-  if (state?.lastError !== undefined) warn(`last error: ${state.lastError}`);
+  if (state?.lastError !== undefined) warn(`${LAST_ERROR_PREFIX}${state.lastError}`);
   if (state?.alertPending !== undefined) {
     const pending = state.alertPending;
     // fromCodes/toCodes are absent on a state file predating this field, or for a pure
     // level transition from "ok" (which never has reasons) — codeDiff then answers empty on
     // both sides, and describeTransition falls back to the plain "from → to" it always did.
     const { added, cleared } = codeDiff(pending.fromCodes ?? [], pending.toCodes ?? []);
-    warn(`alert pending since ${pending.since}: ${describeTransition(pending.from, pending.to, added, cleared)} has not been delivered yet`);
+    warn(alertPendingLine(pending.since, describeTransition(pending.from, pending.to, added, cleared)));
   }
   info(`webhook: ${webhookConfigured ? "configured" : "not configured"}`);
   info(`heartbeat: ${heartbeatConfigured ? "configured" : "not configured"}${state?.heartbeatAt ? `, last ping ${state.heartbeatAt}` : ""}`);

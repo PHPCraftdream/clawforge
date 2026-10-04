@@ -17,7 +17,10 @@ import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { SAFE_DESTROY_SCRIPT } from "#framework/commands/lifecycle/instance/destroy.ts";
+import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, confirmNameMismatch } from "#framework/commands/lifecycle/instance/destroy.ts";
+import { SUDO_PASSWORD_REFUSAL } from "#framework/runtime/datadir.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { humanSize } from "#framework/core/io/size.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { ArgumentError } from "#framework/core/command/index.ts";
@@ -131,10 +134,10 @@ async function output(body: () => Promise<void>): Promise<string> {
   check("dry run leaves every target in place", [dirs.has(DATA_DIR), dirs.has(BACKUP_DIR), dirs.has(SNAPSHOT_DIR)], [true, true, true]);
   check("dry run never calls runtime.stop", order.some((entry) => entry.startsWith("stop:")), false);
   check("dry run still shows the containers plan", order.includes("showStatus"), true);
-  check("dry run says so and names --yes/--confirm-name", text.includes("dry run") && text.includes("--confirm-name"), true);
+  check("dry run says so and names --yes/--confirm-name", text.includes(DRY_RUN_REAL_RUN_HINT), true);
   check("dry run names each target path", [DATA_DIR, BACKUP_DIR, SNAPSHOT_DIR].every((path) => text.includes(path)), true);
-  check("dry run sizes read as human units, not raw KiB", text.includes("5.0 GiB"), true);
-  check("dry run never prints the raw du count", text.includes("5242880 KiB"), false);
+  check("dry run sizes read as human units, not raw KiB", text.includes(humanSize(5 * 1024 ** 3)), true);
+  check("dry run never prints the raw du count", text.includes("5242880"), false);
 }
 
 {
@@ -156,7 +159,7 @@ async function output(body: () => Promise<void>): Promise<string> {
 {
   const { ctx, dirs } = destroyContext();
   const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", "not-this-deployment"]));
-  check("a wrong --confirm-name is refused", message.includes("does not match"), true);
+  check("a wrong --confirm-name is refused", message.includes(confirmNameMismatch("not-this-deployment")), true);
   check("nothing was removed", dirs.has(DATA_DIR), true);
 }
 
@@ -213,7 +216,7 @@ for (const [flag, envName, path] of [
   const { ctx: transportCtx } = destroyContext([linkedParent], new Set(), new Map([[linkedParent, "/outside/backups"]]));
   const linkedCtx = { ...transportCtx, settings: ctx.settings } as Context;
   const message = await refused(() => openclawCommands.destroy.run(linkedCtx, ["--backups"]));
-  check("refuses a path reached through a symlinked parent", message.includes("resolves through a symlink"), true);
+  check("refuses a path reached through a symlinked parent", message.includes("resolves through a symlink"), true); // the script's own diagnostic, quoted verbatim
 }
 
 // --- real run: removes exactly the flagged parts, in order, under the real lock -------------
@@ -274,7 +277,7 @@ for (const [name, setup, expected] of [
     uid: 1001, unwritable: new Set([DATA_DIR]), noSudo: true,
   });
   const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
-  check("a protected target without passwordless sudo is refused", message.includes("sudo asks for a password"), true);
+  check("a protected target without passwordless sudo is refused", message.includes(SUDO_PASSWORD_REFUSAL), true);
   check("a protected target without sudo is never verified or removed", order.some((entry) => entry.includes(`:${DATA_DIR}`)), false);
   check("a protected target without sudo preserves the target", dirs.has(DATA_DIR), true);
 }
@@ -293,7 +296,7 @@ for (const [name, setup, expected] of [
     uid: 1001, unsearchable: new Set(["/srv/destroy-check"]), noSudo: true,
   });
   const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
-  check("a protected parent without passwordless sudo is refused", message.includes("sudo asks for a password"), true);
+  check("a protected parent without passwordless sudo is refused", message.includes(SUDO_PASSWORD_REFUSAL), true);
   check("a protected parent without sudo is never verified or removed", order.some((entry) => entry.includes(`:${DATA_DIR}`)), false);
   check("a protected parent without sudo preserves the target", dirs.has(DATA_DIR), true);
 }
@@ -389,7 +392,7 @@ if (process.platform === "linux") {
   const held = await takeLock(ctx, "unrelated", "op-holder");
   try {
     const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
-    check("a real run refuses while another operation holds the lock", message.includes("operations op-holder"), true);
+    check("a real run refuses while another operation holds the lock", message.includes(commandLine(["operations", "op-holder"])), true);
   } finally {
     await held.release();
   }
@@ -401,7 +404,7 @@ if (process.platform === "linux") {
 {
   const { ctx, dirs, order } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
   const text = await output(() => openclawCommands.destroy.run(ctx, ["--data"]));
-  check("never bootstrapped dry run says nothing to destroy", text.includes("nothing to destroy") && text.includes("dry run"), true);
+  check("never bootstrapped dry run says nothing to destroy", text.includes(NEVER_BOOTSTRAPPED) && text.includes(DRY_RUN_NOTHING_TO_REMOVE), true);
   check("never bootstrapped dry run does not show a container plan", order.includes("showStatus"), false);
   check("never bootstrapped dry run creates nothing", [...dirs], []);
 }
@@ -409,7 +412,7 @@ if (process.platform === "linux") {
 {
   const { ctx, dirs, order } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
   const text = await output(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
-  check("never bootstrapped real run says nothing to destroy", text.includes("nothing to destroy"), true);
+  check("never bootstrapped real run says nothing to destroy", text.includes(NEVER_BOOTSTRAPPED), true);
   check("never bootstrapped real run stops and removes nothing", order.filter((e) => e.startsWith("stop:") || e.startsWith("rm:")), []);
   check("never bootstrapped real run creates no lock directory", [...dirs], []);
 }
@@ -419,7 +422,7 @@ if (process.platform === "linux") {
     const { ctx } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
     await openclawCommands.destroy.run(ctx, ["--yes", "--confirm-name", "not-this-deployment"]);
   });
-  check("never bootstrapped still needs the right --confirm-name", message.includes("does not match"), true);
+  check("never bootstrapped still needs the right --confirm-name", message.includes(confirmNameMismatch("not-this-deployment")), true);
 }
 
 {
@@ -443,9 +446,9 @@ if (process.platform === "linux") {
   const text = await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots"]));
   check("absent dry run needs no sudo and runs no target script", order, []);
   check("absent dry run reports the directories absent", text.includes(`${BACKUP_DIR}`) && text.includes("absent"), true);
-  check("absent dry run says there is nothing to remove", text.includes("nothing to remove"), true);
-  check("absent directories are not listed as 'would remove'", text.includes("would remove"), false);
-  check("absent dry run does not invite a real run", text.includes("--yes") || text.includes("for a real run"), false);
+  check("absent dry run says there is nothing to remove", text.includes(DRY_RUN_NOTHING_TO_REMOVE), true);
+  check("absent directories are not listed as 'would remove'", text.includes(WOULD_REMOVE), false);
+  check("absent dry run does not invite a real run", text.includes("--yes") || text.includes(DRY_RUN_REAL_RUN_HINT), false);
 }
 
 {
@@ -453,7 +456,7 @@ if (process.platform === "linux") {
   const { ctx, order } = destroyContext([BACKUP_DIR], new Set(), new Map(), { uid: 1001, noSudo: true, neverBootstrapped: true });
   const text = await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots"]));
   check("present target is still verified in the dry run", order, [`plain:verify:${BACKUP_DIR}`]);
-  check("present target keeps the real-run hint", text.includes("for a real run"), true);
+  check("present target keeps the real-run hint", text.includes(DRY_RUN_REAL_RUN_HINT), true);
 }
 
 // --- --yes + --confirm-name is a prepare refusal: before any contact or the lock ------------

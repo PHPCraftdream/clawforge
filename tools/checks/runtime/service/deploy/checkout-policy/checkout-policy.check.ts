@@ -15,12 +15,13 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deploy, frameworkSourceRoot } from "#framework/commands/management/deploy/index.ts";
+import { INSTALLED_PACKAGE_MODE } from "#framework/commands/management/deploy/arguments.ts";
 import { useComposeProjectOverride, useApplicationRecipesDir } from "#framework/runtime/deployment.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-import { ctx, probeReply, isRootProbe } from "#checks/runtime/service/deploy/fixture.ts";
+import { ctx, probeReply, isRootProbe, FIXTURE_APP } from "#checks/runtime/service/deploy/fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const calls: { command: string; args: string[] }[] = [];
@@ -60,7 +61,7 @@ check("no secret path appears outside an --exclude argument", leaked, []);
 // --- the deployment travels by name ------------------------------------------
 
 const bootstrapCall = flat.find((line) => line.includes("bootstrap"));
-check("the remote bootstrap names this deployment", bootstrapCall?.includes("example app"), true);
+check("the remote bootstrap names this deployment", bootstrapCall?.includes(FIXTURE_APP), true);
 
 // --- the remote command is well formed ---------------------------------------
 
@@ -118,7 +119,7 @@ check("at least one ssh call was made", sshCalls.length > 0, true);
       refusal = (error as Error).message;
     }
     check("deploy refuses to mirror a tree that is not a checkout", refusal !== "", true);
-    check("the refusal says which mode it is in", refusal.includes("installed package"), true);
+    check("the refusal says which mode it is in", refusal.includes(INSTALLED_PACKAGE_MODE), true);
     check("the refusal offers a way forward", refusal.includes("bootstrap"), true);
 
     // The gate script is the evidence, so planting one flips the answer — the predicate
@@ -164,7 +165,7 @@ check("at least one ssh call was made", sshCalls.length > 0, true);
     (call) => call.command === "ssh" && !call.args.includes("BatchMode=yes"),
   );
   const overrideBootstrap = overrideScriptCalls.find((call) => call.args.some((arg) => arg.includes("bootstrap")))?.args.at(-1) ?? "";
-  check("the remote --app argument uses the deployment's own directory name", overrideBootstrap.includes("example app"), true);
+  check("the remote --app argument uses the deployment's own directory name", overrideBootstrap.includes(FIXTURE_APP), true);
   check("never the compose-project override", overrideBootstrap.includes("example_app_compose_project"), false);
 }
 
@@ -174,7 +175,8 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
 // --- an application recipe root follows the declaration --------------------
 
 {
-  useApplicationRecipesDir("custom recipes");
+  const recipesDir = "custom recipes";
+  useApplicationRecipesDir(recipesDir);
   const customCalls: { command: string; args: string[] }[] = [];
   const customCtx = {
     ...ctx,
@@ -193,12 +195,14 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
     useApplicationRecipesDir(undefined);
   }
 
-  const customRsync = customCalls.find((call) => call.command === "rsync" && call.args.some((arg) => arg.includes("custom recipes")));
+  const customRsync = customCalls.find((call) => call.command === "rsync" && call.args.some((arg) => arg.includes(recipesDir)));
   const customRemote = customRsync?.args.at(-1) ?? "";
-  check("relative recipesDir is sent to its matching remote directory", customRemote.includes("/apps/example app/custom recipes/"), true);
-  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("# clawforge-child-prepare") && call.args.at(-1)?.includes("custom recipes"));
-  check("relative recipesDir is created under the remote app", customMkdir?.args.at(-1)?.includes("custom recipes"), true);
-  check("relative recipesDir does not also write the default root", customRemote.includes("/apps/example app/recipes/"), false);
+  const expectedRemoteRecipes = `/apps/${FIXTURE_APP}/${recipesDir}/`;
+  const defaultRemoteRecipes = `/apps/${FIXTURE_APP}/recipes/`;
+  check("relative recipesDir is sent to its matching remote directory", customRemote.includes(expectedRemoteRecipes), true);
+  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("# clawforge-child-prepare") && call.args.at(-1)?.includes(recipesDir));
+  check("relative recipesDir is created under the remote app", customMkdir?.args.at(-1)?.includes(recipesDir), true);
+  check("relative recipesDir does not also write the default root", customRemote.includes(defaultRemoteRecipes), false);
 }
 
 finish("deploy checkout-policy");

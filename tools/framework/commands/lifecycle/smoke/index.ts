@@ -38,13 +38,23 @@ export const SMOKE_ARGUMENTS = [
 // Hard ceiling on smoke's agent round-trip, enforced inside the container.
 const AGENT_DEADLINE_S = 120;
 
+/** A probe answered with a status a healthy gateway never gives. */
+export function probeRefusal(endpoint: string, code: number): string {
+  return `${endpoint} returned ${code}`;
+}
+
+/** The provider-missing hint the agent check adds when the live config really has none. */
+export function providerMissingDetail(error: unknown): string {
+  return `no model provider is configured — run ${commandLine("configure-provider")} (${describeError(error)})`;
+}
+
 export const checks: Check[] = [
   {
     name: "gateway answers all HTTP probes",
     run: async (ctx) => {
       for (const endpoint of ["healthz", "startupz", "readyz"]) {
         const code = await reach(`probe ${endpoint}`, () => ctx.runtime.probe(endpoint));
-        expect(code === 200, `${endpoint} returned ${code}`);
+        expect(code === 200, probeRefusal(endpoint, code));
       }
     },
   },
@@ -79,7 +89,7 @@ export const checks: Check[] = [
         // configures none (best effort: noProviderConfigured() never replaces a real failure
         // with an unrelated guess).
         if (!(await noProviderConfigured(ctx))) throw error;
-        const message = `no model provider is configured — run ${commandLine("configure-provider")} (${describeError(error)})`;
+        const message = providerMissingDetail(error);
         throw error instanceof CouldNotCheck ? new CouldNotCheck(message) : new Error(message);
       }
     },
@@ -223,6 +233,16 @@ export async function runSmokeSuite(ctx: Context, selected: Check[], onResult: (
   return { results, ...counts };
 }
 
+/** The run's refusal when any check went unanswered: could-not-check fails exactly as a
+ *  failure does. Shared with the checks that prove the wording. */
+export function smokeDidNotPassMessage(unanswered: number, failed: number, couldNotCheck: number, names: readonly string[]): string {
+  return `${unanswered} smoke check(s) did not pass (${failed} failed, ${couldNotCheck} could not be checked): ${names.join(", ")}`;
+}
+
+export function smokePassedMessage(passed: number, notChecked: number): string {
+  return `all ${passed} checks passed${notChecked > 0 ? `, ${notChecked} not checked` : ""}`;
+}
+
 /** Prints what the run concluded, and refuses to call a run with an unanswered check
  *  successful: could-not-check fails the run exactly as a failed check does. */
 export function report(summary: SmokeSummary, quick: boolean): void {
@@ -230,11 +250,9 @@ export function report(summary: SmokeSummary, quick: boolean): void {
 
   const unanswered = summary.results.filter((result) => result.status === "failed" || result.status === "could-not-check");
   if (unanswered.length > 0) {
-    throw new Error(
-      `${unanswered.length} smoke check(s) did not pass (${summary.failed} failed, ${summary.couldNotCheck} could not be checked): ${unanswered.map((result) => result.name).join(", ")}`,
-    );
+    throw new Error(smokeDidNotPassMessage(unanswered.length, summary.failed, summary.couldNotCheck, unanswered.map((result) => result.name)));
   }
-  log(`all ${summary.passed} checks passed${summary.notChecked > 0 ? `, ${summary.notChecked} not checked` : ""}`);
+  log(smokePassedMessage(summary.passed, summary.notChecked));
 }
 
 export const SMOKE = commandBody({

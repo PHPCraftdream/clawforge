@@ -133,6 +133,8 @@ async function detectWatchTransition(level: WatchLevel, reasons: WatchReason[]):
   return { previous, previousLevel, previousReasons, added, cleared, transitioned: isTransition(previousLevel, level, added, cleared) };
 }
 
+export const ALERT_NOT_DELIVERED = "was not delivered";
+
 /** Sends the transition webhook alert, when one applies. On delivery failure, persists a
  *  retry marker (level/reasons untouched, so the next cycle retries the same change) and
  *  dies — this cycle must not go on to report a change it never actually announced. */
@@ -165,7 +167,7 @@ async function deliverTransitionAlert(
       },
     });
     die(
-      `watch: ${summary(level)}, but the alert for ${describeTransition(previousLevel, level, added, cleared)} was not delivered: ` +
+      `watch: ${summary(level)}, but the alert for ${describeTransition(previousLevel, level, added, cleared)} ${ALERT_NOT_DELIVERED}: ` +
         `${detail}\nstate was left at "${previousLevel}" so this is retried next cycle`,
     );
   }

@@ -19,6 +19,9 @@ export const PINNED_WITH_TAG = `${SHARED_TAG}@sha256:${"2".repeat(64)}`;
 // without guessing.
 export const PINNED_NO_TAG = `${SHARED_TAG.split(":")[0]}@sha256:${"2".repeat(64)}`;
 
+/** One recorded runtime call, shared with the checks that assert the call log. */
+export const loggedCall = (name: string, arg: string): string => `${name} ${arg}`;
+
 export type Scenario = "success" | "health-fail" | "exit78" | "doctor-fail";
 
 /** A backup/restore-compatible POSIX stub, permissive by default (matching the proven shape
@@ -88,7 +91,7 @@ export function makeUpgradeCtx(scenario: Scenario, options: { image?: string; ru
         return scenario === "health-fail" ? 1 : 0;
       },
       async resolveImageDigest(reference: string): Promise<string | undefined> {
-        calls.push(`resolveImageDigest ${reference}`);
+        calls.push(loggedCall("resolveImageDigest", reference));
         // A digest reference is verified at the "registry" like buildx imagetools inspect
         // would: known digests answer themselves, anything else (a typo) is unknown.
         if (reference.includes("@sha256:")) {
@@ -97,7 +100,7 @@ export function makeUpgradeCtx(scenario: Scenario, options: { image?: string; ru
         return reference === SHARED_TAG ? TARGET_DIGEST : undefined;
       },
       async recreateWithImage(reference: string, onMutationStart?: () => void): Promise<void> {
-        calls.push(`recreateWithImage ${reference}`);
+        calls.push(loggedCall("recreateWithImage", reference));
         onMutationStart?.();
         runningDigest = reference;
       },

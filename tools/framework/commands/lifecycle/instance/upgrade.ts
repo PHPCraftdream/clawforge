@@ -17,6 +17,17 @@ import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
+export const UPGRADE_AVAILABLE = "upgrade available";
+
+export function pinAdviceLine(pinnedReference: string): string {
+  return `5. on success: pin OPENCLAW_IMAGE to ${pinnedReference} in .env`;
+}
+
+export function settingsImageRefusal(value: string): string {
+  return `OPENCLAW_IMAGE is "${value}" — not a valid image reference ` +
+    "(expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]).";
+}
+
 export const UPGRADE_ARGUMENTS = [
   {
     name: "image",
@@ -70,10 +81,7 @@ async function resolveUpgradeTarget(
   if (channelRef === undefined) {
     const declared = tryParse(ctx.settings.image);
     if (declared === undefined) {
-      die(
-        `OPENCLAW_IMAGE is "${ctx.settings.image}" — not a valid image reference ` +
-          "(expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]).",
-      );
+      die(settingsImageRefusal(ctx.settings.image));
     }
     if (declared.digest !== undefined && declared.tag === undefined) {
       die(
@@ -306,12 +314,12 @@ export const UPGRADE = commandBody({
     if (upToDate) {
       log(target.channel === undefined ? "up to date — nothing to upgrade" : `up to date — ${target.channel} still resolves to what is running`);
     } else {
-      log(`upgrade available: ${previousDigest} -> ${target.targetDigest}`);
+      log(`${UPGRADE_AVAILABLE}: ${previousDigest} -> ${target.targetDigest}`);
       info("1. pre-upgrade backup (native, i.e. hot, if the image supports it — else a stopped full backup)");
       info(`2. recreate the gateway on ${pinnedReference}`);
       info("3. wait for /startupz then /readyz, then run openclaw doctor --lint");
       info("4. on any failure: recreate on the previous digest; also restore the backup if migrations ran (exit 78)");
-      info(`5. on success: pin OPENCLAW_IMAGE to ${pinnedReference} in .env`);
+      info(pinAdviceLine(pinnedReference));
     }
     info("--dry-run changes nothing, and takes no lock");
     return;

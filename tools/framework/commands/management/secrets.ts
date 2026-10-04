@@ -229,6 +229,10 @@ function renderRecoveredStore(entries: SecretRequirement[], values: Record<strin
  *  target's filesystem at all, so they're read from the running container's own environment
  *  instead. Unrecoverable names are left blank and named in the report; never refuses on
  *  partial recovery, since a partial store beats none. */
+export function storeExistsRefusal(path: string): string {
+  return `${path} already exists — pass --force to overwrite it with recovered values`;
+}
+
 async function dumpToStore(ctx: Context, storeName: string, force: boolean): Promise<void> {
   const path = secretStoreFile(storeName);
 
@@ -237,7 +241,7 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
     () => false,
   );
   if (exists && !force) {
-    die(`${path} already exists — pass --force to overwrite it with recovered values`);
+    die(storeExistsRefusal(path));
   }
 
   const needed = await requirements(ctx);

@@ -47,15 +47,38 @@ function reportUnrecoverable(unrecoverable: { name: string }[]): void {
 /** Names the facts both sides carry with different values and the two directions out — the
  *  decision this command declines to make on the operator's behalf. Names only: the values
  *  are printed when a direction is chosen and a write reports what it wrote. */
+export const NO_DIRECTION_NOTE = "authoritative is the operator's call — nothing is written over them without a direction:";
+
 function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
   if (diverged.length === 0) return;
   log(
     `${diverged.length} connection fact(s) differ from the running container, and which side is ` +
-      "authoritative is the operator's call — nothing is written over them without a direction:",
+      NO_DIRECTION_NOTE,
   );
   for (const fact of diverged) info(fact.name);
   info(`keep the container's values: ${commandLine(["recover-env", "--adopt-runtime"])}`);
   info(`keep .env's values (the edit is the intent): ${commandLine("up")} recreates the container from the file as it now reads`);
+}
+
+export const NOTHING_TO_RECOVER = "nothing to recover — every connection fact that could be recovered already matches the running instance";
+
+export function dryRunHeader(count: number, total: number, path: string): string {
+  return `dry run — ${count} of ${total} connection fact(s) would be written to ${path}`;
+}
+
+export function cannotIntrospectRefusal(description: string): string {
+  return `${description} cannot introspect its running container, so the connection facts cannot be recovered here`;
+}
+
+export const NOT_RUNNING_CAUSE = "is not running, or its container could not be inspected";
+export const RECOVERABLE_ONLY_FROM_RUNNING = "facts are recoverable only from a running container";
+
+export function notRunningRefusal(description: string): string {
+  return (
+    `${description} ${NOT_RUNNING_CAUSE} — the connection ` +
+    `${RECOVERABLE_ONLY_FROM_RUNNING}, since that is where compose's resolved ` +
+    `values live. Start it and try again: ${commandLine("up")}`
+  );
 }
 
 /** The one argument grammar, parsed for the apply step's entry point (the pipeline parses
@@ -70,13 +93,17 @@ function parseRecoveryArgs(args: string[]): { dryRun: boolean; adoptRuntime: boo
 /** A wholly absent .env is the command's one stated limit: reaching the target to inspect
  *  its container already requires the .env that says which target and transport to use.
  *  The pipeline's prepare stage refuses here, before any contact. */
+export function missingEnvRefusal(path: string): string {
+  return (
+    `${path} does not exist, and recovery cannot create it: reaching the target to inspect ` +
+    "its container already requires the .env that says which target and transport to use — " +
+    `a missing .env has nothing to recover against. Run ${commandLine("bootstrap")} to create one.`
+  );
+}
+
 function refuseWithoutEnvFile(raw: string | undefined, path: string): string {
   if (raw !== undefined) return raw;
-  die(
-    `${path} does not exist, and recovery cannot create it: reaching the target to inspect ` +
-      "its container already requires the .env that says which target and transport to use — " +
-      `a missing .env has nothing to recover against. Run ${commandLine("bootstrap")} to create one.`,
-  );
+  die(missingEnvRefusal(path));
 }
 
 /** The merge both entry points share: the running container's facts classified against the
@@ -108,7 +135,7 @@ async function mergeRecoveredFacts(
       emit(`${JSON.stringify({ ok: true, changed: false, path, written: [], diverged: [], unrecoverable: unrecoverable.map((fact) => fact.name) }, null, 2)}\n`);
       return;
     }
-    log(`nothing to recover — every connection fact that could be recovered already matches the running instance`);
+    log(NOTHING_TO_RECOVER);
     reportUnrecoverable(unrecoverable);
     return;
   }
@@ -132,7 +159,7 @@ async function mergeRecoveredFacts(
       );
       return;
     }
-    log(`dry run — ${writable.length} of ${CONNECTION_FACTS.length} connection fact(s) would be written to ${path}`);
+    log(dryRunHeader(writable.length, CONNECTION_FACTS.length, path));
     for (const fact of writable) info(`${fact.name}=${fact.value}`);
     if (!adoptRuntime) reportDirectionChoice(diverged);
     reportUnrecoverable(unrecoverable);
@@ -196,16 +223,12 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
   refuseWithoutEnvFile(raw, path);
 
   if (typeof ctx.runtime.runningConnectionFacts !== "function") {
-    die(`${ctx.runtime.description} cannot introspect its running container, so the connection facts cannot be recovered here`);
+    die(cannotIntrospectRefusal(ctx.runtime.description));
   }
 
   const facts = await ctx.runtime.runningConnectionFacts();
   if (facts === undefined) {
-    die(
-      `${ctx.runtime.description} is not running, or its container could not be inspected — the connection ` +
-        "facts are recoverable only from a running container, since that is where compose's resolved " +
-        `values live. Start it and try again: ${commandLine("up")}`,
-    );
+    die(notRunningRefusal(ctx.runtime.description));
   }
 
   await mergeRecoveredFacts(facts, path, raw as string, dryRun, adoptRuntime, jsonOnly);

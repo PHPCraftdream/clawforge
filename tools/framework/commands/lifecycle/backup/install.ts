@@ -33,6 +33,7 @@ import { BACKUP_APPLY_ARGUMENT } from "./prune-replaced.ts";
 
 const JOB = "backup";
 const DEFAULT_BACKUP_INTERVAL = "1d";
+export const NOTHING_INSTALLED = "no backup schedule was installed for this deployment — nothing to remove";
 
 /** The slice of `backup`'s declaration `install`'s own argv actually uses. `--apply` is the
  *  shared BACKUP_APPLY_ARGUMENT (prune-replaced.ts), not a second declaration of the same
@@ -127,7 +128,7 @@ export async function backupUninstall(ctx: Context, values: UninstallValues): Pr
 
   await guardedWith(ctx, "backup uninstall --apply", takeover, async () => {
     if (!await updateCrontab(ctx, JOB, identity, undefined, { name, invocation })) {
-      info("no backup schedule was installed for this deployment — nothing to remove");
+      info(NOTHING_INSTALLED);
       return;
     }
     log("removed");

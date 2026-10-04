@@ -14,7 +14,8 @@
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { recoverEnv } from "#framework/commands/operate/recover-env/index.ts";
+import { recoverEnv, NOTHING_TO_RECOVER, NO_DIRECTION_NOTE, dryRunHeader, missingEnvRefusal, cannotIntrospectRefusal, notRunningRefusal } from "#framework/commands/operate/recover-env/index.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment, deploymentDir, deploymentName, envFile } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -118,7 +119,7 @@ try {
     facts = { dataDir: "/new/data", port: "18790", composeProject: "new-project", image: "ghcr.io/openclaw/openclaw:new-tag" };
     const { output } = await capture(() => recoverEnv(ctx, ["--dry-run", "--adopt-runtime"]));
     check("a dry run leaves the file byte-identical", await readFile(envFile(), "utf8"), SEED);
-    check("the dry run says it is one", output.includes("dry run"), true);
+    check("the dry run says it is one", output.includes(dryRunHeader(4, 4, envFile())), true);
     check(
       "the dry run names every value that would change",
       ["OC_DATA_DIR=/new/data", "OPENCLAW_GATEWAY_PORT=18790", "OC_COMPOSE_PROJECT=new-project", "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:new-tag"]
@@ -134,9 +135,9 @@ try {
     const { output, error } = await capture(() => recoverEnv(ctx, ["--dry-run"]));
     check("a plain dry run still leaves the file byte-identical", await readFile(envFile(), "utf8"), SEED);
     check("it exits cleanly", error, "");
-    check("it says nothing would be written without a direction", output.includes("nothing is written over them"), true);
-    check("it names both directions", output.includes("--adopt-runtime") && output.includes("./clawforge up"), true);
-    check("the dry-run header counts zero writable facts", output.includes("0 of 4 connection fact(s) would be written"), true);
+    check("it says nothing would be written without a direction", output.includes(NO_DIRECTION_NOTE), true);
+    check("it names both directions", output.includes("--adopt-runtime") && output.includes(commandLine("up")), true);
+    check("the dry-run header counts zero writable facts", output.includes(dryRunHeader(0, 4, envFile())), true);
   }
 
   // --- nothing to recover: every fact already matches ------------------------------------
@@ -145,7 +146,7 @@ try {
     facts = { dataDir: "/old/data", port: "9999", composeProject: "old-project", image: "ghcr.io/openclaw/openclaw:old-tag" };
     const { output } = await capture(() => recoverEnv(ctx, []));
     check("matching facts leave the file byte-identical", await readFile(envFile(), "utf8"), SEED);
-    check("a full match is reported as nothing to recover", output.includes("nothing to recover"), true);
+    check("a full match is reported as nothing to recover", output.includes(NOTHING_TO_RECOVER), true);
   }
 
   // --- an empty OC_COMPOSE_PROJECT is the directory-derived default, not a divergence -----
@@ -158,7 +159,7 @@ try {
     facts = { dataDir: "/old/data", port: "9999", composeProject: deploymentName(), image: "ghcr.io/openclaw/openclaw:old-tag" };
     const { output } = await capture(() => recoverEnv(ctx, ["--dry-run"]));
     check("an empty OC_COMPOSE_PROJECT matching the directory name asks for no direction", output.includes("--adopt-runtime"), false);
-    check("it is reported as nothing to recover", output.includes("nothing to recover"), true);
+    check("it is reported as nothing to recover", output.includes(NOTHING_TO_RECOVER), true);
     await resetEnv();
   }
 
@@ -232,7 +233,7 @@ try {
     facts = undefined;
     const { error } = await capture(() => recoverEnv(ctx, []));
     check("a runtime with no running container throws", error !== "", true);
-    check("the refusal says the container is not running", error.includes("not running"), true);
+    check("the refusal says the container is not running", error.includes(notRunningRefusal("stub")), true);
     check("a refused recovery leaves the file byte-identical", await readFile(envFile(), "utf8"), SEED);
   }
 
@@ -242,7 +243,7 @@ try {
     const noCapability = { runtime: { description: "stub" } } as unknown as Context;
     const { error } = await capture(() => recoverEnv(noCapability, []));
     check("a runtime that cannot introspect throws", error !== "", true);
-    check("the refusal says it cannot introspect", error.includes("cannot introspect"), true);
+    check("the refusal says it cannot introspect", error.includes(cannotIntrospectRefusal("stub")), true);
     check("a refused recovery leaves the file unchanged", await readFile(envFile(), "utf8"), SEED);
   }
 
@@ -250,6 +251,7 @@ try {
   {
     const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-recover-env-check-"));
     useDeployment(emptyDir);
+    const expectedRefusal = missingEnvRefusal(envFile());
     let error = "";
     try {
       await withOutputSink(
@@ -265,8 +267,8 @@ try {
       await rm(emptyDir, { recursive: true, force: true });
     }
     check("a missing .env is refused", error !== "", true);
-    check("the refusal says the file does not exist", error.includes("does not exist"), true);
-    check("the refusal says recovery cannot create one", error.includes("cannot create"), true);
+    check("the refusal says the file does not exist", error.includes(expectedRefusal), true);
+    check("the refusal says recovery cannot create one", error.includes(expectedRefusal), true);
     check("the refusal points at bootstrap", error.includes("bootstrap"), true);
     check("no .env was created in the empty deployment", await access(join(emptyDir, ".env")).then(() => true, () => false), false);
   }

@@ -41,14 +41,28 @@ export function stagedFileName(dryRun: boolean): string {
   return dryRun ? `clawforge-desired.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
 }
 
+export function declarationExistsRefusal(path: string): string {
+  return `${path} already exists — pass --force to overwrite it with recovered values`;
+}
+
+export function missingLiveConfigRefusal(dataDir: string): string {
+  return `${dataDir}/config/openclaw.json not found on the target — nothing to recover from`;
+}
+
+export const RECOVERED_VALUES_NOTE =
+  "recovered values are what the live config holds now, not the original declaration — a value OpenClaw defaults to is indistinguishable from a declared one once the declaration is gone";
+
 /** The headline for a real (non-dry) apply. Exported so checks can pin the wording without
  *  a live instance. bootstrap.ts/set-try.ts/apply.ts pass `restartAdvice: false` since each
  *  starts or restarts the gateway itself moments later. */
+/** The advice a headline carries when the caller does not restart the gateway itself. */
+export const RESTART_ADVICE = "restart to pick it up";
+
 export function appliedHeadline(restartAdvice: boolean): string {
   return restartAdvice
     // Not `clawforge up`: a healthy container already converges on `up`, reporting success
     // while leaving the old settings live.
-    ? `desired state applied — restart to pick it up: ${commandLine("restart")}`
+    ? `desired state applied — ${RESTART_ADVICE}: ${commandLine("restart")}`
     : "desired state applied";
 }
 
@@ -220,12 +234,12 @@ async function dumpDesiredState(ctx: Context, force: boolean, jsonOnly = false):
     () => false,
   );
   if (exists && !force) {
-    die(`${path} already exists — pass --force to overwrite it with recovered values`);
+    die(declarationExistsRefusal(path));
   }
 
   const live = await readLiveConfigOrThrow(ctx);
   if (live === undefined) {
-    die(`${ctx.settings.dataDir}/config/openclaw.json not found on the target — nothing to recover from`);
+    die(missingLiveConfigRefusal(ctx.settings.dataDir));
   }
 
   const recovered: { path: string; value: unknown }[] = [];
@@ -245,6 +259,6 @@ async function dumpDesiredState(ctx: Context, force: boolean, jsonOnly = false):
   log(`recovered ${recovered.length} of ${RECOVERABLE_PATHS.length} known path(s) into ${path}`);
   for (const declaredPath of omitted) info(`${declaredPath} has no value in the live config — omitted, not guessed`);
   if (recovered.length === 0) warn("nothing was recoverable — the file was written as an empty declaration");
-  info("recovered values are what the live config holds now, not the original declaration — a value OpenClaw defaults to is indistinguishable from a declared one once the declaration is gone");
+  info(RECOVERED_VALUES_NOTE);
   info("recipes are not part of desired-state.json (it is a config set --batch-file payload), so there is nothing to recover them into");
 }

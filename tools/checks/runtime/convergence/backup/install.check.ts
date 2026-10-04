@@ -6,7 +6,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jobMarker, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import { CRONTAB_FAILURES, MANUAL_INSTALL_HEADER, REFUSING_APPLY, SCHEDULER_TRANSACTION_FAILED, crontabUpdateFailure, jobMarker, nearestValidIntervals, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import { INTERVAL_GRAMMAR_WITH_UNIT, NEAREST_VALID } from "#framework/core/values/durations.ts";
+import { NOTHING_INSTALLED } from "#framework/commands/lifecycle/backup/install.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
@@ -113,17 +115,17 @@ try {
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "not-a-duration"])));
-    check("a malformed --interval is refused, named", message.includes("an explicit unit is required"), true);
+    check("a malformed --interval is refused, named", message.includes(INTERVAL_GRAMMAR_WITH_UNIT), true);
   }
   {
     calls.length = 0;
     const bare = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "30"])));
-    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes("nearest valid: 30m"), true);
+    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes(`${NEAREST_VALID}${nearestValidIntervals(30).join(", ")}`), true);
     check("...and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
     const empty = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", ""])));
-    check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes("an explicit unit is required"), true);
+    check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes(INTERVAL_GRAMMAR_WITH_UNIT), true);
     const nearest = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "45m"])));
-    check("--interval 45m suggests only values backup itself accepts", nearest.includes("nearest valid: 30m, 1h"), true);
+    check("--interval 45m suggests only values backup itself accepts", nearest.includes(`${NEAREST_VALID}${nearestValidIntervals(45).join(", ")}`), true);
   }
 
   // uninstall --apply: removes only OUR marked line.
@@ -137,14 +139,14 @@ try {
   calls.length = 0;
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), () => openclawCommands.backup.run(ctx, ["uninstall", "--apply"]));
-  check("a second uninstall reports nothing to remove", written.join("").includes("nothing to remove"), true);
+  check("a second uninstall reports nothing to remove", written.join("").includes(NOTHING_INSTALLED), true);
   check("and never re-writes the crontab", calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 
   const unreadableInitial = `${FOREIGN}\n${WATCH_ENTRY}\n`;
   const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
   const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
   const readError = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(unreadableCtx, ["install", "--apply"])));
-  check("backup install aborts on crontab read failure", readError.includes("could not read crontab"), true);
+  check("backup install aborts on crontab read failure", readError.includes(crontabUpdateFailure("ssh:user@host", 28, CRONTAB_FAILURES[28] ?? SCHEDULER_TRANSACTION_FAILED)), true);
   check("backup install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
   check("backup install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 
@@ -163,7 +165,7 @@ try {
     () => openclawCommands.backup.run(ctx, ["install"]),
     "win32",
   ));
-  check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes("Run this yourself"), true);
+  check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes(MANUAL_INSTALL_HEADER), true);
 
   {
     const recorded: { command: string; args: string[] }[] = [];
@@ -186,7 +188,7 @@ try {
   }
   if (process.platform !== "win32") {
     const message = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--apply"])));
-    check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
+    check("--apply refuses outright on an unsupported, non-Windows transport", message.includes(REFUSING_APPLY), true);
   }
 }
 } finally {

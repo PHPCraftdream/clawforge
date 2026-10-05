@@ -1,7 +1,7 @@
 // The entry decision matrix (refactor plan stage 2, item 4): every layout × argv × env ×
 // platform, resolved by the pure entry resolver (entry/resolve.ts) on a fake file system —
 // no processes. Not a table-driven re-assertion of the code's own shape: the prefixes are
-// rendered through the real invocationPrefix(), the refusals through the same pure report
+// rendered through the real commandLine(), the refusals through the same pure report
 // builders the entries render, and the file is a golden diff like the other surfaces.
 
 import { basename, dirname } from "node:path";

@@ -15,9 +15,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { DEFAULT_WSL_DISTRO } from "./env.ts";
 
-/** Where a path is meaningful. */
-export type PathSpace = "tool" | "target" | "container";
-
 /** One bind mount, in the two coordinate systems it connects. */
 export interface MountPoint {
   /** Path on the target, e.g. /srv/openclaw/data/workspace. */

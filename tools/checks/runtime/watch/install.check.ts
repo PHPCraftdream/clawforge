@@ -28,7 +28,6 @@ import {
   SCHEDULER_TRANSACTION_FAILED,
   WSL_SCHEDULING_REASON,
   crontabUpdateFailure,
-  nearestValidIntervals,
   schedulerIdentity,
   withScheduleRunner,
 } from "#framework/commands/operate/schedule.ts";
@@ -232,7 +231,7 @@ try {
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "45m"])));
-    check("--interval 45m names non-empty valid alternatives in its own spelling", message.includes(`${NEAREST_VALID}${nearestValidIntervals(45).join(", ")}`), true);
+    check("--interval 45m names non-empty valid alternatives in its own spelling", message.includes(`${NEAREST_VALID}30m, 1h`), true);
     const malformed = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "soon"])));
     check("a malformed --interval names both spellings", malformed.includes(INTERVAL_GRAMMAR), true);
     const empty = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval",""])));

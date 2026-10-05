@@ -41,7 +41,7 @@ import {
 } from "#src/security/privacy/private-paths-ledger.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import type { Recipe } from "#src/service/recipe.ts";
-import { commandBody, type ArgumentSpec, type Values } from "#src/core/command/spec.ts";
+import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
@@ -59,8 +59,6 @@ export const RESTORE_ARGUMENTS = [
   { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
   { name: "json", summary: "Emit restored data and the gateway startup outcome as JSON", description: "Emit restored data and actual gateway startup outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
-
-export interface RestoreValues extends Values<typeof RESTORE_ARGUMENTS> {}
 
 export interface RestoreOptions {
   force?: boolean;

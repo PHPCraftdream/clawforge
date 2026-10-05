@@ -6,7 +6,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CRONTAB_FAILURES, MANUAL_INSTALL_HEADER, REFUSING_APPLY, SCHEDULER_TRANSACTION_FAILED, crontabUpdateFailure, jobMarker, nearestValidIntervals, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import { CRONTAB_FAILURES, MANUAL_INSTALL_HEADER, REFUSING_APPLY, SCHEDULER_TRANSACTION_FAILED, crontabUpdateFailure, jobMarker, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { INTERVAL_GRAMMAR_WITH_UNIT, NEAREST_VALID } from "#framework/core/values/durations.ts";
 import { NOTHING_INSTALLED } from "#framework/commands/lifecycle/backup/install.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
@@ -120,12 +120,12 @@ try {
   {
     calls.length = 0;
     const bare = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "30"])));
-    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes(`${NEAREST_VALID}${nearestValidIntervals(30).join(", ")}`), true);
+    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes(`${NEAREST_VALID}30m`), true);
     check("...and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
     const empty = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", ""])));
     check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes(INTERVAL_GRAMMAR_WITH_UNIT), true);
     const nearest = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "45m"])));
-    check("--interval 45m suggests only values backup itself accepts", nearest.includes(`${NEAREST_VALID}${nearestValidIntervals(45).join(", ")}`), true);
+    check("--interval 45m suggests only values backup itself accepts", nearest.includes(`${NEAREST_VALID}30m, 1h`), true);
   }
 
   // uninstall --apply: removes only OUR marked line.

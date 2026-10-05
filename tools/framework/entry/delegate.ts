@@ -16,7 +16,7 @@ import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
 import { command } from "../core/io/invocation/advice.ts";
 import { renderArgument } from "../core/io/invocation/render.ts";
-import { nodeFs, checkoutGateIn, findCheckoutRootIn, frameworkOwner, strayCheckoutApp, importsCheckoutSourcesIn } from "./resolve.ts";
+import { nodeFs, checkoutGateIn, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -88,16 +88,6 @@ export function refuseStrayCheckoutApp(self: string, appRoot: string): void {
   if (stray === undefined) return;
   reportError(`${appRoot} ${FOREIGN_SOURCES_NOTE} of the ClawForge checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`);
   process.exit(1);
-}
-
-/** True when `appRoot/app.ts` loads the framework from a checkout's sources rather than the package. */
-export function importsCheckoutSources(appRoot: string): boolean {
-  return importsCheckoutSourcesIn(appRoot, nodeFs);
-}
-
-/** The ClawForge checkout at or above `start` (the same test as the hand-over gate). */
-export function findCheckoutRoot(start: string): string | undefined {
-  return findCheckoutRootIn(start, nodeFs);
 }
 
 /** Lets the deployment's app.ts import @clawforge/framework from this very package when it

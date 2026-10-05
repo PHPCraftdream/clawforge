@@ -359,6 +359,18 @@ try {
   }
 
   {
+    // A digest-shaped suffix the image grammar refuses pins nothing: the same finding as a tag.
+    await reset();
+    await writeEnv(MATCHING_ENV);
+    await writeStore(COMPLETE_STORE);
+    const malformed = `${TAG}@sha256:zz`;
+    const inspection = await gatherInspection(folderContext({ ...CLEAN, image: malformed }, CONTAINER_FACTS));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("a malformed digest is IMAGE_UNPINNED", codes(inspection.problems), ["IMAGE_UNPINNED"]);
+    check("it names the malformed value", inspection.problems[0]?.detail.includes(malformed) ?? false, true);
+  }
+
+  {
     // The tag has NOT moved (imageReference() and runningImageIdentity() agree by default) —
     // IMAGE_UNPINNED alone, never paired with IMAGE_TAG_MOVED over a fact that has not happened.
     await reset();

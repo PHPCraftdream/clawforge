@@ -10,6 +10,9 @@ import { ArgumentError } from "#framework/core/command/index.ts";
 import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
+import { setInvocation } from "#framework/core/io/invocation/index.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const UNREACHABLE = "prepare-refusals: no target is reachable here";
@@ -93,6 +96,32 @@ for (const [name, argv, argument] of [
   checkTrue(`${name} ${argv.join(" ")} is refused as an argument error`, error instanceof ArgumentError);
   check(`${name} ${argv.join(" ")} names the argument`, (error as ArgumentError).argument, argument);
   check(`${name} ${argv.join(" ")} never contacts the target`, contacts, []);
+}
+
+// --- the refusal and the help name the invocation set AFTER import ----------------------------
+// The entry sets the invocation once modules are loaded: wording evaluated at import would
+// always read the default checkout spelling.
+
+{
+  setInvocation({ program: "clawforge", mode: "installed", audience: "terminal", app: { name: "prod", selectedBy: "flag" } });
+  try {
+    const { error } = await refusal("rollback", ["--previous-set", "--operation", "apply-1"]);
+    check(
+      "rollback's conflict refusal names the current invocation's apply line",
+      (error as Error).message,
+      "--previous-set cannot be combined with --operation — rolls back the whole set through clawforge --app prod apply — --operation and --no-restart belong to the single-file path only",
+    );
+    let printed = "";
+    await withOutputSink((chunk) => {
+      printed += chunk;
+    }, async () => {
+      renderCommandHelp("rollback", orchestrationCommands.rollback);
+    });
+    checkTrue("rollback's help names the current invocation's apply --set", printed.includes("through clawforge --app prod apply --set,"));
+    checkTrue("rollback's help never names the default spelling", !printed.includes("./clawforge"));
+  } finally {
+    setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+  }
 }
 
 finish("orchestration prepare refusals");

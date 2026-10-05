@@ -147,7 +147,12 @@ export async function loadChecks(recipe: string): Promise<AcceptanceCheck[] | un
   } catch {
     return undefined;
   }
-  const parsed = JSON.parse(raw) as { checks?: AcceptanceCheck[] };
+  let parsed: { checks?: AcceptanceCheck[] };
+  try {
+    parsed = JSON.parse(raw) as { checks?: AcceptanceCheck[] };
+  } catch (error) {
+    throw new Error(`recipe "${recipe}": recipes/${recipe}/acceptance.json is not valid JSON: ${(error as Error).message}`);
+  }
   if (!Array.isArray(parsed.checks)) return [];
   const invalid = parsed.checks
     .map((check, index) => acceptanceSpecError(check, index))

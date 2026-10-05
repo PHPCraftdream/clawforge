@@ -530,6 +530,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   `remove-app`, from one shared helper; the recipe-name listing is one helper shared by `lock` and
   `set`; the system-install check no longer writes into the tracked `docs/` folder; the entry's
   re-exports that only the gate used are gone.
+* `rollback --previous-set` with `--operation` or `--no-restart` now names the current invocation
+  (`clawforge --app prod apply` for an installed or named app) instead of always `./clawforge apply`;
+  `list` and `inspect` treat a malformed image digest (`repo@sha256:zz`, an uppercase digest) as
+  unpinned; `set validate` and `set build` name the recipe and file for a malformed `agent/config.json`
+  or `acceptance.json` instead of printing a bare JSON error, and a self-consistent artifact carrying
+  one is reported as a finding rather than an integrity failure.
 
 ### Added
 

@@ -220,7 +220,7 @@
     }
   },
   "prosePins": {
-    "comment": "stage 5 + cross-cutting (I9): checks assert structure, prose lives in goldens; the two added pins in cli-help and gate-dispatch assert the help renderer's own printed output (control-mcp's and remove-app's help) — the allowed renderer-output case.",
+    "comment": "stage 5 + cross-cutting (I9): checks assert structure, prose lives in goldens; the two added pins in cli-help and gate-dispatch assert the help renderer's own printed output (control-mcp's and remove-app's help) — the allowed renderer-output case. rf6-fix22-B: the added pins (and the matcher/equality growth) assert printed output of the product against independent literals instead of the product's own exported constants — the nearest-interval suggestions of backup/watch install and parseInterval, rollback's refusal and help, the set validate coherent line and the git-init advice — the allowed renderer-output case.",
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 7,
@@ -259,7 +259,7 @@
       "tools/checks/runtime/convergence/apply/apply.check.ts": 1,
       "tools/checks/runtime/convergence/backup/backup.check.ts": 7,
       "tools/checks/runtime/convergence/backup/health.check.ts": 1,
-      "tools/checks/runtime/convergence/backup/install.check.ts": 2,
+      "tools/checks/runtime/convergence/backup/install.check.ts": 3,
       "tools/checks/runtime/convergence/backup/real-filesystem.check.ts": 3,
       "tools/checks/runtime/convergence/inspect/connectivity/egress-credentials.check.ts": 1,
       "tools/checks/runtime/convergence/inspect/connectivity/egress.check.ts": 3,
@@ -288,7 +288,7 @@
       "tools/checks/runtime/recovery/plan.check.ts": 3,
       "tools/checks/runtime/recovery/private-history-restore.check.ts": 1,
       "tools/checks/runtime/recovery/protected-target-access.check.ts": 3,
-      "tools/checks/runtime/schedule/schedule.check.ts": 2,
+      "tools/checks/runtime/schedule/schedule.check.ts": 3,
       "tools/checks/runtime/service/deploy/checkout-policy/recipes-root.check.ts": 4,
       "tools/checks/runtime/service/deploy/checkout-policy/sensitive-names.check.ts": 5,
       "tools/checks/runtime/service/deploy/path-boundary.check.ts": 5,
@@ -316,7 +316,7 @@
       "tools/checks/runtime/watch/health.check.ts": 1,
       "tools/checks/runtime/watch/heartbeat.check.ts": 1,
       "tools/checks/runtime/watch/index.check.ts": 6,
-      "tools/checks/runtime/watch/install.check.ts": 3,
+      "tools/checks/runtime/watch/install.check.ts": 4,
       "tools/checks/security/acceptance/accept.check.ts": 7,
       "tools/checks/security/acceptance/plan.check.ts": 1,
       "tools/checks/security/audit/security-audit.check.ts": 6,
@@ -344,17 +344,20 @@
       "tools/checks/surfaces/effect-markers.check.ts": 2,
       "tools/checks/runtime/service/deploy/checkout-policy/checkout-policy.check.ts": 1,
       "tools/checks/runtime/convergence/apply-config.check.ts": 4,
-      "tools/checks/runtime/convergence/instance-lock/advice.check.ts": 2
+      "tools/checks/runtime/convergence/instance-lock/advice.check.ts": 2,
+      "tools/checks/release/release/lock.check.ts": 1,
+      "tools/checks/runtime/convergence/apply/prepare-refusals.check.ts": 1,
+      "tools/checks/sets/lifecycle/set-validate.check.ts": 1
     },
-    "total": 401
+    "total": 407
   },
   "proseMatchers": {
     "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator",
-    "total": 99
+    "total": 107
   },
   "proseEquality": {
     "comment": "stage 5 + cross-cutting (I9): prose as the third argument of check(name, actual, \"literal with a space\") — a form prosePins (includes only) and proseMatchers (equality operator required) both miss, so rewriting a === pin into check() lowers proseMatchers while the prose stays; equality ratchet: growth fails, the existing sites are not being converted now",
-    "total": 208
+    "total": 213
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
@@ -385,7 +388,7 @@
     "total": 0
   },
   "adhocSkips": {
-    "comment": "invariant I10 (rf6-fix14): a host-dependent check case is skipped only through a declared capability (requires()); lines matching /process.platform|os.platform()|skip(/ under tools/checks (kit, architecture, golden excluded) must all sit on an exempt line — a recorded value selection, a transport helper kept for its probe, or a nested availability note inside a requires() body. total counts occurrences past the exemptions: any new ad-hoc gate fails, and an exempt line that disappears fails too",
+    "comment": "invariant I10 (rf6-fix14): a host-dependent check case is skipped only through a declared capability (requires()); lines matching /process.platform|os.platform()|skip(|a literal skip case compared with itself/ under tools/checks (kit, architecture, golden excluded) must all sit on an exempt line — a recorded value selection, a transport helper kept for its probe, or a nested availability note inside a requires() body. total counts occurrences past the exemptions: any new ad-hoc gate fails, and an exempt line that disappears fails too",
     "total": 0,
     "exempt": {
       "tools/checks/foundation/cli/host.check.ts": {

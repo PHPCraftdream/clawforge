@@ -146,7 +146,8 @@ async function posixTransport(): Promise<Transport | undefined> {
 await requires("local-posix", "real GNU tar profiles over a real POSIX filesystem", async () => {
 const transport = await posixTransport();
 if (transport === undefined) {
-  check("real GNU tar profiles (skipped: no POSIX shell or WSL)", "skip", "skip");
+  // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+  check("real GNU tar profiles: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
 } else {
   const runtime = {
     async isRunning(): Promise<boolean> { return false; },

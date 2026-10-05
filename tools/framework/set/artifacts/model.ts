@@ -24,11 +24,6 @@ import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 
 export const SET_MANIFEST_VERSION = 1;
 
-/** Which of the three things an operation touches. Every set operation must be able to say
- *  which entity it acts on; the vocabulary lives here so later commands cannot each grow
- *  their own spelling of it. */
-export type SetEntity = "set" | "instance" | "state";
-
 /** The instance configuration declaration, keyed in the manifest's file map by this path
  *  relative to the deployment directory. */
 export const DESIRED_STATE_PATH = "config/desired-state.json";

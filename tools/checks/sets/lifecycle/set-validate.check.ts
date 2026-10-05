@@ -6,7 +6,7 @@
 // is worse than no finding.
 
 import { validateSet, cronProblem, INVALID_JSON_NOTE, addingFix } from "#framework/set/ownership/validate.ts";
-import { defaultSetName, collectManifest, buildSet, blockingFindingsMessage, blockingWarningsSummary, ARTIFACT_CONTENTS_MATCH, coherentLine } from "#framework/commands/sets/set.ts";
+import { defaultSetName, collectManifest, buildSet, blockingFindingsMessage, blockingWarningsSummary } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { INVALID_ARTIFACT } from "#framework/set/load.ts";
@@ -175,7 +175,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     check("a declared agent with no agent/config.json is a finding", missingAgentConfig.some((entry) => entry.detail.includes("agent/config.json")), true);
 
     await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
-    await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), "{}");
+    await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), JSON.stringify(agent));
     check("and a complete tree is silent again", codes(await validateSet(coherent(), { checkFiles: true })), []);
 
     // The same manifest without the file check must stay silent throughout — that is what
@@ -372,7 +372,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
       process.stderr.write = originalWriteAgain;
     }
     check("validate --set says checking, not installing", goodText.includes("checking") && !goodText.includes("installing"), true);
-    check("a good artifact still validates as coherent", goodText.includes(coherentLine("demo-set", ARTIFACT_CONTENTS_MATCH)), true);
+    check("a good artifact still validates as coherent", goodText.includes("set demo-set is coherent and its artifact contents match"), true);
 
     // --json (a capturing sink) keeps the artifact's content id, as it always carried it.
     let captured = "";
@@ -515,7 +515,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     await mkdir(resolve(deployment, "config"), { recursive: true });
     await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
     await writeFile(resolve(deployment, "recipes", "demo", "server.ts"), "// server\n");
-    await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), "{}");
+    await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), JSON.stringify(agent));
     useDeployment(deployment);
 
     // The tree files exist, so only the definition's content can still be wrong.

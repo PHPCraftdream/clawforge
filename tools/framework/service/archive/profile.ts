@@ -18,10 +18,6 @@ export type Profile = "full" | "migrate" | "share";
 
 export const PROFILES: Profile[] = ["full", "migrate", "share"];
 
-export function isProfile(value: string): value is Profile {
-  return (PROFILES as string[]).includes(value);
-}
-
 /** Shorthand flags for `backup` and `pull`, one map so both parsers agree. */
 export const PROFILE_SHORTHAND_FLAGS: ReadonlyMap<string, Profile> = new Map([
   ["--share", "share"],

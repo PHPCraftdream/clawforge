@@ -404,7 +404,7 @@ export async function runPhases(
     return {
       phase: "contain",
       actions: [],
-      notes: [`contain failed unexpectedly: ${(error as Error).message}${options.dryRun ? "" : " — rotate proceeds regardless"}`],
+      notes: [`${CONTAIN_FAILED}: ${(error as Error).message}${options.dryRun ? "" : " — rotate proceeds regardless"}`],
     };
   });
 

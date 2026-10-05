@@ -465,7 +465,8 @@ async function realPosixTransport(): Promise<Transport | undefined> {
   await requires("local-posix", "the symlink-ancestor checks on a real transport", async () => {
   const transport = await realPosixTransport();
   if (transport === undefined) {
-    check("symlink-ancestor checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+    // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+    check("symlink-ancestor checks: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
   } else {
     const tag = randomBytes(4).toString("hex");
     const root = `/tmp/clawforge-trav-${tag}`;

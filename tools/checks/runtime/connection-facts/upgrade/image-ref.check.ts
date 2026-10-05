@@ -86,5 +86,16 @@ check("digestOf still reads a non-canonical suffix", digestOf("fixture@sha256:ab
 check("so sameContent holds for it", sameContent("fixture@sha256:abc", "other/fixture@sha256:abc"), true);
 check("hasDigest on a pin", hasDigest(`openclaw/openclaw:1.2.3@${DIGEST}`), true);
 check("hasDigest on a tag", hasDigest("openclaw/openclaw:1.2.3"), false);
+// The grammar decides what is pinned: a digest-shaped suffix tryParse refuses pins nothing.
+for (const [what, value] of [
+  ["a short digest", "repo@sha256:zz"],
+  ["an uppercase 64-hex digest", `repo@sha256:${"A".repeat(64)}`],
+  ["a digest of 63 hex characters", `repo@sha256:${"a".repeat(63)}`],
+] as const) {
+  check(`${what} is no reference`, tryParse(value), undefined);
+  check(`hasDigest refuses ${what}`, hasDigest(value), false);
+}
+check("hasDigest agrees with tryParse on a bare digest", hasDigest(DIGEST), false);
+check("hasDigest on a registry pin with a port", hasDigest(`localhost:5000/openclaw/openclaw@${DIGEST}`), true);
 
 finish("ImageRef laws");

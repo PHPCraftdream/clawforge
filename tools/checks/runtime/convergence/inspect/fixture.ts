@@ -130,7 +130,7 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
         // bootstrap now leaves behind), so a case that says nothing about the
         // image provokes neither IMAGE_UNPINNED nor IMAGE_TAG_MOVED. folder.check.ts's own
         // image-pinning section overrides this to exercise both.
-        image: spec.image ?? "ghcr.io/openclaw/openclaw@sha256:abc",
+        image: spec.image ?? `ghcr.io/openclaw/openclaw@sha256:${"a".repeat(64)}`,
         backupDir: BACKUP_DIR,
         env: { OPENCLAW_GATEWAY_TOKEN: "a-token-value" },
       },

@@ -474,6 +474,7 @@ const ADHOC = new RegExp([
   "\\b(hasGnuUserland|hasDocker|hasDockerDesktopWsl|hasWsl|hasPosixSh|hasPosixModes|hasLocalPosix|hasBash|hasPwsh|hasRsync|hasSymlink|hasSshLoopback|hasAutoTarget|isLinuxHost|isWindowsHost|isPosixHost)\\s*\\(",
   "\\bskipIf\\b|\\brunIf\\b|\\.skip\\b",
   "\\bskip\\(",
+  "\"skip\",\\s*\"skip\"",
 ].join("|"));
 const adhocExemptLeft = new Map<string, Map<string, number>>(
   Object.entries(baseline.adhocSkips.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),

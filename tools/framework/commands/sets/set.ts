@@ -97,7 +97,7 @@ async function validateAction(
         )}\n`,
       );
     } else if (problems.length === 0) {
-      log(`set ${manifest.name} is coherent${coherentNote}`);
+      log(coherentLine(manifest.name, coherentNote));
       info(`${Object.keys(manifest.recipes).length} recipe(s), ${manifest.secrets.length} secret name(s)`);
       info("checked without a gateway; whether the pinned image supports what the recipes use is settled at install");
     } else {

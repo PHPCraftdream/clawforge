@@ -62,9 +62,6 @@ export const ROLLBACK_ARGUMENTS = [
   { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag", effect: "read" },
 ] as const satisfies readonly ArgumentSpec[];
 
-/** Today's wording, computed once: the rule's reason names the apply command line. */
-const APPLY_COMMAND_LINE = commandLine("apply");
-
 /** The operation to undo, and why that one. Exported for the checks: choosing the wrong
  *  operation is the failure that matters here, and it is worth asserting without a target. */
 export async function operationToRollback(ctx: Context, wanted?: string): Promise<OperationRecord> {
@@ -130,7 +127,10 @@ export const ROLLBACK = commandBody({
     rule: "conflicts",
     name: "previous-set",
     with: ["operation", "no-restart"],
-    reason: `rolls back the whole set through ${APPLY_COMMAND_LINE} — --operation and --no-restart belong to the single-file path only`,
+    // A getter: the invocation is set after import, so the line is spelled when refused.
+    get reason(): string {
+      return `rolls back the whole set through ${commandLine("apply")} — --operation and --no-restart belong to the single-file path only`;
+    },
   }],
   prepare: ({ values }) => rollbackOptions(values as Parameters<typeof rollbackOptions>[0]),
   run: (ctx, plan) => rollbackRun(ctx, plan),

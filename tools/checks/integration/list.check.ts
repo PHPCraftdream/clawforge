@@ -45,6 +45,11 @@ await writeDeployment(
     "OPENCLAW_GATEWAY_PORT=18002\nOPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n",
 );
 await writeDeployment(
+  "bad-digest",
+  "OC_DATA_DIR=/srv/baddigest/data\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_PORT=18007\n" +
+    "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable@sha256:zz\n",
+);
+await writeDeployment(
   "not-bootstrapped",
   "OC_DATA_DIR=/srv/notboot/data\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_PORT=18003\n" +
     "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
@@ -78,6 +83,7 @@ async function buildContext(_app: AppDefinition, directory: string): Promise<Con
   if (name === "healthy") return stubContext(async () => true, "local");
   if (name === "auto-target") return stubContext(async () => true, "wsl:Ubuntu-24.04");
   if (name === "unpinned") return stubContext(async () => false, "ssh:user@example.com");
+  if (name === "bad-digest") return stubContext(async () => false, "local");
   if (name === "not-bootstrapped") {
     return stubContext(async () => {
       throw new NotBootstrapped("/srv/notboot/data");
@@ -99,6 +105,7 @@ const byName = new Map(summaries.map((entry) => [entry.name, entry]));
 
 check("every fixture directory gets a row", [...byName.keys()].sort(), [
   "auto-target",
+  "bad-digest",
   "broken-app",
   "conn-error",
   "healthy",
@@ -133,6 +140,8 @@ check("a stopped ssh deployment names its host and an unpinned tag", byName.get(
   pinned: false,
   state: "stopped",
 });
+
+check("a malformed digest is not a pin", byName.get("bad-digest")?.pinned, false);
 
 check("NotBootstrapped becomes its own state, not a generic error", byName.get("not-bootstrapped"), {
   name: "not-bootstrapped",
@@ -213,7 +222,7 @@ check(
 // --- only directories with app.ts and a valid name are deployments ------------------------
 
 check("an empty, a hidden and an invalid-name directory are not deployments", await deploymentNames(root), [
-  "auto-target", "broken-app", "conn-error", "healthy", "no-env", "not-bootstrapped", "unpinned",
+  "auto-target", "bad-digest", "broken-app", "conn-error", "healthy", "no-env", "not-bootstrapped", "unpinned",
 ]);
 const withOthers = await listDeployments({ appsRoot: root, checkStatus: false, includeOthers: true });
 check(

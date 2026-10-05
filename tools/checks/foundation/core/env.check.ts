@@ -5,8 +5,11 @@
 // rather than trusted. toSettings is checked for its required field and its defaults, since
 // a wrong default silently points a deployment at the wrong directory or port.
 
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   ENV_FILE_ONLY_VARS,
+  monorepoRoot,
   locksDir,
   parseDiskMinFreeMb,
   parseDurationThreshold,
@@ -380,6 +383,15 @@ check("serviceUrl is built from the default bind address and port", minimal.serv
 check("backupDir defaults to a sibling of the data directory's parent", minimal.backupDir, "/srv/openclaw/backups");
 check("snapshotDir defaults to a sibling of the data directory's parent", minimal.snapshotDir, "/srv/openclaw/snapshots");
 check("image defaults", minimal.image, "ghcr.io/openclaw/openclaw:extended-stable");
+// The default image is written in three more places: the compose file's three `image:` lines
+// and .env.example. They must all name the one default the settings fall back to.
+{
+  const compose = await readFile(resolve(monorepoRoot, "tools", "framework", "docker-compose.yml"), "utf8");
+  const composeDefaults = [...compose.matchAll(/\$\{OPENCLAW_IMAGE:-([^}]+)\}/g)].map((match) => match[1]);
+  check("docker-compose.yml falls back to the default image at each of its three services", composeDefaults, Array(3).fill(minimal.image));
+  const example = parseEnv(await readFile(resolve(monorepoRoot, "tools", "framework", ".env.example"), "utf8"));
+  check(".env.example names the default image", example.OPENCLAW_IMAGE, minimal.image);
+}
 check("location defaults to auto", minimal.location, "auto");
 check("wslDistro defaults", minimal.wslDistro, "Ubuntu-24.04");
 check("sshHost defaults to empty", minimal.sshHost, "");

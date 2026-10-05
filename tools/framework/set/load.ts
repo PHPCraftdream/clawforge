@@ -24,7 +24,6 @@ import { recipeNames } from "#src/service/recipe.ts";
 import { desiredStateShapeError, validateSet } from "#src/set/ownership/validate.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { frameworkVersion, readLock } from "#src/commands/management/lock.ts";
-import { parseAgentConfig } from "#src/commands/management/provision-agent/declaration.ts";
 import type { AgentConfig } from "#src/commands/management/provision-agent/declaration.ts";
 import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, buildSetManifest, canonicalJson, setManifestId } from "./artifacts/model.ts";
@@ -32,6 +31,7 @@ import type { SetManifest, SetRecipe } from "./artifacts/model.ts";
 import { assertNoSecretValues, localSecretValues } from "#src/commands/sets/set-secrets-guard.ts";
 import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { imagePinAdvice } from "./advice.ts";
+import { acceptanceLabel, agentConfigLabel, readAcceptanceFile, readAgentFile } from "./recipe-files.ts";
 import { withSetSource } from "./artifacts/source.ts";
 import type { Problem } from "#src/service/inspection.ts";
 
@@ -146,15 +146,25 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
 }
 
 /** The recipe's parsed agent declaration, read with provision-agent's own parser, so a set
- *  and provisioning can't disagree on defaults. */
-async function agentDeclaration(recipe: string): Promise<AgentConfig> {
-  let raw: string;
-  try {
-    raw = await readFile(resolve(recipesDir(), recipe, "agent", "config.json"), "utf8");
-  } catch {
+ *  and provisioning can't disagree on defaults. A malformed file is the validator's finding
+ *  (undefined here) when the caller reports, a refusal naming file and recipe otherwise. */
+async function agentDeclaration(recipe: string, report: boolean): Promise<AgentConfig | undefined> {
+  const declared = await readAgentFile(resolve(recipesDir(), recipe, "agent", "config.json"), recipe);
+  if (declared === undefined) {
     die(`recipe "${recipe}" has an agent/ bundle without agent/config.json — provision-agent requires it`);
   }
-  return parseAgentConfig(JSON.parse(raw));
+  if (declared.ok) return declared.value;
+  if (!report) die(declared.reason);
+  return undefined;
+}
+
+/** The recipe's acceptance checks; a malformed file follows the same rule as agentDeclaration. */
+async function acceptanceChecks(recipe: string, report: boolean): Promise<AcceptanceCheck[] | undefined> {
+  const declared = await readAcceptanceFile(resolve(recipesDir(), recipe, "acceptance.json"), recipe);
+  if (declared === undefined) return undefined;
+  if (declared.ok) return declared.value;
+  if (!report) die(declared.reason);
+  return undefined;
 }
 
 /** The manifest a build would write, without writing anything. `set validate` asks exactly
@@ -222,22 +232,22 @@ export async function collectManifest(
   const files: Record<string, string> = { [DESIRED_STATE_PATH]: checksumOf(desiredStateRaw) };
   const recipes: Record<string, SetRecipe> = {};
   const acceptance: Record<string, readonly AcceptanceCheck[]> = {};
-  // Lazy: accept.ts reaches install.ts, which imports this module (no static cycle).
-  const { loadChecks } = await import("#src/commands/orchestration/accept.ts");
+  const report = options.reportInvalidDeclaration === true;
   for (const recipe of await recipeNames()) {
     const dir = resolve(recipesDir(), recipe);
     const served = await recipeFileChecksums(dir);
     const agentFiles = await agentBundleChecksums(dir);
     for (const [rel, sum] of Object.entries(served)) files[`recipes/${recipe}/${rel}`] = sum;
     for (const [rel, sum] of Object.entries(agentFiles)) files[`recipes/${recipe}/agent/${rel}`] = sum;
+    const agent = Object.keys(agentFiles).length === 0 ? undefined : await agentDeclaration(recipe, report);
     recipes[recipe] = {
       checksum: checksumOfFileMap(served),
       files: served,
       ...(Object.keys(agentFiles).length === 0
         ? {}
-        : { agentChecksum: checksumOfFileMap(agentFiles), agentFiles, agent: await agentDeclaration(recipe) }),
+        : { agentChecksum: checksumOfFileMap(agentFiles), agentFiles, ...(agent === undefined ? {} : { agent }) }),
     };
-    const checks = await loadChecks(recipe);
+    const checks = await acceptanceChecks(recipe, report);
     if (checks !== undefined) acceptance[recipe] = checks;
   }
 
@@ -424,19 +434,21 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
       // A declared agent whose config.json is absent from the inventory is a completeness
       // finding — the tree validator reports the same about the same content (parity), not
       // an integrity error. The parsed-file comparison below IS archive-vs-manifest.
-      const configPath = `recipes/${name}/agent/config.json`;
+      // A file that does not parse is not a disagreement the archive can be blamed for: the
+      // validator reports it (SET_RECIPE_INVALID), the same as for the tree.
+      const configPath = agentConfigLabel(name);
       if (manifest.files[configPath] !== undefined) {
-        const declared = parseAgentConfig(JSON.parse(await readFile(resolve(staging, configPath), "utf8")));
-        if (canonicalJson(declared) !== canonicalJson(recipe.agent)) throw new Error(`recipe ${name} agent declaration disagrees with its file`);
+        const declared = await readAgentFile(resolve(staging, configPath), name);
+        if (declared?.ok === true && canonicalJson(declared.value) !== canonicalJson(recipe.agent)) {
+          throw new Error(`recipe ${name} agent declaration disagrees with its file`);
+        }
       }
     } else if (Object.keys(recipe.agentFiles ?? {}).length > 0) {
       throw new Error(`recipe ${name} has agent files without an agent declaration`);
     }
-    const acceptancePath = `recipes/${name}/acceptance.json`;
-    const fromFile = manifest.files[acceptancePath] === undefined
-      ? undefined
-      : JSON.parse(await readFile(resolve(staging, acceptancePath), "utf8")).checks;
-    if (canonicalJson(fromFile ?? []) !== canonicalJson(manifest.acceptance[name] ?? [])) {
+    const acceptancePath = acceptanceLabel(name);
+    const fromFile = manifest.files[acceptancePath] === undefined ? undefined : await readAcceptanceFile(resolve(staging, acceptancePath), name);
+    if (fromFile?.ok !== false && canonicalJson(fromFile?.value ?? []) !== canonicalJson(manifest.acceptance[name] ?? [])) {
       throw new Error(`recipe ${name} acceptance disagrees with its file`);
     }
   }

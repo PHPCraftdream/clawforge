@@ -48,7 +48,7 @@ export function noiseFilteredForwarder(write: (chunk: string) => void): { push: 
   };
 }
 
-// #composeArgs() (runtime/docker/runtime-docker.ts) always inserts these right after "compose": real,
+// #composeArgs() (runtime/docker/compose-operations.ts) always inserts these right after "compose": real,
 // but never the reason a call failed.
 const COMPOSE_IDENTITY_FLAGS = new Set(["--env-file", "--project-name", "--file", "--project-directory"]);
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;

@@ -534,7 +534,7 @@ async function realPosixTarget(): Promise<Transport | undefined> {
       if (shell) return candidate;
     }
   } catch {
-    // wsl.exe missing or unlaunchable — reported as the skip below.
+    // wsl.exe missing or unlaunchable — the absent probe is reported by the check after the requires block.
   }
   return undefined;
 }
@@ -542,10 +542,11 @@ async function realPosixTarget(): Promise<Transport | undefined> {
 let probeTarget: Transport | undefined;
 await requires("local-posix", "provision symlink-boundary checks", async () => {
   probeTarget = await realPosixTarget();
+  // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+  if (probeTarget === undefined) check("provision symlink-boundary checks: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
 });
-if (probeTarget === undefined) {
-  check("provision symlink-boundary checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
-} else {
+// Without the capability requires() reported the skip (or, under --require, the failure).
+if (probeTarget !== undefined) {
   const linkTransport = probeTarget;
   // A one-shot target root with an `outside/` directory beside the data dir, plus a recipe
   // directory Node can read directly. Cleanup removes both sides.

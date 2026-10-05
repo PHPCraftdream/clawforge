@@ -26,7 +26,6 @@ import {
   crontabUpdateFailure,
   displayCommandLine,
   jobMarker,
-  nearestValidIntervals,
   parseIntervalToMinutes,
   posixTargetInvocation,
   printSchedulingInstructions,
@@ -128,7 +127,7 @@ check("1d -> 1440 minutes", parseIntervalToMinutes("1d"), 1440);
 check("a bare number is minutes (watch's historical form)", [parseIntervalToMinutes("30"), parseIntervalToMinutes("120"), parseIntervalToMinutes("1440")], [30, 120, 1440]);
 check("60m and 1h are the same interval", [parseIntervalToMinutes("60m"), parseIntervalToMinutes("1h")], [60, 60]);
 // backup install passes { bareMinutes: false }: a cadence that stops the gateway must carry a unit.
-check("a bare number is refused when bare minutes are disallowed, naming valid explicit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes(`${NEAREST_VALID}${nearestValidIntervals(6).join(", ")}`), true);
+check("a bare number is refused when bare minutes are disallowed, naming valid explicit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes(`${NEAREST_VALID}6m`), true);
 check("an explicit unit is still accepted when bare minutes are disallowed", [parseIntervalToMinutes("6m", { bareMinutes: false }), parseIntervalToMinutes("6h", { bareMinutes: false })], [6, 360]);
 check("an empty value is refused even when bare minutes are allowed", (await deathOf(() => parseIntervalToMinutes(""))).includes(INTERVAL_GRAMMAR), true);
 for (const malformed of ["", "abc", "1.5h", "-5", "5 m", "10mm"]) {
@@ -136,7 +135,7 @@ for (const malformed of ["", "abc", "1.5h", "-5", "5 m", "10mm"]) {
 }
 check("5h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("5h"))).includes(NO_FAITHFUL_ENCODING), true);
 check("7h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("7h"))).includes(NO_FAITHFUL_ENCODING), true);
-check("the refusal names the nearest valid values in the flag's own spelling", (await deathOf(() => parseIntervalToMinutes("7h"))).includes(`${NEAREST_VALID}${nearestValidIntervals(420).join(", ")}`), true);
+check("the refusal names the nearest valid values in the flag's own spelling", (await deathOf(() => parseIntervalToMinutes("7h"))).includes(`${NEAREST_VALID}6h, 8h`), true);
 
 // Every refusal's "nearest valid" list is non-empty and each entry parses back through the
 // same parser — it never offers a value the command itself would reject.
@@ -144,7 +143,12 @@ for (const refused of ["10h", "45m", "45", "90", "1441", "7", "0", "2d", "100d"]
   const message = await deathOf(() => parseIntervalToMinutes(refused));
   const offered = /nearest valid: (.*)$/.exec(message)?.[1]?.split(", ") ?? [];
   check(`${refused}: a non-empty nearest list`, offered.length > 0, true);
-  for (const value of offered) check(`${refused}: suggested ${value} is accepted`, await deathOf(() => parseIntervalToMinutes(value)), "");
+  for (const value of offered) {
+    check(`${refused}: suggested ${value} is accepted`, await deathOf(() => parseIntervalToMinutes(value)), "");
+    // The grammar's own reading, not the suggester's: a faithful cron cadence divides 60 minutes or one day.
+    const minutes = parseIntervalToMinutes(value);
+    check(`${refused}: suggested ${value} divides an hour or a day`, minutes < 60 ? 60 % minutes === 0 : 1440 % minutes === 0 && minutes % 60 === 0, true);
+  }
 }
 
 // Both commands' refusals for the report's values: every suggestion in the message is itself

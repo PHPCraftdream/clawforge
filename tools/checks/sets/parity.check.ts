@@ -228,6 +228,52 @@ await runVariant({
   mutate: (deployment) => writeFile(recipeFile(deployment, "recipe.json"), "{}"),
 });
 
+// A malformed JSON file in a self-consistent set is a body refusal, never an integrity error:
+// the archive agrees with its manifest about the very bytes that are wrong. The manifest is the
+// healthy one with the file's inventory entry updated to the malformed bytes.
+function withMalformedFile(healthy: SetManifest, kind: "agent" | "acceptance", text: string): SetManifest {
+  const checksum = checksumOf(Buffer.from(text));
+  const recipe = healthy.recipes.demo;
+  if (kind === "agent") {
+    const agentFiles = { ...recipe.agentFiles, "config.json": checksum };
+    return {
+      ...healthy,
+      files: { ...healthy.files, "recipes/demo/agent/config.json": checksum },
+      recipes: { ...healthy.recipes, demo: { ...recipe, agentFiles, agentChecksum: checksumOfFileMap(agentFiles) } },
+    };
+  }
+  const files = { ...recipe.files, "acceptance.json": checksum };
+  return {
+    ...healthy,
+    files: { ...healthy.files, "recipes/demo/acceptance.json": checksum },
+    recipes: { ...healthy.recipes, demo: { ...recipe, files, checksum: checksumOfFileMap(files) } },
+  };
+}
+
+await runVariant({
+  label: "a malformed agent/config.json in a self-consistent set",
+  mutate: (deployment) => writeFile(recipeFile(deployment, "agent", "config.json"), '{"agentId":"demo-agent",'),
+  assembled: true,
+  crafted: (healthy) => withMalformedFile(healthy, "agent", '{"agentId":"demo-agent",'),
+  expectCodes: ["SET_RECIPE_INVALID"],
+});
+
+await runVariant({
+  label: "an agent/config.json that is JSON but not a declaration",
+  mutate: (deployment) => writeFile(recipeFile(deployment, "agent", "config.json"), "[]"),
+  assembled: true,
+  crafted: (healthy) => withMalformedFile(healthy, "agent", "[]"),
+  expectCodes: ["SET_RECIPE_INVALID"],
+});
+
+await runVariant({
+  label: "a malformed acceptance.json in a self-consistent set",
+  mutate: (deployment) => writeFile(recipeFile(deployment, "acceptance.json"), '{"checks":[{"kind":'),
+  assembled: true,
+  crafted: (healthy) => withMalformedFile(healthy, "acceptance", '{"checks":[{"kind":'),
+  expectCodes: ["SET_RECIPE_INVALID"],
+});
+
 await runVariant({
   label: "a declaration that is not valid JSON",
   mutate: (deployment) => desiredState(deployment, '[{"path":"gateway.mode","value":"loc'),
@@ -372,6 +418,70 @@ try {
       check("a missing declaration is a finding naming the file", [codesOf(problems), problems[0]?.detail.includes("desired-state.json")], [["SET_DECLARATION_INVALID"], true]);
     } finally {
       await removeBuildDeployment(gone);
+    }
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// A malformed agent/config.json or acceptance.json: both paths name the file and the recipe.
+// Strict artifact load of the self-consistent set is not an integrity error; the tree loader
+// reports it as a finding (validate) or refuses naming the file (build) — never a bare
+// SyntaxError.
+for (const [kind, relative, text, label] of [
+  ["agent", ["agent", "config.json"], '{"agentId":"demo-agent",', "recipes/demo/agent/config.json"],
+  ["acceptance", ["acceptance.json"], '{"checks":[{"kind":', "recipes/demo/acceptance.json"],
+] as const) {
+  const deployment = await createBuildDeployment();
+  try {
+    const manifest = withMalformedFile(await collectedManifest(), kind, text);
+    await writeFile(recipeFile(deployment, ...relative), text);
+
+    const loaded = await loadSet({ kind: "tree" }, {
+      name: "demo-set",
+      declaredImage: IMAGE,
+      tolerateUnpinnedImage: true,
+      reportInvalidDeclaration: true,
+    });
+    const found = await validateLoadedSet(loaded);
+    // A declaration the tree cannot read is not in its manifest, so the acceptance checks
+    // naming that agent also report their dangling reference (the artifact side keeps the
+    // healthy declaration and does not).
+    const expected = kind === "agent" ? ["SET_RECIPE_INVALID", "SET_REFERENCE_BROKEN"] : ["SET_RECIPE_INVALID"];
+    check(`${label}: the tree loader reports it as a finding`, codesOf(found), expected);
+    const invalid = found.find((entry) => entry.code === "SET_RECIPE_INVALID");
+    check(`${label}: the finding names the file and the recipe`, invalid?.detail.startsWith(`recipe "demo": ${label} is not valid JSON: `), true);
+
+    let refusal = "";
+    try {
+      await collectManifest(IMAGE, "demo-set", { tolerateUnpinnedImage: true });
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check(`${label}: build refuses naming the file and the recipe`, refusal.startsWith(`recipe "demo": ${label} is not valid JSON: `), true);
+    check(`${label}: build's refusal is not the bare parser message`, refusal.length > "Unexpected end of JSON input".length && refusal !== "Unexpected end of JSON input", true);
+
+    let captured = "";
+    let failed = false;
+    await withOutputSink((chunk) => { captured += chunk; }, async () => {
+      try { await set(buildCtx, ["validate", "--json"]); } catch { failed = true; }
+    });
+    const document = JSON.parse(captured.slice(captured.indexOf("{\n")));
+    check(`${label}: set validate reports it`, [failed, document.valid, codesOf(document.problems)], [true, false, expected]);
+
+    const artifact = resolve(deployment, "malformed-assembled.tar.gz");
+    await packArtifact(deployment, manifest, artifact);
+    const strict = await loadSet({ kind: "artifact", path: artifact });
+    try {
+      check(`${label}: a self-consistent artifact loads strictly`, strict.id, setManifestId(manifest));
+      const problems = await validateLoadedSet(strict);
+      check(
+        `${label}: the artifact reports the same finding for the same bytes`,
+        sortedDetails(problems.filter((entry) => entry.code === "SET_RECIPE_INVALID"), [deployment, strict.staging ?? ""]),
+        sortedDetails(found.filter((entry) => entry.code === "SET_RECIPE_INVALID"), [deployment]),
+      );
+    } finally {
+      if (strict.staging !== undefined) await rm(strict.staging, { recursive: true, force: true });
     }
   } finally {
     await removeBuildDeployment(deployment);

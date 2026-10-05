@@ -14,7 +14,7 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
-import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/index.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =
@@ -323,10 +323,6 @@ export const SET_DIFF_ARGUMENTS = [
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface SetDiffPlan { readonly from: string; readonly to: string; readonly json: boolean }
-
-export function planSetDiff({ from, to, json, artifacts: positional }: Values<typeof SET_DIFF_ARGUMENTS>): SetDiffPlan {
-  return { from: from ?? positional[0], to: to ?? positional[1], json };
-}
 
 function humanChange(change: SetDiffChange): string {
   const target = `${change.scope}${change.field === undefined ? "" : `.${change.field}`}`;

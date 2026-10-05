@@ -104,9 +104,11 @@ export function digestOf(value: string): string | undefined {
   return at >= 0 ? value.slice(at + 1) : undefined;
 }
 
-/** Whether a value pins exact content — `repo[@:tag]@sha256:…` — rather than a moving tag. */
+/** Whether a value pins exact content — `repo[@:tag]@sha256:…` — rather than a moving tag.
+ *  The grammar decides, like parse(): a malformed digest pins nothing (digestOf keeps the
+ *  lexical suffix for comparing a spelling already on record). */
 export function hasDigest(value: string): boolean {
-  return value.includes("@sha256:");
+  return tryParse(value)?.digest !== undefined;
 }
 
 function contentId(value: string): string {

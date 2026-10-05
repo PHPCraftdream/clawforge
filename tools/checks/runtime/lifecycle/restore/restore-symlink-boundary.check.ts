@@ -113,7 +113,8 @@ try {
 await requires("local-posix", "restore symlink-boundary checks over a real POSIX filesystem", async () => {
 const transport = await realPosixTransport();
 if (transport === undefined) {
-  check("restore symlink-boundary checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+  // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+  check("restore symlink-boundary checks: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
 } else {
   // --- the audit's repro: an archive whose root entry is a symlink ---------------------------
   {

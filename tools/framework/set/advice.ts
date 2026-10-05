@@ -57,10 +57,10 @@ export function recipeMissingDir(recipe: string, detail: string): Problem {
   );
 }
 
-/** A recipe.json that does not parse the way recipe list/install read it: the loader's own
- *  message is the detail, the file to fix is the remedy. */
-export function recipeInvalidDefinition(recipe: string, message: string): Problem {
-  return problem("SET_RECIPE_INVALID", message, command("set validate", { note: `after fixing recipes/${recipe}/recipe.json` }));
+/** A recipe file (recipe.json by default) that does not parse the way its reader reads it: the
+ *  loader's own message is the detail, the file to fix is the remedy. */
+export function recipeInvalidDefinition(recipe: string, message: string, file = "recipe.json"): Problem {
+  return problem("SET_RECIPE_INVALID", message, command("set validate", { note: `after fixing recipes/${recipe}/${file}` }));
 }
 
 /** The remedy the instance-side recipe findings carry: re-provisioning one recipe. */

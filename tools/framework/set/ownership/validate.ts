@@ -15,6 +15,7 @@ import { parseRecipeDefinition } from "#src/service/recipe.ts";
 import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { readLock } from "#src/commands/management/lock.ts";
+import { readAcceptanceFile, readAgentFile } from "#src/set/recipe-files.ts";
 import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#src/set/advice.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
@@ -177,6 +178,12 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
       if (declaresAgent && !(await exists(resolve(dir, "agent", "config.json")))) {
         problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no agent/config.json`, addingFix("agent/config.json", name)));
       }
+      // The JSON files the set declares, read once by the loader's own step: a malformed
+      // one is the same finding whichever path loaded the set.
+      const agentFile = await readAgentFile(resolve(dir, "agent", "config.json"), name);
+      if (agentFile?.ok === false) problems.push(recipeInvalidDefinition(name, agentFile.reason, "agent/config.json"));
+      const acceptanceFile = await readAcceptanceFile(resolve(dir, "acceptance.json"), name);
+      if (acceptanceFile?.ok === false) problems.push(recipeInvalidDefinition(name, acceptanceFile.reason, "acceptance.json"));
       // Parse the definition with the loader recipe list and recipe install use, so a
       // recipe.json `recipe list` calls broken is a finding here too instead of failing
       // only mid-apply on the target (R33-08). The loader's own message names the file.

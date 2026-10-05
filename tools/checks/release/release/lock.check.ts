@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { compareLock, COMMIT_ADVICE, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, PREDATES_PLUGIN_PINNING, PREDATES_SKILL_PINNING, LOCK_NOT_WRITTEN, COULD_NOT_COMPARE, REASON_NOT_RUNNING, REASON_NEVER_BOOTSTRAPPED, DIFFERENCES_PHRASE, UNREAD_PHRASE, versionMismatchDetail, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
-import { gitInitAdvice, GIT_INIT_STEP } from "#framework/integration/deployment/scaffold.ts";
+import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
 import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList, pluginReinstall, skillReinstall, inventoryPrefix, NEVER_BOOTSTRAPPED_HINT, NOT_RUNNING_HINT, UNKNOWN_INVENTORY_TAIL, NO_LONGER_INSTALLED, REVIEW_BEFORE_REMOVAL } from "#framework/commands/management/extensions.ts";
@@ -289,7 +289,7 @@ check(
 
 const initAdvice = gitInitAdvice("demo");
 check("new-app's own note explains why (apps/ is gitignored here)", initAdvice.includes("gitignore"), true);
-check("and names the concrete command, not just the idea", initAdvice.includes(GIT_INIT_STEP), true);
+check("and names the concrete command, not just the idea", initAdvice.includes("cd apps/demo && git init"), true);
 check("and confirms secrets are already kept out of that new repository", initAdvice.includes(".env") && initAdvice.includes("secrets/"), true);
 
 // --- a recipes root that is not a directory must die naming it, not pin an empty lock -----

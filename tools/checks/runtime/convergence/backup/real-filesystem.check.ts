@@ -124,7 +124,8 @@ if (p202Transport !== undefined) {
 
 await requires("local-posix", "backup symlink-root checks over a real POSIX filesystem", async () => {
 if (p202Transport === undefined) {
-  check("backup symlink-root checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+  // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+  check("backup symlink-root checks: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
 } else {
   // The auditor's repro: a non-empty data root that is itself a symlink. Backup must
   // refuse before anything misleading is written, and the data behind the link stays put.

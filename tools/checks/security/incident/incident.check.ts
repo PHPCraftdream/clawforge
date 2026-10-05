@@ -14,7 +14,7 @@ import {
   IncidentPhaseFailure,
   PUBLIC_EXPOSURE_NOTE, NOTHING_TO_TURN_OFF, NO_GATEWAY_ROUTE, WOULD_RUN, RAN, NOTHING_TO_ROTATE, WOULD_ROTATE,
   ROTATED_TOKEN, RECREATING_GATEWAY, UNCONFIRMED_TOKEN, WOULD_PRESERVE, NO_PRE_ROTATE_EVIDENCE, WOULD_COLLECT,
-  CONTAIN_FAILED, auditFindingsSummary,
+  auditFindingsSummary,
 } from "#framework/commands/operate/incident/index.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { unprotectedPrivateFile } from "#framework/security/privacy/private-file.ts";
@@ -479,7 +479,7 @@ await withDeployment(async (dir) => {
     checkTrue("incident --dry-run with an unreachable target fails", failure instanceof IncidentPhaseFailure);
     checkTrue("the failure names the contain phase's transport error", (failure as Error).message.includes("unreachable"));
     const report = (failure as IncidentPhaseFailure).report;
-    check("the report still reaches the caller", report.phases[0].notes.some((note) => note.includes(CONTAIN_FAILED)), true);
+    check("the report still reaches the caller", report.phases[0].notes.some((note) => note.startsWith("contain failed unexpectedly: ")), true);
 
     // The control: a real run still proceeds to rotate over the same contain failure.
     let realRunFailed = false;

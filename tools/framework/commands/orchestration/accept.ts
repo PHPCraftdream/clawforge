@@ -11,7 +11,6 @@
 // Checks that call the model are declared separately and never run unless asked (cost,
 // agent-turn side effects). What was skipped is always reported, or coverage disappears.
 
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
@@ -24,6 +23,7 @@ import type { CheckOutcome } from "#src/commands/check-outcome.ts";
 import type { Context } from "#src/core/context.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
+import { readAcceptanceFile } from "#src/set/recipe-files.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
@@ -140,25 +140,11 @@ export function acceptanceSpecError(value: unknown, index?: number): string | un
   return undefined;
 }
 
-export async function loadChecks(recipe: string): Promise<AcceptanceCheck[] | undefined> {
-  let raw: string;
-  try {
-    raw = await readFile(resolve(recipesDir(), recipe, "acceptance.json"), "utf8");
-  } catch {
-    return undefined;
-  }
-  let parsed: { checks?: AcceptanceCheck[] };
-  try {
-    parsed = JSON.parse(raw) as { checks?: AcceptanceCheck[] };
-  } catch (error) {
-    throw new Error(`recipe "${recipe}": recipes/${recipe}/acceptance.json is not valid JSON: ${(error as Error).message}`);
-  }
-  if (!Array.isArray(parsed.checks)) return [];
-  const invalid = parsed.checks
-    .map((check, index) => acceptanceSpecError(check, index))
-    .find((detail) => detail !== undefined);
-  if (invalid !== undefined) throw new Error(`recipe "${recipe}": ${invalid}`);
-  return parsed.checks;
+async function loadChecks(recipe: string): Promise<AcceptanceCheck[] | undefined> {
+  const file = await readAcceptanceFile(resolve(recipesDir(), recipe, "acceptance.json"), recipe);
+  if (file === undefined) return undefined;
+  if (!file.ok) throw new Error(file.reason);
+  return file.value;
 }
 
 async function recipesWithAcceptance(): Promise<string[]> {

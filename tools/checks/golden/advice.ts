@@ -158,6 +158,7 @@ export function toolFormCell(advice: Advice): string {
 export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
   { label: "checkout default (openclaw/default)", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "default" }, audience: "terminal" } },
   { label: "--app openclaw", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "flag" }, audience: "terminal" } },
+  { label: "OC_APP=staging", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "staging", selectedBy: "env" }, audience: "terminal" } },
   { label: "--app demo", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
   { label: "OC_APP=demo", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "env" }, audience: "terminal" } },
   { label: "sole demo", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" } },

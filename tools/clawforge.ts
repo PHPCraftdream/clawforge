@@ -71,6 +71,7 @@ const decision = resolveCheckoutEntry({
   argv,
   ocApp: process.env.OC_APP,
   handedOver: handedOver !== undefined,
+  handedProgram: handedOver?.program,
   fs: nodeFs,
   gateCommands: gateCommands.map((command) => command.name),
   deploymentCommands: Object.keys(openclawCommands),

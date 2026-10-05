@@ -16,7 +16,7 @@ import { locksDir, parseEnv } from "#framework/core/env.ts";
 import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish, requires } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 assert.equal(upsertEnvValue("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
 assert.equal(upsertEnvValue("A=1\n", "B", "added"), "A=1\nB=added\n");
@@ -386,10 +386,11 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
 
 // --- the real POSIX transport: the marker arrives only through the sourced env file -----------
 
-{
+await requires("local-posix", "the real POSIX transport round-trip", async () => {
   const transport = await realPosixTransport();
   if (transport === undefined) {
-    process.stderr.write("  skip real-transport round-trip: no local POSIX filesystem and no WSL distribution with a shell\n");
+    // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+    checkTrue("real-transport round-trip: local-posix holds, so a POSIX transport must answer", false);
   } else {
     const dataDir = `/tmp/clawforge-exec-secrets-${randomBytes(4).toString("hex")}`;
     const locks = locksDir(dataDir);
@@ -410,7 +411,7 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
       await transport.remove(locks).catch(() => {});
     }
   }
-}
+});
 
   await requires("windows-host", "the Windows local secret round trip", async () => {
   const local = new LocalTransport();

@@ -12,7 +12,7 @@ import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { INVALID_ARTIFACT } from "#framework/set/load.ts";
 import { problem, SET_RECIPE_DIR_NOTE } from "#framework/service/inspection.ts";
 import { missingDescriptionDetail } from "#framework/service/recipe.ts";
-import { recipeInvalidDefinition, afterNote } from "#framework/set/advice.ts";
+import { afterNote } from "#framework/set/advice.ts";
 import type { CommandAdvice } from "#framework/core/io/invocation/advice.ts";
 import { BLOCKING_MARK, WARN_MARK } from "#framework/core/io/log.ts";
 
@@ -45,13 +45,13 @@ function coherent(overrides: Partial<SetManifest> = {}): SetManifest {
   return buildSetManifest({
     name: "demo",
     requires: { framework: "0.1.0", image: `ghcr.io/openclaw/openclaw@sha256:${HASH}` },
-    files: { "config/desired-state.json": HASH, "recipes/demo/server.ts": HASH },
+    files: { "config/desired-state.json": HASH, "recipes/demo/server.ts": HASH, "recipes/demo/recipe.json": HASH, "recipes/demo/agent/config.json": HASH },
     recipes: {
       demo: {
         checksum: HASH,
-        files: { "server.ts": HASH, "data/page.md": HASH },
+        files: { "server.ts": HASH, "recipe.json": HASH, "data/page.md": HASH },
         agentChecksum: HASH,
-        agentFiles: { "AGENTS.md": HASH },
+        agentFiles: { "AGENTS.md": HASH, "config.json": HASH },
         agent,
       },
     },
@@ -64,6 +64,20 @@ function coherent(overrides: Partial<SetManifest> = {}): SetManifest {
     },
     ...overrides,
   } as never);
+}
+
+/** The coherent set with some recipe files missing from its portable inventory: never written,
+ *  or kept private (privateFiles) — the tree and the artifact are judged by this inventory, not
+ *  by what the disk holds. */
+function withoutFiles(...paths: string[]): SetManifest {
+  const full = coherent();
+  const demo = full.recipes.demo!;
+  const kept = <T>(map: Record<string, T>, prefix: string): Record<string, T> =>
+    Object.fromEntries(Object.entries(map).filter(([path]) => !paths.includes(`${prefix}${path}`)));
+  return coherent({
+    files: Object.fromEntries(Object.entries(full.files).filter(([path]) => !paths.map((rel) => `recipes/demo/${rel}`).includes(path))),
+    recipes: { demo: { ...demo, files: kept(demo.files, ""), agentFiles: kept(demo.agentFiles ?? {}, "agent/") } },
+  });
 }
 
 function codes(problems: readonly { code: string }[]): string[] {
@@ -150,7 +164,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
     useDeployment(deployment);
 
-    const missingServer = await validateSet(coherent(), { checkFiles: true });
+    const missingServer = await validateSet(withoutFiles("server.ts"), { checkFiles: true });
     check("a recipe declaring an agent but no server.ts is a finding", codes(missingServer).includes("SET_RECIPE_INCOMPLETE"), true);
 
     // The false positive this rule started with, found by running it against a real
@@ -171,7 +185,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     check("a service recipe with no agent needs no server.ts", codes(await validateSet(serviceOnly, { checkFiles: true })), []);
 
     await writeFile(resolve(deployment, "recipes", "demo", "server.ts"), "// server\n");
-    const missingAgentConfig = await validateSet(coherent(), { checkFiles: true });
+    const missingAgentConfig = await validateSet(withoutFiles("agent/config.json"), { checkFiles: true });
     check("a declared agent with no agent/config.json is a finding", missingAgentConfig.some((entry) => entry.detail.includes("agent/config.json")), true);
 
     await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
@@ -523,7 +537,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     let problems = await validateSet(coherent(), { checkFiles: true });
     check("a recipe.json that is not JSON is a finding", codes(problems), ["SET_RECIPE_INVALID"]);
     check("the finding is the loader's, naming the file", problems[0]?.detail.includes("recipes/demo/recipe.json"), true);
-    check("the remedy names the file to fix", problems[0]?.nextAction, recipeInvalidDefinition("demo", "").nextAction);
+    const remedy = problems[0]?.next as CommandAdvice | undefined;
+    check("the remedy is set validate again, naming the file to fix", [remedy?.kind, remedy?.kind === "clawforge" ? remedy.argv.join("/") : "", remedy?.note?.includes("recipes/demo/recipe.json")], ["clawforge", "set/validate", true]);
 
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{}");
     problems = await validateSet(coherent(), { checkFiles: true });
@@ -536,14 +551,12 @@ check("leading digits and punctuation are stripped rather than smuggled through"
 
     // Each completeness gap gets the advice that closes THAT gap, not one recipe.json-or-
     // server.ts line for all five.
-    await rm(resolve(deployment, "recipes", "demo", "server.ts"));
-    const missingServer = await validateSet(coherent(), { checkFiles: true });
+    const missingServer = await validateSet(withoutFiles("server.ts"), { checkFiles: true });
     const missingServerAdvice = (missingServer[0] ?? { next: undefined }).next as CommandAdvice | undefined;
     check("an agent recipe without server.ts is advised to add server.ts", missingServerAdvice?.note, afterNote(addingFix("server.ts", "demo")));
     check("and not to add recipe.json, which would not fix it", missingServerAdvice?.note === SET_RECIPE_DIR_NOTE, false);
 
-    await rm(resolve(deployment, "recipes", "demo", "agent", "config.json"));
-    const missingConfig = await validateSet(coherent(), { checkFiles: true });
+    const missingConfig = await validateSet(withoutFiles("agent/config.json"), { checkFiles: true });
     check("a missing agent/config.json is advised by name", missingConfig.some((entry) => (entry.next as CommandAdvice).note === afterNote(addingFix("agent/config.json", "demo"))), true);
 
     await rm(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });

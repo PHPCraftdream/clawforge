@@ -7,6 +7,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
+const DIGEST = `sha256:${"deadbeef".repeat(8)}`;
 {
   useDeployment("/fixture/deployment");
   const calls: { command: string; args: string[] }[] = [];
@@ -16,9 +17,9 @@ import type { PathBridge } from "#framework/core/paths.ts";
     exec: async (command: string, args: string[]) => {
       calls.push({ command, args });
       if (command === "docker" && args[0] === "buildx") {
-        return args.includes("bad-registry-ref")
-          ? { code: 1, stdout: "", stderr: "not found" }
-          : { code: 0, stdout: "Name:      x\nMediaType: y\nDigest:    sha256:deadbeef\n", stderr: "" };
+        if (args.includes("bad-registry-ref")) return { code: 1, stdout: "", stderr: "not found" };
+        const answer = args.includes("malformed-digest") ? "sha256:zz" : DIGEST;
+        return { code: 0, stdout: `Name:      x\nMediaType: y\nDigest:    ${answer}\n`, stderr: "" };
       }
       if (command === "docker" && args[0] === "ps" && args.includes("--all")) return { code: 0, stdout: containerIdStdout, stderr: "" };
       if (args[0] === "compose" && args.includes("ps")) return { code: 0, stdout: containerIdStdout, stderr: "" };
@@ -36,9 +37,10 @@ import type { PathBridge } from "#framework/core/paths.ts";
     { service: "gateway", reconcileSettings: async () => ({ env: { OPENCLAW_IMAGE: "old-ref" }, image: "old-ref", dataDir: "/srv/openclaw/data" } as unknown as Settings) },
   );
 
-  assert.equal(await runtime.resolveImageDigest!("ghcr.io/openclaw/openclaw:extended-stable"), "ghcr.io/openclaw/openclaw:extended-stable@sha256:deadbeef", "resolves a tag via buildx imagetools, keeping the tag alongside the digest");
+  assert.equal(await runtime.resolveImageDigest!("ghcr.io/openclaw/openclaw:extended-stable"), `ghcr.io/openclaw/openclaw:extended-stable@${DIGEST}`, "resolves a tag via buildx imagetools, keeping the tag alongside the digest");
   assert.equal(calls.some((call) => call.command === "docker" && call.args.includes("pull")), false, "resolving a digest never pulls");
-  assert.equal(await runtime.resolveImageDigest!("myregistry:5000/repo:tag"), "myregistry:5000/repo:tag@sha256:deadbeef", "a registry port is not mistaken for the tag separator, and the tag survives alongside it");
+  assert.equal(await runtime.resolveImageDigest!("myregistry:5000/repo:tag"), `myregistry:5000/repo:tag@${DIGEST}`, "a registry port is not mistaken for the tag separator, and the tag survives alongside it");
+  assert.equal(await runtime.resolveImageDigest!("malformed-digest"), undefined, "a registry answer that is not a sha256 digest is never pinned");
   assert.equal(await runtime.resolveImageDigest!("bad-registry-ref"), undefined, "an unresolvable reference answers undefined, never a guess");
 
   await runtime.recreateWithImage!("ghcr.io/openclaw/openclaw@sha256:pinned");

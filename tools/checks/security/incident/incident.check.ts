@@ -14,7 +14,6 @@ import {
   IncidentPhaseFailure,
   PUBLIC_EXPOSURE_NOTE, NOTHING_TO_TURN_OFF, NO_GATEWAY_ROUTE, WOULD_RUN, RAN, NOTHING_TO_ROTATE, WOULD_ROTATE,
   ROTATED_TOKEN, RECREATING_GATEWAY, UNCONFIRMED_TOKEN, WOULD_PRESERVE, NO_PRE_ROTATE_EVIDENCE, WOULD_COLLECT,
-  auditFindingsSummary,
 } from "#framework/commands/operate/incident/index.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { unprotectedPrivateFile } from "#framework/security/privacy/private-file.ts";
@@ -315,7 +314,9 @@ await withDeployment(async () => {
 await withDeployment(async () => {
   const ctx = stubContext({ running: true, cliAnswers: { "security audit": JSON.stringify({ findings: [] }), "secrets audit": JSON.stringify({ findings: [] }) } });
   const { phase, security } = await runAudits(ctx);
-  checkTrue("the audit phase names how many findings and how many are blocking", phase.actions[0].includes(auditFindingsSummary(0, 0)));
+  const summary = phase.actions[0];
+  checkTrue("the audit phase names how many findings and how many are blocking", ["finding", "blocking"].every((word) => summary.includes(word)));
+  check("both counts are numbers, none here", summary.match(/\d+/g), ["0", "0"]);
   check("the security report travels back to the caller", security.problems.length, 0);
 });
 

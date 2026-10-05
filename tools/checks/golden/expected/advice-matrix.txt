@@ -1,6 +1,7 @@
 === command: status ===
   checkout default (openclaw/default): ./clawforge status
-  --app openclaw: ./clawforge status
+  --app openclaw: ./clawforge --app openclaw status
+  OC_APP=staging: ./clawforge --app staging status
   --app demo: ./clawforge --app demo status
   OC_APP=demo: ./clawforge --app demo status
   sole demo: ./clawforge --app demo status
@@ -17,6 +18,7 @@
 === gate command: new-app <name> ===
   checkout default (openclaw/default): ./clawforge new-app <name>
   --app openclaw: ./clawforge new-app <name>
+  OC_APP=staging: ./clawforge new-app <name>
   --app demo: ./clawforge new-app <name>
   OC_APP=demo: ./clawforge new-app <name>
   sole demo: ./clawforge new-app <name>
@@ -33,6 +35,7 @@
 === explicit app: status ===
   checkout default (openclaw/default): ./clawforge --app demo status
   --app openclaw: ./clawforge --app demo status
+  OC_APP=staging: ./clawforge --app demo status
   --app demo: ./clawforge --app demo status
   OC_APP=demo: ./clawforge --app demo status
   sole demo: ./clawforge --app demo status
@@ -48,7 +51,8 @@
 
 === placeholder: logs --tail ===
   checkout default (openclaw/default): ./clawforge logs --tail <n>
-  --app openclaw: ./clawforge logs --tail <n>
+  --app openclaw: ./clawforge --app openclaw logs --tail <n>
+  OC_APP=staging: ./clawforge --app staging logs --tail <n>
   --app demo: ./clawforge --app demo logs --tail <n>
   OC_APP=demo: ./clawforge --app demo logs --tail <n>
   sole demo: ./clawforge --app demo logs --tail <n>
@@ -64,7 +68,8 @@
 
 === note: up ===
   checkout default (openclaw/default): ./clawforge up  (after the change)
-  --app openclaw: ./clawforge up  (after the change)
+  --app openclaw: ./clawforge --app openclaw up  (after the change)
+  OC_APP=staging: ./clawforge --app staging up  (after the change)
   --app demo: ./clawforge --app demo up  (after the change)
   OC_APP=demo: ./clawforge --app demo up  (after the change)
   sole demo: ./clawforge --app demo up  (after the change)
@@ -81,6 +86,7 @@
 === shell posix ===
   checkout default (openclaw/default): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   --app openclaw: cd /srv/openclaw && ./clawforge backup  (in the crontab)
+  OC_APP=staging: cd /srv/openclaw && ./clawforge backup  (in the crontab)
   --app demo: cd /srv/openclaw && ./clawforge backup  (in the crontab)
   OC_APP=demo: cd /srv/openclaw && ./clawforge backup  (in the crontab)
   sole demo: cd /srv/openclaw && ./clawforge backup  (in the crontab)
@@ -97,6 +103,7 @@
 === shell cmd ===
   checkout default (openclaw/default): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   --app openclaw: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
+  OC_APP=staging: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   --app demo: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   OC_APP=demo: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   sole demo: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
@@ -113,6 +120,7 @@
 === shell pwsh ===
   checkout default (openclaw/default): clawforge status | Out-String
   --app openclaw: clawforge status | Out-String
+  OC_APP=staging: clawforge status | Out-String
   --app demo: clawforge status | Out-String
   OC_APP=demo: clawforge status | Out-String
   sole demo: clawforge status | Out-String
@@ -129,6 +137,7 @@
 === manual ===
   checkout default (openclaw/default): reconnect the MCP client (in Claude Code: /mcp)
   --app openclaw: reconnect the MCP client (in Claude Code: /mcp)
+  OC_APP=staging: reconnect the MCP client (in Claude Code: /mcp)
   --app demo: reconnect the MCP client (in Claude Code: /mcp)
   OC_APP=demo: reconnect the MCP client (in Claude Code: /mcp)
   sole demo: reconnect the MCP client (in Claude Code: /mcp)
@@ -144,7 +153,8 @@
 
 === problem code: NOT_BOOTSTRAPPED ===
   checkout default (openclaw/default): ./clawforge bootstrap
-  --app openclaw: ./clawforge bootstrap
+  --app openclaw: ./clawforge --app openclaw bootstrap
+  OC_APP=staging: ./clawforge --app staging bootstrap
   --app demo: ./clawforge --app demo bootstrap
   OC_APP=demo: ./clawforge --app demo bootstrap
   sole demo: ./clawforge --app demo bootstrap
@@ -161,6 +171,7 @@
 === problem code: TARGET_UNREACHABLE ===
   checkout default (openclaw/default): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   --app openclaw: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
+  OC_APP=staging: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   --app demo: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   OC_APP=demo: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   sole demo: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
@@ -176,7 +187,8 @@
 
 === problem code: TARGET_NOT_GNU ===
   checkout default (openclaw/default): ./clawforge bootstrap --check
-  --app openclaw: ./clawforge bootstrap --check
+  --app openclaw: ./clawforge --app openclaw bootstrap --check
+  OC_APP=staging: ./clawforge --app staging bootstrap --check
   --app demo: ./clawforge --app demo bootstrap --check
   OC_APP=demo: ./clawforge --app demo bootstrap --check
   sole demo: ./clawforge --app demo bootstrap --check
@@ -192,7 +204,8 @@
 
 === problem code: GATEWAY_DOWN ===
   checkout default (openclaw/default): ./clawforge up
-  --app openclaw: ./clawforge up
+  --app openclaw: ./clawforge --app openclaw up
+  OC_APP=staging: ./clawforge --app staging up
   --app demo: ./clawforge --app demo up
   OC_APP=demo: ./clawforge --app demo up
   sole demo: ./clawforge --app demo up
@@ -208,7 +221,8 @@
 
 === problem code: GATEWAY_UNHEALTHY ===
   checkout default (openclaw/default): ./clawforge logs --tail 100
-  --app openclaw: ./clawforge logs --tail 100
+  --app openclaw: ./clawforge --app openclaw logs --tail 100
+  OC_APP=staging: ./clawforge --app staging logs --tail 100
   --app demo: ./clawforge --app demo logs --tail 100
   OC_APP=demo: ./clawforge --app demo logs --tail 100
   sole demo: ./clawforge --app demo logs --tail 100
@@ -224,7 +238,8 @@
 
 === problem code: EGRESS_UNREACHABLE ===
   checkout default (openclaw/default): ./clawforge logs --tail 100
-  --app openclaw: ./clawforge logs --tail 100
+  --app openclaw: ./clawforge --app openclaw logs --tail 100
+  OC_APP=staging: ./clawforge --app staging logs --tail 100
   --app demo: ./clawforge --app demo logs --tail 100
   OC_APP=demo: ./clawforge --app demo logs --tail 100
   sole demo: ./clawforge --app demo logs --tail 100
@@ -240,7 +255,8 @@
 
 === problem code: CONFIG_DRIFT ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -256,7 +272,8 @@
 
 === problem code: SECRET_MISSING ===
   checkout default (openclaw/default): ./clawforge secrets --apply
-  --app openclaw: ./clawforge secrets --apply
+  --app openclaw: ./clawforge --app openclaw secrets --apply
+  OC_APP=staging: ./clawforge --app staging secrets --apply
   --app demo: ./clawforge --app demo secrets --apply
   OC_APP=demo: ./clawforge --app demo secrets --apply
   sole demo: ./clawforge --app demo secrets --apply
@@ -272,7 +289,8 @@
 
 === problem code: PROVIDER_MISSING ===
   checkout default (openclaw/default): ./clawforge configure-provider
-  --app openclaw: ./clawforge configure-provider
+  --app openclaw: ./clawforge --app openclaw configure-provider
+  OC_APP=staging: ./clawforge --app staging configure-provider
   --app demo: ./clawforge --app demo configure-provider
   OC_APP=demo: ./clawforge --app demo configure-provider
   sole demo: ./clawforge --app demo configure-provider
@@ -288,7 +306,8 @@
 
 === problem code: RESTART_REQUIRED ===
   checkout default (openclaw/default): ./clawforge restart
-  --app openclaw: ./clawforge restart
+  --app openclaw: ./clawforge --app openclaw restart
+  OC_APP=staging: ./clawforge --app staging restart
   --app demo: ./clawforge --app demo restart
   OC_APP=demo: ./clawforge --app demo restart
   sole demo: ./clawforge --app demo restart
@@ -305,6 +324,7 @@
 === problem code: MCP_RESTART_REQUIRED ===
   checkout default (openclaw/default): reconnect the MCP client (in Claude Code: /mcp)
   --app openclaw: reconnect the MCP client (in Claude Code: /mcp)
+  OC_APP=staging: reconnect the MCP client (in Claude Code: /mcp)
   --app demo: reconnect the MCP client (in Claude Code: /mcp)
   OC_APP=demo: reconnect the MCP client (in Claude Code: /mcp)
   sole demo: reconnect the MCP client (in Claude Code: /mcp)
@@ -320,7 +340,8 @@
 
 === problem code: RECIPE_MIRROR_DRIFT ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -336,7 +357,8 @@
 
 === problem code: AGENT_MISSING ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -352,7 +374,8 @@
 
 === problem code: MCP_SERVER_MISSING ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -368,7 +391,8 @@
 
 === problem code: CRON_DRIFT ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -384,7 +408,8 @@
 
 === problem code: CLI_READ_FAILED ===
   checkout default (openclaw/default): ./clawforge inspect
-  --app openclaw: ./clawforge inspect
+  --app openclaw: ./clawforge --app openclaw inspect
+  OC_APP=staging: ./clawforge --app staging inspect
   --app demo: ./clawforge --app demo inspect
   OC_APP=demo: ./clawforge --app demo inspect
   sole demo: ./clawforge --app demo inspect
@@ -400,7 +425,8 @@
 
 === problem code: CHANNEL_UNKNOWN ===
   checkout default (openclaw/default): ./clawforge cli channels status --json
-  --app openclaw: ./clawforge cli channels status --json
+  --app openclaw: ./clawforge --app openclaw cli channels status --json
+  OC_APP=staging: ./clawforge --app staging cli channels status --json
   --app demo: ./clawforge --app demo cli channels status --json
   OC_APP=demo: ./clawforge --app demo cli channels status --json
   sole demo: ./clawforge --app demo cli channels status --json
@@ -416,7 +442,8 @@
 
 === problem code: LOCK_MISSING ===
   checkout default (openclaw/default): ./clawforge lock
-  --app openclaw: ./clawforge lock
+  --app openclaw: ./clawforge --app openclaw lock
+  OC_APP=staging: ./clawforge --app staging lock
   --app demo: ./clawforge --app demo lock
   OC_APP=demo: ./clawforge --app demo lock
   sole demo: ./clawforge --app demo lock
@@ -432,7 +459,8 @@
 
 === problem code: LOCK_DRIFT ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -448,7 +476,8 @@
 
 === problem code: PLUGIN_DRIFT ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -464,7 +493,8 @@
 
 === problem code: SKILL_DRIFT ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -480,7 +510,8 @@
 
 === problem code: ENV_STALE ===
   checkout default (openclaw/default): ./clawforge recover-env
-  --app openclaw: ./clawforge recover-env
+  --app openclaw: ./clawforge --app openclaw recover-env
+  OC_APP=staging: ./clawforge --app staging recover-env
   --app demo: ./clawforge --app demo recover-env
   OC_APP=demo: ./clawforge --app demo recover-env
   sole demo: ./clawforge --app demo recover-env
@@ -496,7 +527,8 @@
 
 === problem code: ENV_LINE_INVALID ===
   checkout default (openclaw/default): ./clawforge inspect  (then edit .env: fix the line named)
-  --app openclaw: ./clawforge inspect  (then edit .env: fix the line named)
+  --app openclaw: ./clawforge --app openclaw inspect  (then edit .env: fix the line named)
+  OC_APP=staging: ./clawforge --app staging inspect  (then edit .env: fix the line named)
   --app demo: ./clawforge --app demo inspect  (then edit .env: fix the line named)
   OC_APP=demo: ./clawforge --app demo inspect  (then edit .env: fix the line named)
   sole demo: ./clawforge --app demo inspect  (then edit .env: fix the line named)
@@ -512,7 +544,8 @@
 
 === problem code: DECLARATION_MISSING ===
   checkout default (openclaw/default): ./clawforge apply-config --dump
-  --app openclaw: ./clawforge apply-config --dump
+  --app openclaw: ./clawforge --app openclaw apply-config --dump
+  OC_APP=staging: ./clawforge --app staging apply-config --dump
   --app demo: ./clawforge --app demo apply-config --dump
   OC_APP=demo: ./clawforge --app demo apply-config --dump
   sole demo: ./clawforge --app demo apply-config --dump
@@ -528,7 +561,8 @@
 
 === problem code: STORE_INCOMPLETE ===
   checkout default (openclaw/default): ./clawforge secrets --dump
-  --app openclaw: ./clawforge secrets --dump
+  --app openclaw: ./clawforge --app openclaw secrets --dump
+  OC_APP=staging: ./clawforge --app staging secrets --dump
   --app demo: ./clawforge --app demo secrets --dump
   OC_APP=demo: ./clawforge --app demo secrets --dump
   sole demo: ./clawforge --app demo secrets --dump
@@ -544,7 +578,8 @@
 
 === problem code: IMAGE_UNPINNED ===
   checkout default (openclaw/default): ./clawforge upgrade
-  --app openclaw: ./clawforge upgrade
+  --app openclaw: ./clawforge --app openclaw upgrade
+  OC_APP=staging: ./clawforge --app staging upgrade
   --app demo: ./clawforge --app demo upgrade
   OC_APP=demo: ./clawforge --app demo upgrade
   sole demo: ./clawforge --app demo upgrade
@@ -560,7 +595,8 @@
 
 === problem code: IMAGE_TAG_MOVED ===
   checkout default (openclaw/default): ./clawforge upgrade
-  --app openclaw: ./clawforge upgrade
+  --app openclaw: ./clawforge --app openclaw upgrade
+  OC_APP=staging: ./clawforge --app staging upgrade
   --app demo: ./clawforge --app demo upgrade
   OC_APP=demo: ./clawforge --app demo upgrade
   sole demo: ./clawforge --app demo upgrade
@@ -576,7 +612,8 @@
 
 === problem code: SET_RECIPE_INCOMPLETE ===
   checkout default (openclaw/default): ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
-  --app openclaw: ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
+  --app openclaw: ./clawforge --app openclaw set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
+  OC_APP=staging: ./clawforge --app staging set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   --app demo: ./clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   OC_APP=demo: ./clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   sole demo: ./clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
@@ -592,7 +629,8 @@
 
 === problem code: SET_RECIPE_INVALID ===
   checkout default (openclaw/default): ./clawforge set validate  (after fixing the recipe's recipe.json)
-  --app openclaw: ./clawforge set validate  (after fixing the recipe's recipe.json)
+  --app openclaw: ./clawforge --app openclaw set validate  (after fixing the recipe's recipe.json)
+  OC_APP=staging: ./clawforge --app staging set validate  (after fixing the recipe's recipe.json)
   --app demo: ./clawforge --app demo set validate  (after fixing the recipe's recipe.json)
   OC_APP=demo: ./clawforge --app demo set validate  (after fixing the recipe's recipe.json)
   sole demo: ./clawforge --app demo set validate  (after fixing the recipe's recipe.json)
@@ -608,7 +646,8 @@
 
 === problem code: SET_REFERENCE_BROKEN ===
   checkout default (openclaw/default): ./clawforge set validate
-  --app openclaw: ./clawforge set validate
+  --app openclaw: ./clawforge --app openclaw set validate
+  OC_APP=staging: ./clawforge --app staging set validate
   --app demo: ./clawforge --app demo set validate
   OC_APP=demo: ./clawforge --app demo set validate
   sole demo: ./clawforge --app demo set validate
@@ -624,7 +663,8 @@
 
 === problem code: SET_SCHEDULE_INVALID ===
   checkout default (openclaw/default): ./clawforge set validate
-  --app openclaw: ./clawforge set validate
+  --app openclaw: ./clawforge --app openclaw set validate
+  OC_APP=staging: ./clawforge --app staging set validate
   --app demo: ./clawforge --app demo set validate
   OC_APP=demo: ./clawforge --app demo set validate
   sole demo: ./clawforge --app demo set validate
@@ -640,7 +680,8 @@
 
 === problem code: SET_SECRET_UNDECLARED ===
   checkout default (openclaw/default): ./clawforge set validate
-  --app openclaw: ./clawforge set validate
+  --app openclaw: ./clawforge --app openclaw set validate
+  OC_APP=staging: ./clawforge --app staging set validate
   --app demo: ./clawforge --app demo set validate
   OC_APP=demo: ./clawforge --app demo set validate
   sole demo: ./clawforge --app demo set validate
@@ -656,7 +697,8 @@
 
 === problem code: SET_DECLARATION_INVALID ===
   checkout default (openclaw/default): ./clawforge set validate
-  --app openclaw: ./clawforge set validate
+  --app openclaw: ./clawforge --app openclaw set validate
+  OC_APP=staging: ./clawforge --app staging set validate
   --app demo: ./clawforge --app demo set validate
   OC_APP=demo: ./clawforge --app demo set validate
   sole demo: ./clawforge --app demo set validate
@@ -672,7 +714,8 @@
 
 === problem code: SET_REQUIREMENT_UNMET ===
   checkout default (openclaw/default): ./clawforge inspect
-  --app openclaw: ./clawforge inspect
+  --app openclaw: ./clawforge --app openclaw inspect
+  OC_APP=staging: ./clawforge --app staging inspect
   --app demo: ./clawforge --app demo inspect
   OC_APP=demo: ./clawforge --app demo inspect
   sole demo: ./clawforge --app demo inspect
@@ -688,7 +731,8 @@
 
 === problem code: SET_IMAGE_UNPINNED ===
   checkout default (openclaw/default): ./clawforge bootstrap
-  --app openclaw: ./clawforge bootstrap
+  --app openclaw: ./clawforge --app openclaw bootstrap
+  OC_APP=staging: ./clawforge --app staging bootstrap
   --app demo: ./clawforge --app demo bootstrap
   OC_APP=demo: ./clawforge --app demo bootstrap
   sole demo: ./clawforge --app demo bootstrap
@@ -704,7 +748,8 @@
 
 === problem code: SET_IMAGE_INVALID ===
   checkout default (openclaw/default): ./clawforge set validate
-  --app openclaw: ./clawforge set validate
+  --app openclaw: ./clawforge --app openclaw set validate
+  OC_APP=staging: ./clawforge --app staging set validate
   --app demo: ./clawforge --app demo set validate
   OC_APP=demo: ./clawforge --app demo set validate
   sole demo: ./clawforge --app demo set validate
@@ -720,7 +765,8 @@
 
 === problem code: SET_OBJECT_ORPHANED ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -736,7 +782,8 @@
 
 === problem code: SECURITY_AUDIT_CRITICAL ===
   checkout default (openclaw/default): ./clawforge cli security audit --json
-  --app openclaw: ./clawforge cli security audit --json
+  --app openclaw: ./clawforge --app openclaw cli security audit --json
+  OC_APP=staging: ./clawforge --app staging cli security audit --json
   --app demo: ./clawforge --app demo cli security audit --json
   OC_APP=demo: ./clawforge --app demo cli security audit --json
   sole demo: ./clawforge --app demo cli security audit --json
@@ -752,7 +799,8 @@
 
 === problem code: SECURITY_AUDIT_WARN ===
   checkout default (openclaw/default): ./clawforge cli security audit --json
-  --app openclaw: ./clawforge cli security audit --json
+  --app openclaw: ./clawforge --app openclaw cli security audit --json
+  OC_APP=staging: ./clawforge --app staging cli security audit --json
   --app demo: ./clawforge --app demo cli security audit --json
   OC_APP=demo: ./clawforge --app demo cli security audit --json
   sole demo: ./clawforge --app demo cli security audit --json
@@ -768,7 +816,8 @@
 
 === problem code: GATEWAY_PUBLICLY_BOUND ===
   checkout default (openclaw/default): ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
-  --app openclaw: ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
+  --app openclaw: ./clawforge --app openclaw expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
+  OC_APP=staging: ./clawforge --app staging expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   --app demo: ./clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   OC_APP=demo: ./clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   sole demo: ./clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
@@ -784,7 +833,8 @@
 
 === problem code: GATEWAY_EXPOSURE_ACKNOWLEDGED ===
   checkout default (openclaw/default): ./clawforge expose status
-  --app openclaw: ./clawforge expose status
+  --app openclaw: ./clawforge --app openclaw expose status
+  OC_APP=staging: ./clawforge --app staging expose status
   --app demo: ./clawforge --app demo expose status
   OC_APP=demo: ./clawforge --app demo expose status
   sole demo: ./clawforge --app demo expose status
@@ -800,7 +850,8 @@
 
 === problem code: UFW_DOCKER_BYPASS ===
   checkout default (openclaw/default): ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
-  --app openclaw: ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
+  --app openclaw: ./clawforge --app openclaw expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
+  OC_APP=staging: ./clawforge --app staging expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   --app demo: ./clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   OC_APP=demo: ./clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   sole demo: ./clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
@@ -816,7 +867,8 @@
 
 === problem code: PRIVATE_FILE_INSECURE ===
   checkout default (openclaw/default): ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
-  --app openclaw: ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
+  --app openclaw: ./clawforge --app openclaw secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
+  OC_APP=staging: ./clawforge --app staging secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   --app demo: ./clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   OC_APP=demo: ./clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   sole demo: ./clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
@@ -832,7 +884,8 @@
 
 === problem code: PRIVATE_FILE_UNREADABLE ===
   checkout default (openclaw/default): ./clawforge doctor  (check local filesystem access, then retry)
-  --app openclaw: ./clawforge doctor  (check local filesystem access, then retry)
+  --app openclaw: ./clawforge --app openclaw doctor  (check local filesystem access, then retry)
+  OC_APP=staging: ./clawforge --app staging doctor  (check local filesystem access, then retry)
   --app demo: ./clawforge --app demo doctor  (check local filesystem access, then retry)
   OC_APP=demo: ./clawforge --app demo doctor  (check local filesystem access, then retry)
   sole demo: ./clawforge --app demo doctor  (check local filesystem access, then retry)
@@ -848,7 +901,8 @@
 
 === problem code: BACKUP_MISSING ===
   checkout default (openclaw/default): ./clawforge backup
-  --app openclaw: ./clawforge backup
+  --app openclaw: ./clawforge --app openclaw backup
+  OC_APP=staging: ./clawforge --app staging backup
   --app demo: ./clawforge --app demo backup
   OC_APP=demo: ./clawforge --app demo backup
   sole demo: ./clawforge --app demo backup
@@ -864,7 +918,8 @@
 
 === problem code: BACKUP_UNREADABLE ===
   checkout default (openclaw/default): ./clawforge backup list
-  --app openclaw: ./clawforge backup list
+  --app openclaw: ./clawforge --app openclaw backup list
+  OC_APP=staging: ./clawforge --app staging backup list
   --app demo: ./clawforge --app demo backup list
   OC_APP=demo: ./clawforge --app demo backup list
   sole demo: ./clawforge --app demo backup list
@@ -880,7 +935,8 @@
 
 === problem code: BACKUP_STALE ===
   checkout default (openclaw/default): ./clawforge backup install --apply
-  --app openclaw: ./clawforge backup install --apply
+  --app openclaw: ./clawforge --app openclaw backup install --apply
+  OC_APP=staging: ./clawforge --app staging backup install --apply
   --app demo: ./clawforge --app demo backup install --apply
   OC_APP=demo: ./clawforge --app demo backup install --apply
   sole demo: ./clawforge --app demo backup install --apply
@@ -896,7 +952,8 @@
 
 === problem code: DISK_LOW ===
   checkout default (openclaw/default): ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
-  --app openclaw: ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
+  --app openclaw: ./clawforge --app openclaw backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
+  OC_APP=staging: ./clawforge --app staging backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   --app demo: ./clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   OC_APP=demo: ./clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   sole demo: ./clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
@@ -912,7 +969,8 @@
 
 === image pin: no lock recorded ===
   checkout default (openclaw/default): ./clawforge bootstrap
-  --app openclaw: ./clawforge bootstrap
+  --app openclaw: ./clawforge --app openclaw bootstrap
+  OC_APP=staging: ./clawforge --app staging bootstrap
   --app demo: ./clawforge --app demo bootstrap
   OC_APP=demo: ./clawforge --app demo bootstrap
   sole demo: ./clawforge --app demo bootstrap
@@ -928,7 +986,8 @@
 
 === image pin: lock without a digest ===
   checkout default (openclaw/default): ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
-  --app openclaw: ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
+  --app openclaw: ./clawforge --app openclaw upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
+  OC_APP=staging: ./clawforge --app staging upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   --app demo: ./clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   OC_APP=demo: ./clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   sole demo: ./clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
@@ -944,7 +1003,8 @@
 
 === image pin: lock for another image ===
   checkout default (openclaw/default): ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
-  --app openclaw: ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
+  --app openclaw: ./clawforge --app openclaw upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
+  OC_APP=staging: ./clawforge --app staging upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   --app demo: ./clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   OC_APP=demo: ./clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   sole demo: ./clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
@@ -960,7 +1020,8 @@
 
 === recipe incomplete (set validate) ===
   checkout default (openclaw/default): ./clawforge set validate  (after adding the missing file)
-  --app openclaw: ./clawforge set validate  (after adding the missing file)
+  --app openclaw: ./clawforge --app openclaw set validate  (after adding the missing file)
+  OC_APP=staging: ./clawforge --app staging set validate  (after adding the missing file)
   --app demo: ./clawforge --app demo set validate  (after adding the missing file)
   OC_APP=demo: ./clawforge --app demo set validate  (after adding the missing file)
   sole demo: ./clawforge --app demo set validate  (after adding the missing file)
@@ -976,7 +1037,8 @@
 
 === recipe incomplete (set build) ===
   checkout default (openclaw/default): ./clawforge set build  (after rebuilding)
-  --app openclaw: ./clawforge set build  (after rebuilding)
+  --app openclaw: ./clawforge --app openclaw set build  (after rebuilding)
+  OC_APP=staging: ./clawforge --app staging set build  (after rebuilding)
   --app demo: ./clawforge --app demo set build  (after rebuilding)
   OC_APP=demo: ./clawforge --app demo set build  (after rebuilding)
   sole demo: ./clawforge --app demo set build  (after rebuilding)
@@ -992,7 +1054,8 @@
 
 === recipe missing directory ===
   checkout default (openclaw/default): ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
-  --app openclaw: ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
+  --app openclaw: ./clawforge --app openclaw set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
+  OC_APP=staging: ./clawforge --app staging set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   --app demo: ./clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   OC_APP=demo: ./clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   sole demo: ./clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
@@ -1008,7 +1071,8 @@
 
 === recipe invalid definition ===
   checkout default (openclaw/default): ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
-  --app openclaw: ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
+  --app openclaw: ./clawforge --app openclaw set validate  (after fixing recipes/<recipe>/recipe.json)
+  OC_APP=staging: ./clawforge --app staging set validate  (after fixing recipes/<recipe>/recipe.json)
   --app demo: ./clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
   OC_APP=demo: ./clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
   sole demo: ./clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
@@ -1024,7 +1088,8 @@
 
 === provision remedy ===
   checkout default (openclaw/default): ./clawforge provision-agent <recipe>
-  --app openclaw: ./clawforge provision-agent <recipe>
+  --app openclaw: ./clawforge --app openclaw provision-agent <recipe>
+  OC_APP=staging: ./clawforge --app staging provision-agent <recipe>
   --app demo: ./clawforge --app demo provision-agent <recipe>
   OC_APP=demo: ./clawforge --app demo provision-agent <recipe>
   sole demo: ./clawforge --app demo provision-agent <recipe>
@@ -1040,7 +1105,8 @@
 
 === forget remedy ===
   checkout default (openclaw/default): ./clawforge set forget --kind cron-job --name <name>
-  --app openclaw: ./clawforge set forget --kind cron-job --name <name>
+  --app openclaw: ./clawforge --app openclaw set forget --kind cron-job --name <name>
+  OC_APP=staging: ./clawforge --app staging set forget --kind cron-job --name <name>
   --app demo: ./clawforge --app demo set forget --kind cron-job --name <name>
   OC_APP=demo: ./clawforge --app demo set forget --kind cron-job --name <name>
   sole demo: ./clawforge --app demo set forget --kind cron-job --name <name>
@@ -1056,7 +1122,8 @@
 
 === plugin reinstall ===
   checkout default (openclaw/default): ./clawforge cli plugins install <package> --force
-  --app openclaw: ./clawforge cli plugins install <package> --force
+  --app openclaw: ./clawforge --app openclaw cli plugins install <package> --force
+  OC_APP=staging: ./clawforge --app staging cli plugins install <package> --force
   --app demo: ./clawforge --app demo cli plugins install <package> --force
   OC_APP=demo: ./clawforge --app demo cli plugins install <package> --force
   sole demo: ./clawforge --app demo cli plugins install <package> --force
@@ -1072,7 +1139,8 @@
 
 === skill reinstall ===
   checkout default (openclaw/default): ./clawforge cli skills install <name> --force
-  --app openclaw: ./clawforge cli skills install <name> --force
+  --app openclaw: ./clawforge --app openclaw cli skills install <name> --force
+  OC_APP=staging: ./clawforge --app staging cli skills install <name> --force
   --app demo: ./clawforge --app demo cli skills install <name> --force
   OC_APP=demo: ./clawforge --app demo cli skills install <name> --force
   sole demo: ./clawforge --app demo cli skills install <name> --force
@@ -1089,6 +1157,7 @@
 === audit remediation (OpenClaw's own) ===
   checkout default (openclaw/default): Set gateway.auth (token recommended).
   --app openclaw: Set gateway.auth (token recommended).
+  OC_APP=staging: Set gateway.auth (token recommended).
   --app demo: Set gateway.auth (token recommended).
   OC_APP=demo: Set gateway.auth (token recommended).
   sole demo: Set gateway.auth (token recommended).
@@ -1104,7 +1173,8 @@
 
 === audit fallback: cli security audit ===
   checkout default (openclaw/default): ./clawforge cli security audit --json
-  --app openclaw: ./clawforge cli security audit --json
+  --app openclaw: ./clawforge --app openclaw cli security audit --json
+  OC_APP=staging: ./clawforge --app staging cli security audit --json
   --app demo: ./clawforge --app demo cli security audit --json
   OC_APP=demo: ./clawforge --app demo cli security audit --json
   sole demo: ./clawforge --app demo cli security audit --json
@@ -1121,6 +1191,7 @@
 === refusal: missing deployment, nothing available ===
   checkout default (openclaw/default): ./clawforge new-app <name>
   --app openclaw: ./clawforge new-app <name>
+  OC_APP=staging: ./clawforge new-app <name>
   --app demo: ./clawforge new-app <name>
   OC_APP=demo: ./clawforge new-app <name>
   sole demo: ./clawforge new-app <name>
@@ -1137,6 +1208,7 @@
 === refusal: missing deployment, others available ===
   checkout default (openclaw/default): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   --app openclaw: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
+  OC_APP=staging: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   --app demo: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   OC_APP=demo: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   sole demo: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
@@ -1153,6 +1225,7 @@
 === refusal: missing deployment, others available (2) ===
   checkout default (openclaw/default): ./clawforge new-app <name>
   --app openclaw: ./clawforge new-app <name>
+  OC_APP=staging: ./clawforge new-app <name>
   --app demo: ./clawforge new-app <name>
   OC_APP=demo: ./clawforge new-app <name>
   sole demo: ./clawforge new-app <name>
@@ -1169,6 +1242,7 @@
 === refusal: empty directory without app.ts ===
   checkout default (openclaw/default): ./clawforge new-app demo
   --app openclaw: ./clawforge new-app demo
+  OC_APP=staging: ./clawforge new-app demo
   --app demo: ./clawforge new-app demo
   OC_APP=demo: ./clawforge new-app demo
   sole demo: ./clawforge new-app demo
@@ -1185,6 +1259,7 @@
 === refusal: empty directory without app.ts (2) ===
   checkout default (openclaw/default): otherwise remove it or pick another name
   --app openclaw: otherwise remove it or pick another name
+  OC_APP=staging: otherwise remove it or pick another name
   --app demo: otherwise remove it or pick another name
   OC_APP=demo: otherwise remove it or pick another name
   sole demo: otherwise remove it or pick another name
@@ -1201,6 +1276,7 @@
 === refusal: checkout gate command from a subfolder ===
   checkout default (openclaw/default): cd "/clawforge-checkout"
   --app openclaw: cd "/clawforge-checkout"
+  OC_APP=staging: cd "/clawforge-checkout"
   --app demo: cd "/clawforge-checkout"
   OC_APP=demo: cd "/clawforge-checkout"
   sole demo: cd "/clawforge-checkout"
@@ -1217,6 +1293,7 @@
 === refusal: init inside a ClawForge checkout ===
   checkout default (openclaw/default): ./clawforge new-app <name>
   --app openclaw: ./clawforge new-app <name>
+  OC_APP=staging: ./clawforge new-app <name>
   --app demo: ./clawforge new-app <name>
   OC_APP=demo: ./clawforge new-app <name>
   sole demo: ./clawforge new-app <name>
@@ -1233,6 +1310,7 @@
 === refusal: init inside a ClawForge checkout (2) ===
   checkout default (openclaw/default): ./clawforge new-app <name>  (in bash)
   --app openclaw: ./clawforge new-app <name>  (in bash)
+  OC_APP=staging: ./clawforge new-app <name>  (in bash)
   --app demo: ./clawforge new-app <name>  (in bash)
   OC_APP=demo: ./clawforge new-app <name>  (in bash)
   sole demo: ./clawforge new-app <name>  (in bash)
@@ -1249,6 +1327,7 @@
 === refusal: not initialised (installed) ===
   checkout default (openclaw/default): ./clawforge init
   --app openclaw: ./clawforge init
+  OC_APP=staging: ./clawforge init
   --app demo: ./clawforge init
   OC_APP=demo: ./clawforge init
   sole demo: ./clawforge init
@@ -1265,6 +1344,7 @@
 === refusal: not initialised (in a checkout) (2) ===
   checkout default (openclaw/default): ./clawforge  (in bash)
   --app openclaw: ./clawforge  (in bash)
+  OC_APP=staging: ./clawforge  (in bash)
   --app demo: ./clawforge  (in bash)
   OC_APP=demo: ./clawforge  (in bash)
   sole demo: ./clawforge  (in bash)
@@ -1280,7 +1360,8 @@
 
 === pointer: unknown command ===
   checkout default (openclaw/default): ./clawforge help
-  --app openclaw: ./clawforge help
+  --app openclaw: ./clawforge --app openclaw help
+  OC_APP=staging: ./clawforge --app staging help
   --app demo: ./clawforge --app demo help
   OC_APP=demo: ./clawforge --app demo help
   sole demo: ./clawforge --app demo help
@@ -1296,7 +1377,8 @@
 
 === pointer: unknown argument ===
   checkout default (openclaw/default): ./clawforge status --help
-  --app openclaw: ./clawforge status --help
+  --app openclaw: ./clawforge --app openclaw status --help
+  OC_APP=staging: ./clawforge --app staging status --help
   --app demo: ./clawforge --app demo status --help
   OC_APP=demo: ./clawforge --app demo status --help
   sole demo: ./clawforge --app demo status --help
@@ -1313,6 +1395,7 @@
 === deploy: remote bootstrap hint (shell) ===
   checkout default (openclaw/default): cd '<remotePath>' && ./clawforge --app <name> bootstrap
   --app openclaw: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  OC_APP=staging: cd '<remotePath>' && ./clawforge --app <name> bootstrap
   --app demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
   OC_APP=demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
   sole demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
@@ -1329,6 +1412,7 @@
 === deploy: remote bootstrap command ===
   checkout default (openclaw/default): ./clawforge --app <name> bootstrap
   --app openclaw: ./clawforge --app <name> bootstrap
+  OC_APP=staging: ./clawforge --app <name> bootstrap
   --app demo: ./clawforge --app <name> bootstrap
   OC_APP=demo: ./clawforge --app <name> bootstrap
   sole demo: ./clawforge --app <name> bootstrap
@@ -1345,6 +1429,7 @@
 === deploy: remote secrets --apply command ===
   checkout default (openclaw/default): ./clawforge --app <name> secrets --apply
   --app openclaw: ./clawforge --app <name> secrets --apply
+  OC_APP=staging: ./clawforge --app <name> secrets --apply
   --app demo: ./clawforge --app <name> secrets --apply
   OC_APP=demo: ./clawforge --app <name> secrets --apply
   sole demo: ./clawforge --app <name> secrets --apply
@@ -1361,6 +1446,7 @@
 === cron: posix target line ===
   checkout default (openclaw/default): cd <root> && ./clawforge --app "<name>" backup
   --app openclaw: cd <root> && ./clawforge --app "<name>" backup
+  OC_APP=staging: cd <root> && ./clawforge --app "<name>" backup
   --app demo: cd <root> && ./clawforge --app "<name>" backup
   OC_APP=demo: cd <root> && ./clawforge --app "<name>" backup
   sole demo: cd <root> && ./clawforge --app "<name>" backup
@@ -1377,6 +1463,7 @@
 === schtasks: cmd.exe create line ===
   checkout default (openclaw/default): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   --app openclaw: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
+  OC_APP=staging: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   --app demo: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   OC_APP=demo: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   sole demo: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
@@ -1392,7 +1479,8 @@
 
 === help prose: restart up ===
   checkout default (openclaw/default): ./clawforge up
-  --app openclaw: ./clawforge up
+  --app openclaw: ./clawforge --app openclaw up
+  OC_APP=staging: ./clawforge --app staging up
   --app demo: ./clawforge --app demo up
   OC_APP=demo: ./clawforge --app demo up
   sole demo: ./clawforge --app demo up
@@ -1409,6 +1497,7 @@
 === help prose: destroy remove-app ===
   checkout default (openclaw/default): ./clawforge remove-app
   --app openclaw: ./clawforge remove-app
+  OC_APP=staging: ./clawforge remove-app
   --app demo: ./clawforge remove-app
   OC_APP=demo: ./clawforge remove-app
   sole demo: ./clawforge remove-app
@@ -1424,7 +1513,8 @@
 
 === help prose: backup help pull ===
   checkout default (openclaw/default): ./clawforge help pull
-  --app openclaw: ./clawforge help pull
+  --app openclaw: ./clawforge --app openclaw help pull
+  OC_APP=staging: ./clawforge --app staging help pull
   --app demo: ./clawforge --app demo help pull
   OC_APP=demo: ./clawforge --app demo help pull
   sole demo: ./clawforge --app demo help pull
@@ -1440,7 +1530,8 @@
 
 === help prose: backup restore ===
   checkout default (openclaw/default): ./clawforge restore
-  --app openclaw: ./clawforge restore
+  --app openclaw: ./clawforge --app openclaw restore
+  OC_APP=staging: ./clawforge --app staging restore
   --app demo: ./clawforge --app demo restore
   OC_APP=demo: ./clawforge --app demo restore
   sole demo: ./clawforge --app demo restore
@@ -1456,7 +1547,8 @@
 
 === help prose: backup backup ===
   checkout default (openclaw/default): ./clawforge backup
-  --app openclaw: ./clawforge backup
+  --app openclaw: ./clawforge --app openclaw backup
+  OC_APP=staging: ./clawforge --app staging backup
   --app demo: ./clawforge --app demo backup
   OC_APP=demo: ./clawforge --app demo backup
   sole demo: ./clawforge --app demo backup
@@ -1472,7 +1564,8 @@
 
 === help prose: verify pull --share ===
   checkout default (openclaw/default): ./clawforge pull --share
-  --app openclaw: ./clawforge pull --share
+  --app openclaw: ./clawforge --app openclaw pull --share
+  OC_APP=staging: ./clawforge --app staging pull --share
   --app demo: ./clawforge --app demo pull --share
   OC_APP=demo: ./clawforge --app demo pull --share
   sole demo: ./clawforge --app demo pull --share
@@ -1488,7 +1581,8 @@
 
 === help prose: upgrade lock ===
   checkout default (openclaw/default): ./clawforge lock
-  --app openclaw: ./clawforge lock
+  --app openclaw: ./clawforge --app openclaw lock
+  OC_APP=staging: ./clawforge --app staging lock
   --app demo: ./clawforge --app demo lock
   OC_APP=demo: ./clawforge --app demo lock
   sole demo: ./clawforge --app demo lock
@@ -1504,7 +1598,8 @@
 
 === help prose: smoke apply-config ===
   checkout default (openclaw/default): ./clawforge apply-config
-  --app openclaw: ./clawforge apply-config
+  --app openclaw: ./clawforge --app openclaw apply-config
+  OC_APP=staging: ./clawforge --app staging apply-config
   --app demo: ./clawforge --app demo apply-config
   OC_APP=demo: ./clawforge --app demo apply-config
   sole demo: ./clawforge --app demo apply-config
@@ -1520,7 +1615,8 @@
 
 === help prose: inspect plan ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -1536,7 +1632,8 @@
 
 === help prose: inspect cli-start ===
   checkout default (openclaw/default): ./clawforge cli-start
-  --app openclaw: ./clawforge cli-start
+  --app openclaw: ./clawforge --app openclaw cli-start
+  OC_APP=staging: ./clawforge --app staging cli-start
   --app demo: ./clawforge --app demo cli-start
   OC_APP=demo: ./clawforge --app demo cli-start
   sole demo: ./clawforge --app demo cli-start
@@ -1552,7 +1649,8 @@
 
 === help prose: doctor inspect ===
   checkout default (openclaw/default): ./clawforge inspect
-  --app openclaw: ./clawforge inspect
+  --app openclaw: ./clawforge --app openclaw inspect
+  OC_APP=staging: ./clawforge --app staging inspect
   --app demo: ./clawforge --app demo inspect
   OC_APP=demo: ./clawforge --app demo inspect
   sole demo: ./clawforge --app demo inspect
@@ -1568,7 +1666,8 @@
 
 === help prose: plan inspect ===
   checkout default (openclaw/default): ./clawforge inspect
-  --app openclaw: ./clawforge inspect
+  --app openclaw: ./clawforge --app openclaw inspect
+  OC_APP=staging: ./clawforge --app staging inspect
   --app demo: ./clawforge --app demo inspect
   OC_APP=demo: ./clawforge --app demo inspect
   sole demo: ./clawforge --app demo inspect
@@ -1584,7 +1683,8 @@
 
 === help prose: plan recover-env ===
   checkout default (openclaw/default): ./clawforge recover-env
-  --app openclaw: ./clawforge recover-env
+  --app openclaw: ./clawforge --app openclaw recover-env
+  OC_APP=staging: ./clawforge --app staging recover-env
   --app demo: ./clawforge --app demo recover-env
   OC_APP=demo: ./clawforge --app demo recover-env
   sole demo: ./clawforge --app demo recover-env
@@ -1600,7 +1700,8 @@
 
 === help prose: plan apply-config --dump ===
   checkout default (openclaw/default): ./clawforge apply-config --dump
-  --app openclaw: ./clawforge apply-config --dump
+  --app openclaw: ./clawforge --app openclaw apply-config --dump
+  OC_APP=staging: ./clawforge --app staging apply-config --dump
   --app demo: ./clawforge --app demo apply-config --dump
   OC_APP=demo: ./clawforge --app demo apply-config --dump
   sole demo: ./clawforge --app demo apply-config --dump
@@ -1616,7 +1717,8 @@
 
 === help prose: plan secrets --dump ===
   checkout default (openclaw/default): ./clawforge secrets --dump
-  --app openclaw: ./clawforge secrets --dump
+  --app openclaw: ./clawforge --app openclaw secrets --dump
+  OC_APP=staging: ./clawforge --app staging secrets --dump
   --app demo: ./clawforge --app demo secrets --dump
   OC_APP=demo: ./clawforge --app demo secrets --dump
   sole demo: ./clawforge --app demo secrets --dump
@@ -1632,7 +1734,8 @@
 
 === help prose: plan apply ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -1648,7 +1751,8 @@
 
 === help prose: apply plan ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -1664,7 +1768,8 @@
 
 === help prose: apply operations ===
   checkout default (openclaw/default): ./clawforge operations
-  --app openclaw: ./clawforge operations
+  --app openclaw: ./clawforge --app openclaw operations
+  OC_APP=staging: ./clawforge --app staging operations
   --app demo: ./clawforge --app demo operations
   OC_APP=demo: ./clawforge --app demo operations
   sole demo: ./clawforge --app demo operations
@@ -1680,7 +1785,8 @@
 
 === help prose: apply secrets --dump ===
   checkout default (openclaw/default): ./clawforge secrets --dump
-  --app openclaw: ./clawforge secrets --dump
+  --app openclaw: ./clawforge --app openclaw secrets --dump
+  OC_APP=staging: ./clawforge --app staging secrets --dump
   --app demo: ./clawforge --app demo secrets --dump
   OC_APP=demo: ./clawforge --app demo secrets --dump
   sole demo: ./clawforge --app demo secrets --dump
@@ -1696,7 +1802,8 @@
 
 === help prose: apply apply-config --dry-run ===
   checkout default (openclaw/default): ./clawforge apply-config --dry-run
-  --app openclaw: ./clawforge apply-config --dry-run
+  --app openclaw: ./clawforge --app openclaw apply-config --dry-run
+  OC_APP=staging: ./clawforge --app staging apply-config --dry-run
   --app demo: ./clawforge --app demo apply-config --dry-run
   OC_APP=demo: ./clawforge --app demo apply-config --dry-run
   sole demo: ./clawforge --app demo apply-config --dry-run
@@ -1712,7 +1819,8 @@
 
 === help prose: accept smoke ===
   checkout default (openclaw/default): ./clawforge smoke
-  --app openclaw: ./clawforge smoke
+  --app openclaw: ./clawforge --app openclaw smoke
+  OC_APP=staging: ./clawforge --app staging smoke
   --app demo: ./clawforge --app demo smoke
   OC_APP=demo: ./clawforge --app demo smoke
   sole demo: ./clawforge --app demo smoke
@@ -1728,7 +1836,8 @@
 
 === help prose: accept doctor ===
   checkout default (openclaw/default): ./clawforge doctor
-  --app openclaw: ./clawforge doctor
+  --app openclaw: ./clawforge --app openclaw doctor
+  OC_APP=staging: ./clawforge --app staging doctor
   --app demo: ./clawforge --app demo doctor
   OC_APP=demo: ./clawforge --app demo doctor
   sole demo: ./clawforge --app demo doctor
@@ -1744,7 +1853,8 @@
 
 === help prose: rollback apply ===
   checkout default (openclaw/default): ./clawforge apply
-  --app openclaw: ./clawforge apply
+  --app openclaw: ./clawforge --app openclaw apply
+  OC_APP=staging: ./clawforge --app staging apply
   --app demo: ./clawforge --app demo apply
   OC_APP=demo: ./clawforge --app demo apply
   sole demo: ./clawforge --app demo apply
@@ -1760,7 +1870,8 @@
 
 === help prose: rollback push ===
   checkout default (openclaw/default): ./clawforge push
-  --app openclaw: ./clawforge push
+  --app openclaw: ./clawforge --app openclaw push
+  OC_APP=staging: ./clawforge --app staging push
   --app demo: ./clawforge --app demo push
   OC_APP=demo: ./clawforge --app demo push
   sole demo: ./clawforge --app demo push
@@ -1776,7 +1887,8 @@
 
 === help prose: rollback apply --set ===
   checkout default (openclaw/default): ./clawforge apply --set
-  --app openclaw: ./clawforge apply --set
+  --app openclaw: ./clawforge --app openclaw apply --set
+  OC_APP=staging: ./clawforge --app staging apply --set
   --app demo: ./clawforge --app demo apply --set
   OC_APP=demo: ./clawforge --app demo apply --set
   sole demo: ./clawforge --app demo apply --set
@@ -1792,7 +1904,8 @@
 
 === help prose: operations rollback ===
   checkout default (openclaw/default): ./clawforge rollback
-  --app openclaw: ./clawforge rollback
+  --app openclaw: ./clawforge --app openclaw rollback
+  OC_APP=staging: ./clawforge --app staging rollback
   --app demo: ./clawforge --app demo rollback
   OC_APP=demo: ./clawforge --app demo rollback
   sole demo: ./clawforge --app demo rollback
@@ -1808,7 +1921,8 @@
 
 === help prose: expose status ===
   checkout default (openclaw/default): ./clawforge status
-  --app openclaw: ./clawforge status
+  --app openclaw: ./clawforge --app openclaw status
+  OC_APP=staging: ./clawforge --app staging status
   --app demo: ./clawforge --app demo status
   OC_APP=demo: ./clawforge --app demo status
   sole demo: ./clawforge --app demo status
@@ -1824,7 +1938,8 @@
 
 === help prose: incident up ===
   checkout default (openclaw/default): ./clawforge up
-  --app openclaw: ./clawforge up
+  --app openclaw: ./clawforge --app openclaw up
+  OC_APP=staging: ./clawforge --app staging up
   --app demo: ./clawforge --app demo up
   OC_APP=demo: ./clawforge --app demo up
   sole demo: ./clawforge --app demo up
@@ -1840,7 +1955,8 @@
 
 === help prose: incident mcp-creds ===
   checkout default (openclaw/default): ./clawforge mcp-creds
-  --app openclaw: ./clawforge mcp-creds
+  --app openclaw: ./clawforge --app openclaw mcp-creds
+  OC_APP=staging: ./clawforge --app staging mcp-creds
   --app demo: ./clawforge --app demo mcp-creds
   OC_APP=demo: ./clawforge --app demo mcp-creds
   sole demo: ./clawforge --app demo mcp-creds
@@ -1856,7 +1972,8 @@
 
 === help prose: incident doctor ===
   checkout default (openclaw/default): ./clawforge doctor
-  --app openclaw: ./clawforge doctor
+  --app openclaw: ./clawforge --app openclaw doctor
+  OC_APP=staging: ./clawforge --app staging doctor
   --app demo: ./clawforge --app demo doctor
   OC_APP=demo: ./clawforge --app demo doctor
   sole demo: ./clawforge --app demo doctor
@@ -1872,7 +1989,8 @@
 
 === help prose: incident accept ===
   checkout default (openclaw/default): ./clawforge accept
-  --app openclaw: ./clawforge accept
+  --app openclaw: ./clawforge --app openclaw accept
+  OC_APP=staging: ./clawforge --app staging accept
   --app demo: ./clawforge --app demo accept
   OC_APP=demo: ./clawforge --app demo accept
   sole demo: ./clawforge --app demo accept
@@ -1888,7 +2006,8 @@
 
 === help prose: lock inspect ===
   checkout default (openclaw/default): ./clawforge inspect
-  --app openclaw: ./clawforge inspect
+  --app openclaw: ./clawforge --app openclaw inspect
+  OC_APP=staging: ./clawforge --app staging inspect
   --app demo: ./clawforge --app demo inspect
   OC_APP=demo: ./clawforge --app demo inspect
   sole demo: ./clawforge --app demo inspect
@@ -1904,7 +2023,8 @@
 
 === help prose: cli cli config get gateway.mode ===
   checkout default (openclaw/default): ./clawforge cli config get gateway.mode
-  --app openclaw: ./clawforge cli config get gateway.mode
+  --app openclaw: ./clawforge --app openclaw cli config get gateway.mode
+  OC_APP=staging: ./clawforge --app staging cli config get gateway.mode
   --app demo: ./clawforge --app demo cli config get gateway.mode
   OC_APP=demo: ./clawforge --app demo cli config get gateway.mode
   sole demo: ./clawforge --app demo cli config get gateway.mode
@@ -1920,7 +2040,8 @@
 
 === help prose: cli cli-start ===
   checkout default (openclaw/default): ./clawforge cli-start
-  --app openclaw: ./clawforge cli-start
+  --app openclaw: ./clawforge --app openclaw cli-start
+  OC_APP=staging: ./clawforge --app staging cli-start
   --app demo: ./clawforge --app demo cli-start
   OC_APP=demo: ./clawforge --app demo cli-start
   sole demo: ./clawforge --app demo cli-start
@@ -1936,7 +2057,8 @@
 
 === help prose: cli cli --help ===
   checkout default (openclaw/default): ./clawforge cli --help
-  --app openclaw: ./clawforge cli --help
+  --app openclaw: ./clawforge --app openclaw cli --help
+  OC_APP=staging: ./clawforge --app staging cli --help
   --app demo: ./clawforge --app demo cli --help
   OC_APP=demo: ./clawforge --app demo cli --help
   sole demo: ./clawforge --app demo cli --help
@@ -1952,7 +2074,8 @@
 
 === help prose: cli help cli ===
   checkout default (openclaw/default): ./clawforge help cli
-  --app openclaw: ./clawforge help cli
+  --app openclaw: ./clawforge --app openclaw help cli
+  OC_APP=staging: ./clawforge --app staging help cli
   --app demo: ./clawforge --app demo help cli
   OC_APP=demo: ./clawforge --app demo help cli
   sole demo: ./clawforge --app demo help cli
@@ -1968,7 +2091,8 @@
 
 === help prose: cli cli -- --help ===
   checkout default (openclaw/default): ./clawforge cli -- --help
-  --app openclaw: ./clawforge cli -- --help
+  --app openclaw: ./clawforge --app openclaw cli -- --help
+  OC_APP=staging: ./clawforge --app staging cli -- --help
   --app demo: ./clawforge --app demo cli -- --help
   OC_APP=demo: ./clawforge --app demo cli -- --help
   sole demo: ./clawforge --app demo cli -- --help
@@ -1984,7 +2108,8 @@
 
 === help prose: exec exec curl -fsS http://127.0.0.1:18789/healthz ===
   checkout default (openclaw/default): ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
-  --app openclaw: ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
+  --app openclaw: ./clawforge --app openclaw exec curl -fsS http://127.0.0.1:18789/healthz
+  OC_APP=staging: ./clawforge --app staging exec curl -fsS http://127.0.0.1:18789/healthz
   --app demo: ./clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
   OC_APP=demo: ./clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
   sole demo: ./clawforge --app demo exec curl -fsS http://127.0.0.1:18789/healthz
@@ -2000,7 +2125,8 @@
 
 === help prose: exec exec cat /app/docs/channels/telegram.md ===
   checkout default (openclaw/default): ./clawforge exec cat /app/docs/channels/telegram.md
-  --app openclaw: ./clawforge exec cat /app/docs/channels/telegram.md
+  --app openclaw: ./clawforge --app openclaw exec cat /app/docs/channels/telegram.md
+  OC_APP=staging: ./clawforge --app staging exec cat /app/docs/channels/telegram.md
   --app demo: ./clawforge --app demo exec cat /app/docs/channels/telegram.md
   OC_APP=demo: ./clawforge --app demo exec cat /app/docs/channels/telegram.md
   sole demo: ./clawforge --app demo exec cat /app/docs/channels/telegram.md
@@ -2016,7 +2142,8 @@
 
 === help prose: cli-start cli ===
   checkout default (openclaw/default): ./clawforge cli
-  --app openclaw: ./clawforge cli
+  --app openclaw: ./clawforge --app openclaw cli
+  OC_APP=staging: ./clawforge --app staging cli
   --app demo: ./clawforge --app demo cli
   OC_APP=demo: ./clawforge --app demo cli
   sole demo: ./clawforge --app demo cli
@@ -2032,7 +2159,8 @@
 
 === help prose: cli-start mcp-serve ===
   checkout default (openclaw/default): ./clawforge mcp-serve
-  --app openclaw: ./clawforge mcp-serve
+  --app openclaw: ./clawforge --app openclaw mcp-serve
+  OC_APP=staging: ./clawforge --app staging mcp-serve
   --app demo: ./clawforge --app demo mcp-serve
   OC_APP=demo: ./clawforge --app demo mcp-serve
   sole demo: ./clawforge --app demo mcp-serve
@@ -2048,7 +2176,8 @@
 
 === help prose: cli-start up ===
   checkout default (openclaw/default): ./clawforge up
-  --app openclaw: ./clawforge up
+  --app openclaw: ./clawforge --app openclaw up
+  OC_APP=staging: ./clawforge --app staging up
   --app demo: ./clawforge --app demo up
   OC_APP=demo: ./clawforge --app demo up
   sole demo: ./clawforge --app demo up
@@ -2064,7 +2193,8 @@
 
 === help prose: cli-start down ===
   checkout default (openclaw/default): ./clawforge down
-  --app openclaw: ./clawforge down
+  --app openclaw: ./clawforge --app openclaw down
+  OC_APP=staging: ./clawforge --app staging down
   --app demo: ./clawforge --app demo down
   OC_APP=demo: ./clawforge --app demo down
   sole demo: ./clawforge --app demo down
@@ -2080,7 +2210,8 @@
 
 === help prose: cli-stop cli ===
   checkout default (openclaw/default): ./clawforge cli
-  --app openclaw: ./clawforge cli
+  --app openclaw: ./clawforge --app openclaw cli
+  OC_APP=staging: ./clawforge --app staging cli
   --app demo: ./clawforge --app demo cli
   OC_APP=demo: ./clawforge --app demo cli
   sole demo: ./clawforge --app demo cli
@@ -2096,7 +2227,8 @@
 
 === help prose: cli-stop mcp-serve ===
   checkout default (openclaw/default): ./clawforge mcp-serve
-  --app openclaw: ./clawforge mcp-serve
+  --app openclaw: ./clawforge --app openclaw mcp-serve
+  OC_APP=staging: ./clawforge --app staging mcp-serve
   --app demo: ./clawforge --app demo mcp-serve
   OC_APP=demo: ./clawforge --app demo mcp-serve
   sole demo: ./clawforge --app demo mcp-serve
@@ -2112,7 +2244,8 @@
 
 === help prose: provision-agent up ===
   checkout default (openclaw/default): ./clawforge up
-  --app openclaw: ./clawforge up
+  --app openclaw: ./clawforge --app openclaw up
+  OC_APP=staging: ./clawforge --app staging up
   --app demo: ./clawforge --app demo up
   OC_APP=demo: ./clawforge --app demo up
   sole demo: ./clawforge --app demo up
@@ -2128,7 +2261,8 @@
 
 === help prose: mcp-serve mcp-setup ===
   checkout default (openclaw/default): ./clawforge mcp-setup
-  --app openclaw: ./clawforge mcp-setup
+  --app openclaw: ./clawforge --app openclaw mcp-setup
+  OC_APP=staging: ./clawforge --app staging mcp-setup
   --app demo: ./clawforge --app demo mcp-setup
   OC_APP=demo: ./clawforge --app demo mcp-setup
   sole demo: ./clawforge --app demo mcp-setup
@@ -2144,7 +2278,8 @@
 
 === help prose: mcp-serve control-mcp ===
   checkout default (openclaw/default): ./clawforge control-mcp
-  --app openclaw: ./clawforge control-mcp
+  --app openclaw: ./clawforge --app openclaw control-mcp
+  OC_APP=staging: ./clawforge --app staging control-mcp
   --app demo: ./clawforge --app demo control-mcp
   OC_APP=demo: ./clawforge --app demo control-mcp
   sole demo: ./clawforge --app demo control-mcp
@@ -2160,7 +2295,8 @@
 
 === help prose: mcp-serve cli-start ===
   checkout default (openclaw/default): ./clawforge cli-start
-  --app openclaw: ./clawforge cli-start
+  --app openclaw: ./clawforge --app openclaw cli-start
+  OC_APP=staging: ./clawforge --app staging cli-start
   --app demo: ./clawforge --app demo cli-start
   OC_APP=demo: ./clawforge --app demo cli-start
   sole demo: ./clawforge --app demo cli-start
@@ -2176,7 +2312,8 @@
 
 === help prose: mcp-creds mcp-setup ===
   checkout default (openclaw/default): ./clawforge mcp-setup
-  --app openclaw: ./clawforge mcp-setup
+  --app openclaw: ./clawforge --app openclaw mcp-setup
+  OC_APP=staging: ./clawforge --app staging mcp-setup
   --app demo: ./clawforge --app demo mcp-setup
   OC_APP=demo: ./clawforge --app demo mcp-setup
   sole demo: ./clawforge --app demo mcp-setup
@@ -2192,7 +2329,8 @@
 
 === help prose: set plan ===
   checkout default (openclaw/default): ./clawforge plan
-  --app openclaw: ./clawforge plan
+  --app openclaw: ./clawforge --app openclaw plan
+  OC_APP=staging: ./clawforge --app staging plan
   --app demo: ./clawforge --app demo plan
   OC_APP=demo: ./clawforge --app demo plan
   sole demo: ./clawforge --app demo plan
@@ -2208,7 +2346,8 @@
 
 === help prose: check smoke ===
   checkout default (openclaw/default): ./clawforge smoke
-  --app openclaw: ./clawforge smoke
+  --app openclaw: ./clawforge --app openclaw smoke
+  OC_APP=staging: ./clawforge --app staging smoke
   --app demo: ./clawforge --app demo smoke
   OC_APP=demo: ./clawforge --app demo smoke
   sole demo: ./clawforge --app demo smoke
@@ -2225,6 +2364,7 @@
 === help prose: check check gate ===
   checkout default (openclaw/default): ./clawforge check gate
   --app openclaw: ./clawforge check gate
+  OC_APP=staging: ./clawforge check gate
   --app demo: ./clawforge check gate
   OC_APP=demo: ./clawforge check gate
   sole demo: ./clawforge check gate
@@ -2241,6 +2381,7 @@
 === help prose: new-app bootstrap ===
   checkout default (openclaw/default): ./clawforge --app <name> bootstrap
   --app openclaw: ./clawforge --app <name> bootstrap
+  OC_APP=staging: ./clawforge --app <name> bootstrap
   --app demo: ./clawforge --app <name> bootstrap
   OC_APP=demo: ./clawforge --app <name> bootstrap
   sole demo: ./clawforge --app <name> bootstrap
@@ -2257,6 +2398,7 @@
 === help prose: remove-app list ===
   checkout default (openclaw/default): ./clawforge list
   --app openclaw: ./clawforge list
+  OC_APP=staging: ./clawforge list
   --app demo: ./clawforge list
   OC_APP=demo: ./clawforge list
   sole demo: ./clawforge list
@@ -2273,6 +2415,7 @@
 === help prose: remove-app destroy ===
   checkout default (openclaw/default): ./clawforge --app <name> destroy
   --app openclaw: ./clawforge --app <name> destroy
+  OC_APP=staging: ./clawforge --app <name> destroy
   --app demo: ./clawforge --app <name> destroy
   OC_APP=demo: ./clawforge --app <name> destroy
   sole demo: ./clawforge --app <name> destroy

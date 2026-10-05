@@ -266,7 +266,9 @@ try {
 
   const SELECTIONS: readonly { readonly label: string; readonly on: Invocation; readonly named: boolean }[] = [
     { label: "no app", on: MONO, named: false },
-    { label: "openclaw", on: { ...MONO, app: { name: "openclaw", selectedBy: "flag" } }, named: false },
+    // --app openclaw is the exception once OC_APP is exported, so it is named; the default is not.
+    { label: "openclaw by flag", on: { ...MONO, app: { name: "openclaw", selectedBy: "flag" } }, named: true },
+    { label: "openclaw by default", on: { ...MONO, app: { name: "openclaw", selectedBy: "default" } }, named: false },
     { label: "flag", on: { ...MONO, app: { name: "demo", selectedBy: "flag" } }, named: true },
     { label: "env", on: { ...MONO, app: { name: "demo", selectedBy: "env" } }, named: true },
     { label: "sole", on: { ...MONO, app: { name: "demo", selectedBy: "sole" } }, named: true },
@@ -291,7 +293,7 @@ try {
   //    invocation on screen would not re-select it by itself.
   for (const { label, on, named } of SELECTIONS) {
     setInvocation(on);
-    check(`a status advice line under ${label}`, renderAdvice(command(["status"])), named ? DEMO_STATUS : STATUS);
+    check(`a status advice line under ${label}`, renderAdvice(command(["status"])), named ? `${HINT} --app ${on.app?.name} status` : STATUS);
   }
 
   // 2. Gate commands run before a deployment is resolved, so they never receive an --app — the

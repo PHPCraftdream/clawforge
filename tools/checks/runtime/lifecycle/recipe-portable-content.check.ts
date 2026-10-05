@@ -30,7 +30,7 @@
 // Windows/privilege caveat: creating symlinks can fail without developer mode or elevated
 // privileges. The symlink probe degrades exactly the way the WSL probe does in
 // security/credentials/recipe-private-snapshot/snapshot.check.ts: the four symlink
-// assertions print `skip` and never fail, and the rest of the file still runs.
+// assertions are reported as skipped, never failed, and the rest of the file still runs.
 
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

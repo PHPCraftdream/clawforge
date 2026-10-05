@@ -478,6 +478,14 @@ async function performRestore(ctx: Context, prepared: PreparedRestore, options: 
   return aside;
 }
 
+/** The lines that re-point a sidecar at the restored tree: one command per line, never joined
+ *  with `&&` (Windows PowerShell 5.1 has no such operator). */
+export function repointLines(name: string): Array<string> {
+  const remove = commandLine(["recipe", "remove", name]);
+  const install = commandLine(["recipe", "install", name]);
+  return [`to point ${name} at the restored tree:`, remove, install];
+}
+
 /** Verify/report phase: warns about sidecars still bound to the previous data, then starts
  *  the gateway back up (or explains why it was left stopped). Runs only once performRestore
  *  has succeeded. */
@@ -496,9 +504,7 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
         "their containers may still bind-mount the previous data rather than the restored tree" +
         (aside !== undefined ? ` (kept at ${aside})` : ""),
     );
-    for (const recipe of sidecars) {
-      info(`to point ${recipe.name} at the restored tree: ${commandLine(["recipe", "remove", recipe.name])} && ${commandLine(["recipe", "install", recipe.name])}`);
-    }
+    for (const recipe of sidecars) for (const line of repointLines(recipe.name)) info(line);
   }
 
   if (options.noStart === true) {

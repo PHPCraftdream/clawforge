@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA } from "#framework/integration/mcp/server.ts";
 import { STRUCTURED_ENVELOPE_HELP } from "#framework/core/io/help-render.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -185,9 +186,10 @@ try {
   // (Help no longer repeats the "With import:" lead-in next to the action scope, R32-04.)
   const recipeTool = fullTools.find((tool) => tool.name === "recipe");
   const newNameSchemaDescription = recipeTool?.inputSchema?.properties?.["new-name"]?.description ?? "";
-  const newNameFullDescription = "import under this name instead of the source directory's own name";
-  check("the schema description is the declared full phrase", newNameSchemaDescription === newNameFullDescription, true);
-  check("the full argument description is still reachable through help", helpTextFor("recipe").includes(newNameFullDescription), true);
+  const declaredNewName = (openclawCommands.recipe.arguments ?? []).find((argument) => argument.name === "new-name");
+  check("the declaration carries a summary for new-name", typeof declaredNewName?.summary, "string");
+  check("the schema description is the declaration's summary", newNameSchemaDescription, declaredNewName?.summary);
+  check("the full argument description is still reachable through help", helpTextFor("recipe").includes(declaredNewName?.summary ?? ""), true);
 
   const helpBareRun = await run(
     ["--app", deployment, "control-mcp"],

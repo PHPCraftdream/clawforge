@@ -2,7 +2,8 @@
 // `--app <name>` as its first words moving into the advice's `app` field; {--name} — this
 // command's own flag. "{" without clawforge/-- is plain text (JSON in prose).
 
-import { commandLine } from "./render.ts";
+import { command } from "./advice.ts";
+import { renderAdvice, renderProgram } from "./render.ts";
 import { invocation, type Invocation } from "./index.ts";
 
 export type ProseToken =
@@ -58,9 +59,9 @@ export function renderProse(text: string, on: Invocation = invocation()): string
   let cursor = 0;
   for (const [token, start, end] of scan(text)) {
     rendered += text.slice(cursor, start);
-    if (token.kind === "program") rendered += on.program;
+    if (token.kind === "program") rendered += renderProgram(on);
     else if (token.kind === "flag") rendered += `--${token.name}`;
-    else rendered += commandLine(token.argv, token.app === undefined ? undefined : { app: token.app });
+    else rendered += renderAdvice(command(token.argv, token.app === undefined ? undefined : { app: token.app }), on);
     cursor = end;
   }
   return rendered + text.slice(cursor);

@@ -58,8 +58,8 @@ export function blockingFindingsMessage(count: number, codes: readonly string[])
 export function blockingWarningsSummary(blocking: number, warnings: number): string {
   return `${blocking} blocking, ${warnings} warning(s)`;
 }
-export const ARTIFACT_CONTENTS_MATCH = " and its artifact contents match";
-export function coherentLine(name: string, note = ""): string {
+const ARTIFACT_CONTENTS_MATCH = " and its artifact contents match";
+function coherentLine(name: string, note = ""): string {
   return `set ${name} is coherent${note}`;
 }
 

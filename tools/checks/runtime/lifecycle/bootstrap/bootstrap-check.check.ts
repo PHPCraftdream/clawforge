@@ -18,7 +18,7 @@ import {
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, TransportUnreachableError } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // --- pure parsers: fed a canned ExecResult, nothing else -------------------------------------
@@ -328,28 +328,17 @@ function healthyExecHandler(command: string, args: string[]): { code: number; st
 // is not this machine's to assert on, so only the LINE FORMAT is checked, never which
 // capabilities this machine happens to have.
 
-{
-  let shAvailable = true;
-  try {
-    await spawnLocal("sh", ["-c", "exit 0"], { allowFailure: true });
-  } catch {
-    shAvailable = false;
-  }
-
-  if (!shAvailable) {
-    process.stderr.write("  skip GNU-userland probe script under a real sh (no POSIX sh on this machine)\n");
-  } else {
-    const result = await spawnLocal("sh", ["-s"], { input: GNU_USERLAND_PROBE_SCRIPT, allowFailure: true });
-    const lines = result.stdout.split(/\r?\n/).filter((line) => line !== "");
-    const expectedKeys = ["find-printf", "stat-c", "readlink-f", "sha256sum", "tar-numeric-owner", "proc"];
-    check("the script exits 0 under a real sh (no syntax error)", result.code, 0);
-    check("it prints exactly one line per capability, well-formed and in order", lines.map((line) => line.split("=")[0]), expectedKeys);
-    check(
-      "every line is `<capability>=ok` or `<capability>=missing` — never which this machine has",
-      lines.every((line) => /^[a-z0-9-]+=(ok|missing)$/.test(line)),
-      true,
-    );
-  }
-}
+await requires("posix-sh", "GNU-userland probe script under a real sh", async () => {
+  const result = await spawnLocal("sh", ["-s"], { input: GNU_USERLAND_PROBE_SCRIPT, allowFailure: true });
+  const lines = result.stdout.split(/\r?\n/).filter((line) => line !== "");
+  const expectedKeys = ["find-printf", "stat-c", "readlink-f", "sha256sum", "tar-numeric-owner", "proc"];
+  check("the script exits 0 under a real sh (no syntax error)", result.code, 0);
+  check("it prints exactly one line per capability, well-formed and in order", lines.map((line) => line.split("=")[0]), expectedKeys);
+  check(
+    "every line is `<capability>=ok` or `<capability>=missing` — never which this machine has",
+    lines.every((line) => /^[a-z0-9-]+=(ok|missing)$/.test(line)),
+    true,
+  );
+});
 
 finish("bootstrap --check");

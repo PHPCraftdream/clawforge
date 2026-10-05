@@ -133,9 +133,10 @@ export function sameContent(a: string, b: string): boolean {
 export async function resolveImageDigest(transport: Transport, reference: string): Promise<string | undefined> {
   const result = await transport.exec("docker", ["buildx", "imagetools", "inspect", reference], { allowFailure: true });
   const digest = result.code === 0 ? /^Digest:\s+(\S+)/m.exec(result.stdout)?.[1] : undefined;
-  if (digest === undefined) return undefined;
+  // The registry's word is checked against the grammar before it is pinned into .env.
+  if (digest === undefined || !DIGEST.test(digest)) return undefined;
   const ref = tryParse(reference);
-  return `${ref === undefined ? reference.split("@")[0] : channel(ref)}@${digest}`;
+  return ref === undefined ? undefined : format(withDigest(ref, digest));
 }
 
 /** The container's own exit code, or undefined when there is no container or the inspect

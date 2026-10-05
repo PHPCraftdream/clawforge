@@ -267,8 +267,9 @@ try {
       await rm(emptyDir, { recursive: true, force: true });
     }
     check("a missing .env is refused", error !== "", true);
-    check("the refusal says the file does not exist", error.includes(expectedRefusal), true);
-    check("the refusal says recovery cannot create one", error.includes(expectedRefusal), true);
+    check("the refusal says the file does not exist", error.includes("exist"), true);
+    check("the refusal says recovery cannot create one", error.includes("cannot") && error.includes("create"), true);
+    check("the refusal is the declared one, whole", error.includes(expectedRefusal), true);
     check("the refusal points at bootstrap", error.includes("bootstrap"), true);
     check("no .env was created in the empty deployment", await access(join(emptyDir, ".env")).then(() => true, () => false), false);
   }

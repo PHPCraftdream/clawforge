@@ -83,16 +83,23 @@ const WIN_REAL: Record<string, string> = {
 interface CaseLayout {
   readonly id: string;
   /** cwd for the gate decision; undefined — the gate is not the process for this layout. */
-  readonly gate?: { readonly cwd: string; readonly handedOver: boolean };
+  readonly gate?: { readonly cwd: string; readonly handedOver: boolean; readonly program?: string };
   readonly handover: { readonly appRoot: string; readonly localEntry?: string };
   /** cwd for the installed entry's own decisions; undefined — the installed command is
    *  not the process for this layout. */
   readonly installed?: { readonly cwd: string };
 }
 
+/** The MCP launcher's program: its shim two levels up from the deployment. */
+const LAUNCHER_PROGRAM = "../../clawforge";
+
 const LAYOUTS: readonly CaseLayout[] = [
   { id: "checkout-root", gate: { cwd: ROOT, handedOver: false }, handover: { appRoot: ROOT }, installed: { cwd: ROOT } },
-  { id: "apps-openclaw", gate: { cwd: `${ROOT}/apps/openclaw`, handedOver: true }, handover: { appRoot: `${ROOT}/apps/openclaw` } },
+  { id: "apps-openclaw", gate: { cwd: `${ROOT}/apps/openclaw`, handedOver: true, program: SHIM_PROGRAM }, handover: { appRoot: `${ROOT}/apps/openclaw` } },
+  // The bare program resolves its deployment from the cwd; the MCP launcher's program is a path
+  // out of the deployment (the checkout gate), which never reads the cwd, so its advice keeps --app.
+  { id: "apps-demo-bare", gate: { cwd: `${ROOT}/apps/demo`, handedOver: true, program: "clawforge" }, handover: { appRoot: `${ROOT}/apps/demo` } },
+  { id: "apps-demo-launcher", gate: { cwd: `${ROOT}/apps/demo`, handedOver: true, program: LAUNCHER_PROGRAM }, handover: { appRoot: `${ROOT}/apps/demo` } },
   // APPS/<name> typed case: the hand-over's canonicalisation is decided here; whether the
   // handed-over gate process then sees its own cwd as inside is the host path module's case
   // rule, not resolver logic — covered end to end by system-install on Windows.
@@ -113,6 +120,8 @@ const ARGVS: readonly (readonly string[])[] = [
   ["status"],
   ["status", "--help"],
   ["--app", "x", "status"],
+  ["--app", "openclaw", "status"],
+  ["--app", "demo", "status"],
   ["--app=x", "status"],
   ["--app"],
   ["status", "--app", "x"],
@@ -121,6 +130,7 @@ const ARGVS: readonly (readonly string[])[] = [
 const ENVS: readonly (readonly [string, string | undefined])[] = [
   ["none", undefined],
   ["OC_APP=x", "x"],
+  ["OC_APP=staging", "staging"],
 ];
 
 const PLATFORMS: readonly NodeJS.Platform[] = ["linux", "win32", "darwin"];
@@ -208,7 +218,7 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
   return rows;
 }
 
-function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0]): string {
+function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0], program: string = SHIM_PROGRAM): string {
   const decision = resolveCheckoutEntry(input);
   switch (decision.kind) {
     case "refuse":
@@ -223,7 +233,7 @@ function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0]): st
       return `help-without-deployment: ${decision.description}`;
     case "run": {
       // The prefix through the real renderer, not a restatement of the rule.
-      const invocation: Invocation = { program: "./clawforge", mode: "checkout", audience: "terminal", ...(decision.app === undefined ? {} : { app: decision.app }) };
+      const invocation: Invocation = { program, mode: "checkout", audience: "terminal", ...(decision.app === undefined ? {} : { app: decision.app }) };
       setInvocation(invocation);
       return `run app=${decision.appName} fact=${decision.app === undefined ? "-" : decision.app.name}/${decision.app?.selectedBy} argv=${JSON.stringify(decision.argv)} prefix=${commandLine([])}${decision.soleNote === undefined ? "" : ` sole=${decision.soleNote}`}`;
     }
@@ -307,12 +317,13 @@ export function renderEntryMatrix(): string {
               argv,
               ocApp,
               handedOver: layout.gate.handedOver,
+              handedProgram: layout.gate.program,
               fs,
               gateCommands: GATE_COMMANDS,
               deploymentCommands: DEPLOYMENT_COMMANDS,
               variadicCommands: VARIADIC_COMMANDS,
               deploymentArguments: (name) => gateArguments(name) ?? openclawCommands[name]?.arguments,
-            })}`);
+            }, layout.gate.program)}`);
           }
           lines.push(`handover: ${handoverDecisionLine({
             self: SELF,

@@ -12,20 +12,19 @@ import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { ExecOptions, Transport } from "#framework/runtime/transport/transport.ts";
 import { LocalTransport, spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { requires } from "#checks/kit/harness.ts";
 import { parseEnv, type Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
-const composeLive = await spawnLocal("docker", ["compose", "version"], { allowFailure: true }).catch(() => undefined);
-const runnableImage = await (async () => {
-  if (composeLive?.code !== 0) return undefined;
+await requires("docker", "live image recreate behavior", async () => {
+  let runnableImage: string | undefined;
   for (const candidate of ["alpine:3.20", "busybox:latest"]) {
     const probeImage = await spawnLocal("docker", ["image", "inspect", candidate], { allowFailure: true }).catch(() => undefined);
-    if (probeImage?.code === 0) return candidate;
+    if (probeImage?.code === 0) { runnableImage = candidate; break; }
   }
-  return undefined;
-})();
-if (runnableImage === undefined) {
-  process.stderr.write("skip live recreate checks: Docker Compose or a runnable image is unavailable\n");
-} else {
+  if (runnableImage === undefined) {
+    process.stderr.write("skip live recreate checks: neither alpine:3.20 nor busybox:latest is present locally\n");
+    return;
+  }
   const previousLive = (() => { try { return deploymentDir(); } catch { return undefined; } })();
   const scratch = await mkdtemp(join(tmpdir(), "clawforge-recreate-live-"));
   // The deployment directory's basename becomes the compose project name, and mkdtemp's random
@@ -124,4 +123,4 @@ if (runnableImage === undefined) {
     await rm(scratch, { recursive: true, force: true });
     if (previousLive !== undefined) useDeployment(previousLive);
   }
-}
+});

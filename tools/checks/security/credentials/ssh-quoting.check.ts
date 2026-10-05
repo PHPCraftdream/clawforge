@@ -16,7 +16,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { shellQuote } from "#framework/core/io/shell.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 function runSh(line: string): Promise<ExecResult> {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -34,16 +34,8 @@ function runSh(line: string): Promise<ExecResult> {
   });
 }
 
-let shAvailable = true;
-try {
-  await runSh("exit 0");
-} catch {
-  shAvailable = false;
-}
-
-if (!shAvailable) {
-  process.stderr.write("no POSIX shell reachable locally — skipping (this checks ssh's behaviour, not this machine's)\n");
-} else {
+// This checks ssh's behaviour (a real sh stands in for the remote login shell), not this machine's.
+await requires("posix-sh", "ssh remote-command quoting through a real sh", async () => {
   // ctx.transport.exec("ssh", args) simulates ssh: everything after the destination is
   // joined with one space and handed to a real `sh`, exactly as sshd hands it to the
   // remote's login shell.
@@ -81,6 +73,6 @@ if (!shAvailable) {
     withMetachars.stdout,
     "one\nthree\n",
   );
-}
+});
 
 finish("ssh-quoting");

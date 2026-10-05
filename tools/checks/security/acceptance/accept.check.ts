@@ -4,7 +4,7 @@
 // no check — it reports success on a broken deployment. The stub stands in for the target so
 // each failure can be provoked deliberately.
 
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { accept, runCheck, requiresModel, summarize, acceptanceSpecError } from "#framework/commands/orchestration/accept.ts";
@@ -286,6 +286,31 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
     }
     checkTrue("a recipes root that is a file dies rather than reporting nothing declared", message !== "");
     checkTrue("naming the recipes path", message.includes(resolve(deployment, "recipes")));
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
+}
+
+// --- an acceptance.json holding `null` is read by the one reader set validate and the artifact
+// use, so it declares no checks; `accept` used to throw a raw TypeError on it ---------------------
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-accept-null-check-"));
+  await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
+  await writeFile(resolve(deployment, "recipes", "demo", "acceptance.json"), "null");
+  useDeployment(deployment);
+  try {
+    let message = "";
+    try {
+      // The stub context has no runtime: whatever stops the run after the declarations are read
+      // is not the declaration reader.
+      await accept({} as unknown as Context, ["demo"]);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    checkTrue("a null acceptance.json is not a TypeError on its checks", !message.includes("checks"));
+    checkTrue("nor a refusal that the recipe declares none", !message.includes("declares"));
   } finally {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(resolve(monorepoRoot, "apps", "example app"));

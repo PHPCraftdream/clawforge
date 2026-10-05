@@ -103,8 +103,7 @@ for (const failingPath of ["/config", "/recipes"]) {
 }
 
 // Run generated scripts with a real shell, against disposable directories only.
-const shell = await spawnLocal("sh", ["-c", "true"], { allowFailure: true });
-if (shell.code === 0) {
+await requires("posix-sh", "generated deploy scripts execute in POSIX sh", async () => {
   const root = await mkdtemp(join(tmpdir(), "clawforge-deploy-path-"));
   try {
     const forwardRoot = root.replaceAll("\\", "/");
@@ -121,13 +120,8 @@ if (shell.code === 0) {
     check("created root passes a separate guard", (await runScript(directoryGuardScript(`${owned}/new`))).code, 0);
 
     await mkdir(resolve(root, "outside"));
-    let linksAvailable = true;
-    try {
+    await requires("symlink", "generated deploy scripts refuse symlinked parents and roots", async () => {
       await symlink(resolve(root, "outside"), resolve(root, "alias"), "dir");
-    } catch {
-      linksAvailable = false;
-    }
-    if (linksAvailable) {
       const escaped = await runScript(directoryPrepareScript(`${path}/alias/new`, true));
       check("root preparation refuses a symlinked parent", escaped.code !== 0, true);
       check("root preparation did not write past that symlink", await stat(resolve(root, "outside", "new")).then(() => true, () => false), false);
@@ -142,7 +136,7 @@ if (shell.code === 0) {
       await symlink(resolve(root, "outside"), resolve(root, "apps", "example app", "custom recipes"), "dir");
       check("custom recipesDir symlink refuses preparation", (await runScript(directoryPrepareScript(recipes, false))).code !== 0, true);
       check("custom recipesDir symlink refuses pre-rsync guard", (await runScript(directoryGuardScript(recipes))).code !== 0, true);
-    }
+    });
 
     await requires("posix-host", "the guarded rsync receiver runs through a real POSIX shell", async () => {
       const bin = resolve(root, "bin");
@@ -173,7 +167,7 @@ if (shell.code === 0) {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}
+});
 
 check("a receiver outside its root is rejected locally", (() => {
   try { guardedRsyncPath("/opt/openclaw", "/opt/elsewhere"); return false; }

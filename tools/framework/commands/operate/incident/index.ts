@@ -51,7 +51,7 @@ export const UNCONFIRMED_TOKEN = "could not confirm";
 export const WOULD_PRESERVE = "would preserve";
 export const NO_PRE_ROTATE_EVIDENCE = "no pre-rotate evidence";
 export const WOULD_COLLECT = "would collect";
-export const CONTAIN_FAILED = "contain failed unexpectedly";
+const CONTAIN_FAILED = "contain failed unexpectedly";
 export function auditFindingsSummary(findings: number, blocking: number): string {
   return `${findings} finding(s), ${blocking} blocking`;
 }

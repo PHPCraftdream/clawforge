@@ -15,10 +15,12 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
+import { resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice, renderArgument, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -27,9 +29,6 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const APP_FLAG = "--app";
 const FULL_SELECTION = new Set(["flag", "env", "sole"]);
-/** The one deployment name that means "no deployment was chosen": the default and the
- *  `--app openclaw` spellings pick it, and the renderer says so by writing no `--app`. */
-const DEFAULT_APP = "openclaw";
 const PLACEHOLDER = "—";
 /** A `<…>` element stands in for one word; what example the declaration would offer is
  *  its business, not the token's (help-prose.check.ts's rule, design 4.2's P4). */
@@ -37,14 +36,12 @@ const PLACEHOLDER_WORD = /^<.*>$/;
 const EXAMPLE = "x";
 const CLAWFORGE_KIND = "clawforge";
 
-/** The app column an invocation carries for the `--app` rule, or undefined when it says
- *  nothing: a selection the cwd already made (`cwd`) and the default deployment name both
- *  read as "no `--app`". */
+/** The app an invocation carries for the `--app` rule, or undefined when it says nothing: a
+ *  selection the cwd already made (`cwd`) or the default (`default`). A flagged `openclaw` is
+ *  not the default — the pasting shell may export OC_APP — so it is named like any other. */
 function inheritedApp(on: Invocation): string | undefined {
   const app = on.app;
-  if (app === undefined) return undefined;
-  if (!FULL_SELECTION.has(app.selectedBy)) return undefined;
-  return app.name === DEFAULT_APP ? undefined : app.name;
+  return app !== undefined && FULL_SELECTION.has(app.selectedBy) ? app.name : undefined;
 }
 
 /** The one `--app <name>` the rule allows for a cell: the advice's own when it names a
@@ -221,6 +218,60 @@ check(
   [renderAdvice(command(["status"]), PATH_SPELLING), renderAdvice(command(["status"]), BARE_PROGRAM), renderAdvice(command(["status"]), WRAPPER_PROGRAM)],
   [`${SHIM_PROGRAM} status`, "clawforge status", `${WINDOWS_BIN_PROGRAM} status`],
 );
+
+/** The entry's own fact, rendered: what the gate records for a hand-over and an OC_APP
+ *  export decides the `--app` of every advice line pasted afterwards. Two deployments under
+ *  a fake root; the gate's program, cwd and environment vary per case. */
+const TREE_ROOT = "/clawforge-tree";
+const treeFs: FsProbe = {
+  exists: (path) => path.replaceAll("\\", "/").endsWith("/app.ts") || path.replaceAll("\\", "/").endsWith("/apps"),
+  isDirectory: () => true,
+  readdir: () => ["demo", "openclaw"],
+  readFile: () => undefined,
+  realpath: (path) => path,
+};
+function adviceAfterEntry(argv: string[], options: { cwd: string; ocApp?: string; handedProgram?: string }): string {
+  const decision = resolveCheckoutEntry({
+    root: TREE_ROOT, cwd: options.cwd, argv, ocApp: options.ocApp,
+    handedOver: options.handedProgram !== undefined, handedProgram: options.handedProgram,
+    fs: treeFs, gateCommands: [], deploymentCommands: ["bootstrap", "up"], variadicCommands: [],
+  });
+  if (decision.kind !== "run") throw new Error(`entry did not run: ${decision.kind}`);
+  return renderAdvice(command(["bootstrap"]), { program: options.handedProgram ?? SHIM_PROGRAM, mode: "checkout", audience: "mcp", ...(decision.app === undefined ? {} : { app: decision.app }) });
+}
+const DEMO_DIR = `${TREE_ROOT}/apps/demo`;
+check(
+  "an MCP launcher's hand-over keeps its --app: its program is the checkout gate, not the cwd",
+  adviceAfterEntry(["--app", "demo", "bootstrap"], { cwd: DEMO_DIR, handedProgram: "../../clawforge" }),
+  "../../clawforge --app demo bootstrap",
+);
+check(
+  "a hand-over by the bare program inside the deployment names no --app: the cwd selects it",
+  adviceAfterEntry(["--app", "demo", "bootstrap"], { cwd: DEMO_DIR, handedProgram: "clawforge" }),
+  "clawforge bootstrap",
+);
+check(
+  "--app openclaw is kept while OC_APP is exported: the pasted line would otherwise follow the environment",
+  adviceAfterEntry(["--app", "openclaw", "up"], { cwd: TREE_ROOT, ocApp: "staging" }),
+  `${SHIM_PROGRAM} --app openclaw bootstrap`,
+);
+check(
+  "the default deployment (no flag, no OC_APP) names no --app",
+  adviceAfterEntry(["up"], { cwd: TREE_ROOT }),
+  `${SHIM_PROGRAM} bootstrap`,
+);
+
+/** Prose tokens go through the same renderer as advice: the invocation handed in decides the
+ *  program (quoted by the argument rule) and the `--app`, never the process's global one. */
+const FLAGGED_DEMO: Invocation = { program: "../../clawforge", mode: "checkout", audience: "mcp", app: { name: "demo", selectedBy: "flag" } };
+setInvocation(PATH_SPELLING);
+check("a {clawforge ...} token renders under the invocation it is given", renderProse("run {clawforge up}", FLAGGED_DEMO).split(" "), ["run", "../../clawforge", "--app", "demo", "up"]);
+check(
+  "the {clawforge} program token is quoted like the advice program",
+  renderProse("run {clawforge}", { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" }),
+  "run '<programs dir>/clawforge'",
+);
+check("a plain program stays bare in the {clawforge} token", renderProse("run {clawforge}", BARE_PROGRAM).split(" "), ["run", "clawforge"]);
 
 /** P3 — a `shell` line is byte for byte what the advice carries, note included, under every
  *  column: nothing in the output layer rewrites a line for another shell or host. */

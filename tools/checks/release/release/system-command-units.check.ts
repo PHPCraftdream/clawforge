@@ -2,10 +2,10 @@
 // app.ts, the one-shot delegation flag, the version source classification and the installer's
 // PATH-shadow detection. The installed end-to-end runs are in system-install.check.ts.
 
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, accessSync, statSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { findAppRoot } from "#framework/entry/root.ts";
+import { findAppRootIn, type FsProbe } from "#framework/entry/resolve.ts";
 import { takeDelegationFlag } from "#framework/entry/delegate.ts";
 import { classifyCopy } from "#framework/integration/version.ts";
 import { resolveOnPath, shadowMessage } from "#tools/dev/resolve-on-path.ts";
@@ -14,23 +14,31 @@ import { check, finish } from "#checks/kit/harness.ts";
 // Canonical, as classifyCopy reports it (macOS /var → /private/var, Windows 8.3 names).
 const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "clawforge-system-units-")));
 try {
+  const fs: FsProbe = {
+    exists: (path) => { try { accessSync(path); return true; } catch { return false; } },
+    isDirectory: (path) => { try { return statSync(path).isDirectory(); } catch { return false; } },
+    readdir: (path) => { try { return readdirSync(path); } catch { return []; } },
+    readFile: (path) => { try { return readFileSync(path, "utf8"); } catch { return undefined; } },
+    realpath: (path) => { try { return realpathSync(path); } catch { return path; } },
+  };
+
   // --- upward search ------------------------------------------------------------------------
   const app = join(scratch, "app");
   const deep = join(app, "recipes", "one");
   mkdirSync(deep, { recursive: true });
-  check("no app.ts anywhere above: nothing found", findAppRoot(deep), undefined);
+  check("no app.ts anywhere above: nothing found", findAppRootIn(deep, fs), undefined);
   writeFileSync(join(app, "app.ts"), "");
-  check("an ancestor's bare app.ts (some other project's) is not a deployment", findAppRoot(deep), undefined);
+  check("an ancestor's bare app.ts (some other project's) is not a deployment", findAppRootIn(deep, fs), undefined);
   mkdirSync(join(app, "config"));
   writeFileSync(join(app, "config", "desired-state.json"), "[]");
-  check("a subfolder finds the nearest ancestor deployment", findAppRoot(deep), app);
-  check("the app folder itself is its own root", findAppRoot(app), app);
+  check("a subfolder finds the nearest ancestor deployment", findAppRootIn(deep, fs), app);
+  check("the app folder itself is its own root", findAppRootIn(app, fs), app);
   writeFileSync(join(app, "recipes", "app.ts"), "");
-  check("a bare app.ts in between is skipped", findAppRoot(deep), app);
+  check("a bare app.ts in between is skipped", findAppRootIn(deep, fs), app);
   mkdirSync(join(app, "recipes", "config"));
   writeFileSync(join(app, "recipes", "config", "desired-state.json"), "[]");
-  check("the nearest deployment wins", findAppRoot(deep), join(app, "recipes"));
-  check("the start itself counts with app.ts alone", findAppRoot(join(app, "recipes")), join(app, "recipes"));
+  check("the nearest deployment wins", findAppRootIn(deep, fs), join(app, "recipes"));
+  check("the start itself counts with app.ts alone", findAppRootIn(join(app, "recipes"), fs), join(app, "recipes"));
 
   // --- the delegation flag covers one hand-over only --------------------------------------------
   process.env.CLAWFORGE_DELEGATED = "1";

@@ -199,6 +199,17 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Advice printed after a hand-over from the MCP launcher keeps `--app`: the launcher's program is the
+  checkout gate, which reads `--app` and `OC_APP` and never the working directory, so the pasted
+  `../../clawforge bootstrap` no longer targets the default deployment. A flagged `--app openclaw` is
+  kept too while `OC_APP` may be set, because `OC_APP=staging` makes `openclaw` the exception. `set
+  validate` judges a recipe's required files (`server.ts`, `agent/config.json`) by the files the set
+  carries, so a file listed under `privateFiles` is reported missing on the tree as it is on the
+  artifact, instead of passing `set build` and failing at `plan`/`apply`/`accept`. `accept` reads
+  `acceptance.json` with the reader `set validate` uses (a file holding `null` no longer throws). A
+  digest the registry answers that is not a `sha256:` digest is not pinned by `bootstrap` or `upgrade`.
+  `restore` prints the two commands that re-point a sidecar recipe on separate lines instead of
+  joining them with `&&`, which Windows PowerShell 5.1 does not accept.
 * An agent recipe without `server.ts` (or without `agent/config.json`) no longer dies as
   "<artifact> is not a valid set artifact: … incomplete agent bundle" on `set validate --set`
   — it is reported as the `SET_RECIPE_INCOMPLETE` finding the working-tree validation gives

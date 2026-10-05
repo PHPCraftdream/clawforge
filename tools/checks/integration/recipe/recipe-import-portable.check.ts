@@ -14,7 +14,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 /** Runs `fn`, returns the thrown message. Records a failure (and returns "") if it did not throw. */
 async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string> {
@@ -90,50 +90,40 @@ try {
 
   // --- a symlink inside the source is followed like set build and the mirror follow it, under
   // its own name, byte-identical; one resolving outside the source is refused the same way.
-  // Windows without developer mode (or privileges) cannot create a symlink; that case is
-  // skipped honestly rather than pretended. ---------------------------------------------------
-  {
+  // Windows without developer mode (or privileges) cannot create a symlink: the declared
+  // capability reports that case as skipped. -------------------------------------------------
+  await requires("symlink", "import follows an inside-pointing symlink and refuses one escaping the source", async () => {
     const linkRoot = resolve(scratch, "symlink");
     const source = resolve(linkRoot, "source-recipe");
     await mkdir(source, { recursive: true });
     await writeFile(resolve(source, "recipe.json"), JSON.stringify({ description: "Linked" }), "utf8");
     await writeFile(resolve(source, "page.md"), "# page\n", "utf8");
-    let linked = true;
-    try {
-      await symlink(resolve(source, "page.md"), resolve(source, "linked-page.md"));
-    } catch {
-      linked = false;
-    }
-    if (!linked) {
-      process.stderr.write("  skip import follows an inside-pointing symlink (symlinks unavailable on this machine)\n");
-      process.stderr.write("  skip import refuses a symlink escaping the source (symlinks unavailable on this machine)\n");
-    } else {
-      useRecipesDir(resolve(linkRoot, "recipes"));
-      await mkdir(resolve(linkRoot, "recipes"), { recursive: true });
-      await withOutputSink(() => {}, () => recipe(ctx, ["import", source, "linked"]));
-      check(
-        "import follows an inside-pointing symlink, byte-identical",
-        await access(resolve(linkRoot, "recipes", "linked", "linked-page.md")).then(() => true, () => false),
-        true,
-      );
+    await symlink(resolve(source, "page.md"), resolve(source, "linked-page.md"));
+    useRecipesDir(resolve(linkRoot, "recipes"));
+    await mkdir(resolve(linkRoot, "recipes"), { recursive: true });
+    await withOutputSink(() => {}, () => recipe(ctx, ["import", source, "linked"]));
+    check(
+      "import follows an inside-pointing symlink, byte-identical",
+      await access(resolve(linkRoot, "recipes", "linked", "linked-page.md")).then(() => true, () => false),
+      true,
+    );
 
-      await mkdir(resolve(linkRoot, "outside"), { recursive: true });
-      await writeFile(resolve(linkRoot, "outside", "secret.env"), "SECRET\n", "utf8");
-      const escapeSource = resolve(linkRoot, "escaping-source");
-      await mkdir(escapeSource, { recursive: true });
-      await writeFile(resolve(escapeSource, "recipe.json"), JSON.stringify({ description: "Escaping" }), "utf8");
-      await symlink(resolve(linkRoot, "outside", "secret.env"), resolve(escapeSource, "escape-link"));
-      const escapeMessage = await messageOf("import refuses a symlink escaping the source", () =>
-        withOutputSink(() => {}, () => recipe(ctx, ["import", escapeSource, "escaped"])),
-      );
-      check("the refusal names the escape", escapeMessage.includes("outside the recipe directory"), true);
-      check(
-        "nothing was copied for the escaping source",
-        await access(resolve(linkRoot, "recipes", "escaped")).then(() => true, () => false),
-        false,
-      );
-    }
-  }
+    await mkdir(resolve(linkRoot, "outside"), { recursive: true });
+    await writeFile(resolve(linkRoot, "outside", "secret.env"), "SECRET\n", "utf8");
+    const escapeSource = resolve(linkRoot, "escaping-source");
+    await mkdir(escapeSource, { recursive: true });
+    await writeFile(resolve(escapeSource, "recipe.json"), JSON.stringify({ description: "Escaping" }), "utf8");
+    await symlink(resolve(linkRoot, "outside", "secret.env"), resolve(escapeSource, "escape-link"));
+    const escapeMessage = await messageOf("import refuses a symlink escaping the source", () =>
+      withOutputSink(() => {}, () => recipe(ctx, ["import", escapeSource, "escaped"])),
+    );
+    check("the refusal names the escape", escapeMessage.includes("outside the recipe directory"), true);
+    check(
+      "nothing was copied for the escaping source",
+      await access(resolve(linkRoot, "recipes", "escaped")).then(() => true, () => false),
+      false,
+    );
+  });
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }

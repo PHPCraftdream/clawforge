@@ -93,6 +93,10 @@ function ctxFor(facts: { bindAddress?: string; port?: string } | undefined, tail
 // The raw writer, not withOutputSink: that helper makes isCaptured() true, which switches
 // exposeStatus to its JSON path regardless of args (the same reasoning folder.check.ts's own
 // captureStderr applies to status text) — these checks want the real terminal text path.
+/** The drift note's own line: the wildcard warning below it also names `up`, so a whole-output
+ *  search would pass without the note saying it. */
+const driftLine = (output: string): string => output.split("\n").find((line) => line.includes("differs")) ?? "";
+
 async function run(ctx: Context): Promise<string> {
   const original = process.stderr.write.bind(process.stderr);
   let out = "";
@@ -138,16 +142,16 @@ async function run(ctx: Context): Promise<string> {
 {
   const output = await run(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }));
   checkTrue("a drifted bind address (vs. configured .env) is noted", output.includes(bindDriftNote("127.0.0.1", "0.0.0.0")));
-  checkTrue("bind drift recommends recreation with up", output.includes(bindDriftNote("127.0.0.1", "0.0.0.0")));
-  checkTrue("adopting a running bind requires the explicit .env edit", output.includes(bindDriftNote("127.0.0.1", "0.0.0.0")));
+  checkTrue("bind drift recommends recreation with up", driftLine(output).includes(commandLine("up")));
+  checkTrue("adopting a running bind requires the explicit .env edit", driftLine(output).includes("explicitly") && driftLine(output).includes("OC_BIND_ADDRESS=0.0.0.0"));
   check("bind drift never recommends restart or unsupported recovery", /restart|recover-env/.test(output), false);
 }
 
 {
   const ctx = ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false });
   const output = await run({ ...ctx, settings: { ...ctx.settings, bindAddress: "0.0.0.0" } });
-  checkTrue("reverse bind drift also recommends up", output.includes(bindDriftNote("0.0.0.0", "127.0.0.1")));
-  checkTrue("reverse bind drift offers the actual runtime bind", output.includes(bindDriftNote("0.0.0.0", "127.0.0.1")));
+  checkTrue("reverse bind drift also recommends up", driftLine(output).includes(commandLine("up")));
+  checkTrue("reverse bind drift offers the actual runtime bind", driftLine(output).includes("explicitly") && driftLine(output).includes("OC_BIND_ADDRESS=127.0.0.1"));
   check("reverse drift does not suggest unsupported recovery", output.includes("recover-env"), false);
 }
 

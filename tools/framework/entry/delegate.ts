@@ -16,7 +16,7 @@ import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
 import { command } from "../core/io/invocation/advice.ts";
 import { renderArgument } from "../core/io/invocation/render.ts";
-import { nodeFs, checkoutGateIn, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
+import { nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -33,11 +33,6 @@ function localEntry(appRoot: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/** The checkout's own gate: `root` holds tools/clawforge.ts next to the framework sources. */
-export function checkoutGate(root: string): string | undefined {
-  return checkoutGateIn(root, nodeFs);
 }
 
 /** Reads and clears the hand-over flag. Called first thing in the receiving bin.ts, so the

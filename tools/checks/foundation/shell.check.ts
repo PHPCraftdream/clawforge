@@ -8,7 +8,7 @@
 
 import { spawnSync } from "node:child_process";
 import { shellQuote } from "#framework/core/io/shell.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 
 // --- byte-exact output ----------------------------------------------------------
@@ -30,18 +30,11 @@ for (const { name, value, expected } of CASES) {
 
 // --- round trip through a real POSIX sh, where one is reachable -----------------
 
-function shAvailable(): boolean {
-  const probe = spawnSync("sh", ["-c", "exit 0"]);
-  return probe.error === undefined && probe.status === 0;
-}
-
-if (shAvailable()) {
+await requires("posix-sh", "shellQuote round-trips through POSIX sh", () => {
   for (const { name, value } of CASES) {
     const result = spawnSync("sh", ["-c", `printf '%s' ${shellQuote(value)}`], { encoding: "utf8" });
     check(`shellQuote round-trip via sh: ${name}`, result.status === 0 ? result.stdout : `exit ${result.status}: ${result.stderr}`, value);
   }
-} else {
-  process.stderr.write("no POSIX sh reachable locally — skipping the round-trip half (byte-exact output still checked)\n");
-}
+});
 
 finish("shellQuote");

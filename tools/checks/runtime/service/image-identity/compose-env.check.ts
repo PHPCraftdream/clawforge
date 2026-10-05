@@ -11,6 +11,7 @@ import { DockerRuntime, serializeComposeEnv } from "#framework/runtime/docker/ru
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { requires } from "#checks/kit/harness.ts";
 import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
 const previous=(()=>{try{return deploymentDir();}catch{return undefined;}})();
@@ -234,10 +235,7 @@ try {
 } finally { if(previous!==undefined)useDeployment(previous); }
 
 // Compose parses the values independently of the serializer; no daemon is needed.
-const compose = await spawnLocal("docker", ["compose", "version"], { allowFailure: true }).catch(() => undefined);
-if (compose?.code !== 0) {
-  process.stderr.write("skip Compose parser check: Docker Compose is unavailable\n");
-} else {
+await requires("docker", "Compose parser preserves literal values and deployment precedence", async () => {
   const root = await mkdtemp(join(tmpdir(), "clawforge-compose-env-check-"));
   const probe = "CLAWFORGE_COMPOSE_ENV_PROBE";
   const expected = {
@@ -264,4 +262,4 @@ if (compose?.code !== 0) {
     else process.env[probe] = inherited;
     await rm(root, { recursive: true, force: true });
   }
-}
+});

@@ -51,7 +51,7 @@ export const REASON_NOT_RUNNING = "instance is not running";
 export const REASON_NEVER_BOOTSTRAPPED = "instance never bootstrapped";
 export const DIFFERENCES_PHRASE = "difference(s) from the lock";
 export const UNREAD_PHRASE = "inventory read(s) could not be compared";
-export function versionMismatchDetail(lockVersion: number): string {
+function versionMismatchDetail(lockVersion: number): string {
   return `the lock file is version ${lockVersion}, this framework writes version ${LOCK_VERSION}`;
 }
 
@@ -63,9 +63,8 @@ export const LOCK_ARGUMENTS = [
 /** Printed once the lock is written. Its own constant so it stays consistent with
  *  scaffold.ts's git-init note: the deployment directory is meant to become its own git
  *  repository (distinct from the framework's, since `apps/` is gitignored at monorepo root). */
-export const COMMIT_ADVICE_TARGET = "this deployment's own git repository (not the framework's, if the two differ)";
 export const COMMIT_ADVICE =
-  `commit it in ${COMMIT_ADVICE_TARGET} ` +
+  "commit it in this deployment's own git repository (not the framework's, if the two differ) " +
   "— that is what makes the deployment reproducible rather than merely configured";
 
 export interface DeploymentLock {

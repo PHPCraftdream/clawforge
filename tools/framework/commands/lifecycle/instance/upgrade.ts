@@ -12,7 +12,7 @@ import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
-import { parse, tryParse, channel, format, repositoryOf, withDigest, sameContent, digestOf, imageRefValue, type ImageRef } from "#src/runtime/docker/image-ref.ts";
+import { parse, tryParse, format, repositoryOf, withDigest, sameContent, digestOf, imageRefValue, type ImageRef } from "#src/runtime/docker/image-ref.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -72,7 +72,7 @@ async function resolveUpgradeTarget(
     // repo parts match — compare repositories, never the channel string itself.
     const declared = tryParse(ctx.settings.image);
     if (declared !== undefined && declared.tag !== undefined && repositoryOf(declared) === repositoryOf(requested)) {
-      return { targetDigest: requestedImage!, pin: `${channel(declared)}@${requested.digest}` };
+      return { targetDigest: requestedImage!, pin: format(withDigest(declared, requested.digest)) };
     }
     return { targetDigest: requestedImage! };
   }

@@ -1,5 +1,5 @@
 {
-  "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it.",
+  "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it. Retired: localizeOptOuts (infoRaw/reportErrorVerbatim/localizeHints) counted three symbols that no longer exist, so it could never move; the property it stood for, that the output layers print the text they are given, is pinned by advice-matrix.check.ts (info() and reportError write rendered advice un-rewritten).",
   "rawArgvScans": {
     "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails",
     "files": {},
@@ -195,12 +195,6 @@
   "dotClawforgeConcatLiterals": {
     "comment": "stage 4 (Advice): the concatenation spelling \".\" + \"/clawforge\" of the program name — same single-renderer invariant as dotClawforgeLiterals, 0 outside it",
     "total": 0
-  },
-  "localizeOptOuts": {
-    "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
-    "infoRaw": 0,
-    "reportErrorVerbatim": 0,
-    "localizeHints": 0
   },
   "rawArgvPredicates": {
     "comment": "stage 3 done, guard at 0: confirmation comes from declared effect, not raw argv; the AppCommand predicates stay only for commands an application declares",
@@ -434,7 +428,9 @@
         "lines": {
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
           "if (process.platform !== \"win32\") return undefined;": 1,
-          "const root = process.platform === \"win32\"": 1
+          "const root = process.platform === \"win32\"": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/integration/agent/recipe-hook-freshness/import-graph.check.ts": {
@@ -444,10 +440,12 @@
         }
       },
       "tools/checks/integration/mcp/transport-listing.check.ts": {
-        "reason": "value selection: the expected answer is the platform fact under test; the case runs on both platforms",
+        "reason": "value selection: the expected answer is the platform fact under test; the case runs on both platforms; nested availability inside a requires() body: the capability held, this note covers what no capability models (a per-file tool or image, a skip note of a helper whose group is gated); a note about a branch no host can exercise safely, not a host-dependent skip",
         "lines": {
           "check(\"local: unsetEnv follows platform case rules\", answer, process.platform === \"win32\" ? \"undefined\" : '\"host-value\"');": 1,
-          "check(\"local: the end came from the SIGKILL grace, not the deadline's own SIGTERM\", process.platform === \"win32\" || elapsed > 5000, true);": 1
+          "check(\"local: the end came from the SIGKILL grace, not the deadline's own SIGTERM\", process.platform === \"win32\" || elapsed > 5000, true);": 1,
+          "process.stderr.write(\"  skip local-shell exists checks (running as root)\\n\");": 1,
+          "\"  skip the genuinely-inherited branch (both descriptors really a terminal): proving it \" +": 1
         }
       },
       "tools/checks/release/release/installed-consumer.check.ts": {
@@ -472,7 +470,9 @@
         "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix)",
         "lines": {
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
-          "if (process.platform !== \"win32\") return undefined;": 1
+          "if (process.platform !== \"win32\") return undefined;": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/runtime/convergence/inspect/checksums.check.ts": {
@@ -481,7 +481,10 @@
           "function skip(name: string): void {": 1,
           "skip(\"a real sh is not spawnable here — the executed-command groups cannot run\");": 1,
           "skip(\"the executed end-to-end checksum needs a real sh\");": 1,
-          "skip(\"the script-contract and ssh round-trip groups need a real sh and a recorded call\");": 1
+          "skip(\"the script-contract and ssh round-trip groups need a real sh and a recorded call\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "await spawnLocal(\"sh\", [\"-c\", \"exit 0\"], { allowFailure: true });": 1,
+          "if (skipped > 0) process.stderr.write(`${skipped} skipped\\n`);": 1
         }
       },
       "tools/checks/runtime/convergence/inspect/drift/drift.check.ts": {
@@ -502,7 +505,10 @@
           "function skip(name: string): void {": 1,
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
           "if (process.platform !== \"win32\") return undefined;": 1,
-          "skip(\"archive/verify lifetime checks (no local POSIX filesystem and no WSL distribution with a shell)\");": 1
+          "skip(\"archive/verify lifetime checks (no local POSIX filesystem and no WSL distribution with a shell)\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts": {
@@ -511,7 +517,10 @@
           "function skip(name: string): void {": 1,
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
           "if (process.platform !== \"win32\") return undefined;": 1,
-          "skip(\"archive/verify prefix-boundary checks (no local POSIX filesystem and no WSL distribution with a shell)\");": 1
+          "skip(\"archive/verify prefix-boundary checks (no local POSIX filesystem and no WSL distribution with a shell)\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/runtime/lifecycle/recipe-portable-content.check.ts": {
@@ -534,14 +543,17 @@
           "skip(\"the mirror holds back every alias to a private or sensitive target (alias creation failed)\");": 1,
           "skip(\"no mirrored file carries the private bytes (alias creation failed)\");": 1,
           "skip(\"a symlink pointing at its own ancestor is refused instead of looping (alias creation failed)\");": 1,
-          "skip(\"a symlink pointing at its own ancestor is refused instead of looping (link creation failed)\");": 1
+          "skip(\"a symlink pointing at its own ancestor is refused instead of looping (link creation failed)\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1
         }
       },
       "tools/checks/runtime/lifecycle/restore/restore-symlink-boundary.check.ts": {
         "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix)",
         "lines": {
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
-          "if (process.platform !== \"win32\") return undefined;": 1
+          "if (process.platform !== \"win32\") return undefined;": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/runtime/recovery/private-history-restore.check.ts": {
@@ -550,7 +562,10 @@
           "function skip(name: string): void {": 1,
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
           "if (process.platform !== \"win32\") return undefined;": 1,
-          "skip(\"the private-history restore checks (no local POSIX filesystem and no WSL distribution with a shell)\");": 1
+          "skip(\"the private-history restore checks (no local POSIX filesystem and no WSL distribution with a shell)\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/runtime/schedule/account-lock.check.ts": {
@@ -569,7 +584,9 @@
         "reason": "nested availability inside a requires() body: the capability held but this in-file probe could not answer (the body's own sh probe stands in for the posix-sh probe inside the body)",
         "lines": {
           "function skip(name: string): void {": 1,
-          "skip(\"the root-probe script's shell contract needs a real sh\");": 1
+          "skip(\"the root-probe script's shell contract needs a real sh\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "const probed = await spawnLocal(\"sh\", [\"-c\", \"true\"], { allowFailure: true });": 1
         }
       },
       "tools/checks/runtime/service/restore/restore-ownership.check.ts": {
@@ -582,7 +599,9 @@
         "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix)",
         "lines": {
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
-          "if (process.platform !== \"win32\") return undefined;": 1
+          "if (process.platform !== \"win32\") return undefined;": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          "const shell = await candidate.exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/runtime/transport/local-target-unsupported.check.ts": {
@@ -606,21 +625,25 @@
         }
       },
       "tools/checks/security/credentials/private-config.check.ts": {
-        "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix)",
+        "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix); nested availability inside a requires() body: the capability held, this note covers what no capability models (a per-file tool or image, a skip note of a helper whose group is gated)",
         "lines": {
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
-          "if (process.platform !== \"win32\") return undefined;": 1
+          "if (process.platform !== \"win32\") return undefined;": 1,
+          "process.stderr.write(\"  skip Windows local secret round-trip: sh/cygpath unavailable\\n\");": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/security/credentials/private-file.check.ts": {
-        "reason": "value selection before the requires() bodies: the platform decides whether the WSL listing is attempted at all, and both requires() bodies consume the pre-computed value",
+        "reason": "value selection before the requires() bodies: the platform decides whether the WSL listing is attempted at all, and both requires() bodies consume the pre-computed value; nested availability inside a requires() body: the capability held, this note covers what no capability models (a per-file tool or image, a skip note of a helper whose group is gated)",
         "lines": {
           "function skip(reason: string): void {": 1,
           "skip(\"hostile-name WSL probes (no WSL distribution installed)\");": 1,
           "skip(`the oracle has no automount guess for the name with ${testCase.label}`);": 1,
           "skip(`the independent probe could not answer for the name with ${testCase.label} (${oracle})`);": 1,
           "skip(\"WSL boundary assertions (no WSL distribution installed)\");": 1,
-          "const listing = process.platform === \"win32\" ? await installedWslDistros() : { state: \"absent\" as const };": 1
+          "const listing = process.platform === \"win32\" ? await installedWslDistros() : { state: \"absent\" as const };": 1,
+          "process.stderr.write(`  skip ${reason}\\n`);": 1
         }
       },
       "tools/checks/security/credentials/recipe-private-snapshot/snapshot.check.ts": {
@@ -629,7 +652,9 @@
           "function skip(name: string): void {": 1,
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
           "if (process.platform !== \"win32\") return undefined;": 1,
-          "skip(\"real-GNU-tar snapshot checks (skipped: no local POSIX filesystem and no WSL distribution with GNU tar)\");": 1
+          "skip(\"real-GNU-tar snapshot checks (skipped: no local POSIX filesystem and no WSL distribution with GNU tar)\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1
         }
       },
       "tools/checks/security/credentials/secrets-command/local-store/local-store.check.ts": {
@@ -644,7 +669,10 @@
           "function skip(name: string): void {": 1,
           "if (process.platform === \"linux\") return new LocalTransport();": 1,
           "if (process.platform !== \"win32\") return undefined;": 1,
-          "skip(\"the fresh-folder reconcile scenario (no local POSIX filesystem and no WSL distribution with a shell)\");": 1
+          "skip(\"the fresh-folder reconcile scenario (no local POSIX filesystem and no WSL distribution with a shell)\");": 1,
+          "process.stderr.write(`  skip ${name}\\n`);": 1,
+          "const listing = await spawnLocal(\"wsl.exe\", [\"--list\", \"--quiet\"], { allowFailure: true, timeoutMs: 30_000 });": 1,
+          ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
       "tools/checks/sets/artifact/set-artifact.check.ts": {
@@ -682,6 +710,13 @@
         "reason": "value selection: tar --force-local on Windows for the drive-letter path",
         "lines": {
           "const forceLocal = process.platform === \"win32\" ? [\"--force-local\"] : [];": 1
+        }
+      },
+      "tools/checks/runtime/service/image-identity/compose-live.check.ts": {
+        "reason": "nested availability inside a requires() body: the capability held, this note covers what no capability models (a per-file tool or image, a skip note of a helper whose group is gated)",
+        "lines": {
+          "const probeImage = await spawnLocal(\"docker\", [\"image\", \"inspect\", candidate], { allowFailure: true }).catch(() => undefined);": 1,
+          "process.stderr.write(\"skip live recreate checks: neither alpine:3.20 nor busybox:latest is present locally\\n\");": 1
         }
       }
     }

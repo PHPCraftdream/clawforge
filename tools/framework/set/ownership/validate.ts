@@ -166,29 +166,33 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
         }
         continue;
       }
+      // Completeness is judged by the manifest's portable inventory, never by what the disk
+      // holds: a file kept private (recipe.json privateFiles) is on the tree but never in the
+      // artifact, so the disk would answer differently on the two paths.
+      const carried = (rel: string): boolean => manifest.files[`recipes/${name}/${rel}`] !== undefined;
       // server.ts is required only of a recipe that declares an agent — that's what makes
       // it an MCP recipe. A recipe without one is a plain service (its own compose stack,
       // recipe.json); demanding server.ts of it was a false positive against a real deployment.
-      if (declaresAgent && !(await exists(resolve(dir, "server.ts")))) {
+      if (declaresAgent && !carried("server.ts")) {
         problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`, addingFix("server.ts", name)));
       }
-      if (!declaresAgent && !(await exists(resolve(dir, "recipe.json"))) && !(await exists(resolve(dir, "server.ts")))) {
+      if (!declaresAgent && !carried("recipe.json") && !carried("server.ts")) {
         problems.push(recipeMissingDir(name, `recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
       }
-      if (declaresAgent && !(await exists(resolve(dir, "agent", "config.json")))) {
+      if (declaresAgent && !carried("agent/config.json")) {
         problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no agent/config.json`, addingFix("agent/config.json", name)));
       }
       // The JSON files the set declares, read once by the loader's own step: a malformed
       // one is the same finding whichever path loaded the set.
-      const agentFile = await readAgentFile(resolve(dir, "agent", "config.json"), name);
+      const agentFile = carried("agent/config.json") ? await readAgentFile(resolve(dir, "agent", "config.json"), name) : undefined;
       if (agentFile?.ok === false) problems.push(recipeInvalidDefinition(name, agentFile.reason, "agent/config.json"));
-      const acceptanceFile = await readAcceptanceFile(resolve(dir, "acceptance.json"), name);
+      const acceptanceFile = carried("acceptance.json") ? await readAcceptanceFile(resolve(dir, "acceptance.json"), name) : undefined;
       if (acceptanceFile?.ok === false) problems.push(recipeInvalidDefinition(name, acceptanceFile.reason, "acceptance.json"));
       // Parse the definition with the loader recipe list and recipe install use, so a
       // recipe.json `recipe list` calls broken is a finding here too instead of failing
       // only mid-apply on the target (R33-08). The loader's own message names the file.
       const definitionPath = resolve(dir, "recipe.json");
-      if (await exists(definitionPath)) {
+      if (carried("recipe.json") && await exists(definitionPath)) {
         try {
           parseRecipeDefinition(name, await readFile(definitionPath, "utf8"));
         } catch (error) {

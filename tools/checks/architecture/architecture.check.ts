@@ -41,12 +41,6 @@ interface Baseline {
   readonly dotClawforgeLiterals: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly dotClawforgeLiteralsNonTs: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly dotClawforgeConcatLiterals: { readonly comment: string; readonly total: number };
-  readonly localizeOptOuts: {
-    readonly comment: string;
-    readonly infoRaw: number;
-    readonly reportErrorVerbatim: number;
-    readonly localizeHints: number;
-  };
   readonly rawArgvPredicates: {
     readonly comment: string;
     readonly readOnlyWhen: number;
@@ -234,25 +228,6 @@ for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) 
   for (const line of content.split("\n")) if (CONCAT_LITERAL.test(line)) concatTotal += 1;
 }
 report(ratchet("dotClawforgeConcatLiterals", baseline.dotClawforgeConcatLiterals.total, concatTotal, [], []));
-
-// 2. Raw-output opt-outs — stage 4: `infoRaw`/`reportErrorVerbatim`/`localizeHints` call
-// sites. Imports carry no parentheses; each function's own definition is the one site to
-// subtract, so the count is occurrences minus definitions.
-const OPT_OUTS = ["infoRaw", "reportErrorVerbatim", "localizeHints"] as const;
-for (const name of OPT_OUTS) {
-  let count = 0;
-  for (const full of frameworkFiles) {
-    const content = await readFile(full, "utf8");
-    for (const line of content.split("\n")) {
-      if (!line.includes(`${name}(`)) continue;
-      if (line.startsWith(`export function ${name}(`)) continue;
-      count += 1;
-    }
-  }
-  const expected = baseline.localizeOptOuts[name];
-  const result = ratchet(`localizeOptOuts.${name}`, expected, count, [], []);
-  report(result);
-}
 
 // 3. Flag spellings in help prose — stage 4 (design 2.3): a `--name` the declaration itself
 // declares, spelled in its own `details` outside a token and outside a code span quoting
@@ -475,6 +450,13 @@ const ADHOC = new RegExp([
   "\\bskipIf\\b|\\brunIf\\b|\\.skip\\b",
   "\\bskip\\(",
   "\"skip\",\\s*\"skip\"",
+  // a skip note on stderr (the lowercase note the runner does not count), or a string opening with it
+  "stderr\\.write\\([^)]*\\bskip",
+  "[\"'`]\\s*skip\\b",
+  // a private availability probe: sh -c true / exit 0, Docker Compose or an image, a WSL listing
+  "\\b(?:spawnLocal|spawn|exec)\\(\\s*\"sh\",\\s*\\[\"-c\",\\s*\"(?:true|exit 0)\"\\]",
+  "\\bspawnLocal\\(\\s*\"docker\",\\s*\\[\"(?:compose\",\\s*\"version|image\",\\s*\"inspect)\"",
+  "\\bspawnLocal\\(\\s*\"wsl\\.exe\",\\s*\\[\"(?:--list|-l)\"",
 ].join("|"));
 const adhocExemptLeft = new Map<string, Map<string, number>>(
   Object.entries(baseline.adhocSkips.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),

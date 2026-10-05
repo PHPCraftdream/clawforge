@@ -247,7 +247,7 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
       }
       if (command === "docker") {
         if (args[0] === "buildx" && args[1] === "imagetools" && args[2] === "inspect") {
-          return ok(`Digest: sha256:${(args[3] ?? "").split("@")[1] ?? ""}`);
+          return ok(`Digest: ${(args[3] ?? "").split("@")[1] ?? ""}`);
         }
         if (args[0] === "ps") return ok("gateway-container");
         if (args[0] === "inspect") {
@@ -390,7 +390,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
       if (command === "curl") return ok(stopped ? "000" : "200");
       if (command === "docker") {
         if (args[0] === "buildx" && args[1] === "imagetools" && args[2] === "inspect") {
-          return ok(`Digest: sha256:${(args[3] ?? "").split("@")[1] ?? ""}`);
+          return ok(`Digest: ${(args[3] ?? "").split("@")[1] ?? ""}`);
         }
         if (args[0] === "ps") return ok(unknown || (stopped && !args.includes("--all")) ? "" : "gateway-container");
         if (args[0] === "inspect") {

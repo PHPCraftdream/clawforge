@@ -214,6 +214,16 @@ await runVariant({
   },
 });
 
+// A required file listed under the recipe's privateFiles stays on the tree and never ships:
+// completeness is judged by the portable inventory, so both paths report it missing.
+for (const privateFile of ["agent/config.json", "server.ts"]) {
+  await runVariant({
+    label: `a required file kept private (privateFiles: ${privateFile})`,
+    mutate: (deployment) => writeFile(recipeFile(deployment, "recipe.json"), JSON.stringify({ description: "demo", privateFiles: [privateFile] })),
+    expectCodes: ["SET_RECIPE_INCOMPLETE"],
+  });
+}
+
 await runVariant({
   label: "an agent recipe serving no content",
   mutate: async (deployment) => {

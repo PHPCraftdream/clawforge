@@ -2,15 +2,8 @@
 
 import { frameworkPackage } from "../core/env.ts";
 import { classifyCopy } from "../integration/version.ts";
-import { findAppRootIn, nodeFs } from "./resolve.ts";
 import { SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "../core/io/invocation/render.ts";
 import type { Invocation } from "../core/io/invocation/index.ts";
-
-/** The nearest deployment at or above `start`. The walk itself (the decision) lives in
- *  entry/resolve.ts; this is the real file system's adapter. */
-export function findAppRoot(start: string): string | undefined {
-  return findAppRootIn(start, nodeFs);
-}
 
 /** Hint prefix and mode when no entry named itself: `clawforge` only for the system-wide
  *  copy; the app's own dependency (MCP launcher, npx, node_modules/.bin) has no global

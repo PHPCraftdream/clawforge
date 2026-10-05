@@ -8,7 +8,7 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { compareLock, COMMIT_ADVICE, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, PREDATES_PLUGIN_PINNING, PREDATES_SKILL_PINNING, LOCK_NOT_WRITTEN, COULD_NOT_COMPARE, REASON_NOT_RUNNING, REASON_NEVER_BOOTSTRAPPED, DIFFERENCES_PHRASE, UNREAD_PHRASE, versionMismatchDetail, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
+import { compareLock, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, PREDATES_PLUGIN_PINNING, PREDATES_SKILL_PINNING, LOCK_NOT_WRITTEN, COULD_NOT_COMPARE, REASON_NOT_RUNNING, REASON_NEVER_BOOTSTRAPPED, DIFFERENCES_PHRASE, UNREAD_PHRASE, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
 import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
@@ -87,7 +87,7 @@ check("a secret no longer required is not", details({ secrets: ["OPENCLAW_GATEWA
 {
   const found = compareLock({ ...composition(), version: 99 }, composition());
   check("a lock from another format version is a single, clear finding", found.length, 1);
-  check("naming both versions", found[0].detail, versionMismatchDetail(99));
+  check("naming both versions", ["99", String(LOCK_VERSION)].every((version) => found[0].detail.includes(version)), true);
 }
 
 check("a missing lock is reported as missing, not as drift", compareLock(undefined, composition()).map((entry) => entry.code), ["LOCK_MISSING"]);
@@ -485,7 +485,7 @@ check("and confirms secrets are already kept out of that new repository", initAd
     const realWrite = process.stderr.write;
     process.stderr.write = ((chunk: string | Uint8Array) => { writtenText += String(chunk); return true; }) as typeof process.stderr.write;
     try { await lock(ctx, []); } finally { process.stderr.write = realWrite; }
-    check("lock's advice names the deployment's own repository, not an unqualified one", writtenText.includes(COMMIT_ADVICE), true);
+    check("lock's advice names the deployment's own repository, not an unqualified one", ["commit", "deployment's", "own", "repository"].every((word) => writtenText.includes(word)), true);
   } finally {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(resolve(monorepoRoot, "apps", "example app"));

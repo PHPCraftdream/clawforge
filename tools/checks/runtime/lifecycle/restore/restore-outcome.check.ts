@@ -8,6 +8,7 @@ import { lockPath, runOwning, type HeldLock } from "#framework/runtime/lock/inst
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { repointLines } from "#framework/commands/lifecycle/restore/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 const DATA_DIR = "/srv/clawforge-restore-outcome/data";
@@ -73,5 +74,12 @@ for (const scenario of [
   check(`${scenario.name}: next action matches the missing prerequisite`, report.nextAction, scenario.nextAction);
   check(`${scenario.name}: JSON excludes credential names and values`, /REQUIRED_VAR|fixture-only-placeholder/.test(output), false);
 }
+
+// The sidecar advice is one command per line: a line joining two with `&&` does not paste into
+// Windows PowerShell 5.1.
+const repoint = repointLines("search");
+check("sidecar advice: a heading and the two commands, one per line", repoint.length, 3);
+check("sidecar advice: no line chains commands", repoint.some((line) => line.includes("&&")), false);
+check("sidecar advice: the commands are remove then install", [repoint[1], repoint[2]].map((line) => line?.split(" ").slice(-3).join(" ")), ["recipe remove search", "recipe install search"]);
 
 finish("restore outcome");

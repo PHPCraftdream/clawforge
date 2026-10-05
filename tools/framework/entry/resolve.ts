@@ -12,7 +12,7 @@ import type { InvocationApp } from "../core/io/invocation/index.ts";
 import type { CommandArgument } from "../core/app.ts";
 import { manual } from "../core/io/invocation/advice.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { renderAdvice, shimInvocation } from "../core/io/invocation/render.ts";
+import { renderAdvice, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "../core/io/invocation/render.ts";
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
 import { tokenize } from "../core/command/parse.ts";
@@ -95,6 +95,8 @@ export interface CheckoutEntryInput {
   readonly ocApp: string | undefined;
   /** A hand-over (bin.shim → gate, or the legacy variable) named this process. */
   readonly handedOver: boolean;
+  /** The program the hand-over named (Invocation.program); decides whether the cwd selects the deployment. */
+  readonly handedProgram?: string;
   readonly fs: FsProbe;
   readonly gateCommands: readonly string[];
   readonly deploymentCommands: readonly string[];
@@ -143,14 +145,22 @@ function sameFile(fs: FsProbe, a: string, b: string): boolean {
   return fs.realpath(a) === fs.realpath(b);
 }
 
-/** The deployment fact hints need: recorded for every selected deployment; a hand-over whose
- *  cwd is inside the deployment re-selects it by the cwd, so the prefix rule prints nothing. */
-function appFact(name: string, selectedBy: InvocationApp["selectedBy"], handedOver: boolean, deploymentDir: string, cwd: string): InvocationApp {
-  return { name, selectedBy: handedOver && isWithin(deploymentDir, cwd) ? "cwd" : selectedBy };
+/** Programs that find their deployment from the cwd: the system-wide command and the
+ *  deployment's own shim / npm bin wrapper. A path out of the deployment (the MCP launcher's
+ *  shim two levels up) is the checkout gate, which reads --app and OC_APP and never the cwd. */
+const CWD_PROGRAMS: readonly string[] = ["clawforge", SHIM_PROGRAM, WINDOWS_BIN_PROGRAM];
+
+/** The deployment fact hints need: recorded for every selected deployment as handed over; only
+ *  a hand-over by a cwd-resolving program, run inside the deployment, re-selects it by the cwd
+ *  (the prefix rule then prints nothing). */
+function appFact(name: string, selectedBy: InvocationApp["selectedBy"], handedProgram: string | undefined, deploymentDir: string, cwd: string): InvocationApp {
+  const byCwd = handedProgram !== undefined && CWD_PROGRAMS.includes(handedProgram) && isWithin(deploymentDir, cwd);
+  return { name, selectedBy: byCwd ? "cwd" : selectedBy };
 }
 
 export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDecision {
   const { root, cwd, argv, ocApp, handedOver, fs, gateCommands, deploymentCommands, variadicCommands, deploymentArguments } = input;
+  const handedProgram = handedOver ? input.handedProgram : undefined;
 
   // --app wins over the environment, the environment over the default.
   let name = ocApp ?? "openclaw";
@@ -188,7 +198,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     const available = availableNames(root, fs);
     const sole = soleDeploymentFallback(ocApp !== undefined || appFlag.value !== undefined, available);
     if (sole !== undefined) {
-      return { kind: "run", deploymentDir: resolve(root, "apps", sole), appName: sole, argv: rest, app: appFact(sole, "sole", handedOver, resolve(root, "apps", sole), cwd), soleNote: sole };
+      return { kind: "run", deploymentDir: resolve(root, "apps", sole), appName: sole, argv: rest, app: appFact(sole, "sole", handedProgram, resolve(root, "apps", sole), cwd), soleNote: sole };
     }
     if (rest.length === 0 || rest[0] === "help" || rest[0] === "--help" || rest[0] === "-h" || isDeploymentHelpRequest(rest, deploymentCommands)) {
       const pick = available.length === 0
@@ -205,7 +215,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     };
   }
 
-  return { kind: "run", deploymentDir, appName: name, argv: rest, app: appFact(name, selectedBy, handedOver, deploymentDir, cwd) };
+  return { kind: "run", deploymentDir, appName: name, argv: rest, app: appFact(name, selectedBy, handedProgram, deploymentDir, cwd) };
 }
 
 // --- the installed command: which framework copy runs --------------------------------------------

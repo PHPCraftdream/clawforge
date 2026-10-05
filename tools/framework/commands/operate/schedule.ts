@@ -84,7 +84,7 @@ function formatInterval(minutes: number): string {
   return minutes === 1440 ? "1d" : `${minutes / 60}h`;
 }
 
-export function nearestValidIntervals(minutes: number): string[] {
+function nearestValidIntervals(minutes: number): string[] {
   const below = [...VALID_INTERVAL_MINUTES].reverse().find((value) => value <= minutes);
   const above = VALID_INTERVAL_MINUTES.find((value) => value >= minutes);
   return [...new Set([below, above].filter((value): value is number => value !== undefined))].map(formatInterval);

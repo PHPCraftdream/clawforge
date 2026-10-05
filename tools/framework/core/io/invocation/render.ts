@@ -59,6 +59,11 @@ export function renderArgument(word: string, program: string): string {
  *  already (npm's bin wrapper carries `\`), so it renders bare like any safe word. */
 const SAFE_PROGRAM = /^[A-Za-z0-9_@%+=:,./\\-]+$/;
 
+/** The program as typed: quoted by the argument rule when it carries a space or a shell word. */
+export function renderProgram(on: Invocation): string {
+  return SAFE_PROGRAM.test(on.program) ? on.program : renderArgument(on.program, on.program);
+}
+
 export function renderAdvice(advice: Advice, on: Invocation = invocation()): string {
   if (advice.kind === "shell") {
     return advice.note === undefined ? advice.text : `${advice.text}  (${advice.note})`;
@@ -68,15 +73,16 @@ export function renderAdvice(advice: Advice, on: Invocation = invocation()): str
   }
   // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
   // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
-  const parts = [SAFE_PROGRAM.test(on.program) ? on.program : renderArgument(on.program, on.program)];
+  const parts = [renderProgram(on)];
   if (advice.app !== undefined) {
     parts.push("--app", renderArgument(advice.app, on.program));
   } else if (
     !isGateCommand(advice.argv[0]) &&
     on.app !== undefined &&
-    on.app.name !== "openclaw" &&
     (on.app.selectedBy === "flag" || on.app.selectedBy === "env" || on.app.selectedBy === "sole")
   ) {
+    // A flagged `openclaw` is named too: it is the default only while OC_APP is unset,
+    // and the pasting shell may export it.
     parts.push("--app", renderArgument(on.app.name, on.program));
   }
   for (const argument of advice.argv) parts.push(renderArgument(argument, on.program));

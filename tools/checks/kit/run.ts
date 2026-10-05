@@ -6,7 +6,7 @@
 
 import { availableParallelism } from "node:os";
 import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readlink, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { reportError } from "#framework/core/io/log.ts";
@@ -48,10 +48,17 @@ export interface AppsEntry {
   readonly size?: number;
   /** sha256 of the content, only for files up to the {@link hashCapBytes} cap. */
   readonly hash?: string;
+  /** Target string of a symlink or Windows junction entry, read without following the link. */
+  readonly link?: string;
 }
 
 /** Files larger than this are sized but not hashed — snapshots stay cheap on big outputs. */
 const hashCapBytes = 64 * 1024;
+
+function kindOf(entry: AppsEntry): string {
+  if (entry.link !== undefined) return `link ${entry.link}`;
+  return entry.directory === true ? "dir" : `${entry.size}B${entry.hash === undefined ? "" : ` ${entry.hash.slice(0, 8)}`}`;
+}
 
 export interface CheckoutSnapshot {
   readonly apps: readonly AppsEntry[];
@@ -71,8 +78,8 @@ function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[]):
       gained.push(path);
       continue;
     }
-    const beforeKind = was.directory === true ? "dir" : `${was.size}B${was.hash === undefined ? "" : ` ${was.hash.slice(0, 8)}`}`;
-    const afterKind = entry.directory === true ? "dir" : `${entry.size}B${entry.hash === undefined ? "" : ` ${entry.hash.slice(0, 8)}`}`;
+    const beforeKind = kindOf(was);
+    const afterKind = kindOf(entry);
     if (beforeKind !== afterKind) changed.push(`${path} (${beforeKind} → ${afterKind})`);
   }
   for (const path of beforeByPath.keys()) if (!afterByPath.has(path)) lost.push(path);
@@ -109,7 +116,9 @@ export async function snapshotCheckout(root: string = resolve(monorepoRoot, "app
     }
     for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const rel = relative(root, join(dir, entry.name)).split("\\").join("/");
-      if (entry.isDirectory()) {
+      if (entry.isSymbolicLink()) {
+        apps.push({ path: rel, link: await readlink(join(dir, entry.name)) }); // recorded by target, never followed: no recursion, no cycles
+      } else if (entry.isDirectory()) {
         apps.push({ path: rel, directory: true });
         await walk(join(dir, entry.name));
       } else if (entry.isFile()) {

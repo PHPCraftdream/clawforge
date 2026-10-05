@@ -6,10 +6,10 @@
 // changes neither top-level names nor `git status --porcelain`, so only a recursive listing
 // can catch it.
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { diffSnapshots, snapshotCheckout, type AppsEntry, type CheckoutSnapshot } from "../run.ts";
 import { parseCaseSkips } from "./gate.ts";
 
@@ -57,6 +57,20 @@ check(
 );
 check("a directory that vanished is reported lost", diffSnapshots(snapshot({ apps: [{ path: "a", directory: true }] }), snapshot()), ["apps/ gained: b", "apps/ changed: a (dir → 1B h1)"]);
 check("a lost entry is named even when nothing else changed", diffSnapshots(snapshot(), snapshot({ apps: [file("a", 1, "h1")] })), ["apps/ lost: b"]);
+
+check("a link entry that appeared is named", diffSnapshots(snapshot(), snapshot({ apps: [...snapshot().apps, { path: "gateprobe-l", link: "a" }] })), ["apps/ gained: gateprobe-l"]);
+check("a link that vanished is reported lost", diffSnapshots(snapshot({ apps: [file("a", 1, "h1"), { path: "b", link: "a" }] }), snapshot({ apps: [file("a", 1, "h1")] })), ["apps/ lost: b"]);
+check(
+  "a retargeted link is reported as changed",
+  diffSnapshots(snapshot({ apps: [{ path: "l", link: "a" }, file("b", 2, "h2")] }), snapshot({ apps: [{ path: "l", link: "c" }, file("b", 2, "h2")] })),
+  ["apps/ changed: l (link a → link c)"],
+);
+check(
+  "a link replaced by a real file is reported as changed",
+  diffSnapshots(snapshot({ apps: [{ path: "l", link: "a" }, file("b", 2, "h2")] }), snapshot({ apps: [file("l", 1, "h1"), file("b", 2, "h2")] })),
+  ["apps/ changed: l (link a → 1B h1)"],
+);
+
 check(
   "a tracked or untracked change is named by its porcelain line",
   diffSnapshots(snapshot(), snapshot({ gitStatus: " M tools/framework/core/env.ts\n" })),
@@ -110,5 +124,29 @@ check(
     await rm(root, { recursive: true, force: true });
   }
 }
+
+await requires("symlink", "the walk records a symlink under apps/ without following it", async () => {
+  const linkRoot = await mkdtemp(join(tmpdir(), "clawforge-runguard-link-"));
+  try {
+    const apps = join(linkRoot, "apps");
+    await mkdir(join(apps, "real"), { recursive: true });
+    await writeFile(join(apps, "real", "data.env"), "alpha\n");
+    await writeFile(join(apps, "outside.env"), "beta\n");
+    const before = await snapshotCheckout(apps);
+    await symlink(join(apps, "outside.env"), join(apps, "linked"), "file");
+    const after = await snapshotCheckout(apps);
+    const alias = after.apps.find((entry) => entry.path === "linked");
+    checkTrue("a symlink under apps/ is recorded with its target string", alias !== undefined && alias.link !== undefined && alias.link.endsWith("outside.env"));
+    check("a symlink created between snapshots is named by the diff", diffSnapshots(before, after), ["apps/ gained: linked"]);
+    const dirLink = join(apps, "linked-dir");
+    await symlink(join(apps, "real"), dirLink, "dir");
+    const withDirLink = await snapshotCheckout(apps);
+    check("a directory symlink is recorded as one entry, not walked through", withDirLink.apps.some((entry) => entry.path === "linked-dir" && entry.link !== undefined) && !withDirLink.apps.some((entry) => entry.path === "linked-dir/data.env"), true);
+    await rm(dirLink, { force: true });
+    check("a symlink removed between snapshots is named by the diff", diffSnapshots(withDirLink, await snapshotCheckout(apps)), ["apps/ lost: linked-dir"]);
+  } finally {
+    await rm(linkRoot, { recursive: true, force: true });
+  }
+});
 
 finish("run guard");

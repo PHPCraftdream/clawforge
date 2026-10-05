@@ -46,7 +46,7 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { LocalTransport } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -390,12 +390,8 @@ try {
   const linksWork = await trySymlink(join(tempRoot, "probe-target"), join(tempRoot, "probe-link"));
   await rm(join(tempRoot, "probe-target"), { force: true });
   await rm(join(tempRoot, "probe-link"), { force: true });
-  if (!linksWork) {
-    skip("set build follows an inside-pointing symlink (symlinks unavailable on this machine)");
-    skip("the mirror follows an inside-pointing symlink too (symlinks unavailable on this machine)");
-    skip("set build refuses a symlink escaping the recipe directory (symlinks unavailable on this machine)");
-    skip("the mirror refuses a symlink escaping the recipe directory (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "set build and the mirror follow an inside-pointing symlink and refuse an escaping one", async () => {
+  if (!linksWork) return;
     // Inside-pointing link: followed once verified to stay in the recipe, under its own name.
     const linked = await trySymlink(resolve(vaulty, "data", "page.md"), resolve(vaulty, "linked-page.md"));
     if (!linked) {
@@ -445,7 +441,7 @@ try {
       await rm(escapeRoot, { recursive: true, force: true });
       useDeployment(tempRoot);
     }
-  }
+  });
 
   // --- Group F: an internal alias to a private target -------------------------------------
   //
@@ -457,20 +453,8 @@ try {
   // a sensitive-named-but-undeclared .env, and an alias of each kind — plus the loop link,
   // planted LAST and on purpose: while it exists every walk of this fixture refuses, so no
   // other assertion could run against the tree that carries it.
-  if (!linksWork) {
-    skip("the walker carries public content and holds back every alias to a private target (symlinks unavailable on this machine)");
-    skip("under a directory link the declaration follows the canonical path (symlinks unavailable on this machine)");
-    skip("an alias to a private or sensitive target is reported under the target's own reason (symlinks unavailable on this machine)");
-    skip("no walker result carries the private bytes (symlinks unavailable on this machine)");
-    skip("the checksum map holds back every alias to a private target (symlinks unavailable on this machine)");
-    skip("the checksum map carries no private bytes (symlinks unavailable on this machine)");
-    skip("the set manifest holds back every alias to a private target (symlinks unavailable on this machine)");
-    skip("the set artifact carries no private bytes (symlinks unavailable on this machine)");
-    skip("the mirror carries the public file and its alias alike (symlinks unavailable on this machine)");
-    skip("the mirror holds back every alias to a private or sensitive target (symlinks unavailable on this machine)");
-    skip("no mirrored file carries the private bytes (symlinks unavailable on this machine)");
-    skip("a symlink pointing at its own ancestor is refused instead of looping (symlinks unavailable on this machine)");
-  } else {
+  await requires("symlink", "an internal alias to a private target is held back by every carrier", async () => {
+  if (!linksWork) return;
     const fixtureRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-01-"));
     try {
       await mkdir(resolve(fixtureRoot, "config"), { recursive: true });
@@ -599,7 +583,7 @@ try {
       // Group F swapped in its own deployment for the set build; leave it where it was.
       useDeployment(tempRoot);
     }
-  }
+  });
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
   // The active deployment is process-wide and the checks share one process: leave it where

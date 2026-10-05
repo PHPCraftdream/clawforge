@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 import { scratchDeployment, stubContext } from "./fixture.ts";
 
 /** Creates a symlink, answering false instead of throwing — Windows without developer mode
@@ -23,11 +23,7 @@ async function trySymlink(target: string, path: string): Promise<boolean> {
   }
 }
 const { outerRecipes } = scratchDeployment();
-function skip(name: string): void {
-  process.stderr.write(`  skip ${name}\n`);
-}
 // Helper-file freshness: editing a relative import the
-// hook pulls in — never verify.ts/prepare.ts itself — must be visible on the very next call
 // of the same process. Before the fix the versioned checksum covered only the hook file
 // itself; shared.ts stayed at an unversioned URL and kept serving its first-loaded content
 // forever, so a long-lived MCP session and a freshly started CLI process disagreed after the
@@ -242,9 +238,10 @@ function skip(name: string): void {
     );
 
     // Symlink escape: skipped where the platform/privileges refuse symlink creation
-    // (Windows without developer mode) — same degrade-not-fail pattern as
-    // recipe-portable-content.check.ts's trySymlink.
+    // (Windows without developer mode) — declared as the symlink capability, with the
+    // same degrade-not-fail pattern as recipe-portable-content.check.ts's trySymlink.
     const linkPath = resolve(aliasRoot, "alias", "escape-link.ts");
+    await requires("symlink", "package imports: a target resolving through a symlink out of the recipe directory is rejected", async () => {
     const linked = await trySymlink(resolve(aliasRoot, "outside.ts"), linkPath);
     if (linked) {
       check(
@@ -252,9 +249,8 @@ function skip(name: string): void {
         (await rejects({ "#helper": "./escape-link.ts" })).includes("symlink"),
         true,
       );
-    } else {
-      skip("package imports: symlink escape is rejected (symlink creation unavailable on this machine)");
     }
+    });
   } finally {
     useRecipesDir(outerRecipes);
     await rm(aliasRoot, { recursive: true, force: true });

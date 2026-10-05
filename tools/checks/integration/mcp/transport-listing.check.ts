@@ -87,8 +87,9 @@ import { check, finish, requires } from "#checks/kit/harness.ts";
 // evaluates `$()`, backticks and `$NAME` inside a path or other argv value. `--exec` preserves
 // the argument vector while retaining the normal env wrapper used by the transport.
 await requires("wsl", "wsl --exec preserves the argument vector", async () => {
+  await requires("windows-host", "wsl --exec preserves the argument vector (a windows host)", async () => {
   const integrationDistro = process.env.CLAWFORGE_TEST_WSL_DISTRO;
-  if (process.platform !== "win32" || integrationDistro === undefined) return;
+  if (integrationDistro === undefined) return;
   {
     const wsl = new WslTransport(integrationDistro);
     const literal = "backup ' quoted $literal ; `printf expanded` $(printf expanded)";
@@ -102,6 +103,7 @@ await requires("wsl", "wsl --exec preserves the argument vector", async () => {
     check("wsl still passes target environment through argv", envResult.code, 0);
     check("wsl environment values remain literal", envResult.stdout, literal);
   }
+  });
 });
 
 function execReturning(result: ExecResult) {

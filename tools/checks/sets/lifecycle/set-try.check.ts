@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, setTryModuleUrl } from "#framework/commands/sets/set-try.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { frameworkRoot } from "#framework/core/env.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 // --- findFreePort: skips a port something is actually listening on ------------------------
 
@@ -115,7 +115,7 @@ check("unknown target modes are refused", tryTargetProblem("other", "win32")?.in
   const expectedModulePath = resolve(frameworkRoot, `core/app${extension}`);
   check("the scaffolded app import is an absolute file URL", new URL(moduleUrl).protocol, "file:");
   check("the scaffolded app URL resolves to the framework source", fileURLToPath(moduleUrl), expectedModulePath);
-  if (process.platform === "win32") {
+  await requires("windows-host", "the cross-drive scaffold import stays an absolute file URL", async () => {
     const tempDrive = win32.parse(tmpdir()).root.toLowerCase();
     const otherDrive = tempDrive === "c:\\" ? "D:" : "C:";
     const crossDriveRoot = `${otherDrive}\\framework`;
@@ -124,7 +124,7 @@ check("unknown target modes are refused", tryTargetProblem("other", "win32")?.in
     const crossDriveUrl = setTryModuleUrl("app", extension, crossDriveRoot);
     check("path.relative cannot express the old cross-drive import", oldRelativeTarget, crossDriveTarget);
     check("the cross-drive scaffold import remains an absolute file URL", fileURLToPath(crossDriveUrl), crossDriveTarget);
-  }
+  });
 }
 
 {

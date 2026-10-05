@@ -48,7 +48,7 @@ import { WslTransport } from "#framework/runtime/transport/wsl.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { cmdExeArgv } from "#checks/runtime/schedule/fixture.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -298,7 +298,7 @@ try {
   await withOutputSink((chunk) => printed.push(chunk), () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], false));
   check("printing without --apply names the manual command, on every platform", printed.join("").includes(MANUAL_INSTALL_HEADER), true);
 
-  if (process.platform === "win32") {
+  await requires("windows-host", "--apply on an actual Windows host drives schtasks through the recording transport", async () => {
     check("...and shows the schtasks command on an actual Windows host", printed.join("").includes("schtasks"), true);
 
     const recorded: { command: string; args: string[] }[] = [];
@@ -324,10 +324,11 @@ try {
           () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], true),
         )));
     check("a failing schtasks call is reported, not swallowed", message.includes("access denied"), true);
-  } else {
+  });
+  await requires("linux-host", "--apply on a non-Windows host refuses outright — no scheduler here to drive", async () => {
     const message = await deathOf(() => withOutputSink(() => {}, () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], true)));
     check("--apply on a non-Windows host refuses outright — no scheduler here to drive", message.includes(REFUSING_APPLY), true);
-  }
+  });
 
   // The printed schtasks line, parsed the way cmd.exe + CommandLineToArgvW would, is exactly
   // what --apply passes as argv — on any host (the platform is forced).

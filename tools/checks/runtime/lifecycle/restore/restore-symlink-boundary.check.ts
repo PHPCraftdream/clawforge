@@ -30,7 +30,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 /** A real POSIX filesystem with real symlinks and real GNU tar: this machine on Linux,
  *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
@@ -110,6 +110,7 @@ useDeployment(fixtureDeployment);
 useComposeProjectOverride("restore-boundary");
 useRecipesDir(resolve(fixtureDeployment, "recipes"));
 try {
+await requires("local-posix", "restore symlink-boundary checks over a real POSIX filesystem", async () => {
 const transport = await realPosixTransport();
 if (transport === undefined) {
   check("restore symlink-boundary checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
@@ -395,6 +396,7 @@ if (transport === undefined) {
     }
   }
 }
+});
 } finally {
   clearRecipesDir();
   await rm(fixtureDeployment, { recursive: true, force: true });

@@ -42,7 +42,7 @@ import {
   privatePathsLedgerFile,
   recordPrivateWrite,
 } from "#framework/security/privacy/private-paths-ledger.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -135,10 +135,11 @@ try {
 
   let transportContext: Context | undefined;
   let archives: string | undefined;
-  const transport = await realPosixTransport();
-  if (transport === undefined) {
-    skip("archive/verify lifetime checks (no local POSIX filesystem and no WSL distribution with a shell)");
-  } else {
+  await requires("local-posix", "archive/verify lifetime checks over a real POSIX filesystem", async () => {
+    const transport = await realPosixTransport();
+    if (transport === undefined) {
+      skip("archive/verify lifetime checks (no local POSIX filesystem and no WSL distribution with a shell)");
+    } else {
     const PARENT = `/tmp/clawforge-pp-lifetime-${tag}`;
     const DATA_NAME = "data";
     const DATA = `${PARENT}/${DATA_NAME}`;
@@ -332,6 +333,7 @@ try {
     await forgetPrivatePaths(["config/secret.env"]);
     await rm(join(tempRecipesA, "shared-config-sidecar"), { recursive: true, force: true });
   }
+  });
 
   // --- fail-closed reads (no target needed) --------------------------------------------------------
 
@@ -343,15 +345,17 @@ try {
     /could not parse/.test((await rejectionOf(() => installedRecipePrivatePaths())) ?? ""),
     true,
   );
-  if (transportContext !== undefined && archives !== undefined) {
+  await requires("local-posix", "a corrupt ledger stops createArchive on the real target", async () => {
+    if (transportContext === undefined || archives === undefined) return;
+    const corruptedCtx = transportContext;
     check(
       "a corrupt ledger stops createArchive",
       /could not parse/.test(
-        (await rejectionOf(() => createArchive(transportContext, { archive: `${archives}/broken-ledger.tar.gz`, profile: "migrate" }))) ?? "",
+        (await rejectionOf(() => createArchive(corruptedCtx, { archive: `${archives}/broken-ledger.tar.gz`, profile: "migrate" }))) ?? "",
       ),
       true,
     );
-  }
+  });
   await writeFile(ledgerFile, `${JSON.stringify({ privatePaths: ["set-two-private", "../escape"] })}\n`, "utf8");
   check(
     "a ledger entry that climbs out stops the policy reader",

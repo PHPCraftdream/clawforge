@@ -16,7 +16,7 @@ import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, confirmNameMismatch, DESTROY_ARGUMENTS } from "#framework/commands/lifecycle/instance/destroy.ts";
 import { SUDO_PASSWORD_REFUSAL } from "#framework/runtime/datadir.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
@@ -313,7 +313,7 @@ for (const [name, setup, expected] of [
   check("symlink introduced after preflight preserves target", dirs.has(DATA_DIR), true);
 }
 
-if (process.platform === "linux") {
+await requires("linux-host", "the target-side safe-destroy script against a real POSIX tree", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "clawforge-destroy-check-"));
   const root = realpathSync(temporary);
   try {
@@ -374,7 +374,7 @@ if (process.platform === "linux") {
       rmSync(resolved, { recursive: true, force: true });
     }
   }
-}
+});
 
 {
   // Only --data: backups/snapshots are never touched.

@@ -60,6 +60,7 @@ interface Baseline {
   readonly proseEquality: { readonly comment: string; readonly total: number };
   readonly proseFlags: PerFileMetric;
   readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
+  readonly adhocSkips: { readonly comment: string; readonly total: number; readonly exempt: Record<string, ExemptLines> };
 }
 
 const root = monorepoRoot;
@@ -384,5 +385,40 @@ for (const full of toolsFiles) {
   }
 }
 report(ratchet("retiredSymbols", baseline.retiredSymbols.total, retiredCount, [], []));
+
+// 8. Ad-hoc host gates — invariant I10: a host-dependent check case is skipped only through a
+// declared capability (requires() from kit/harness.ts). Every line under tools/checks (kit,
+// architecture and golden excluded) matching process.platform / os.platform() / skip() must
+// sit on an exempt line: a recorded value selection (both platforms run; only an expected
+// value or transport choice differs), a transport helper kept for its probe, or a nested
+// availability note inside a requires() body. The table fails in both directions, like
+// section 1, and the total counts occurrences past the exemptions — so any new ad-hoc gate
+// fails the build at 0.
+const ADHOC = /process\.platform|os\.platform\(\)|\bskip\(/;
+const adhocExemptLeft = new Map<string, Map<string, number>>(
+  Object.entries(baseline.adhocSkips.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+);
+const adhocFiles = (await walk(resolve(root, "tools", "checks")))
+  .map(rel)
+  .filter((file) => !file.startsWith("tools/checks/kit/") && !file.startsWith("tools/checks/architecture/") && !file.startsWith("tools/checks/golden/"));
+let adhocCount = 0;
+for (const file of adhocFiles) {
+  const content = await readFile(resolve(root, file), "utf8");
+  const left = adhocExemptLeft.get(file);
+  for (const line of content.split("\n")) {
+    if (!ADHOC.test(line)) continue;
+    const remaining = left?.get(line.trim()) ?? 0;
+    const exempt = Math.min(remaining, 1);
+    if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
+    adhocCount += 1 - exempt;
+  }
+}
+for (const [file, lines] of adhocExemptLeft) {
+  for (const [line, unmatched] of lines) {
+    if (unmatched === 0) continue;
+    checkTrue(`adhocSkips.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+  }
+}
+report(ratchet("adhocSkips", baseline.adhocSkips.total, adhocCount, [], []));
 
 finish("architecture ratchet");

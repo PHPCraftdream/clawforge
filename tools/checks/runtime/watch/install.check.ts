@@ -40,7 +40,7 @@ import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.t
 import { stubCrontabTransaction } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -328,10 +328,10 @@ try {
       )));
     check("a local context on Windows refuses --apply and schedules nothing", [localMessage.includes(REFUSING_APPLY), localRecorded.length], [true, 0]);
   }
-  if (process.platform !== "win32") {
+  await requires("posix-host", "--apply refuses outright on an unsupported, non-Windows transport", async () => {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--apply"])));
     check("--apply refuses outright on an unsupported, non-Windows transport", message.includes(REFUSING_APPLY), true);
-  }
+  });
 }
 } finally {
   await rm(root, { recursive: true, force: true });

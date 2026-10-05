@@ -82,11 +82,13 @@ or several, comma-separated: `// check:requires docker, wsl`. Recognized capabil
 `tools/checks/kit/capabilities/capabilities.ts`: `docker` (`docker info` succeeds), `wsl`
 (`wsl.exe -l -q` lists at least one distro), `posix-sh` (a `sh` that runs a trivial command —
 never via wsl.exe), `rsync` (a real rsync binary), `linux-host` (`process.platform ===
-"linux"`), `windows-host` (`process.platform === "win32"`), `ssh-loopback` (`ssh -o
+"linux"`), `local-posix` (a POSIX filesystem this process drives directly — the Linux host itself, or a usable WSL distribution on it from Windows; macOS answers "absent" — what the real-tar archive/verify and symlink-boundary groups target), `posix-host` (`process.platform !== "win32"`: Linux and macOS alike, for a case that needs only a non-Windows host), `windows-host` (`process.platform === "win32"`), `ssh-loopback` (`ssh -o
 BatchMode=yes -o ConnectTimeout=5 ${OC_CHECK_SSH_HOST:-localhost} true` succeeds — key-based,
 non-interactive; BatchMode refuses instead of prompting, so a host with no key set up answers
 "absent" instead of hanging), `gnu-userland` (this process's own `mkdir`, `mv` and `tar` are GNU-compatible
-— macOS ships BSD ones, a stock Windows runner has no `mkdir`), `auto-target` (the target
+— macOS ships BSD ones, a stock Windows runner has no `mkdir`), `posix-modes` (chmod 0o600 on a
+temp file reads back 0o600 — POSIX permission bits are meaningful on this host's own filesystem;
+Windows filesystems, where ACLs are authoritative, answer "absent"), `auto-target` (the target
 `OC_TARGET_LOCATION=auto` picks on this host answers docker: `docker info` on Linux,
 `wsl -d ${OC_WSL_DISTRO:-Ubuntu-24.04} docker info` on Windows — a WSL distro without docker
 answers "absent", so a case that needs the target to answer, not merely wsl.exe, gates on this

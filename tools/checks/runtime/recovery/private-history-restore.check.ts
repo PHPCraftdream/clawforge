@@ -52,7 +52,7 @@ import {
   publishPrivatePathsHistory,
   recordPrivateWrite,
 } from "#framework/security/privacy/private-paths-ledger.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -295,6 +295,7 @@ try {
 
   // === PART B — the real end-to-end scenario (real POSIX filesystem + real GNU tar) ===============
 
+  await requires("local-posix", "the private-history restore checks", async () => {
   transport = await realPosixTransport();
   if (transport === undefined) {
     skip("the private-history restore checks (no local POSIX filesystem and no WSL distribution with a shell)");
@@ -580,6 +581,7 @@ try {
       sorted(baseline),
     );
   }
+  });
 } finally {
   await rm(deploymentA, { recursive: true, force: true }).catch(() => {});
   await rm(deploymentB, { recursive: true, force: true }).catch(() => {});

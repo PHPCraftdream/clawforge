@@ -21,7 +21,7 @@ import type { ExecOptions, ExecResult } from "#framework/runtime/transport/trans
 import type { Context } from "#framework/core/context.ts";
 import type { TargetSpec } from "./fixture.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 let skipped = 0;
 
@@ -181,6 +181,7 @@ try {
   await gatherInspection(groupTree.ctx);
   const treeCall = groupTree.calls[0];
 
+  await requires("posix-sh", "the hostile-tree checksum runs for real through the executed command", async () => {
   if (!sh) {
     skip("a real sh is not spawnable here — the executed-command groups cannot run");
   } else if (treeCall === undefined) {
@@ -195,8 +196,10 @@ try {
       treeCall.result?.stderr.includes(FILE_MARKER) ?? true,
     ], [false, false, false]);
   }
+  });
 
-  if (sh && process.platform === "win32") {
+  await requires("windows-host", "native Windows separators checksum the same tree", async () => {
+  if (sh) {
     const native = recordingContext(stubContext, {
       targetEnv: "ZAI_API_KEY=k\n",
       dataDir: treeDir,
@@ -207,6 +210,7 @@ try {
     check("native Windows separators remain a positional argument", call?.args[3], recipeMirrorTargetDir(treeDir, "demo"));
     check("native Windows drive paths checksum the same tree", canonical(parseChecksums(call?.result?.stdout ?? "")), canonical(expected));
   }
+  });
 
   // --- end to end: a hostile data directory must still yield a correct drift verdict ------
   const deploymentData = join(root, HOSTILE, "deployment");
@@ -227,17 +231,20 @@ try {
   const endToEndCall = groupEndToEnd.calls[0];
 
   check("a hostile data directory is reported drift-free when the trees match", inspection.problems.some((entry) => entry.code === "RECIPE_MIRROR_DRIFT"), false);
+  await requires("posix-sh", "the executed end-to-end checksum", async () => {
   if (!sh) {
     skip("the executed end-to-end checksum needs a real sh");
   } else {
     check("and the verdict came from checksums of the copied tree itself, not a mangled path", canonical(parseChecksums(endToEndCall?.result?.stdout ?? "")), canonical(goodChecksums));
   }
+  });
   check("no payload executed there either", [
     groupEndToEnd.calls.some((call) => call.result?.stderr.includes(CMD_SUBSTITUTION_MARKER) === true),
     groupEndToEnd.calls.some((call) => call.result?.stderr.includes(BACKTICK_MARKER) === true),
   ], [false, false]);
 
   // --- the script's own contract: no argument, no checksum; and the ssh round trip --------
+  await requires("posix-sh", "the script-contract and ssh round-trip groups", async () => {
   if (!sh || mirrorCall === undefined) {
     skip("the script-contract and ssh round-trip groups need a real sh and a recorded call");
   } else {
@@ -265,6 +272,7 @@ try {
       roundTrip.stderr.includes(FILE_MARKER),
     ], [false, false, false]);
   }
+  });
 } finally {
   await teardownFixtureDeployment(deployment);
   await rm(root, { recursive: true, force: true });

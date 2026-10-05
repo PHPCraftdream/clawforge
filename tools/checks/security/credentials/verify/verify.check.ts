@@ -11,7 +11,7 @@ import { LocalTransport, SshTransport, WslTransport, spawnLocal, type ExecResult
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 const ARCHIVE = "/tmp/evil.tar.gz";
 
@@ -605,9 +605,13 @@ for (const transport of [new WslTransport("test-distro"), new SshTransport("test
     await local.writePrivateFile(path, "secret");
     const directoryMode = (await stat(directory)).mode & 0o777;
     const mode = (await stat(path)).mode & 0o777;
-    checkTrue("LocalTransport creates an exclusive 700 directory", process.platform === "win32" || directoryMode === 0o700);
-    checkTrue("LocalTransport creates a private file", process.platform === "win32" || mode === 0o600);
-    if (process.platform === "win32") {
+    // The mode bits hold only where POSIX permission bits exist; on Windows the ACL is
+    // authoritative — each side declared by capability, not asserted vacuously.
+    await requires("posix-modes", "LocalTransport creates private POSIX modes", () => {
+      checkTrue("LocalTransport creates an exclusive 700 directory", directoryMode === 0o700);
+      checkTrue("LocalTransport creates a private file", mode === 0o600);
+    });
+    await requires("windows-host", "LocalTransport seals the private directory's DACL", async () => {
       const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
       const who = await spawnLocal(join(systemRoot, "System32", "whoami.exe"), ["/user", "/fo", "csv", "/nh"]);
       const owner = /S-1-\d+(?:-\d+)+/.exec(who.stdout)?.[0] ?? "";
@@ -623,7 +627,7 @@ for (const transport of [new WslTransport("test-distro"), new SshTransport("test
       if (owner.endsWith("-500")) allowed.add("LA");
       checkTrue("LocalTransport seals the directory DACL against inheritance", acl.code === 0 && line.startsWith("D:P") && aces.every((ace) => !ace.flags.includes("ID")));
       checkTrue("LocalTransport grants its private directory only to owner, SYSTEM and Administrators", owner !== "" && aces.length > 0 && aces.every((ace) => ace.type === "A" && allowed.has(ace.trustee)));
-    }
+    });
     check("LocalTransport writes the exact secret", await readFile(path, "utf8"), "secret");
     checkTrue("LocalTransport refuses a colliding private file", await rejected(() => local.writePrivateFile(path, "changed")));
     check("the colliding file remains unchanged", await readFile(path, "utf8"), "secret");

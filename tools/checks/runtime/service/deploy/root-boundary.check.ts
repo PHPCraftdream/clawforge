@@ -19,7 +19,7 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe, markerLine } from "./fixture.ts";
 
 const execFileAsync = promisify(execFile);
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 
 let skipped = 0;
@@ -373,6 +373,7 @@ function skip(name: string): void {
 // checksums.check.ts's shAvailable() uses to cd into a Windows tree. Node handles the
 // same directory by the path it created it at, for the marker read-back.
 {
+  await requires("posix-sh", "the root-probe script's shell contract", async () => {
   const probed = await spawnLocal("sh", ["-c", "true"], { allowFailure: true });
   if (probed.code !== 0) {
     skip("the root-probe script's shell contract needs a real sh");
@@ -444,6 +445,7 @@ function skip(name: string): void {
       await rm(root, { recursive: true, force: true });
     }
   }
+  });
 }
 
 finish("deploy root-boundary");

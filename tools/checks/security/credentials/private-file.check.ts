@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { createPrivateFile, installedWslDistros, privateFileHost, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withPrivateFileRenamer, withToolRunner, WSL_BOUNDARY_NOTE, UNLISTED_NOTE, OPEN_IN_ANOTHER_PROGRAM } from "#framework/security/privacy/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(reason: string): void {
   process.stderr.write(`  skip ${reason}\n`);
@@ -410,7 +410,6 @@ async function wslListingContractChecks(root: string): Promise<void> {
 }
 
 async function windowsChecks(root: string, distros: string[], listingFailure?: string): Promise<void> {
-  skip("POSIX mode assertions on Windows (ACLs are authoritative)");
   await hostileNameChecks(root, distros);
   const secret = "OPENCLAW_GATEWAY_TOKEN=tok-check-synthetic-1\n";
 
@@ -642,8 +641,12 @@ try {
   const listing = process.platform === "win32" ? await installedWslDistros() : { state: "absent" as const };
   const distros = listing.state === "listed" ? listing.distros : [];
   const listingFailure = listing.state === "unlisted" ? listing.reason : undefined;
-  if (process.platform === "win32") await windowsChecks(root, distros, listingFailure);
-  else await posixChecks(root);
+  await requires("windows-host", "the Windows DACL and WSL-boundary checks", async () => {
+    await windowsChecks(root, distros, listingFailure);
+  });
+  await requires("posix-modes", "the POSIX mode and rename checks on this host's own filesystem", async () => {
+    await posixChecks(root);
+  });
   await plantedTemporarySurvives(root);
 } finally {
   await rm(root, { recursive: true, force: true });

@@ -7,16 +7,16 @@
 
 import { spawnSync } from "node:child_process";
 import { readlinkSync, symlinkSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
-import { CapabilityProbe, CAPABILITIES, hasBash, hasDocker, hasDockerDesktopWsl, hasGnuUserland, hasAutoTarget, hasPosixSh, hasPwsh, hasRsync, hasSshLoopback, hasSymlink, hasWsl, isCapability, isLinuxHost, isWindowsHost, pwshCommand, type Capability, type ProbeMap } from "./capabilities.ts";
+import { CapabilityProbe, CAPABILITIES, hasBash, hasDocker, hasDockerDesktopWsl, hasGnuUserland, hasAutoTarget, hasLocalPosix, hasPosixModes, hasPosixSh, hasPwsh, hasRsync, hasSshLoopback, hasSymlink, hasWsl, isCapability, isLinuxHost, isPosixHost, isWindowsHost, pwshCommand, type Capability, type ProbeMap } from "./capabilities.ts";
 
 check(
-  "the known capability list is exactly the documented thirteen",
+  "the known capability list is exactly the documented sixteen",
   [...CAPABILITIES].sort(),
-  ["auto-target", "bash", "docker", "docker-desktop-wsl", "gnu-userland", "linux-host", "posix-sh", "pwsh", "rsync", "ssh-loopback", "symlink", "windows-host", "wsl"],
+  ["auto-target", "bash", "docker", "docker-desktop-wsl", "gnu-userland", "linux-host", "local-posix", "posix-host", "posix-modes", "posix-sh", "pwsh", "rsync", "ssh-loopback", "symlink", "windows-host", "wsl"],
 );
 check("isCapability accepts every known name", CAPABILITIES.every((capability) => isCapability(capability)), true);
 check("isCapability rejects an unknown name", isCapability("ssh"), false);
@@ -91,15 +91,36 @@ function countingProbes(answers: Partial<Record<Capability, boolean>>): { probes
 
 // --- the real probes: never throw, always answer a plain boolean ------------------------------
 
-for (const [name, real] of Object.entries({ hasDocker, hasDockerDesktopWsl, hasWsl, hasPosixSh, hasRsync, hasSymlink, isLinuxHost, isWindowsHost, hasSshLoopback, hasGnuUserland, hasAutoTarget, hasBash, hasPwsh })) {
+for (const [name, real] of Object.entries({ hasDocker, hasDockerDesktopWsl, hasWsl, hasPosixSh, hasRsync, hasSymlink, isLinuxHost, isPosixHost, isWindowsHost, hasLocalPosix, hasSshLoopback, hasGnuUserland, hasAutoTarget, hasBash, hasPwsh })) {
   const answer = await real();
   check(`${name}() answers a boolean`, typeof answer, "boolean");
 }
 check("isLinuxHost() agrees with process.platform", await isLinuxHost(), process.platform === "linux");
 check("isWindowsHost() agrees with process.platform", await isWindowsHost(), process.platform === "win32");
+check("isPosixHost() is every host but Windows (Linux and macOS)", await isPosixHost(), process.platform !== "win32");
+if (process.platform === "linux") check("local-posix agrees with linux-host on a linux host", await hasLocalPosix(), await isLinuxHost());
+if (process.platform !== "win32" && process.platform !== "linux") check("local-posix answers false off windows and off linux", await hasLocalPosix(), false);
+if (process.platform === "win32") checkTrue("on windows local-posix cannot exceed hasWsl", !(await hasLocalPosix()) || (await hasWsl()));
 if (process.platform !== "win32") check("docker-desktop-wsl answers false off windows", await hasDockerDesktopWsl(), false);
 checkTrue("docker-desktop-wsl implies wsl", !(await hasDockerDesktopWsl()) || (await hasWsl()));
 check("hasSymlink() agrees with a direct symlink round trip here", await hasSymlink(), await directSymlinkRoundTrip());
+check("hasPosixModes() agrees with a manual chmod/stat round trip here", await hasPosixModes(), await directModeRoundTrip());
+
+function directModeRoundTrip(): Promise<boolean> {
+  return (async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-modes-direct-"));
+    try {
+      const file = join(dir, "probe");
+      await writeFile(file, "");
+      await chmod(file, 0o600);
+      return ((await stat(file)).mode & 0o777) === 0o600;
+    } catch {
+      return false;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  })();
+}
 
 async function directSymlinkRoundTrip(): Promise<boolean> {
   const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-symlink-direct-"));

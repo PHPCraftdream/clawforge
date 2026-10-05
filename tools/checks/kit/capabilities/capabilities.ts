@@ -7,7 +7,7 @@
 // A capability check must never be the reason a run crashes instead of skipping cleanly.
 
 import { readlinkSync, symlinkSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
@@ -15,7 +15,7 @@ import { DEFAULT_WSL_DISTRO } from "#framework/core/env.ts";
 import { ENGINE_DISTRO } from "#framework/commands/interface/host/contexts.ts";
 
 export const CAPABILITIES = [
-  "docker", "docker-desktop-wsl", "wsl", "posix-sh", "rsync", "symlink", "linux-host", "windows-host", "ssh-loopback", "gnu-userland", "auto-target",
+  "docker", "docker-desktop-wsl", "wsl", "posix-sh", "rsync", "symlink", "linux-host", "posix-host", "local-posix", "windows-host", "ssh-loopback", "gnu-userland", "posix-modes", "auto-target",
   "bash", "pwsh",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -110,8 +110,22 @@ export async function isLinuxHost(): Promise<boolean> {
  *  Windows host specifically, not merely "wsl.exe answers" — hasWsl() alone would also be
  *  true from a Linux host reaching a WSL machine over ssh, which is not this cell. */
 // eslint-disable-next-line @typescript-eslint/require-await
+export async function isPosixHost(): Promise<boolean> {
+  return process.platform !== "win32";
+}
+
+/** This process's own host, a Windows one. */
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function isWindowsHost(): Promise<boolean> {
   return process.platform === "win32";
+}
+
+/** A POSIX filesystem this process drives directly (this Linux host) or through a usable WSL
+ *  distribution (Windows) — the target the real-tar archive/verify and symlink-boundary
+ *  checks actually need. macOS has neither and answers "absent". */
+// eslint-disable-next-line @typescript-eslint/require-await
+export async function hasLocalPosix(): Promise<boolean> {
+  return (await isLinuxHost()) || (process.platform === "win32" && (await hasWsl()));
 }
 
 /** GNU-compatible coreutils (GNU or uutils) and GNU tar as this process's own `mkdir`/`mv`/`tar`: what LocalTransport-backed
@@ -123,6 +137,24 @@ export async function hasGnuUserland(): Promise<boolean> {
       ["mkdir", "mv", "tar"].map((tool) => spawnLocal(tool, ["--version"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })),
     );
     return versions.every((result, index) => result.code === 0 && (index === 2 ? /GNU tar/ : /(GNU|uutils) coreutils/).test(result.stdout));
+  });
+}
+
+/** POSIX mode bits are meaningful on this host's own filesystem: chmod 0o600 a temp file and
+ *  read the mode back. Windows filesystems have no POSIX permission bits (ACLs are
+ *  authoritative — chmod only toggles a read-only flag), so the mode-bit assertions answer
+ *  "absent" there instead of asserting a lie. */
+export async function hasPosixModes(): Promise<boolean> {
+  return swallow(async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-modes-"));
+    try {
+      const file = join(dir, "probe");
+      await writeFile(file, "");
+      await chmod(file, 0o600);
+      return ((await stat(file)).mode & 0o777) === 0o600;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 }
 
@@ -185,8 +217,11 @@ export const DEFAULT_PROBES: ProbeMap = {
   rsync: hasRsync,
   symlink: hasSymlink,
   "linux-host": isLinuxHost,
+  "posix-host": isPosixHost,
+  "local-posix": hasLocalPosix,
   "windows-host": isWindowsHost,
   "ssh-loopback": hasSshLoopback,
+  "posix-modes": hasPosixModes,
   "gnu-userland": hasGnuUserland,
   "auto-target": hasAutoTarget,
   bash: hasBash,

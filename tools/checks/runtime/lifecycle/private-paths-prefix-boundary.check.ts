@@ -27,7 +27,7 @@ import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 import { archiveRoot, createArchive, listArchive } from "#framework/service/archive/index.ts";
 import { clearRecipesDir, installedRecipePrivatePaths, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -168,10 +168,11 @@ try {
 
   // --- the REAL archiver and verifier over REAL tar (needs a POSIX filesystem) ---------------------
 
-  const transport = await realPosixTransport();
-  if (transport === undefined) {
-    skip("archive/verify prefix-boundary checks (no local POSIX filesystem and no WSL distribution with a shell)");
-  } else {
+  await requires("local-posix", "archive/verify prefix-boundary checks over a real POSIX filesystem", async () => {
+    const transport = await realPosixTransport();
+    if (transport === undefined) {
+      skip("archive/verify prefix-boundary checks (no local POSIX filesystem and no WSL distribution with a shell)");
+    } else {
     const PARENT = `/tmp/clawforge-pp-prefix-${tag}`;
     const DATA = `${PARENT}/data`;
     const ARCHIVES = `${PARENT}/archives`;
@@ -297,6 +298,7 @@ try {
 
     await transport.remove(PARENT).catch(() => {});
   }
+  });
 } finally {
   await rm(tempDeployment, { recursive: true, force: true }).catch(() => {});
   await rm(tempRecipes, { recursive: true, force: true }).catch(() => {});

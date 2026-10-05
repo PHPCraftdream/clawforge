@@ -16,7 +16,7 @@ import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport, type ExecResult } from "#framework/runtime/transport/transport.ts";
 import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 useComposeProjectOverride("example-app");
 // --- a symlinked data root, end to end on a real filesystem. -----------------------------------
@@ -86,9 +86,9 @@ async function attemptBackup(
 
 const p202Transport = await realPosixTransport();
 
-// GNU tar treats brackets in the root basename as glob syntax unless the root part of every
 // exclude is escaped. Exercise both public profiles through createBackup, including the
 // privacy verifier that must approve the staging archive before it is published.
+await requires("local-posix", "real tar excludes provider env, logs and backup config below a bracketed data root", async () => {
 if (p202Transport !== undefined) {
   for (const profile of ["migrate", "share"] as const) {
     const root = `/tmp/clawforge-backup-glob-${randomBytes(4).toString("hex")}`;
@@ -120,7 +120,9 @@ if (p202Transport !== undefined) {
     }
   }
 }
+});
 
+await requires("local-posix", "backup symlink-root checks over a real POSIX filesystem", async () => {
 if (p202Transport === undefined) {
   check("backup symlink-root checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
 } else {
@@ -289,5 +291,6 @@ if (p202Transport === undefined) {
     check("no unprivileged chown is attempted either", calls.some((call) => call.command === "chown"), false);
   }
 }
+});
 
 finish("backup real filesystem");

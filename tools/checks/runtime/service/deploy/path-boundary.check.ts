@@ -12,7 +12,7 @@ import type { ExecOptions } from "#framework/runtime/transport/transport.ts";
 import {
   directoryGuardScript, directoryPrepareScript, guardedRsyncPath,
 } from "#framework/security/privacy/deploy-boundary.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 import { ctx, isRootProbe, probeReply } from "./fixture.ts";
 
 type Call = { command: string; args: string[]; options?: ExecOptions };
@@ -144,7 +144,7 @@ if (shell.code === 0) {
       check("custom recipesDir symlink refuses pre-rsync guard", (await runScript(directoryGuardScript(recipes))).code !== 0, true);
     }
 
-    if (process.platform !== "win32") {
+    await requires("posix-host", "the guarded rsync receiver runs through a real POSIX shell", async () => {
       const bin = resolve(root, "bin");
       const capture = resolve(root, "capture.txt");
       await mkdir(bin);
@@ -169,7 +169,7 @@ if (shell.code === 0) {
       });
       check("a link swapped in after the first guard refuses inside the receiver", swapped.code !== 0, true);
       check("the refused receiver never called rsync", (await readFile(capture, "utf8")).trimEnd().split("\n"), received);
-    }
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

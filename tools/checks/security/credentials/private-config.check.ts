@@ -16,7 +16,7 @@ import { locksDir, parseEnv } from "#framework/core/env.ts";
 import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 assert.equal(upsertEnvValue("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
 assert.equal(upsertEnvValue("A=1\n", "B", "added"), "A=1\nB=added\n");
@@ -412,7 +412,7 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   }
 }
 
-if (process.platform === "win32") {
+  await requires("windows-host", "the Windows local secret round trip", async () => {
   const local = new LocalTransport();
   const available = await local.exec("sh", ["-c", "command -v cygpath >/dev/null"], { allowFailure: true })
     .then((result) => result.code === 0, () => false);
@@ -429,7 +429,7 @@ if (process.platform === "win32") {
   } else {
     process.stderr.write("  skip Windows local secret round-trip: sh/cygpath unavailable\n");
   }
-}
+});
 
 /** A real POSIX filesystem with real symlinks and real GNU tar: this machine on Linux,
  *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
@@ -462,6 +462,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
 // skips, loudly through checkExec, only where neither exists.
 
 {
+  await requires("local-posix", "the symlink-ancestor checks on a real transport", async () => {
   const transport = await realPosixTransport();
   if (transport === undefined) {
     check("symlink-ancestor checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
@@ -579,6 +580,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       else useRecipesDir(previousRecipesDir);
     }
   }
+  });
 }
 
 finish("exec-secrets");

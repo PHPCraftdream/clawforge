@@ -50,7 +50,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -196,6 +196,7 @@ try {
 
   // --- the real tar ----------------------------------------------------------------------------
 
+  await requires("local-posix", "real-GNU-tar snapshot checks", async () => {
   const probed = await realPosixTransport();
 
   if (probed === undefined) {
@@ -425,6 +426,7 @@ try {
     );
     useRecipesDir(tempRecipes);
   }
+  });
 } finally {
   if (transport !== undefined && parent !== undefined) await transport.remove(parent).catch(() => {});
   await rm(tempRecipes, { recursive: true, force: true });

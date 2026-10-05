@@ -11,14 +11,9 @@ import { command } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { check, checkTrue, requires, finish } from "#checks/kit/harness.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "../fixture.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-
-function skip(reason: string): void {
-  process.stderr.write(`  skip ${reason}\n`);
-}
-
 // The private-file.check.ts idiom, copied rather than imported: check files run for their
 // side effects (tools/checks/run.ts imports them all into one process), so nothing may be
 // imported from one. The DACL is read back through the real icacls /save — SDDL, trustee
@@ -314,7 +309,7 @@ try {
   // Windows ignores — secrets/ itself is sealed so an editor's atomic replacement does not
   // hand the file back wide inherited permissions, and --apply reports a store whose
   // protection has slipped. The honest proof on Windows is the real DACL; the POSIX mode
-  // assertions skip there because chmod bits mean nothing on Windows filesystems. -------
+  // assertions are declared there because chmod bits mean nothing on Windows filesystems. -------
   const secretsDirectory = resolve(deployDir, "secrets");
 
   {
@@ -326,8 +321,7 @@ try {
     const sealedStore = resolve(secretsDirectory, "sealed.env");
     const sealedContent = await readFile(sealedStore, "utf8");
     check("the review store is created with an empty template", /=\S/.test(sealedContent), false);
-    if (process.platform === "win32") {
-      skip("POSIX mode assertions on Windows (ACLs are authoritative)");
+    await requires("windows-host", "the fresh store's DACL is sealed against the planted review ACEs", async () => {
       const owner = await windowsOwnerSid();
       const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
       const storeDacl = await savedAces(sealedStore);
@@ -337,11 +331,11 @@ try {
       const dirDacl = await savedAces(secretsDirectory);
       checkTrue("secrets/ itself is sealed against inheritance", dirDacl.daclProtected && dirDacl.aces.every((ace) => !ace.flags.includes("ID")));
       checkTrue("secrets/ no longer grants the planted Guests access", dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)));
-    } else {
-      skip("Windows DACL assertions on POSIX (no DACL to read)");
+    });
+    await requires("posix-modes", "the fresh store's POSIX mode bits are owner-only", async () => {
       check("secrets/ itself is owner-only (700, execute included)", (await stat(secretsDirectory)).mode & 0o777, 0o700);
       check("the fresh store file is owner-only", (await stat(sealedStore)).mode & 0o777, 0o600);
-    }
+    });
   }
 
   {
@@ -354,8 +348,7 @@ try {
     );
     const afterForce = await readFile(sealedStore, "utf8");
     check("--force replaces a filled store with the empty template", afterForce.includes("leftover-value"), false);
-    if (process.platform === "win32") {
-      skip("POSIX mode assertions on Windows (ACLs are authoritative)");
+    await requires("windows-host", "--force's replacement keeps the DACL sealed against the planted review ACEs", async () => {
       const owner = await windowsOwnerSid();
       const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
       const storeDacl = await savedAces(sealedStore);
@@ -363,11 +356,11 @@ try {
       checkTrue("--force's replacement names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))));
       const dirDacl = await savedAces(secretsDirectory);
       checkTrue("--force seals secrets/ again despite the planted Guests ACE", dirDacl.daclProtected && dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)));
-    } else {
-      skip("Windows DACL assertions on POSIX (no DACL to read)");
+    });
+    await requires("posix-modes", "--force keeps the POSIX mode bits owner-only", async () => {
       check("--force keeps secrets/ owner-only", (await stat(secretsDirectory)).mode & 0o777, 0o700);
       check("--force keeps the replacement owner-only", (await stat(sealedStore)).mode & 0o777, 0o600);
-    }
+    });
   }
 
   {

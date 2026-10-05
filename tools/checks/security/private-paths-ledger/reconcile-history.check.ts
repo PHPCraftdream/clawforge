@@ -54,7 +54,7 @@ import {
   reconcilePrivatePathsHistory,
   recordPrivateWrite,
 } from "#framework/security/privacy/private-paths-ledger.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -404,9 +404,7 @@ try {
 
   // A failed publish must never destroy the old history: the replace stages a sibling and
   // renames, so a write that cannot land leaves the previous copy exactly where it was.
-  if (process.platform === "win32") {
-    skip("the read-only-config publish refusal (POSIX permission bits only)");
-  } else {
+  await requires("posix-modes", "the read-only-config publish refusal (POSIX permission bits only)", async () => {
     await recordPrivateWrite("vault/extra.env", "vault");
     const beforeLock = await readFile(historyPath, "utf8");
     await chmod(`${DATA_C}/config`, 0o500);
@@ -428,7 +426,7 @@ try {
     check("restoring the directory's mode lets the publish land", finalPublishFailed, false);
     checkTrue("with the newly recorded path in it", (await readFile(historyPath, "utf8")).includes("vault/extra.env"));
     check("and the published copy is owner-only", (await stat(historyPath)).mode & 0o777, 0o600);
-  }
+  });
 
   // === PART D — the audit's scenario: a fresh folder straight to migrate/share ============
   //
@@ -437,6 +435,7 @@ try {
   // and no full backup has ever run on THIS operator side. The ledger is empty, no recipe
   // declares anything, and the next command is migrate or share anyway.
 
+  await requires("local-posix", "the fresh-folder reconcile scenario", async () => {
   transport = await realPosixTransport();
   if (transport === undefined) {
     skip("the fresh-folder reconcile scenario (no local POSIX filesystem and no WSL distribution with a shell)");
@@ -505,6 +504,7 @@ try {
     checkTrue("its replace actually landed", publishedCopy.includes("vault/extra.env"));
     checkTrue("and the second full still carries the history copy", (await listArchive(ctx, fullFreshAgain)).includes("data/config/clawforge-private-paths.json"));
   }
+  });
 } finally {
   for (const directory of temporaries) await rm(directory, { recursive: true, force: true }).catch(() => {});
   if (transport !== undefined && PARENT !== undefined) await transport.remove(PARENT).catch(() => {});

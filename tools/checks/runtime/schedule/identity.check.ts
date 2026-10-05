@@ -10,7 +10,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import { stubCrontabTransaction } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 const backupInstall = (ctx: any, args: string[]) => openclawCommands.backup.run(ctx, ["install", ...args]);
 const backupUninstall = (ctx: any, args: string[]) => openclawCommands.backup.run(ctx, ["uninstall", ...args]);
@@ -83,7 +83,7 @@ try {
         await uninstall(contexts[0], ["--apply"]);
         check(`${job}: legacy other root remains byte-identical`, table, `${manual}${oldB}\n${ambiguous}\n`);
       }
-      if (process.platform !== "win32") {
+      await requires("posix-host", "SSH operator and target-local derive identical ownership on a POSIX host", async () => {
         useDeployment(roots[0]);
         const canonical = await realpath(roots[0]);
         const operator = {
@@ -97,7 +97,7 @@ try {
           },
         } as unknown as Context;
         check("SSH operator and target-local derive identical ownership", await schedulerIdentity(operator), await schedulerIdentity(contexts[0]));
-      }
+      });
     }, "linux",
   ));
 

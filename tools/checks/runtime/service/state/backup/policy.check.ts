@@ -12,7 +12,7 @@ import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { listArchive } from "#framework/service/archive/index.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -95,7 +95,7 @@ for (const testCase of [
 }
 
 // Passing a path with shell metacharacters as a literal find argument must not execute it.
-if (process.platform === "linux") {
+await requires("linux-host", "rotation does not execute path metacharacters below a quoted path", async () => {
   const root = await mkdtemp(join(tmpdir(), "clawforge-backup-quote-check-"));
   const marker = join(root, "shell-injected");
   const backupDir = join(root, `backup files '$(touch ${marker})' ; echo hacked`);
@@ -124,7 +124,7 @@ if (process.platform === "linux") {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}
+});
 
 async function posixTransport(): Promise<Transport | undefined> {
   if (process.platform === "linux") return new LocalTransport();
@@ -143,6 +143,7 @@ async function posixTransport(): Promise<Transport | undefined> {
   return undefined;
 }
 
+await requires("local-posix", "real GNU tar profiles over a real POSIX filesystem", async () => {
 const transport = await posixTransport();
 if (transport === undefined) {
   check("real GNU tar profiles (skipped: no POSIX shell or WSL)", "skip", "skip");
@@ -184,5 +185,6 @@ if (transport === undefined) {
     }
   }
 }
+});
 
 finish("backup policy");

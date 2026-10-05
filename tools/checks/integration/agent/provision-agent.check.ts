@@ -540,7 +540,7 @@ async function realPosixTarget(): Promise<Transport | undefined> {
 }
 
 let probeTarget: Transport | undefined;
-await requires(process.platform === "linux" ? "linux-host" : "wsl", "provision symlink-boundary checks", async () => {
+await requires("local-posix", "provision symlink-boundary checks", async () => {
   probeTarget = await realPosixTarget();
 });
 if (probeTarget === undefined) {

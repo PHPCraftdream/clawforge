@@ -6,7 +6,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "../fixture.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 const deployDir = await setupDeployment("store-template");
 try {  const ctx = {
@@ -49,10 +49,10 @@ try {  const ctx = {
 
   const mode = (await stat(storePath)).mode & 0o777;
   // chmod bits are not meaningful on Windows filesystems (no POSIX permission bits), so
-  // this assertion only holds where they are — skip it there rather than assert a lie.
-  if (process.platform !== "win32") {
+  // the assertion only holds where they do — skipped by declared capability, not a lie.
+  await requires("posix-modes", "the store file is created with mode 0o600", () => {
     check("the store file is created with mode 0o600", mode, 0o600);
-  }
+  });
 
   // Running --init-store again WITHOUT --force must refuse, and must leave the file
   // untouched — not refuse-then-overwrite.

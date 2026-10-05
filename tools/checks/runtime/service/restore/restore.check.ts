@@ -20,8 +20,7 @@ import { LocalTransport, type ExecResult } from "#framework/runtime/transport/tr
 import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
-import { check, finish } from "#checks/kit/harness.ts";
-import { hasGnuUserland } from "#checks/kit/capabilities/capabilities.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
   try { await run(); } catch (error) { return (error as Error).message; }
@@ -292,29 +291,29 @@ const NAME = deploymentName();
 // The automatic restore selector uses the same target-side glob as backup rotation. Keep the
 // literal path quoted through a real POSIX shell so spaces, quotes and shell metacharacters stay
 // data and cannot change which archive is selected.
-if (process.platform !== "win32" && await hasGnuUserland()) {
-  const root = await mkdtemp(`${tmpdir()}/clawforge-restore-quote-check-`);
-  const marker = `${root}/shell-injected`;
-  const directory = `${root}/backup files '$(touch ${marker})' ; echo hacked`;
-  try {
-    await mkdir(directory, { recursive: true });
-    const archive = `${directory}/${NAME}-20260103-000000.tar.gz`;
-    await writeFile(archive, "archive");
-    await utimes(archive, new Date("2026-01-03T00:00:00Z"), new Date("2026-01-03T00:00:00Z"));
-    const picked = await newestArchive(
-      { settings: { backupDir: directory }, transport: new LocalTransport() } as unknown as Context,
-      directory,
-    );
-    let markerPresent = true;
-    try { await access(marker); } catch { markerPresent = false; }
-    check("restore selects an archive below a quoted path", picked.archive, archive);
-    check("restore does not execute path metacharacters", markerPresent, false);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-} else {
-  process.stderr.write("  skip archive path quoting needs a GNU-userland local target\n");
-}
+await requires("posix-host", "restore selects an archive below a quoted path over a POSIX shell and GNU tools", async () => {
+  await requires("gnu-userland", "restore selects an archive below a quoted path (GNU tools)", async () => {
+    const root = await mkdtemp(`${tmpdir()}/clawforge-restore-quote-check-`);
+    const marker = `${root}/shell-injected`;
+    const directory = `${root}/backup files '$(touch ${marker})' ; echo hacked`;
+    try {
+      await mkdir(directory, { recursive: true });
+      const archive = `${directory}/${NAME}-20260103-000000.tar.gz`;
+      await writeFile(archive, "archive");
+      await utimes(archive, new Date("2026-01-03T00:00:00Z"), new Date("2026-01-03T00:00:00Z"));
+      const picked = await newestArchive(
+        { settings: { backupDir: directory }, transport: new LocalTransport() } as unknown as Context,
+        directory,
+      );
+      let markerPresent = true;
+      try { await access(marker); } catch { markerPresent = false; }
+      check("restore selects an archive below a quoted path", picked.archive, archive);
+      check("restore does not execute path metacharacters", markerPresent, false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
 
 // --- the restored layout is verified with the
 // privileges that act through it.

@@ -14,10 +14,6 @@ import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-function skip(reason: string): void {
-  process.stderr.write(`  skip ${reason}\n`);
-}
-
 function codes(problems: readonly { code: string }[]): string[] {
   return problems.map((entry) => entry.code).sort();
 }
@@ -430,10 +426,6 @@ await withDeployment(async (dir) => {
   check("a widened .env is reported", finding?.detail.includes(envPath), true);
   check("never with the secret value", finding?.detail.includes("check-value"), false);
 });
-
-if (process.platform !== "win32" && process.platform !== "linux" && process.platform !== "darwin") {
-  skip("permission-mode assertions on an unrecognized platform");
-}
 
 // --- the in-container "lan" bind: loopback-only publishing downgrades, 0.0.0.0 does not ---
 

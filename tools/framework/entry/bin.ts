@@ -42,6 +42,15 @@ setInvocation(handed ?? { program: "clawforge", mode: "installed", audience: "te
 const rawArgv = process.argv.slice(2);
 
 const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs });
+// Before any refusal can render: a refusal's advice is this invocation's spelling (the
+// checkout-refusal's "new-app" line included), so the default must be applied first. The
+// refusals carry the root they decided about (the nesting refusal its deployment); the
+// checkout refusal has none, so the cwd stands in — its own directory is the only root
+// the decision walked.
+if (handed === undefined) {
+  const root = entry.kind === "run" ? entry.appRoot : entry.kind === "refuse" ? (entry.ancestor ?? process.cwd()) : process.cwd();
+  setInvocation({ ...(await defaultInvocation(root, process.platform)), audience: "terminal" });
+}
 switch (entry.kind) {
   case "refuse": {
     for (const refusal of entry.refusals) reportError(refusal);
@@ -56,8 +65,6 @@ const { appRoot, localTypesOnly, ancestor, checkout } = entry;
 // Mutable copies: the executors below take string[].
 const argv = [...entry.argv];
 const launchArgv = [...entry.launchArgv];
-
-if (handed === undefined) setInvocation({ ...(await defaultInvocation(appRoot, process.platform)), audience: "terminal" });
 
 // Installed system-wide, this may not be the framework this deployment runs on.
 delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver);

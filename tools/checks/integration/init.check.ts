@@ -11,10 +11,13 @@ import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { initApp, ALREADY_EXISTS, ALREADY_INITIALISED, NOT_EXIST, NEEDS_ESM, NOT_VALID_JSON, noSaveInstall } from "#framework/integration/deployment/init.ts";
 import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore, ROOT_OWNED } from "#framework/integration/deployment/deployment-template.ts";
-import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { commandLine, renderAdvice, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { IN_BASH_NOTE } from "#framework/entry/resolve.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 async function run(root: string): Promise<string | undefined> {
   let message: string | undefined;
@@ -486,6 +489,53 @@ async function gatewayPortOf(root: string): Promise<number> {
     await writeFile(resolve(root, "package.json"), original, "utf8");
     check("a package that already says module initialises", await run(root), undefined);
     check("and its package.json is not rewritten", await readFile(resolve(root, "package.json"), "utf8"), original);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+// --- a refused init is advised in this invocation's spelling, not the global command's ----
+//
+// R6-5: the entry applies its invocation default only after the placement decision, so a
+// local-package (npx, node_modules/.bin) init that refuses was advised `clawforge new-app`
+// although no global `clawforge` exists. Spawned end to end: the running framework is the
+// checkout's own copy, so the default is the local-package spelling.
+{
+  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const fake = join(base, "checkout");
+  const newDep = join(fake, "apps", "newdep");
+  await mkdir(newDep, { recursive: true });
+  await mkdir(resolve(fake, "tools", "framework"), { recursive: true });
+  await writeFile(resolve(fake, "tools", "framework", "package.json"), JSON.stringify({ name: "@clawforge/framework" }), "utf8");
+  await writeFile(resolve(fake, "tools", "clawforge.ts"), "// gate", "utf8");
+  try {
+    const refused = await new Promise<string>((resolvePromise) => {
+      const child = spawn(
+        process.execPath,
+        ["--experimental-strip-types", resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts"), "init"],
+        { cwd: newDep, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let output = "";
+      child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      child.once("close", () => resolvePromise(output));
+      child.once("error", () => resolvePromise(output));
+    });
+    // The entry spells the local-package program per host (root.ts): npm's bin wrapper on
+    // Windows, the committed shim elsewhere. Both host cases render the same two advice
+    // lines, compared whole so the bare global command cannot sneak into either.
+    const lines = plain(refused).split(String.fromCharCode(10)).map((line) => line.trim()).filter((line) => line.startsWith("→"));
+    const local = (program: string) => renderAdvice(command(["new-app", "<name>"]), { program, mode: "local-package", audience: "terminal" });
+    const bashLine = `${renderAdvice(command(["new-app", "<name>"]), shimInvocation())}  (${IN_BASH_NOTE})`;
+    // The empty apps/<name> directory also earns the takeover note as the third line.
+    check("init inside a checkout refuses with the checkout advice", lines.length, 3);
+    await requires("windows-host", "the refusal advice names npm's bin wrapper (Windows spelling)", () => {
+      check("...the Windows spelling is npm's bin wrapper", lines.slice(0, 2), [`→ ${local(WINDOWS_BIN_PROGRAM)}`, `→ ${bashLine}`]);
+    });
+    await requires("posix-host", "the refusal advice names the committed shim (POSIX spelling)", () => {
+      check("...the POSIX spelling is the committed shim", lines.slice(0, 2), [`→ ${local(SHIM_PROGRAM)}`, `→ ${bashLine}`]);
+    });
+    check("the refusal names the checkout it walked up to", plain(refused).includes(fake), true);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

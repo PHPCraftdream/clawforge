@@ -15,6 +15,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   contains `@sha256:`: `set validate` reports it as the finding `SET_IMAGE_INVALID` (on a working
   tree and on an artifact alike), `set build` and `set try` refuse it, and `set try`'s throwaway
   `.env` carries the canonical form of the parsed reference.
+* When an `init` run through the package's own entry (npx or `node_modules/.bin`) is refused —
+  inside a ClawForge checkout, or nesting inside an existing deployment — the advice names the
+  invocation it runs as (`./clawforge`, on Windows npm's bin wrapper) instead of a global
+  `clawforge` command that does not exist.
 * Shell completion offers `--version` and `-v` as the first word (they were accepted but never
   offered), and after the first argument of a pass-through command (`host`, `cli`, `exec`) it
   offers nothing more: what follows is the child's own text. After a bare `--` it offers nothing

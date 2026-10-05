@@ -341,7 +341,7 @@ export interface InstalledEntryInput {
 export type InstalledEntryDecision =
   /** reportError refusals: the --project-root refusal, init nesting inside a deployment,
    *  and init inside a ClawForge checkout (its bash spelling rides as shell advice). */
-  | { readonly kind: "refuse"; readonly refusals: readonly UserError[] }
+  | { readonly kind: "refuse"; readonly refusals: readonly UserError[]; readonly ancestor?: string }
   /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
   | { readonly kind: "checkout-types-note"; readonly line: string }
   | {
@@ -386,7 +386,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
   // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
   const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
   if (initializing && !scheduled && ancestor !== undefined && ancestor !== here && !localTypesOnly) {
-    return { kind: "refuse", refusals: [new UserError(`${ancestor} ${ALREADY_HOLDS_APP} — this directory is inside that deployment; init here would nest a second one`)] };
+    return { kind: "refuse", refusals: [new UserError(`${ancestor} ${ALREADY_HOLDS_APP} — this directory is inside that deployment; init here would nest a second one`)], ancestor };
   }
   // A checkout deployment reads the framework from the checkout's sources: nothing to install.
   if (localTypesOnly && ancestor !== undefined && importsCheckoutSourcesIn(ancestor, fs)) {

@@ -7,17 +7,18 @@
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { initApp, ALREADY_EXISTS, ALREADY_INITIALISED, NOT_EXIST, NEEDS_ESM, NOT_VALID_JSON, noSaveInstall } from "#framework/integration/deployment/init.ts";
 import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore, ROOT_OWNED } from "#framework/integration/deployment/deployment-template.ts";
 import { commandLine, renderAdvice, shimInvocation } from "#framework/core/io/invocation/render.ts";
+import type { Invocation } from "#framework/core/io/invocation/index.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { IN_BASH_NOTE } from "#framework/entry/resolve.ts";
+import { IN_BASH_NOTE, resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function run(root: string): Promise<string | undefined> {
   let message: string | undefined;
@@ -494,15 +495,15 @@ async function gatewayPortOf(root: string): Promise<number> {
   }
 }
 
-// --- a refused init is advised in this invocation's spelling, not the global command's ----
+// --- a refused init names the checkout root's gate, wherever the run stood ------------------
 //
 // R6-5: the entry applies its invocation default only after the placement decision, so a
-// local-package (npx, node_modules/.bin) init that refuses was advised `clawforge new-app`
-// although no global `clawforge` exists. Spawned end to end: the running framework is the
-// checkout's own copy, and the cwd sits in a SECOND checkout-shaped tree, so the refusal's
-// advice names that walked-to checkout's gate spelled from where the run stands — the
-// committed shim one level up from apps/<name>, the monorepo launcher's spelling — not the
-// running copy's, and never the bare global command (review R16-1).
+// local-package (npx, node_modules/.bin) init that refuses must not be advised the bare
+// global command. The refusal's sentence directs to the checkout root, so both advice rows
+// spell its own shim from there — the same text under every entry default (review R17).
+// Spawned end to end: the running framework is the checkout's own copy, and the cwd sits in
+// a SECOND checkout-shaped tree, so neither the running copy's spelling nor a cwd-relative
+// path can sneak in (review R16-1).
 {
   const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
   const fake = join(base, "checkout");
@@ -524,18 +525,56 @@ async function gatewayPortOf(root: string): Promise<number> {
       child.once("close", () => resolvePromise(output));
       child.once("error", () => resolvePromise(output));
     });
-    // The walked-to checkout is one level up from the cwd's apps/<name>, so the advice names
-    // its shim two levels up — the same spelling on every host, compared whole so neither
-    // the bare global command nor the running copy's own checkout can sneak in.
+    // The sentence directs to the checkout root, so both rows spell the gate from there —
+    // the shim at its root — whatever the cwd, compared whole so neither the bare global
+    // command nor a cwd-relative path can sneak in.
     const lines = plain(refused).split(String.fromCharCode(10)).map((line) => line.trim()).filter((line) => line.startsWith("→"));
-    const walkedTo = renderAdvice(command(["new-app", "<name>"]), { program: "../../clawforge", mode: "checkout", audience: "terminal" });
-    const bashLine = `${renderAdvice(command(["new-app", "<name>"]), shimInvocation())}  (${IN_BASH_NOTE})`;
+    const fromRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
+    const bashLine = `${fromRoot}  (${IN_BASH_NOTE})`;
     // The empty apps/<name> directory also earns the takeover note as the third line.
     check("init inside a checkout refuses with the checkout advice", lines.length, 3);
-    check("...the refusal names the walked-to checkout's gate, not the running copy's", lines.slice(0, 2), [`→ ${walkedTo}`, `→ ${bashLine}`]);
+    check("...the refusal names the checkout root's gate, not the running copy's", lines.slice(0, 2), [`→ ${fromRoot}`, `→ ${bashLine}`]);
     check("the refusal names the checkout it walked up to", plain(refused).includes(fake), true);
   } finally {
     await rm(base, { recursive: true, force: true });
+  }
+}
+
+// --- the same refusal, unit-level, from a nested subfolder ----------------------------------
+//
+// The refusal's rows must not depend on the cwd they refused from: bin.ts sets its
+// invocation default from where the run stands (root.ts's checkout branch), and a
+// clawforge-kind row is re-spelled with it — from a nested subfolder the first row used to
+// read ../../../clawforge, which pasted at the checkout root resolves outside it (R17).
+// Fake fs as in the golden entry matrix; no process.
+{
+  const fakeRoot = "/fake-checkout";
+  const nested = `${fakeRoot}/deep/nested/sub`;
+  const files: Record<string, string> = {
+    [`${fakeRoot}/tools/clawforge.ts`]: "// gate",
+    [`${fakeRoot}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
+  };
+  const dirs = [`${fakeRoot}/tools`, `${fakeRoot}/tools/framework`, nested];
+  const normalize = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
+  const fs: FsProbe = {
+    exists: (path) => normalize(path) in files || dirs.includes(normalize(path)),
+    isDirectory: (path) => dirs.includes(normalize(path)),
+    readdir: () => [],
+    readFile: (path) => files[normalize(path)],
+    realpath: (path) => path,
+  };
+  const decision = resolveInstalledEntry({ cwd: nested, rawArgv: ["init"], platform: "linux", fs });
+  if (decision.kind !== "refuse") {
+    check("init from a nested checkout folder is refused", decision.kind, "refuse");
+  } else {
+    // The frame bin.ts sets for this refusal: root.ts's checkout branch with the run root
+    // standing in the nested cwd.
+    const up = relative(resolve(nested), decision.checkout!).split(sep).join("/");
+    const refusing: Invocation = { program: `${up}/clawforge`, mode: "checkout", audience: "terminal" };
+    const [row, bashRow] = decision.refusals[0]!.advice;
+    const atRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
+    check("both rows spell the gate from the checkout root the sentence names", [renderAdvice(row, refusing), renderAdvice(bashRow, refusing)], [atRoot, `${atRoot}  (${IN_BASH_NOTE})`]);
+    checkTrue("no row spells a path out of the checkout root", !renderAdvice(row, refusing).includes("..") && !renderAdvice(bashRow, refusing).includes(".."));
   }
 }
 

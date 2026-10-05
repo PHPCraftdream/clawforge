@@ -16,6 +16,7 @@ import { exec } from "#framework/commands/interface/exec.ts";
 import { cliStart, cliStop } from "#framework/commands/interface/cli-helper.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
@@ -411,6 +412,36 @@ function runtimeStub(overrides: {
 }
 
 {
+  // The failure headline echoes the wrapped argv for a reader to re-assemble: each element
+  // by the repo's own quoting rule, plain words bare (review R17).
+  const ctx = {
+    runtime: runtimeStub({
+      execInHelper: async (): Promise<ExecResult> => ({ code: 3, stdout: "", stderr: "" }),
+    }),
+  } as unknown as Context;
+
+  const bare = await (async () => {
+    try {
+      await cli(ctx, ["doctor", "--version"]);
+      return "";
+    } catch (error) {
+      return (error as Error).message;
+    }
+  })();
+  check("a failing headline echoes plain words as the bare space join", bare, ["openclaw", "doctor", "--version", "failed (exit 3)"].join(" "));
+
+  const spaced = await (async () => {
+    try {
+      await cli(ctx, ["doctor", "two words"]);
+      return "";
+    } catch (error) {
+      return (error as Error).message;
+    }
+  })();
+  check("a failing headline echoes a spaced argument as one element", spaced, ["openclaw", "doctor", shellQuote("two words"), "failed (exit 3)"].join(" "));
+}
+
+{
   // Same for a SUCCESSFUL command: its diagnostics live on stderr, so a captured run hands
   // both streams back whatever the exit code says (review R16-2), in the transport's order.
   const ctx = {
@@ -507,6 +538,35 @@ check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, unde
     message = error instanceof Error ? error.message : String(error);
   }
   check("exec() refuses cleanly when the runtime has no execCommand", message?.includes("does not support"), true);
+}
+
+{
+  // Same echo rule as cli's headline (review R17).
+  const ctx = {
+    runtime: runtimeStub({
+      execCommand: async (): Promise<ExecResult> => ({ code: 1, stdout: "", stderr: "" }),
+    }),
+  } as unknown as Context;
+
+  const bare = await (async () => {
+    try {
+      await exec(ctx, ["node", "--version"]);
+      return "";
+    } catch (error) {
+      return (error as Error).message;
+    }
+  })();
+  check("exec echoes plain words as the bare space join", bare, ["exec", "node", "--version", "failed (exit 1)"].join(" "));
+
+  const spaced = await (async () => {
+    try {
+      await exec(ctx, ["node", "--eval", "two words"]);
+      return "";
+    } catch (error) {
+      return (error as Error).message;
+    }
+  })();
+  check("exec echoes a spaced argument as one element", spaced, ["exec", "node", "--eval", shellQuote("two words"), "failed (exit 1)"].join(" "));
 }
 
 check("exec is declared destructive, so MCP requires a confirmation", openclawCommands.exec.destructive, true);

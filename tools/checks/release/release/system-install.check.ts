@@ -353,7 +353,7 @@ try {
   await mkdir(freshApp, { recursive: true });
   try {
     const initInCheckout = await clawforge(["init"], freshApp);
-    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes(say(["new-app", "<name>"], installedHint)) && initInCheckout.output.includes("(" + IN_BASH_NOTE + ")") && initInCheckout.output.includes(takeoverNote(`${checkoutApp}-new`)), true);
+    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes(say(["new-app", "<name>"], shimHint)) && initInCheckout.output.includes("(" + IN_BASH_NOTE + ")") && initInCheckout.output.includes(takeoverNote(`${checkoutApp}-new`)), true);
     check("and writes nothing", existsSync(join(freshApp, "app.ts")), false);
   } finally {
     await rm(freshApp, { recursive: true, force: true });
@@ -364,7 +364,7 @@ try {
     await mkdir(unusable, { recursive: true });
     try {
       const refused = await clawforge(["init"], unusable);
-      check(`init in empty apps/${folder} withholds the take-over advice`, refused.code === 1 && !refused.output.includes(takeoverNote(basename(unusable))) && refused.output.includes(say(["new-app", "<name>"], installedHint)), true);
+      check(`init in empty apps/${folder} withholds the take-over advice`, refused.code === 1 && !refused.output.includes(takeoverNote(basename(unusable))) && refused.output.includes(say(["new-app", "<name>"], shimHint)), true);
     } finally {
       await rm(unusable, { recursive: true, force: true });
     }

@@ -80,7 +80,9 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "command you give it, e.g. `{clawforge exec curl -fsS http://127.0.0.1:18789/healthz}` " +
       "or `{clawforge exec cat /app/docs/channels/telegram.md}`.\n" +
       "Same container as `cli`: the OpenClaw image, the gateway's network namespace, the " +
-      "same data mounts, the same one-off-vs-helper choice.",
+      "same data mounts, the same one-off-vs-helper choice.\n" +
+      "A captured run (over MCP or a pipe) decodes its output as UTF-8 text: bytes that are " +
+      "not valid UTF-8 come back as replacement characters, not the original bytes.",
     // Same reasoning as `cli`: it can run anything, so it gets the same MCP confirmation.
   },
   host: {
@@ -106,7 +108,9 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "are not an upgrade but the consent the command needs to run at all — without them it is " +
       "refused, not downgraded; with them it is pinned to -u root explicitly.\n" +
       "Everything from the first non-flag argument on (optionally after a bare --) is the command, " +
-      "verbatim — over MCP pass it as the args list, no leading --.",
+      "verbatim — over MCP pass it as the args list, no leading --.\n" +
+      "A captured run (over MCP or a pipe) decodes its output as UTF-8 text: bytes that are " +
+      "not valid UTF-8 come back as replacement characters.",
     // Same reasoning as cli/exec: it can run anything the targeted machine allows, so it gets
     // the same MCP confirmation. --help shows this command's own help rather than passing
     // through, the same tradeoff exec makes.

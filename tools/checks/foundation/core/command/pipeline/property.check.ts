@@ -15,7 +15,7 @@
 // has no MCP case by construction — that is the surface's rule, not an exclusion of a command.
 
 import { executeCommand } from "#framework/core/command/execute.ts";
-import { ArgumentError, UnknownActionError, specData } from "#framework/core/command/index.ts";
+import { ArgumentError, UnknownActionError, bind, specData, tokenize } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf } from "#framework/core/command/spec.ts";
 import { gateConfirmationRefusal, positionalDashMessage, requiredArgumentMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
@@ -137,6 +137,7 @@ for (const unit of units) {
     check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
     check(`${name}: MCP never contacts the target`, mcp.contacts, []);
     check(`${name}: MCP prints no document`, mcp.output, "");
+    check(`${name}: one voice on both surfaces`, (mcp.execution.error as Error).message, (terminal.execution.error as Error).message);
   }
 }
 
@@ -420,6 +421,27 @@ for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
     for (const argument of command.arguments ?? []) {
       if (argument.required !== true) continue;
       checkTrue(`${entry.name}: a missing required ${argument.name} is refused by validate`, validate(command, {}).includes(requiredArgumentMessage(argument.name)));
+    }
+  }
+}
+
+// One voice for `choices`: for every declared choices argument of every gate command, the
+// MCP validate's problem is byte-identical to what the console dispatch throws for the same
+// argument and value — the parser's own refusal, one shared builder (review R17).
+for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
+  for (const entry of gate) {
+    for (const argument of entry.arguments ?? []) {
+      const choices = (argument as { choices?: readonly string[] }).choices;
+      if (choices === undefined || (argument.kind !== "option" && argument.kind !== "positional")) continue;
+      let value = "outside-the-list";
+      while (choices.includes(value)) value += "-x";
+      let consoleRefusal: string | undefined;
+      try {
+        bind(entry.arguments as readonly ArgumentSpec[], tokenize(entry.arguments as readonly ArgumentSpec[], argument.kind === "positional" ? [value] : [`--${argument.name}`, value]), { command: entry.name });
+      } catch (error) {
+        consoleRefusal = (error as Error).message;
+      }
+      check(`${entry.name} ${argument.name}: one choices voice`, validate(entry, { [argument.name]: value }), [consoleRefusal ?? ""]);
     }
   }
 }

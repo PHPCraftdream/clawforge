@@ -6,6 +6,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* The init-in-checkout refusal's advice rows both spell the gate from the checkout root —
+  the frame its sentence directs to — instead of the first row being re-spelled relative to
+  whatever directory the run refused from. A gate command's `choices` refusal over MCP
+  (`completion`, `help`) is worded exactly as the console parser words it — one message
+  builder owns the text. A wrapped command's failure headline (`exec`, `host`, `cli`) quotes
+  each echoed argument, so a command line whose arguments carry spaces or newlines can be
+  read back as argv; plain words still echo bare.
+
 * The checkout's own entry run directly (`node tools/framework/entry/bin.ts …`, or an
   npm-linked bin) hints the checkout's shim where it really is — `./clawforge` from the
   checkout root, `../../clawforge` from `apps/<name>`, in checkout mode — instead of the

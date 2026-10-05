@@ -11,6 +11,7 @@
 
 import { die, dieWithExitCode, info } from "#src/core/io/log.ts";
 import { emitRaw, shouldFollow } from "#src/core/io/output.ts";
+import { renderArguments } from "#src/core/io/invocation/render.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport/transport.ts";
 import { commandBody, parseCall, runOnContext, specShape } from "#src/core/command/index.ts";
@@ -31,7 +32,7 @@ export function consentRefusal(context: string, arrivesAsRoot: boolean, descript
 
 /** The failure report for a wrapped command that exited non-zero. */
 export function commandFailedMessage(context: string, command: readonly string[], code: number): string {
-  return `host ${context} ${command.join(" ")} failed (exit ${code})`;
+  return `host ${context} ${renderArguments(command)} failed (exit ${code})`;
 }
 
 export const HOST_ARGUMENTS = [

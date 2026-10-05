@@ -350,6 +350,13 @@ function labelOf(argument: ArgumentSpec): string {
   return argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`;
 }
 
+/** The refusal of a value outside a declared `choices` list, in the parser's voice — shared
+ *  with the MCP validate of gate commands (integration/mcp/call.ts), which refuses the same
+ *  wrong value so both surfaces word the refusal alike. */
+export function choicesRefusal(argument: ArgumentSpec, choices: readonly string[], value: string): string {
+  return `${labelOf(argument)} takes one of ${choices.join(", ")}, not "${value}"`;
+}
+
 function joinClause(label: string, clause: string): string {
   return clause.startsWith(":") ? `${label}${clause}` : `${label} ${clause}`;
 }
@@ -368,7 +375,7 @@ function convert(argument: ValueSpec<"option"> | ValueSpec<"positional">, raw: s
   }
   if (raw === "") throw new ArgumentError(`${label} needs a value`, argument.name);
   if (argument.choices !== undefined && !argument.choices.includes(raw)) {
-    throw new ArgumentError(`${label} takes one of ${argument.choices.join(", ")}, not "${raw}"`, argument.name);
+    throw new ArgumentError(choicesRefusal(argument, argument.choices, raw), argument.name);
   }
   return raw;
 }

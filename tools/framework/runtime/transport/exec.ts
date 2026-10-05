@@ -28,7 +28,12 @@ export interface ExecOptions {
 
 export interface ExecResult {
   code: number;
+  /** UTF-8-decoded text: a captured stream's bytes that are not valid UTF-8 arrive as
+   *  U+FFFD, not the original bytes (readFile documents the same loss; the streaming
+   *  terminal path passes the child's bytes through). Binary output needs a byte-safe
+   *  channel — target-side base64 or a mount, not a captured stream. */
   stdout: string;
+  /** As stdout: UTF-8-decoded, lossy for non-UTF-8 bytes. */
   stderr: string;
   /** The deadline (timeoutMs) killed the child — `code` is the signal-terminated remnant
    *  (usually -1), not the command's own exit status. Absent otherwise. A transport built on

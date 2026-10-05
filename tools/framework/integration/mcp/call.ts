@@ -3,7 +3,7 @@
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
 import { maskSecrets } from "../../core/io/log.ts";
-import { bindsAsFlag, effectProfile, specOf, specShape, tokenize } from "../../core/command/index.ts";
+import { bindsAsFlag, choicesRefusal, effectProfile, specOf, specShape, tokenize, type ArgumentSpec } from "../../core/command/index.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
@@ -232,7 +232,7 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
     // Refused here, not escaped with `--`: a variadic already owns the trailing `--`.
     if (argument.kind === "positional" && bindsAsFlag(value)) problems.push(positionalDashMessage(name));
     if (spec === undefined && argument.choices !== undefined && !argument.choices.includes(value)) {
-      problems.push(`${name} must be one of: ${argument.choices.join(", ")}`);
+      problems.push(choicesRefusal(argument as ArgumentSpec, argument.choices, value));
     }
   }
 

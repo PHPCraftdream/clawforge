@@ -1299,13 +1299,13 @@
   sole demo: ./clawforge new-app <name>
   cwd app1: ./clawforge new-app <name>
   gateway, no app yet: ./clawforge new-app <name>
-  global (clawforge): clawforge new-app <name>
-  global, handed to the checkout gate with --app demo: clawforge new-app <name>
+  global (clawforge): ./clawforge new-app <name>
+  global, handed to the checkout gate with --app demo: ./clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
-  local package (win32): node_modules\.bin\clawforge new-app <name>
-  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge new-app <name>
-  tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
+  local package (win32): ./clawforge new-app <name>
+  checkout MCP launcher (../../clawforge, demo/flag): ./clawforge new-app <name>
+  tool form: —
 
 === refusal: init inside a ClawForge checkout (2) ===
   checkout default (openclaw/default): ./clawforge new-app <name>  (in bash)

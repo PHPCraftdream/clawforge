@@ -412,10 +412,10 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     useComposeProjectOverride(previousComposeProject);
   }
 
-  if (report === undefined) {
-    if (operationError !== undefined) throw operationError;
-    die("set try did not produce a report");
-  }
+  // Unreachable as a branch — the catch above always leaves a report (its one throw,
+  // createContext's, rethrows out of the catch itself) — kept as the narrowing the reads
+  // below need.
+  if (report === undefined) die("set try did not produce a report");
   if (!keep) report = { ...report, torndown: teardownError === undefined };
 
   const observed = observedAfter ?? observedBefore ?? { observations: { frameworkVersion: "unknown" }, digests: [] };

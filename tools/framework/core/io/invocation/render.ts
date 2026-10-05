@@ -55,6 +55,13 @@ export function renderArgument(word: string, program: string): string {
   return `"${word.replaceAll('"', '\\"')}"`;
 }
 
+/** An argv echoed for a reader to re-assemble — the failure headlines of exec, host and cli:
+ *  each element by the argument rule under a path spelling (POSIX quoting), so plain words
+ *  stay bare and an element carrying a space, a quote or a newline stays one element. */
+export function renderArguments(argv: readonly string[]): string {
+  return argv.map((word) => renderArgument(word, SHIM_PROGRAM)).join(" ");
+}
+
 /** SAFE_WORD plus backslash: the invocation's own program is spelled for the user's shell
  *  already (npm's bin wrapper carries `\`), so it renders bare like any safe word. */
 const SAFE_PROGRAM = /^[A-Za-z0-9_@%+=:,./\\-]+$/;

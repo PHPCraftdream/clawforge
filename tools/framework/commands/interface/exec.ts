@@ -5,7 +5,7 @@
 // network namespace (a recipe's sidecar port, for instance).
 
 import { die, dieWithExitCode } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
+import { commandLine, renderArguments } from "#src/core/io/invocation/render.ts";
 import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
@@ -57,7 +57,7 @@ async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
       emitRaw(result.stdout);
       emitRaw(result.stderr);
     }
-    if (result.code !== 0) dieWithExitCode(`exec ${rawArgs.join(" ")} failed (exit ${result.code})`, result.code);
+    if (result.code !== 0) dieWithExitCode(`exec ${renderArguments(rawArgs)} failed (exit ${result.code})`, result.code);
   };
 
   if (ctx.runtime.execCommand === undefined) {

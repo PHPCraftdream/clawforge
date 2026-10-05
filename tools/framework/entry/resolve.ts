@@ -360,7 +360,7 @@ export interface InstalledEntryInput {
 
 export type InstalledEntryDecision =
   /** reportError refusals: the --project-root refusal, init nesting inside a deployment,
-   *  and init inside a ClawForge checkout (its bash spelling rides as shell advice). */
+   *  and init inside a ClawForge checkout (its rows spell the checkout root, as shell advice). */
   | { readonly kind: "refuse"; readonly refusals: readonly UserError[]; readonly ancestor?: string; readonly checkout?: string }
   /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
   | { readonly kind: "checkout-types-note"; readonly line: string }
@@ -434,11 +434,13 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
       // Both sides resolved, so the comparison does not depend on how the caller spelled cwd.
       sameDirectory(platform, dirname(here), resolve(checkout, "apps")) &&
       isValidDeploymentName(basename(here));
-    // The main advice is this invocation's spelling; the bash variant is shell advice, so
-    // nothing rewrites it to the program that was typed.
+    // The sentence directs to the checkout root, so both rows spell the gate from there —
+    // the shim at its root, whatever copy runs and wherever the run stood; shell advice
+    // keeps the output layer from re-spelling the program for the refusing frame.
+    const atRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
     const advice: Advice[] = [
-      command(["new-app", "<name>"]),
-      shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: IN_BASH_NOTE }),
+      shellLine("posix", atRoot),
+      shellLine("posix", atRoot, { note: IN_BASH_NOTE }),
     ];
     if (reusable) {
       advice.push(manual(takeoverNote(basename(cwd))));

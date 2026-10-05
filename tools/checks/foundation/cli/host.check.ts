@@ -30,6 +30,7 @@ import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
 import { CommandFailedError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
@@ -417,6 +418,16 @@ try {
     check("a failing command reports its exit code", message === commandFailedMessage("target", ["cat", "/etc/resolv.conf"], 3), true);
     check("its stdout is still handed back", written.join("").includes(partial), true);
     check("and its stderr, which on a failure is the reason", written.join("").includes(reason), true);
+  }
+
+  {
+    // The headline echoes the wrapped argv for a reader to re-assemble: each element by the
+    // repo's own quoting rule, plain words bare (review R17).
+    const stub = recordingTransport(3, "", "");
+    const spaced = await deathOf(() => host(ctxWith(stub.transport), ["target", "--", "cat", "two words"]));
+    check("a failing headline echoes a spaced argument as one element", spaced, ["host", "target", "cat", shellQuote("two words"), "failed (exit 3)"].join(" "));
+    const bare = await deathOf(() => host(ctxWith(stub.transport), ["target", "--", "cat", "resolv.conf"]));
+    check("a failing headline echoes plain words as the bare space join", bare, ["host", "target", "cat", "resolv.conf", "failed (exit 3)"].join(" "));
   }
 
   {

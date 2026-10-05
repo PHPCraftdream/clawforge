@@ -329,6 +329,18 @@ try {
     checkTrue("the parse failure still exits non-zero", process.exitCode === 1);
   }
 
+  // R8-1: an option written `--opt=value` is complete: the `--json` after it IS the flag, so a
+  // parse failure still prints the error document the machine caller asked for.
+  {
+    const backupApp: AppDefinition = {
+      name: "json-inline-fixture",
+      description: "fixture",
+      commands: { backup: lifecycleCommands.backup },
+    };
+    const { output } = await capture(() => main(backupApp, ["backup", "prune-replaced", "--keep=abc", "--json"]));
+    checkTrue("a --json after an inline --opt=value is the flag: the error document is printed", output.includes('"error"'));
+  }
+
   {
     const { output } = await capture(() => main(contractApp, ["ownDocument", "--json"]));
     const ownDoc = `${JSON.stringify({ ok: false, problems: ["the check did not pass"] }, null, 2)}\n`;

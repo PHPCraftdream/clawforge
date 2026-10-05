@@ -73,7 +73,8 @@ function jsonRequested(argv: readonly string[]): boolean {
 
 /** The pre-parse stand-in for a parsed call's `given`: a standalone `--json` token before
  *  the first bare `--` that is not directly preceded by a declared option — a token right
- *  after an option is that option's value (`--interval --json`), not the flag. */
+ *  after a bare option is that option's value (`--interval --json`), not the flag; an option
+ *  written `--opt=value` is complete and does not own the next token. */
 function jsonTokenRequested(argv: readonly string[], shape: EffectShape | undefined): boolean {
   const sep = argv.indexOf("--");
   const head = sep === -1 ? argv : argv.slice(0, sep);
@@ -85,7 +86,7 @@ function jsonTokenRequested(argv: readonly string[], shape: EffectShape | undefi
   for (const action of Object.values(shape?.actions ?? {})) collect(action?.arguments);
   return head.some((token, index) =>
     token === "--json"
-    && !(index > 0 && options.has(head[index - 1].replace(/^--/, "").split("=", 1)[0])));
+    && !(index > 0 && !head[index - 1].includes("=") && options.has(head[index - 1].replace(/^--/, ""))));
 }
 
 /** The context both spec and legacy target commands run on: built here, not by the command —

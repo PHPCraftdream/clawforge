@@ -10,6 +10,7 @@ import { commandLine, renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invo
 import { command, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
+import { appConflictRefusal } from "#framework/entry/delegate.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { checkoutSubfolderReport, missingDeploymentReport } from "#framework/integration/gate.ts";
 import {
@@ -366,4 +367,74 @@ export function renderEntryMatrix(): string {
     }
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** Every refusal the matrices above yield (gate, installed, missing-app, hand-over), deduped
+ *  by structure. surfaces/advice-matrix.check.ts selects the ones whose sentence names a
+ *  place and asserts every advice row is spelled from that place, not from wherever the
+ *  refusing process stood. */
+export function entryDecisionRefusals(): { label: string; error: UserError }[] {
+  const rows: { label: string; error: UserError }[] = [];
+  const seen = new Set<string>();
+  const push = (label: string, error: UserError | undefined): void => {
+    if (error === undefined) return;
+    const shape = (advice: Advice): string =>
+      `${advice.kind}:${"argv" in advice ? advice.argv.join(" ") : ""}:${"text" in advice ? advice.text : ""}:${"note" in advice ? advice.note ?? "" : ""}:${advice.kind === "clawforge" ? advice.app ?? "" : ""}`;
+    const key = `${error.message}\n${error.advice.map(shape).join("|")}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({ label, error });
+  };
+  for (const platform of PLATFORMS) {
+    const fs = fakeFs(BASE_FILES, BASE_DIRS, platform === "win32" ? WIN_REAL : {});
+    for (const layout of LAYOUTS) {
+      for (const [envLabel, ocApp] of ENVS) {
+        for (const argv of ARGVS) {
+          const label = `${platform} ${layout.id} argv=${argv.length === 0 ? "<none>" : JSON.stringify(argv)} env=${envLabel}`;
+          if (layout.gate !== undefined) {
+            const decision = resolveCheckoutEntry({
+              root: ROOT, cwd: layout.gate.cwd, argv, ocApp,
+              handedOver: layout.gate.handedOver, handedProgram: layout.gate.program,
+              fs, gateCommands: GATE_COMMANDS, deploymentCommands: DEPLOYMENT_COMMANDS,
+              variadicCommands: VARIADIC_COMMANDS,
+              deploymentArguments: (name) => gateArguments(name) ?? openclawCommands[name]?.arguments,
+            });
+            if (decision.kind === "refuse") decision.refusals.forEach((refusal) => push(`gate ${label}`, refusal));
+          }
+          const handover = frameworkOwner({
+            self: SELF, appRoot: layout.handover.appRoot, launchArgv: argv, argv,
+            handedOver: false, platform, fs, localEntry: layout.handover.localEntry,
+          });
+          if (handover.kind === "refuse-app-value" && handover.reason === "app-conflict") {
+            push(`handover ${label}`, appConflictRefusal(handover));
+          }
+        }
+      }
+    }
+    for (const layout of LAYOUTS) {
+      if (layout.installed === undefined) continue;
+      for (const installedArgv of INSTALLED_ARGVS) {
+        const label = `installed ${platform} ${layout.id} argv=${installedArgv.length === 0 ? "<none>" : JSON.stringify(installedArgv)}`;
+        const decision = resolveInstalledEntry({ cwd: layout.installed.cwd, rawArgv: installedArgv, platform, fs });
+        if (decision.kind === "refuse") {
+          decision.refusals.forEach((refusal) => push(label, refusal));
+          continue;
+        }
+        if (decision.kind !== "run") continue;
+        if (fs.exists(`${decision.appRoot}/app.ts`)) continue;
+        if (INSTALLED_GATE_COMMANDS.includes(installedArgv[0])) continue;
+        const missing = missingAppDecision({
+          appRoot: decision.appRoot,
+          argv: decision.argv,
+          checkout: decision.checkout,
+          gateCommandNames: INSTALLED_GATE_COMMANDS,
+          deploymentCommands: DEPLOYMENT_COMMANDS,
+        });
+        if (missing.kind === "subfolder-report") push(label, missing.refusal);
+        if (missing.kind === "help") missing.fallback.refusals.forEach((refusal) => push(label, refusal));
+        if (missing.kind === "not-initialised") missing.refusals.forEach((refusal) => push(label, refusal));
+      }
+    }
+  }
+  return rows;
 }

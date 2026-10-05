@@ -20,6 +20,7 @@ import { CommandFailedError } from "#framework/core/io/log.ts";
 import { main } from "#framework/entry/cli.ts";
 import { selectedDeployment, useDeployment } from "#framework/runtime/deployment.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -82,6 +83,14 @@ for (const location of ["wsl", "local", "auto"]) {
     "with the default (matching) local port, mcp-creds' own URL is said to already be correct",
     output.includes(SAME_URL_NOTE),
   );
+}
+
+{
+  // OC_SSH_HOST is free text: a host spelled with a space must survive the echoed tunnel
+  // line as one element — the line is what the operator pastes back (review R17).
+  const output = await run(ctxFor({ location: "ssh", sshHost: "user name@host.example" }), []);
+  const line = output.split("\n").find((entry) => entry.trim().startsWith("ssh")) ?? "";
+  check("the echoed tunnel line keeps a spaced host one element", line.trim(), `ssh -N -L 18789:127.0.0.1:18789 ${shellQuote("user name@host.example")}`);
 }
 
 {

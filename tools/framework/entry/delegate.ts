@@ -14,8 +14,8 @@ import { pathToFileURL } from "node:url";
 import { INVOCATION_ENV, invocation, serializeInvocation } from "../core/io/invocation/index.ts";
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
-import { command } from "../core/io/invocation/advice.ts";
-import { renderArgument } from "../core/io/invocation/render.ts";
+import { command, shellLine } from "../core/io/invocation/advice.ts";
+import { renderArgument, renderAdvice, shimInvocation } from "../core/io/invocation/render.ts";
 import { nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
@@ -23,6 +23,7 @@ const DELEGATED = "CLAWFORGE_DELEGATED";
 
 /** Fixed parts of the hand-over refusals, exported for the system-install check. */
 export const APP_CONFLICT_NOTE = "conflicts with this directory";
+export const APP_CONFLICT_FROM_ROOT = "run this from the checkout root";
 export const FOREIGN_SOURCES_NOTE = "imports the framework sources";
 
 /** The local package's entry point, when the app resolves one of its own. */
@@ -56,6 +57,17 @@ function runInstead(entry: string, args: string[], flag: boolean): never {
   process.exit(result.status ?? 1);
 }
 
+/** The hand-over's --app conflict as data: the sentence names the checkout root, so the row
+ *  spells the gate from there (the shim at its root), never from the frame this run stood
+ *  in — the same frame rule as entry/resolve.ts's checkout refusals. */
+export function appConflictRefusal(decision: { readonly typed: string; readonly app: string }): UserError {
+  const atRoot = renderAdvice(command([], { app: decision.typed }), shimInvocation());
+  return new UserError(
+    `--app ${renderArgument(decision.typed, invocation().program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — ${APP_CONFLICT_FROM_ROOT}:`,
+    { advice: [shellLine("posix", atRoot)] },
+  );
+}
+
 /** Hands the whole invocation to the deployment's own framework when it has one; returns
  *  only when this package is the one to run. `launchArgv` is passed on untouched to a local
  *  install (same entry point), `argv` (without --project-root) to a checkout gate. Which
@@ -71,7 +83,7 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
     reportError("--app needs a deployment name");
     process.exit(1);
   }
-  reportError(new UserError(`--app ${renderArgument(decision.typed, invocation().program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — run this from the checkout root:`, { advice: [command([], { app: decision.typed })] }));
+  reportError(appConflictRefusal(decision));
   process.exit(1);
 }
 

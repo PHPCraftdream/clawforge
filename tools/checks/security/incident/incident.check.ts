@@ -30,6 +30,8 @@ import { executeCommand } from "#framework/core/command/execute.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
+import { tailscaleServeOffCommand } from "#framework/commands/operate/expose/tailscale.ts";
 
 async function withDeployment<T>(body: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(resolve(tmpdir(), "clawforge-incident-check-"));
@@ -170,6 +172,28 @@ await withDeployment(async () => {
   const phase = await containExposure(ctx, { dryRun: true, keepExposure: false, tail: "500" });
   checkTrue("dry-run: prints the exact off command", phase.actions.some((line) => line.includes(WOULD_RUN) && line.includes("tailscale serve --https=443 off")));
   check("dry-run: never actually turns it off", ctx.execCalls.some((call) => call.includes("off")), false);
+});
+
+await withDeployment(async () => {
+  // A mount point observed with a space (serve-status JSON is free-form) must stay one
+  // element in the reported off command — the line is what the operator pastes back
+  // (review R17); the exec itself still receives the raw argv.
+  const spaced = JSON.stringify({ Web: { "box.ts.net:443": { Handlers: { "/my path": { Proxy: "http://127.0.0.1:18789" } } } } });
+  const bareSetPath = "--set-path=/my path off";
+  const spacedOff = tailscaleServeOffCommand({ hostPort: "box.ts.net:443", port: "443", mountPoint: "/my path" }).join(" ");
+  const dry = stubContext({ tailscale: { present: true, loggedIn: true, serveJson: spaced } });
+  const dryPhase = await containExposure(dry, { dryRun: true, keepExposure: false, tail: "500" });
+  checkTrue(
+    "dry-run: a spaced --set-path is echoed as one quoted element",
+    dryPhase.actions.some((line) => line.includes(shellQuote("--set-path=/my path")) && !line.includes(bareSetPath)),
+  );
+  const ran = stubContext({ tailscale: { present: true, loggedIn: true, serveJson: spaced } });
+  const ranPhase = await containExposure(ran, { dryRun: false, keepExposure: false, tail: "500" });
+  check("and the exec still receives the raw argv", ran.execCalls.some((call) => call.join(" ") === spacedOff), true);
+  checkTrue(
+    "the ran line quotes the spaced element the same way",
+    ranPhase.actions.some((line) => line.includes(shellQuote("--set-path=/my path"))),
+  );
 });
 
 await withDeployment(async () => {

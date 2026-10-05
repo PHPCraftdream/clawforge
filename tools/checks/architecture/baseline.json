@@ -383,8 +383,8 @@
     "total": 427
   },
   "proseMatchers": {
-    "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth); rf6-fix25: one fewer — requires-bootstrapped's spaced endsWith(\"run ./clawforge bootstrap\") pin became a structured-advice assertion (renderAdvice(...).endsWith(\"bootstrap\")), so the prose moved into structure",
-    "total": 110
+    "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth); rf6-fix25: one fewer — requires-bootstrapped's spaced endsWith(\"run ./clawforge bootstrap\") pin became a structured-advice assertion (renderAdvice(...).endsWith(\"bootstrap\")), so the prose moved into structure; rf6-fix29: two fewer — lock-home's sudo-line collector became one shared regex constant read by all three family blocks (the new spaced-root case adds no new match site)",
+    "total": 108
   },
   "proseEquality": {
     "comment": "stage 5 + cross-cutting (I9): prose as the third argument of check(name, actual, \"literal with a space\") — a form prosePins (includes only) and proseMatchers (equality operator required) both miss, so rewriting a === pin into check() lowers proseMatchers while the prose stays; equality ratchet: growth fails, the existing sites are not being converted now; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth)",

@@ -400,7 +400,8 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     clearSetSource();
     useDeployment(realDir);
     await rm(staging, { recursive: true, force: true }).catch(() => {});
-    if (!keep && teardownError === undefined && tempDirCreated) {
+    // --keep retains an instance; with no report there never was one.
+    if ((!keep || report === undefined) && teardownError === undefined && tempDirCreated) {
       try {
         await rm(tempDir, { recursive: true, force: true });
       } catch (error) {

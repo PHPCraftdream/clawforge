@@ -14,7 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die, registerSecret, maskSecrets } from "../../../core/io/log.ts";
-import { commandLine } from "../../../core/io/invocation/render.ts";
+import { commandLine, renderArguments } from "../../../core/io/invocation/render.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
 import { commandBody, runOnContext, type ArgumentSpec, type Values } from "../../../core/command/index.ts";
@@ -172,7 +172,7 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
     const command = tailscaleServeOffCommand(route);
     const label = `${route.hostPort}${route.mountPoint}`;
     if (options.dryRun) {
-      actions.push(`${WOULD_RUN}: ${command.join(" ")} (turn off tailscale serve route ${label})`);
+      actions.push(`${WOULD_RUN}: ${renderArguments(command)} (turn off tailscale serve route ${label})`);
       continue;
     }
     const result = await ctx.transport.exec(command[0], command.slice(1), { allowFailure: true });
@@ -185,7 +185,7 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
       notes.push(`could not turn off tailscale serve route ${label} (exit ${result.code}): ${detail}${hint}`);
       continue;
     }
-    actions.push(`${RAN}: ${command.join(" ")} (turned off route ${label})`);
+    actions.push(`${RAN}: ${renderArguments(command)} (turned off route ${label})`);
   }
 
   return { phase: "contain", actions, notes };

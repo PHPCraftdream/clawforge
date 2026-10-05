@@ -1341,6 +1341,23 @@
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge init
   tool form: {"tool":"init","arguments":{}}
 
+=== refusal: not initialised (in a checkout) ===
+  checkout default (openclaw/default): ./clawforge
+  --app openclaw: ./clawforge
+  OC_APP=staging: ./clawforge
+  --app demo: ./clawforge
+  OC_APP=demo: ./clawforge
+  sole demo: ./clawforge
+  cwd app1: ./clawforge
+  gateway, no app yet: ./clawforge
+  global (clawforge): ./clawforge
+  global, handed to the checkout gate with --app demo: ./clawforge
+  shim init (./clawforge, installed): ./clawforge
+  local package: ./clawforge
+  local package (win32): ./clawforge
+  checkout MCP launcher (../../clawforge, demo/flag): ./clawforge
+  tool form: —
+
 === refusal: not initialised (in a checkout) (2) ===
   checkout default (openclaw/default): ./clawforge  (in bash)
   --app openclaw: ./clawforge  (in bash)

@@ -5,7 +5,7 @@
 // own loopback.
 
 import { log, info, die, dieWithExitCode } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
+import { commandLine, renderArguments } from "#src/core/io/invocation/render.ts";
 import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
@@ -63,7 +63,7 @@ async function runSsh(ctx: Context, values: Values<typeof EXPOSE_SSH_ARGUMENTS>)
   const command = sshTunnelCommand(host, localPort, ctx.settings.gatewayPort);
 
   log("SSH tunnel to the remote gateway");
-  info(command.join(" "));
+  info(renderArguments(command));
   info(`once open: http://127.0.0.1:${localPort}`);
   info(
     localPort === ctx.settings.gatewayPort

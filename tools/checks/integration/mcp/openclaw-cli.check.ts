@@ -29,6 +29,7 @@ import { join } from "node:path";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
 
 const SCOPE_ERROR = "gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: abc)";
 
@@ -73,6 +74,18 @@ check("the approval message names the command to run", approveScopeUpgradeArgv("
 check("the request id is read out of the gateway's own refusal", scopeUpgradeRequestId({ code: 1, stdout: "", stderr: SCOPE_ERROR }), "abc");
 check("a refusal without a request id yields nothing to approve", scopeUpgradeRequestId({ code: 1, stdout: "", stderr: "scope upgrade pending approval" }), undefined);
 check("the approval names that id", approveScopeUpgradeArgv("abc").some((a) => a.includes(approveAbc)), true);
+
+{
+  // The failure line names the call it made; a spaced argument stays one element (review R17).
+  const { ctx } = ctxWith(() => ({ code: 1, stdout: "", stderr: "boom" }));
+  let message = "";
+  try {
+    await openclawCli(ctx, ["cron", "add", "--message", "two words"]);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("a failing call names its spaced argument as one element", message, `openclaw cron add --message ${shellQuote("two words")} failed (exit 1): boom`);
+}
 // The command itself, not the prose around it: the message deliberately spells out "do not
 // use --latest" to the agent, so a bare substring search would match our own instruction.
 check(

@@ -5,7 +5,7 @@
 // care about the artifact's specific declared content, only that it is a valid set.
 
 import assert from "node:assert/strict";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildSet } from "#framework/commands/sets/set.ts";
@@ -171,6 +171,21 @@ try {
   const evidence = await listReceipts(built.id);
   assert.equal(evidence.length, 4, "success, startup failure, teardown failure and kept trials each leave evidence");
   assert.ok(evidence.every((receipt) => receipt.verdict === "not-verified"), "empty acceptance never certifies a set");
+
+  // Failure before the instance exists: the user sees the real problem, and nothing the
+  // try created stays behind, --keep or not.
+  const triesDir = join(root, "sets", ".tries");
+  const triesBefore = (await readdir(triesDir)).length;
+  for (const keep of [false, true]) {
+    const early = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep, jsonOnly: true }, {
+      ...dependencies,
+      createContext: async () => { throw new Error("synthetic target problem"); },
+    }));
+    assert.equal(early.error?.message, "synthetic target problem", `keep=${keep}: the real problem, not a TypeError`);
+    assert.equal((await readdir(triesDir)).length, triesBefore, `keep=${keep}: a try that never got an instance leaves no deployment directory`);
+    assert.equal(deploymentDir(), root);
+    assert.equal(setSourceDir(), undefined);
+  }
 
   process.stderr.write("all set-try lifecycle checks passed\n");
 } finally {

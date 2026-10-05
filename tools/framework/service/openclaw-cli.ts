@@ -8,7 +8,7 @@
 // request). Failure is read from the complete output, not a thrown message truncated
 // before `docker compose`'s own progress lines are past.
 
-import { commandLine } from "../core/io/invocation/render.ts";
+import { commandLine, renderArguments } from "../core/io/invocation/render.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { log } from "../core/io/log.ts";
 import { shellQuote } from "../core/io/shell.ts";
@@ -73,7 +73,7 @@ function run(ctx: Context, args: string[]): Promise<ExecResult> {
 
 function failure(args: string[], result: ExecResult): Error {
   const detail = (result.stderr || result.stdout).trim();
-  return new Error(`openclaw ${args.join(" ")} failed (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
+  return new Error(`openclaw ${renderArguments(args)} failed (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
 }
 
 /** Runs OpenClaw with captured output; model-backed approval requires scoped opt-in. */
@@ -96,7 +96,7 @@ export async function openclawCli(ctx: Context, args: string[]): Promise<ExecRes
 
   if (!mayApproveWithModel()) {
     throw new Error(
-      `openclaw ${args.join(" ")} needs a scope upgrade (request ${requestId}), but automatic ` +
+      `openclaw ${renderArguments(args)} needs a scope upgrade (request ${requestId}), but automatic ` +
         "model approval is disabled. Approve this request through a trusted admin session " +
         "or the Control UI; only accept/set try support opting in with --with-model.",
     );
@@ -124,7 +124,7 @@ export async function openclawCliJson<T>(ctx: Context, args: string[]): Promise<
   try {
     return JSON.parse(result.stdout) as T;
   } catch {
-    throw new Error(`openclaw ${args.join(" ")} ${NOT_JSON}: ${result.stdout.trim().slice(0, 200)}`);
+    throw new Error(`openclaw ${renderArguments(args)} ${NOT_JSON}: ${result.stdout.trim().slice(0, 200)}`);
   }
 }
 

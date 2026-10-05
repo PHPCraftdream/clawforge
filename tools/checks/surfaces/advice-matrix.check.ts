@@ -15,16 +15,19 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
-import { resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { FROM_CHECKOUT_ROOT, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { CHECKOUT_ROOT_NOTE } from "#framework/integration/gate.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, renderArgument, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, toolFormCell } from "#checks/golden/advice.ts";
+import { APP_CONFLICT_FROM_ROOT } from "#framework/entry/delegate.ts";
+import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, toolFormCell, type InvocationColumn } from "#checks/golden/advice.ts";
+import { entryDecisionRefusals } from "#checks/golden/matrix.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const APP_FLAG = "--app";
@@ -414,6 +417,26 @@ for (const { label, advice } of ADVICE_ROWS) {
   const direct = parsedValues(declared.arguments, filled.slice(1), verbatim);
   const reparsed = parsedValues(declared.arguments, round, verbatim);
   check(`${label}: the step's argv reparses to the same values`, canon(reparsed), canon(direct));
+  }
+}
+
+/** Entry refusals whose sentence names a place (rf6-fix29): for every layout × argv of the
+ *  entry matrix that refuses with a sentence naming the checkout root, each advice row must
+ *  render identically under every invocation column — the sentence, not the refusing
+ *  process, fixes the frame — and a row naming a clawforge program must paste the checkout
+ *  root's own program. */
+const PLACE_MARKERS: readonly string[] = [FROM_CHECKOUT_ROOT, CHECKOUT_ROOT_NOTE, APP_CONFLICT_FROM_ROOT];
+for (const { label, error } of entryDecisionRefusals()) {
+  if (!PLACE_MARKERS.some((marker) => error.message.includes(marker))) continue;
+  checkTrue(`${label}: the place-naming refusal carries a row`, error.advice.length > 0);
+  for (const [index, advice] of error.advice.entries()) {
+    const where = `${label} row ${index + 1}`;
+    const spellings = MATRIX_COLUMNS
+      .filter((column): column is InvocationColumn => "invocation" in column)
+      .map((column) => renderAdvice(advice, column.invocation));
+    checkTrue(`${where}: one spelling under every invocation — the sentence fixes the frame`, new Set(spellings).size === 1);
+    const program = (spellings[0] ?? "").split(" ")[0];
+    if (program.includes("clawforge")) check(`${where}: the row pastes the checkout root's program`, program, renderProgram(shimInvocation()));
   }
 }
 

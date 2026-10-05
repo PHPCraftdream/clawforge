@@ -6,6 +6,18 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Refusals whose sentence names a place now spell every advice row from that place: the
+  not-initialised refusal inside a checkout and the `--app` conflict refusal a checkout's
+  `apps/<name>` deployment answers both carry rows that paste from the checkout root
+  (`./clawforge`), whatever spelling of the command the run started under. Lines that echo
+  a command for the operator to paste back — `expose ssh`'s tunnel line, `expose tailscale`'s
+  serve and undo lines, `incident`'s route-off lines, the `sudo install -d` preparation
+  advice, the transport probe-failure refusal, and OpenClaw CLI failure lines — quote each
+  argument, so an argument or path carrying spaces stays one element; plain words still
+  echo bare. A `set try` that fails before its throwaway instance exists (the target's
+  context cannot be created) reports that problem as is, and `--keep` no longer leaves the
+  empty throwaway deployment directory behind for an instance that never came up.
+
 * The init-in-checkout refusal's advice rows both spell the gate from the checkout root —
   the frame its sentence directs to — instead of the first row being re-spelled relative to
   whatever directory the run refused from. A gate command's `choices` refusal over MCP

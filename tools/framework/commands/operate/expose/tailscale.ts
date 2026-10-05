@@ -11,7 +11,7 @@
 // turning one off never touches another service's mapping.
 
 import { log, info, die } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
+import { commandLine, renderArguments } from "#src/core/io/invocation/render.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
@@ -137,12 +137,12 @@ async function runTailscale(ctx: Context, values: Values<typeof EXPOSE_TAILSCALE
 
   log("tailscale serve (tailnet-only)");
   info(probe.detail);
-  info(command.join(" "));
+  info(renderArguments(command));
   info("reachable to tailnet members only — the exact https URL depends on this machine's");
   info(`tailnet name; see \`tailscale serve status\` (or ${commandLine(["expose", "status"])}) once applied.`);
   // The bare-target form above serves https 443 at "/": turn off just that route.
   const undo = tailscaleServeOffCommand({ hostPort: "", port: "443", mountPoint: "/" });
-  info(`undo with: ${undo.join(" ")} (run on the target; removes only this route — confirm the port with \`tailscale serve status\`)`);
+  info(`undo with: ${renderArguments(undo)} (run on the target; removes only this route — confirm the port with \`tailscale serve status\`)`);
 
   if (!apply) {
     if (!probe.present) info("install tailscale on the target, then `tailscale up`, before --apply");

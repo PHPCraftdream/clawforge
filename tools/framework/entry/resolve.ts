@@ -504,13 +504,17 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
   if (subfolder !== undefined) {
     return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, refusal: subfolder };
   }
+  // The sentence directs to the checkout root, so both rows spell the gate from there —
+  // whatever copy runs and wherever the run stood; shell advice keeps the output layer
+  // from re-spelling the program for the refusing frame.
+  const atRoot = renderAdvice(command([]), shimInvocation());
   const refusals: readonly UserError[] = checkout === undefined
     ? [new UserError(`this directory ${NOT_INITIALISED_NOTE}`, { advice: [command(["init"])] })]
     : [
         new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
-            command([]),
-            shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: IN_BASH_NOTE }),
+            shellLine("posix", atRoot),
+            shellLine("posix", atRoot, { note: IN_BASH_NOTE }),
           ],
         }),
       ];

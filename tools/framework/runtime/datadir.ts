@@ -6,6 +6,7 @@
 // every routine run, which is how the shell version once hung.
 
 import { log, info, die } from "../core/io/log.ts";
+import { renderArguments } from "../core/io/invocation/render.ts";
 import type { Context } from "../core/context.ts";
 import { lockHome } from "./lock/instance-lock.ts";
 
@@ -128,8 +129,8 @@ function parentOf(path: string): string {
 function prepareCommand(owner: string, paths: string[]): string {
   const [uid, gid] = owner.split(":");
   const parents = new Set(paths.map(parentOf));
-  const target = paths.length > 1 && parents.size === 1 ? [...parents][0] : paths.join(" ");
-  return `sudo install -d -o ${uid} -g ${gid} ${target}`;
+  const target = paths.length > 1 && parents.size === 1 ? [...parents][0] : paths;
+  return renderArguments(["sudo", "install", "-d", "-o", uid, "-g", gid, ...(Array.isArray(target) ? target : [target])]);
 }
 
 /** Every directory this deployment needs prepared with elevated privileges, grouped by owner:
@@ -188,7 +189,7 @@ export async function answeredProbe(ctx: Context, command: string, args: string[
     last = await ctx.transport.exec(command, args, { allowFailure: true });
     if (answers.includes(last.code)) return last;
   }
-  throw new Error(`could not run \`${command} ${args.join(" ")}\` on the target (exit ${last.code}${last.stderr.trim() ? `: ${last.stderr.trim()}` : ""}) — the transport failed, not the check`);
+  throw new Error(`could not run \`${command} ${renderArguments(args)}\` on the target (exit ${last.code}${last.stderr.trim() ? `: ${last.stderr.trim()}` : ""}) — the transport failed, not the check`);
 }
 
 /** Resolves `path` through every symlink on the target, optionally through a privileged

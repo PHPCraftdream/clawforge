@@ -8,7 +8,8 @@
 // So the assertions are about the shape of what reaches the target, not about the outcome
 // of a run: numeric ids, resolved before any escalation, passed as plain arguments.
 
-import { ensureLockHome, needsOwnerEscalation, sudoFor } from "#framework/runtime/datadir.ts";
+import { ensureLockHome, needsOwnerEscalation, sudoFor, answeredProbe } from "#framework/runtime/datadir.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
 import { lockHome } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -212,13 +213,13 @@ async function run(ctx: Context): Promise<string> {
  *  (scaffold.ts's/init.ts's own default layout), and a configurable identity for whoever
  *  runs the tooling — the fact that decides whether the lock home's own group merges with
  *  the data family's or stays separate. */
-function familyContext(owner: string): Context {
+function familyContext(owner: string, root = "/srv/openclaw"): Context {
   const [uid, gid] = owner.split(":");
   return {
     settings: {
-      dataDir: "/srv/openclaw/data",
-      backupDir: "/srv/openclaw/backups",
-      snapshotDir: "/srv/openclaw/snapshots",
+      dataDir: `${root}/data`,
+      backupDir: `${root}/backups`,
+      snapshotDir: `${root}/snapshots`,
     },
     transport: {
       async exists(): Promise<boolean> {
@@ -237,9 +238,11 @@ function familyContext(owner: string): Context {
   } as unknown as Context;
 }
 
-async function familyRefusal(owner: string): Promise<string> {
+const sudoLines = /sudo install -d[^\n]*/g;
+
+async function familyRefusal(owner: string, root = "/srv/openclaw"): Promise<string> {
   try {
-    await sudoFor(familyContext(owner), "/srv/openclaw/data");
+    await sudoFor(familyContext(owner, root), `${root}/data`);
     return "(did not refuse)";
   } catch (error) {
     return (error as Error).message;
@@ -251,9 +254,31 @@ async function familyRefusal(owner: string): Promise<string> {
   // uid 1000, same as the container — every directory this deployment needs collapses into
   // one owner, and the advice is one line for the whole family instead of one per path.
   const message = await familyRefusal("1000:1000");
-  const commands: string[] = message.match(/sudo install -d[^\n]*/g) ?? [];
+  const commands: string[] = message.match(sudoLines) ?? [];
   check("when the tooling's own user already is uid 1000, one command covers the family", commands.length, 1);
   check("naming the shared root, not each path", commands[0], "sudo install -d -o 1000 -g 1000 /srv/openclaw");
+}
+
+{
+  // A data root spelled with a space must survive the handed-over sudo line as one
+  // element — the line is pasted into a root shell by hand (review R17).
+  const message = await familyRefusal("1000:1000", "/srv/my openclaw");
+  const commands: string[] = message.match(sudoLines) ?? [];
+  check("a spaced data root is one quoted element of the sudo line", commands[0], `sudo install -d -o 1000 -g 1000 ${shellQuote("/srv/my openclaw")}`);
+}
+
+{
+  // The transport-failure refusal names the probe it could not run; a spaced path in it
+  // stays one element (review R17).
+  const ctx = { transport: { exec: async () => ({ code: 2, stdout: "", stderr: "" }) } } as unknown as Context;
+  let message = "";
+  try {
+    await answeredProbe(ctx, "test", ["-w", "/srv/my dir"], [0, 1]);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("the probe refusal quotes a spaced path", message.includes(`\`test -w ${shellQuote("/srv/my dir")}\``), true);
+  check("and never echoes the bare space join", message.includes("`test -w /srv/my dir`"), false);
 }
 
 {
@@ -262,7 +287,7 @@ async function familyRefusal(owner: string): Promise<string> {
   // the invoking identity, never the container's — is named on its own so this command
   // cannot re-chown the shared root out from under the other group.
   const message = await familyRefusal("1000:1001");
-  const commands: string[] = message.match(/sudo install -d[^\n]*/g) ?? [];
+  const commands: string[] = message.match(sudoLines) ?? [];
   check("otherwise, one command per owner", commands.length, 2);
   check("the container-owned family still names the shared root", commands.includes("sudo install -d -o 1000 -g 1000 /srv/openclaw"), true);
   check("the lock home keeps the tooling's own identity, not the container's", commands.includes("sudo install -d -o 1000 -g 1001 /srv/openclaw/data-locks"), true);

@@ -130,6 +130,17 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
     `command name "help" is claimed twice: by a gate command and by the dispatcher (reserved)`);
   check("two gate commands of one name are refused", refusal({}, [sample({ name: "twin" }), sample({ name: "twin" })]),
     `command name "twin" is claimed twice: by a gate command and by a gate command`);
+  // The gate rewrites --version/-v onto `version` before dispatch, so a command so named would
+  // be unreachable while still appearing in help, the MCP tools list and completion.
+  const aliasRefusal = (name: string, deployment: Record<string, typeof command>, gates: readonly GateCommand[]): boolean => {
+    const expected =
+      `command name "${name}" is the version command's alias — the gate rewrites it to "version" before dispatch, so the command would be unreachable`;
+    try { commandRegistry({ deployment, gate: gates, appName: "fixture" }); return false; }
+    catch (error) { return (error as Error).message === expected; }
+  };
+  check("a deployment command named --version is refused", aliasRefusal("--version", { ...openclawCommands, "--version": command }, gate), true);
+  check("a deployment command named -v is refused", aliasRefusal("-v", { ...openclawCommands, "-v": command }, gate), true);
+  check("a gate command named --version is refused", aliasRefusal("--version", openclawCommands, [sample({ name: "--version" })]), true);
 }
 
 // --- the command list ------------------------------------------------------------------------

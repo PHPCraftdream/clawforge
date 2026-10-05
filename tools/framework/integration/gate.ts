@@ -21,6 +21,7 @@ import { specData, specOf } from "../core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
+import { VERSION_ALIASES } from "./version.ts";
 
 export { closestCommand } from "../core/command/index.ts";
 
@@ -418,6 +419,11 @@ export function commandRegistry(source: {
   ];
   const origins = new Map<string, string>();
   const claim = (name: string, origin: string): void => {
+    if (VERSION_ALIASES.includes(name)) {
+      throw new Error(
+        `command name "${name}" is the version command's alias — the gate rewrites it to "version" before dispatch, so the command would be unreachable`,
+      );
+    }
     const first = origins.get(name);
     if (first !== undefined) throw new Error(`command name "${name}" is claimed twice: by ${first} and by ${origin}`);
     origins.set(name, origin);

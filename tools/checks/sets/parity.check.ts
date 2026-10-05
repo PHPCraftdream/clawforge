@@ -24,6 +24,7 @@ import type { Problem } from "#framework/service/inspection.ts";
 import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 import { invalidImageReference } from "#framework/runtime/docker/image-ref.ts";
+import { acceptanceLabel } from "#framework/set/recipe-files.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
@@ -215,14 +216,64 @@ await runVariant({
 });
 
 // A required file listed under the recipe's privateFiles stays on the tree and never ships:
-// completeness is judged by the portable inventory, so both paths report it missing.
-for (const privateFile of ["agent/config.json", "server.ts"]) {
+// completeness is judged by the portable inventory, so both paths report it. With
+// agent/config.json private the manifest declares no agent, so the acceptance checks naming
+// that agent are the finding (a dangling reference), not a completeness gap.
+for (const [privateFile, expectCodes] of [
+  ["agent/config.json", ["SET_REFERENCE_BROKEN"]],
+  ["server.ts", ["SET_RECIPE_INCOMPLETE"]],
+] as const) {
   await runVariant({
     label: `a required file kept private (privateFiles: ${privateFile})`,
     mutate: (deployment) => writeFile(recipeFile(deployment, "recipe.json"), JSON.stringify({ description: "demo", privateFiles: [privateFile] })),
-    expectCodes: ["SET_RECIPE_INCOMPLETE"],
+    expectCodes,
   });
 }
+
+// A file kept private that is NOT completeness-bearing: the manifest must drop what the walk
+// excluded (acceptance checks, recipe.json) instead of carrying it anyway — the tree stays
+// silent and the artifact loads strictly, never as an integrity error.
+for (const privateFile of ["acceptance.json", "recipe.json"] as const) {
+  const deployment = await createBuildDeployment();
+  try {
+    await writeFile(recipeFile(deployment, "recipe.json"), JSON.stringify({ description: "demo", privateFiles: [privateFile] }));
+    const manifest = await collectedManifest();
+    const label = `a file kept private (privateFiles: ${privateFile})`;
+    const dropped = privateFile === "acceptance.json" ? acceptanceLabel("demo") : `recipes/demo/${privateFile}`;
+    check(`${label}: the manifest does not carry the file`, manifest.files[dropped] === undefined, true);
+    if (privateFile === "acceptance.json") {
+      check(`${label}: the manifest drops the recipe's acceptance`, manifest.acceptance.demo === undefined, true);
+    }
+    check(`${label}: the tree is silent`, codesOf(await validateLoadedSet(
+      await loadSet({ kind: "tree" }, { name: "demo-set", declaredImage: IMAGE, tolerateUnpinnedImage: true }),
+    )), []);
+    const artifact = (await buildSet(buildCtx, "demo-set")).artifact;
+    let integrity = false;
+    let strictId = "";
+    try {
+      const strict = await loadSet({ kind: "artifact", path: artifact });
+      strictId = strict.id;
+      if (strict.staging !== undefined) {
+        await rm(strict.staging, { recursive: true, force: true });
+        await assertRemoved(strict.staging, label);
+      }
+    } catch (error) {
+      integrity = error instanceof ArtifactIntegrityError;
+    }
+    check(`${label}: the artifact loads strictly, not as an integrity error`, [integrity, strictId.length], [false, 64]);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// The same on a plain service: with recipe.json private the walk carries neither server.ts
+// nor recipe.json, so completeness reports it on both paths alike.
+await runVariant({
+  label: "a required file kept private (privateFiles: recipe.json on the plain service)",
+  mutate: (deployment) =>
+    writeFile(resolve(deployment, "recipes", "plain", "recipe.json"), JSON.stringify({ description: "plain service", privateFiles: ["recipe.json"] })),
+  expectCodes: ["SET_RECIPE_INCOMPLETE"],
+});
 
 await runVariant({
   label: "an agent recipe serving no content",

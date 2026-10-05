@@ -10,7 +10,8 @@ import { SHIM_PROGRAM } from "./render.ts";
 /** The invocation travels to child gate processes as versioned JSON (see serializeInvocation). */
 export const INVOCATION_ENV = "CLAWFORGE_INVOCATION";
 /** Legacy input: committed shims and launchers written before CLAWFORGE_INVOCATION exist in
- *  users' deployments and are read and mapped (parseLegacyInvokedAs), never written anymore. */
+ *  users' deployments and are read and mapped (parseLegacyInvokedAs); today only the committed-shim
+ *  and launcher generators still write it, so older frameworks keep getting right hints. */
 export const INVOKED_AS_ENV = "CLAWFORGE_INVOKED_AS";
 
 export const INVOCATION_VERSION = 1;

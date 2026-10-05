@@ -239,7 +239,14 @@ export async function collectManifest(
     const agentFiles = await agentBundleChecksums(dir);
     for (const [rel, sum] of Object.entries(served)) files[`recipes/${recipe}/${rel}`] = sum;
     for (const [rel, sum] of Object.entries(agentFiles)) files[`recipes/${recipe}/agent/${rel}`] = sum;
-    const agent = Object.keys(agentFiles).length === 0 ? undefined : await agentDeclaration(recipe, report);
+    // Only files the portable walk carried reach the manifest: a privateFiles entry is
+    // excluded there, so its acceptance checks are not collected either.
+    const acceptancePath = acceptanceLabel(recipe);
+    if (files[acceptancePath] !== undefined) {
+      const checks = await acceptanceChecks(recipe, report);
+      if (checks !== undefined) acceptance[recipe] = checks;
+    }
+    const agent = agentFiles["config.json"] === undefined ? undefined : await agentDeclaration(recipe, report);
     recipes[recipe] = {
       checksum: checksumOfFileMap(served),
       files: served,
@@ -247,8 +254,6 @@ export async function collectManifest(
         ? {}
         : { agentChecksum: checksumOfFileMap(agentFiles), agentFiles, ...(agent === undefined ? {} : { agent }) }),
     };
-    const checks = await acceptanceChecks(recipe, report);
-    if (checks !== undefined) acceptance[recipe] = checks;
   }
 
   const manifest = buildSetManifest({
@@ -443,13 +448,19 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
           throw new Error(`recipe ${name} agent declaration disagrees with its file`);
         }
       }
-    } else if (Object.keys(recipe.agentFiles ?? {}).length > 0) {
+    } else if (Object.keys(recipe.agentFiles ?? {}).length > 0 && manifest.files[agentConfigLabel(name)] !== undefined) {
+      // config.json carried yet no declaration is incoherent; config.json itself held back by
+      // policy is the privateFiles case — the validator judges it, not integrity.
       throw new Error(`recipe ${name} has agent files without an agent declaration`);
     }
+    // A file policy keeps private (recipe.json privateFiles) is absent from the manifest and
+    // the archive alike — nothing to compare, never an integrity error (parity with the tree).
     const acceptancePath = acceptanceLabel(name);
-    const fromFile = manifest.files[acceptancePath] === undefined ? undefined : await readAcceptanceFile(resolve(staging, acceptancePath), name);
-    if (fromFile?.ok !== false && canonicalJson(fromFile?.value ?? []) !== canonicalJson(manifest.acceptance[name] ?? [])) {
-      throw new Error(`recipe ${name} acceptance disagrees with its file`);
+    if (manifest.files[acceptancePath] !== undefined) {
+      const fromFile = await readAcceptanceFile(resolve(staging, acceptancePath), name);
+      if (fromFile?.ok !== false && canonicalJson(fromFile?.value ?? []) !== canonicalJson(manifest.acceptance[name] ?? [])) {
+        throw new Error(`recipe ${name} acceptance disagrees with its file`);
+      }
     }
   }
   return { manifest, id: setManifestId(manifest) };

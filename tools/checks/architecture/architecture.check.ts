@@ -376,7 +376,7 @@ report(ratchet("imageStringOps.total", baseline.imageStringOps.total, imageTotal
 // 6. Prose pins in checks — stage 5 and the cross-cutting I9: checks assert structure
 // (codes, argv, JSON fields); prose belongs in goldens and renderer checks. The generated
 // golden surfaces and this ratchet's own directory are excluded.
-const PROSE_PIN = /includes\((`|")[^`"]* [^`"]*(`|")\)/;
+const PROSE_PIN = /includes\((?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\)/;
 const proseAfter = new Map<string, number>();
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");
@@ -391,7 +391,7 @@ report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
 // nor split one pin across a string join (`includes("a" + " b")`).
 // Equality ratchet: growth means the prose moved into another operator instead of structure.
 const PROSE_MATCHER =
-  /\.(startsWith|endsWith|indexOf)\((`|")[^`"]* [^`"]*(`|")\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(`|")[^`"]* [^`"]*(`|")|includes\([^\n]*" \+ "/;
+  /\.(startsWith|endsWith|indexOf)\((?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')|includes\([^\n]*(`|") \+ (`|")/;
 let matcherCount = 0;
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");
@@ -407,7 +407,7 @@ report(ratchet("proseMatchers", baseline.proseMatchers.total, matcherCount, [], 
 // (equality operator required), so rewriting a === pin into check() lowers proseMatchers
 // while the prose stays. Equality ratchet: growth fails; the sites are not being converted
 // now, this records the honest count.
-const PROSE_EQUALITY = /\bcheck\([^\n]*,\s*(`|")[^`"]* [^`"]*\1\s*\)/;
+const PROSE_EQUALITY = /\bcheck\([^\n]*,\s*(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\s*\)/;
 let proseEqualityCount = 0;
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");

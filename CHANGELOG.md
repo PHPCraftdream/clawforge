@@ -196,6 +196,16 @@ All notable changes to `@clawforge/framework` will be documented here.
   --apply — no other action takes the instance lock` and `--json cannot be combined with
   --<flag> — only the default report is structured` (the old `--json only supports the default
   report — not with …` wording is gone).
+* A set recipe that keeps `acceptance.json` private (`recipe.json` `privateFiles`) now builds an
+  artifact that loads: the acceptance checks no longer travel for a file the portable-content
+  policy holds back, so loading the artifact is not an integrity error. The same rule now applies
+  to a recipe that keeps `agent/config.json` private: the set declares no agent, and `set validate`
+  reports the acceptance checks naming that agent as a dangling reference (`SET_REFERENCE_BROKEN`)
+  on a working tree and an artifact alike. A deployment (or gate) command named `--version` or `-v`
+  is refused when the framework loads: the gate rewrites those spellings to `version` before
+  dispatch, so the command would be unreachable while still listed by help, completion and MCP.
+  `check` runs no longer leave `apps/cli-help-check-*` fixtures behind: the check is declared
+  exclusive and its cleanup retries and fails loudly instead of leaking into the checkout.
 
 ### Fixed
 

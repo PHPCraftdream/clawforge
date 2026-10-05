@@ -1,3 +1,4 @@
+// check:exclusive — writes a scratch deployment into apps/ that the gate spawns it drives resolve under this checkout's apps/, which siblings' gate spawns and any apps/ enumeration must not see; exclusivity also keeps the runner's checkout guard from racing the fixture.
 // Checks that --help actually shows help for the framework-level pseudo-commands —
 // new-app, control-mcp, help itself — instead of running the real thing. Also checks that
 // `./clawforge help` works in a checkout with no deployments at all, before any app.ts exists to
@@ -10,7 +11,7 @@
 // this spawns the real gate (tools/clawforge.ts) with a bounded wait rather than asserting on a
 // direct function call.
 
-import { rm, readFile } from "node:fs/promises";
+import { rm, readFile, access } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
@@ -33,6 +34,7 @@ async function runGate(args: string[], timeoutMs = CHILD_NODE_DEADLINE_MS): Prom
 }
 
 const deploymentName = `cli-help-check-${randomBytes(4).toString("hex")}`;
+let cleanupFailed = false;
 
 try {
   await createApp(deploymentName);
@@ -157,7 +159,27 @@ try {
     true,
   );
 } finally {
-  await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
+  // Windows: a just-exited gate child or an antivirus scan can still hold handles on the
+  // freshly written .env/.codex files, so a bare rm intermittently fails with EPERM/EBUSY/
+  // ENOTEMPTY and leaks the fixture into the real apps/ — tripping the runner's
+  // "the run changed the checkout" guard. Retry through those transient errors, then verify;
+  // if it still exists, fail loudly instead of leaking silently.
+  const fixture = resolve(appsDir, deploymentName);
+  await rm(fixture, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  let gone = false;
+  await access(fixture).catch(() => {
+    gone = true;
+  });
+  cleanupFailed = !gone;
 }
 
 finish("cli-help");
+
+// finish() sets process.exitCode from the check results, so the cleanup verdict has to land
+// after it — otherwise a leftover fixture would exit 0 and leak silently.
+if (cleanupFailed) {
+  process.stderr.write(
+    `cli-help.check: FAILED to remove fixture ${resolve(appsDir, deploymentName)} — it is leaking into the real checkout\n`,
+  );
+  process.exitCode = 1;
+}

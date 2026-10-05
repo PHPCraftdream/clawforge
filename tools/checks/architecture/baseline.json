@@ -246,13 +246,15 @@
     }
   },
   "prosePins": {
-    "comment": "stage 5 + cross-cutting (I9): checks assert structure, prose lives in goldens; the two added pins in cli-help and gate-dispatch assert the help renderer's own printed output (control-mcp's and remove-app's help) — the allowed renderer-output case. rf6-fix22-B: the added pins (and the matcher/equality growth) assert printed output of the product against independent literals instead of the product's own exported constants — the nearest-interval suggestions of backup/watch install and parseInterval, rollback's refusal and help, the set validate coherent line and the git-init advice — the allowed renderer-output case.",
+    "comment": "stage 5 + cross-cutting (I9): checks assert structure, prose lives in goldens; the two added pins in cli-help and gate-dispatch assert the help renderer's own printed output (control-mcp's and remove-app's help) — the allowed renderer-output case. rf6-fix22-B: the added pins (and the matcher/equality growth) assert printed output of the product against independent literals instead of the product's own exported constants — the nearest-interval suggestions of backup/watch install and parseInterval, rollback's refusal and help, the set validate coherent line and the git-init advice — the allowed renderer-output case. rf6-fix23: the measurement widened to single-quoted delimiters (.includes('… …')) — numbers rose because newly measured, not new growth; gate-commands, execute, invocation-hints, init, mcp-project, recipe-new, private-config, private-file.",
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 7,
+      "tools/checks/foundation/cli/gate-commands.check.ts": 1,
       "tools/checks/foundation/cli/help-groups.check.ts": 6,
       "tools/checks/foundation/core/archive.check.ts": 1,
       "tools/checks/foundation/core/env.check.ts": 1,
+      "tools/checks/foundation/core/command/pipeline/execute.check.ts": 3,
       "tools/checks/foundation/core/command/spec/view.check.ts": 1,
       "tools/checks/foundation/cli/gate-dispatch.check.ts": 1,
       "tools/checks/foundation/hygiene/readme-quickstart.check.ts": 1,
@@ -265,14 +267,16 @@
       "tools/checks/integration/agent/recipe-readiness.check.ts": 7,
       "tools/checks/integration/agent/recipe.check.ts": 10,
       "tools/checks/integration/apps/init-messages.check.ts": 6,
-      "tools/checks/integration/apps/invocation-hints.check.ts": 12,
+      "tools/checks/integration/apps/invocation-hints.check.ts": 13,
       "tools/checks/integration/apps/new-app-acl-warning.check.ts": 1,
+      "tools/checks/integration/init.check.ts": 3,
       "tools/checks/integration/list.check.ts": 2,
+      "tools/checks/integration/mcp/mcp-project.check.ts": 6,
       "tools/checks/integration/mcp/openclaw-cli.check.ts": 1,
       "tools/checks/integration/mcp/transport-listing.check.ts": 6,
       "tools/checks/integration/recipe/recipe-arguments.check.ts": 3,
       "tools/checks/integration/recipe/recipe-import-portable.check.ts": 7,
-      "tools/checks/integration/recipe/recipe-new.check.ts": 4,
+      "tools/checks/integration/recipe/recipe-new.check.ts": 5,
       "tools/checks/kit/harness.check.ts": 16,
       "tools/checks/kit/spawn.ts": 1,
       "tools/checks/release/release/installed-consumer.check.ts": 1,
@@ -346,7 +350,8 @@
       "tools/checks/security/acceptance/accept.check.ts": 7,
       "tools/checks/security/acceptance/plan.check.ts": 1,
       "tools/checks/security/audit/security-audit.check.ts": 6,
-      "tools/checks/security/credentials/private-file.check.ts": 2,
+      "tools/checks/security/credentials/private-config.check.ts": 2,
+      "tools/checks/security/credentials/private-file.check.ts": 5,
       "tools/checks/security/credentials/recipe-private-snapshot/pull-privacy.check.ts": 1,
       "tools/checks/security/credentials/recipe-private-snapshot/snapshot.check.ts": 1,
       "tools/checks/security/credentials/secrets-command/instance-lock.check.ts": 2,
@@ -375,15 +380,15 @@
       "tools/checks/runtime/convergence/apply/prepare-refusals.check.ts": 1,
       "tools/checks/sets/lifecycle/set-validate.check.ts": 1
     },
-    "total": 407
+    "total": 427
   },
   "proseMatchers": {
-    "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator",
-    "total": 107
+    "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth)",
+    "total": 111
   },
   "proseEquality": {
-    "comment": "stage 5 + cross-cutting (I9): prose as the third argument of check(name, actual, \"literal with a space\") — a form prosePins (includes only) and proseMatchers (equality operator required) both miss, so rewriting a === pin into check() lowers proseMatchers while the prose stays; equality ratchet: growth fails, the existing sites are not being converted now",
-    "total": 213
+    "comment": "stage 5 + cross-cutting (I9): prose as the third argument of check(name, actual, \"literal with a space\") — a form prosePins (includes only) and proseMatchers (equality operator required) both miss, so rewriting a === pin into check() lowers proseMatchers while the prose stays; equality ratchet: growth fails, the existing sites are not being converted now; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth)",
+    "total": 219
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",

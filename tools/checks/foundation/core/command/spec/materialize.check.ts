@@ -25,6 +25,7 @@ const ARGS = [
 const SINGLE = commandBody({
   effect: "change",
   arguments: ARGS,
+  rules: [{ rule: "conflicts", name: "dry-run", with: ["wipe"] }],
   prepare: ({ values }) => {
     calls.push("prepare");
     if (values.n === 13) throw new ArgumentError("unlucky", "n");
@@ -123,6 +124,10 @@ check("preparesEnvironment without target", loadError(() => commandBody({ effect
 check("a defaultAction outside the actions", loadError(() => multiActionBody({ effect: "read", action: { description: "x" }, defaultAction: "nope", actions: { a: defineAction({ summary: "a", run }) } })), "default-action-unknown");
 check("a duplicate inside an action", loadError(() => defineAction({ summary: "a", arguments: [flag("x"), flag("x")] as unknown as readonly ArgumentSpec[], run })), "duplicate-name");
 check("a multi-action body with no actions", loadError(() => multiActionBody({ effect: "read", action: { description: "x" }, actions: {} })), "no-actions");
+check("a read flag and a destroy flag with no conflicts rule", loadError(bad([flag("a", { effect: "read" }), flag("b", { effect: "destroy" })])), "effect-flags-unrefused");
+check("a read flag and a change flag, in either rule direction", loadError(() => commandBody({ effect: "read", arguments: [flag("a", { effect: "read" }), flag("b", { effect: "change" })] as unknown as readonly ArgumentSpec[], rules: [{ rule: "conflicts", name: "b", with: ["a"] }], run })), "");
+check("an action with an unrefused read and destroy flag", loadError(() => defineAction({ summary: "a", arguments: [flag("a", { effect: "read" }), flag("b", { effect: "destroy" })] as unknown as readonly ArgumentSpec[], run })), "effect-flags-unrefused");
+check("a read flag beside a flag without an effect is fine", loadError(bad([flag("a", { effect: "read" }), flag("b")])), "");
 check("a good declaration does not throw", loadError(bad([flag("a"), option("b"), { name: "rest", kind: "variadic", description: "d" }])), "");
 
 // --- runOnContext ----------------------------------------------------------------------------------------------------
@@ -155,7 +160,8 @@ check("whose transport is the context's", await sawScope?.transport(), ctx.trans
 // --- the spec paths of callFactsFor and effectProfile -----------------------------------------------------------------
 
 check("a body's base effect", callFactsFor(commands.single, []), { effect: "change" });
-check("a read flag wins", callFactsFor(commands.single, ["--dry-run", "--wipe"]).effect, "read");
+check("a read flag lowers", callFactsFor(commands.single, ["--dry-run"]).effect, "read");
+check("a read flag beside a destroy flag is refused, never lowered", await Promise.resolve().then(() => callFactsFor(commands.single, ["--dry-run", "--wipe"])).catch((error: ArgumentError) => error.argument), "dry-run");
 check("a destroy flag raises", callFactsFor(commands.single, ["--wipe"]).effect, "destroy");
 check("a refused argv throws instead of guessing", await Promise.resolve().then(() => callFactsFor(commands.single, ["--n", "x"])).catch((error: ArgumentError) => error.argument), "n");
 check("an action's own effect", [callFactsFor(commands.multi, []).effect, callFactsFor(commands.multi, ["purge", "x"]).effect], ["read", "destroy"]);

@@ -55,6 +55,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   inside a ClawForge checkout, or nesting inside an existing deployment — the advice names the
   invocation it runs as (`./clawforge`, on Windows npm's bin wrapper) instead of a global
   `clawforge` command that does not exist.
+* `secrets --print-template` is refused together with `--template`, `--init-store`, `--apply` and
+  `--dump`: over MCP the read flag used to lower the call to read, skipping the confirmation of
+  the destructive action that still ran. A command declaration that lets a read-effect flag meet a
+  flag of another effect without a refusing rule is rejected when the framework loads. A
+  deployment command (or a gate command) named like another command or like `help` or
+  `control-mcp` is refused with an error naming both claimants, instead of two entries sharing
+  one name. `recipe <action>` without a name is refused as a missing argument before the target
+  is contacted. An MCP positional value that begins with a dash (`accept`'s `recipe`,
+  `restore`'s `archive`, `operations`' `id`) is refused instead of being read as a flag.
+  `help -- status` shows the help of `status`. Completion offers a command's declared default
+  action's flags (`recipe --json`), compares words case-sensitively in PowerShell like the CLI
+  does (`Backup`, `--TAIL`), and offers flags after an empty word in bash; `completion` states
+  that a deployment's own commands are not completed.
 * Shell completion offers `--version` and `-v` as the first word (they were accepted but never
   offered), and after the first argument of a pass-through command (`host`, `cli`, `exec`) it
   offers nothing more: what follows is the child's own text. After a bare `--` it offers nothing

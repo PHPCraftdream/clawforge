@@ -5,7 +5,7 @@
 // file in framework/ — that is the property this module exists to guarantee.
 
 import { reportError, UserError, CommandFailedError, info } from "../core/io/log.ts";
-import { UnknownArgumentError } from "../core/command/index.ts";
+import { UnknownArgumentError, tokenize } from "../core/command/index.ts";
 import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { commandRegistry, dispatcherHelpLines, refuseUnknownTokens, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
@@ -47,7 +47,11 @@ export async function runApp(
     // Extra or unknown tokens are refused against the declared positional; a help request
     // (`help --help`, `help status -h`) is answered first, as for every command.
     if (!requestsShortHelp(args) && refuseDispatcherTokens("help", registry, args)) return 1;
-    return renderHelp(args[0], app, registry, gateHelp) ? 0 : 1;
+    // The positional is read where the tokenizer binds it: `help -- status` is `help status`.
+    const target = requestsShortHelp(args)
+      ? args[0]
+      : tokenize(registry.find("help")?.arguments ?? [], args).entries.find((entry) => entry.argument.name === "command")?.value;
+    return renderHelp(typeof target === "string" ? target : undefined, app, registry, gateHelp) ? 0 : 1;
   }
 
   // Serves the application's commands as MCP tools, so the instance can be driven from a

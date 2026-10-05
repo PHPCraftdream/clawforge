@@ -120,6 +120,23 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
     scenarios.push({ name: `${prefix} prefix`, words: [found.command, prefix], cword: 1 });
   }
 
+  // The parser, the model and bash compare case-sensitively: `Backup`, `STATUS` and
+  // `--TAIL` are not declared words, so they must not be read as such by any implementation
+  // (PowerShell's own operators fold case).
+  for (const command of commands) scenarios.push({ name: `upper-case command ${command.toUpperCase()}`, words: [command.toUpperCase(), ""], cword: 1 });
+  for (const key of data.after.keys()) {
+    const [command, word = "*"] = key.split(" ");
+    if (word === "*") continue;
+    scenarios.push({ name: `${command} upper-case action ${word.toUpperCase()}`, words: [command, word.toUpperCase(), ""], cword: 2 });
+  }
+  for (const [command, options] of data.valueOptions) {
+    const upper = options[0]!.toUpperCase();
+    scenarios.push({ name: `${command} upper-case option ${upper}`, words: [command, upper, ""], cword: 2 });
+  }
+  // An empty word MID-line is a typed (empty) word, not an option name: nothing it is compared
+  // with may match it (bash's `" $opts " == *" $token "*` matched it when no option existed).
+  for (const command of commands) scenarios.push({ name: `${command}'s empty mid word`, words: [command, "", ""], cword: 2 });
+
   scenarios.push(...sweepScenarios(data));
   return scenarios;
 }

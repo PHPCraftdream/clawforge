@@ -188,11 +188,11 @@ try {
     check("declaration and generated schema agree", required.includes("confirm"), false);
     check("bare recipe arguments are read-only for MCP gating", callFactsFor(openclawCommands.recipe!, []).effect, "read");
     check("recipe list remains read-only for MCP gating", callFactsFor(openclawCommands.recipe!, ["list"]).effect, "read");
-    check("recipe status remains read-only for MCP gating", callFactsFor(openclawCommands.recipe!, ["status"]).effect, "read");
-  check("recipe logs remains read-only for MCP gating", callFactsFor(openclawCommands.recipe!, ["logs"]).effect, "read");
-  check("recipe verify is mutating for MCP gating like onboard", callFactsFor(openclawCommands.recipe!, ["verify"]).effect, "destroy");
-  check("recipe onboard is mutating for MCP gating", callFactsFor(openclawCommands.recipe!, ["onboard"]).effect, "destroy");
-  check("recipe diagnose is mutating for MCP gating, same reason as verify", callFactsFor(openclawCommands.recipe!, ["diagnose"]).effect, "destroy");
+    check("recipe status remains read-only for MCP gating", callFactsFor(openclawCommands.recipe!, ["status", "probe"]).effect, "read");
+  check("recipe logs remains read-only for MCP gating", callFactsFor(openclawCommands.recipe!, ["logs", "probe"]).effect, "read");
+  check("recipe verify is mutating for MCP gating like onboard", callFactsFor(openclawCommands.recipe!, ["verify", "probe"]).effect, "destroy");
+  check("recipe onboard is mutating for MCP gating", callFactsFor(openclawCommands.recipe!, ["onboard", "probe"]).effect, "destroy");
+  check("recipe diagnose is mutating for MCP gating, same reason as verify", callFactsFor(openclawCommands.recipe!, ["diagnose", "probe"]).effect, "destroy");
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
   const recipePointer = `${FULL_TEXT_POINTER}=recipe`;
@@ -203,8 +203,8 @@ try {
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
-    check("recipe install remains destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["install"]).effect, "destroy");
-    check("recipe remove remains destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["remove"]).effect, "destroy");
+    check("recipe install remains destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["install", "probe"]).effect, "destroy");
+    check("recipe remove remains destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["remove", "probe"]).effect, "destroy");
 
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);

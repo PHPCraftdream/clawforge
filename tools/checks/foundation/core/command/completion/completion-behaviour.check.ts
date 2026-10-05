@@ -233,6 +233,12 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   check("an installed gate without --app never offers it",
     [[...at(installed, ["--app", ""], 1)], at(installed, ["sta"], 0).includes("--app")], [[], false]);
   check("an unknown command completes to nothing", [...at(data, ["zzz-nope-command", ""], 1)], []);
+  // A command's default action is the one its declaration names (recipe: list, backup: create),
+  // for flags and for choice-valued options: the bare call's flags complete without an action word.
+  check("recipe's bare call completes the default action's --json", [at(data, ["recipe", "--j"], 1).includes("--json"), at(data, ["recipe", "zz", ""], 2).includes("--json")], [true, true]);
+  check("recipe's explicit list still offers --json and install does not", [at(data, ["recipe", "list", ""], 2).includes("--json"), at(data, ["recipe", "install", ""], 2).includes("--json")], [true, false]);
+  check("backup's bare call still completes create's flags", at(data, ["backup", "--h"], 1).includes("--hot"), true);
+  check("upper-case words are not declared words", [at(data, ["Backup", ""], 1).length, at(data, ["backup", "LIST", ""], 2).includes("--keep"), at(data, ["logs", "--TAIL", ""], 2).includes("--help")], [0, false, true]);
   check("watch install --int completes --interval", at(data, ["watch", "install", "--int"], 2).includes("--interval"), true);
 
   // --app is positional and must lead the command: past a command word the command's own flags
@@ -310,11 +316,11 @@ function bashDriver(scriptPath: string): string {
  *  powershell.exe 5.1). The path is written with forward slashes: a backslash is an escape in a
  *  PowerShell double-quoted string, and the path reaches one. */
 function pwshDriver(scriptPath: string): string {
-  // PowerShell hashtable keys are CASE-INSENSITIVE ($clawforgeValues.ContainsKey) — every
-  // scenario word is lowercase already, so the key the completer builds is the key the table
-  // holds, and no casing rule of the model's own is being tested here.
+  // PowerShell folds case by default (`-eq`, `-contains`, a hashtable): the upper-case scenarios
+  // hold the completer to the parser's ordinal comparison. An empty word before the cursor is
+  // typed as '' — the only way to write one.
   const runs = scenarios
-    .map((scenario, index) => `Reply ${index} 'clawforge ${scenario.words.join(" ")}'`)
+    .map((scenario, index) => `Reply ${index} 'clawforge ${scenario.words.map((word, at) => (word === "" && at < scenario.cword ? "''''" : word)).join(" ")}'`)
     .join("\n");
   return [
     `. ${quote(scriptPath.replaceAll("\\", "/"))}`,

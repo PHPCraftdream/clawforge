@@ -4,7 +4,6 @@
 // table is built from the one command registry help, the MCP tool list and the docs table
 // read, so a command completes because it is declared, not because a case arm named it.
 
-import { NO_ACTION } from "../../core/command/index.ts";
 import { tokenizeLenient } from "../../core/command/parse.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import type { CommandRegistry } from "../gate.ts";
@@ -97,7 +96,7 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
         continue;
       }
       // The default action (no action word typed) reads its own options at scope "".
-      if (argument.actions === undefined || (actionArgument.required !== true && argument.actions.includes(NO_ACTION))) {
+      if (argument.actions === undefined || (entry.defaultAction !== undefined && argument.actions.includes(entry.defaultAction))) {
         values.push({ command: name, scope: "", option, values: argument.choices });
       }
       for (const action of argument.actions ?? actionArgument.choices) {
@@ -122,11 +121,12 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
       perAction.set(value, [...new Set([...globalFlags, ...scoped])].sort());
     }
     // An OPTIONAL action positional means the command has an implicit default action —
-    // backup's bare create (NO_ACTION). Its flags are the fallback for the no-action and
-    // unknown-action cases, where the shell cannot know which action is meant.
-    const fallback = actionArgument.required === true
+    // backup's bare create, recipe's bare list: the declared default action. Its flags are the
+    // fallback for the no-action and unknown-action cases, where the shell cannot know which
+    // action is meant.
+    const fallback = entry.defaultAction === undefined
       ? globalFlags
-      : [...new Set([...globalFlags, ...(perAction.get(NO_ACTION) ?? globalFlags)])].sort();
+      : [...new Set([...globalFlags, ...(perAction.get(entry.defaultAction) ?? [])])].sort();
     first.set(name, [...new Set([...actionWords, ...fallback])].sort());
     for (const [value, flags] of perAction) after.set(`${name} ${value}`, flags);
     after.set(`${name} *`, fallback);

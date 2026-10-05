@@ -83,7 +83,7 @@ export const BASH_COMPLETER: string =
   "    if [[ \"$token\" == \"--\" ]]; then ended=1; break; fi\n" +
   "    key=\"$token\"; inline=0\n" +
   "    if [[ \"$token\" == --*=* ]]; then key=\"${token%%=*}\"; inline=1; fi\n" +
-  "    if (( ! inline )) && [[ \" $opts \" == *\" $token \"* ]]; then swallow=1; continue; fi\n" +
+  "    if (( ! inline )) && [[ -n \"$token\" && \" $opts \" == *\" $token \"* ]]; then swallow=1; continue; fi\n" +
   "    if [[ \"$token\" == -* ]]; then\n" +
   "      if (( isverb )) && [[ \" $flags \" != *\" $key \"* ]]; then tail=1; break; fi\n" +
   "      continue\n" +

@@ -16,6 +16,9 @@ import type { CompletionData } from "./table.ts";
  *  Plain double-quoted literals concatenated with `+`, never a template literal: one would eat
  *  `$wordToComplete`, `$commandAst`, `"$wordToComplete*"` and `$($between[0])` (design
  *  section 9, pitfall 9).
+ *  Every comparison is ordinal like the parser's and bash's: `-ceq`, `-ccontains`, `-clike`,
+ *  `Sort-Object -CaseSensitive`, and the tables are built with an ordinal comparer (a plain
+ *  `@{}` and `-contains` fold case, so `Backup` or `--TAIL` would be read as declared).
  *  Windows PowerShell 5.1: no `??`, no `?.`, no ternary, and every `if` that can yield one
  *  element wrapped in `@(...)` — unwrapped, a single result stops being an array and the
  *  `.Count` below it becomes a String's length (verified on powershell.exe 5.1). */
@@ -35,15 +38,15 @@ export const PWSH_COMPLETER: string =
   "  # command (and a value that looks like a command name does not shadow the real one).\n" +
   "  # The '--app=<name>' form carries its own value in one token: it is skipped alone.\n" +
   "  $i = 0\n" +
-  "  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -eq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -eq '--app') { 2 } else { 1 }) }\n" +
+  "  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }\n" +
   "  $candidates = @()\n" +
   "  if ($i -ge $scan.Count) {\n" +
-  "    if ($clawforgeApp -and $prev -eq '--app') {\n" +
+  "    if ($clawforgeApp -and $prev -ceq '--app') {\n" +
   "      # --app's own value, lazily: only while no command word has been typed — --app must\n" +
   "      # come before the command, so past one the command's flags return (R33-10). Whichever\n" +
   "      # of the system-wide command or the checkout shim was typed makes the call.\n" +
   "      $names = @(try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() })\n" +
-  "      $names | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object {\n" +
+  "      $names | Where-Object { $_ -clike \"$wordToComplete*\" } | ForEach-Object {\n" +
   "        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)\n" +
   "      }\n" +
   "      return\n" +
@@ -64,13 +67,13 @@ export const PWSH_COMPLETER: string =
   "    $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)\n" +
   "    foreach ($w2 in $between) {\n" +
   "      if ($swallow) { $swallow = $false; continue }\n" +
-  "      if ($w2 -eq '--') { $ended = $true; break }\n" +
+  "      if ($w2 -ceq '--') { $ended = $true; break }\n" +
   "      $key = $w2\n" +
   "      $inline = $false\n" +
   "      if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }\n" +
-  "      if ((-not $inline) -and ($clawforgeValueOptions[$cmd] -contains $w2)) { $swallow = $true; continue }\n" +
+  "      if ((-not $inline) -and ($w2 -cne '') -and ($clawforgeValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }\n" +
   "      if ($w2.StartsWith('-')) {\n" +
-  "        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -contains $key)) { $tail = $true; break }\n" +
+  "        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }\n" +
   "        continue\n" +
   "      }\n" +
   "      $free = $free + 1\n" +
@@ -96,7 +99,7 @@ export const PWSH_COMPLETER: string =
   "      $candidates = @($clawforgeAfter[\"$cmd *\"])\n" +
   "    }\n" +
   "  }\n" +
-  "  $candidates | Where-Object { $_ -like \"$wordToComplete*\" } | Sort-Object -Unique | ForEach-Object {\n" +
+  "  $candidates | Where-Object { $_ -clike \"$wordToComplete*\" } | Sort-Object -Unique -CaseSensitive | ForEach-Object {\n" +
   "    [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)\n" +
   "  }\n";
 
@@ -107,7 +110,7 @@ export function renderPwsh(data: CompletionData): string {
   const entries = (source: ReadonlyMap<string, readonly string[]>): string[] =>
     [...source].map(([key, values]) => `  "${key}" = @(${quoted(values)})`);
   const block = (name: string, lines: readonly string[]): string =>
-    `$${name} = @{\n${lines.length === 0 ? "" : `${lines.join("\n")}\n`}}`;
+    `$${name} = [hashtable]::new(@{\n${lines.length === 0 ? "" : `${lines.join("\n")}\n`}}, [System.StringComparer]::Ordinal)`;
   const values = data.values.map((entry) => `  "${entry.command}${entry.scope}${entry.option}" = @(${quoted(entry.values)})`);
   return (
     "# clawforge PowerShell completion — generated from the command declarations.\n" +

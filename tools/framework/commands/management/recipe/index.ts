@@ -17,7 +17,6 @@ import {
   runOnContext,
 } from "#src/core/command/index.ts";
 import type { ArgumentSpec } from "#src/core/command/index.ts";
-import { ArgumentError } from "#src/core/command/index.ts";
 import type { Context } from "#src/core/context.ts";
 import { log, info, warn } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
@@ -129,15 +128,9 @@ const NAME_ARGUMENT = {
   name: "name",
   description: "Recipe name; with import, the source directory to copy",
   kind: "positional",
+  required: true,
 } as const satisfies ArgumentSpec;
 
-/** The name every action but `list` runs on. Deliberately not `required`: the word's own
- *  refusal is the usage line, and the schema shows <name> optional — bare `recipe status`
- *  is an action word without its operand, not a schema error. */
-function recipeName(values: { readonly name?: string }, action: string): string {
-  if (values.name === undefined) throw new ArgumentError(`usage: ${commandLine(["recipe", action, "<name>"])}`, "name");
-  return values.name;
-}
 
 const TAIL_ARGUMENT = {
   name: "tail",
@@ -185,7 +178,7 @@ export const RECIPE = multiActionBody({
       }],
       // Repository-side only: no target, no lock — either works before bootstrap has
       // prepared the lock home.
-      run: (_ctx, values) => runImportAction(recipeName(values, "import"), values["new-name"]),
+      run: (_ctx, values) => runImportAction(values.name, values["new-name"]),
     }),
     new: defineAction({
       summary: "Scaffold a recipes/<name>/ skeleton",
@@ -196,22 +189,22 @@ export const RECIPE = multiActionBody({
         kind: "flag",
       }],
       // Repository-side only, like import.
-      run: (_ctx, values) => runNewAction(recipeName(values, "new"), values["with-hooks"] === true),
+      run: (_ctx, values) => runNewAction(values.name, values["with-hooks"] === true),
     }),
     verify: defineAction({
       summary: "Run the recipe's verify.ts hook",
       arguments: [NAME_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
-      run: (ctx, values) => runLocked(ctx, "verify", values, () => runVerifyAction(ctx, recipeName(values, "verify"))),
+      run: (ctx, values) => runLocked(ctx, "verify", values, () => runVerifyAction(ctx, values.name)),
     }),
     onboard: defineAction({
       summary: "Run the recipe's onboard.ts hook",
       arguments: [NAME_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
-      run: (ctx, values) => runLocked(ctx, "onboard", values, () => runOnboardAction(ctx, recipeName(values, "onboard"))),
+      run: (ctx, values) => runLocked(ctx, "onboard", values, () => runOnboardAction(ctx, values.name)),
     }),
     diagnose: defineAction({
       summary: "Bundle stack state, logs and the verify hook into one report",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
-      run: (ctx, values) => runLocked(ctx, "diagnose", values, () => runDiagnoseAction(ctx, recipeName(values, "diagnose"), values.tail)),
+      run: (ctx, values) => runLocked(ctx, "diagnose", values, () => runDiagnoseAction(ctx, values.name, values.tail)),
     }),
     install: defineAction({
       summary: "Build a recipe from source and start it",
@@ -222,7 +215,7 @@ export const RECIPE = multiActionBody({
         kind: "flag",
       }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "install", values, () => {
-        const name = recipeName(values, "install");
+        const name = values.name;
         return values["dry-run"] === true
           ? runInstallDryRun(ctx, name, values["force-disabled"] === true)
           : runInstallAction(ctx, name, values["force-disabled"] === true);
@@ -237,7 +230,7 @@ export const RECIPE = multiActionBody({
         kind: "flag",
       }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "remove", values, () => {
-        const name = recipeName(values, "remove");
+        const name = values.name;
         return values["dry-run"] === true
           ? runRemoveDryRun(ctx, name, values.volumes === true)
           : runRemoveAction(ctx, name, values.volumes === true);
@@ -247,13 +240,13 @@ export const RECIPE = multiActionBody({
       summary: "Show the recipe stack's compose status",
       effect: "read",
       arguments: [NAME_ARGUMENT],
-      run: (ctx, values) => runStatusAction(ctx, recipeName(values, "status")),
+      run: (ctx, values) => runStatusAction(ctx, values.name),
     }),
     logs: defineAction({
       summary: "Read a recipe stack's logs",
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
-      run: (ctx, values) => runLogsAction(ctx, recipeName(values, "logs"), values.tail),
+      run: (ctx, values) => runLogsAction(ctx, values.name, values.tail),
     }),
   },
 });
@@ -264,11 +257,11 @@ export const RECIPE = multiActionBody({
 async function runLocked(
   ctx: Context,
   action: string,
-  values: { readonly name?: string } & Parameters<typeof takeoverOf>[0],
+  values: { readonly name: string } & Parameters<typeof takeoverOf>[0],
   body: () => Promise<void>,
   gate = true,
 ): Promise<void> {
-  const name = recipeName(values, action);
+  const name = values.name;
   // R32-08 class: resolve the recipe purely locally before the lock or any transport call,
   // so a typo dies here instead of as a lock failure or an unreachable-target error.
   await loadRecipe(name);

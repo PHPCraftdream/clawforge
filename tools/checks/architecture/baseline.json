@@ -13,7 +13,7 @@
           "const argument = flagToken.startsWith(\"--\") ? named.get(flagToken.slice(2)) : undefined;": 1,
           "const key = flagToken.startsWith(\"--\") ? flagToken.slice(2) : undefined;": 1,
           "const name = token.startsWith(\"--\") && eq !== -1 ? token.slice(0, eq) : token;": 1,
-          "if (!optionsEnded && token.startsWith(\"-\")) {": 1,
+          "return token.startsWith(\"-\");": 1,
           "if (first !== undefined && !first.startsWith(\"-\")) {": 1
         }
       },

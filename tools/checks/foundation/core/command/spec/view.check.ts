@@ -4,7 +4,7 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
+import { argumentsView, specData, specOf, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription, validate } from "#framework/integration/mcp/server.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -243,6 +243,8 @@ import { check, finish } from "#checks/kit/harness.ts";
   for (const name of ACTION_COMMANDS) {
     const command = openclawCommands[name]!;
     const run = command.run!;
+    const body = specData(specOf(command)!);
+    const defaultAction = body.kind === "multi" ? body.defaultAction : undefined;
     const outcome = async (argv: string[]): Promise<string> => {
       try {
         await run({} as Parameters<typeof run>[0], argv);
@@ -273,7 +275,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     // offers --interval under watch status) is caught exactly here, as an accepted-refusal.
     for (const action of actionArgument.choices) {
       const actionsOf = (argument: CommandArgument): string[] => argvFor(action, argument);
-      if (action === NO_ACTION) {
+      if (action === defaultAction) {
         // The implicit default action is reached without any action word at all.
         for (const argument of declared) {
           if (argument.actions !== undefined && !argument.actions.includes(action)) continue;

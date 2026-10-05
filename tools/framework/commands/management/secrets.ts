@@ -444,6 +444,7 @@ export const SECRETS = commandBody({
   arguments: SECRETS_ARGUMENTS,
   rules: [
     { rule: "requires", name: "break-foreign-lock", with: ["apply"], reason: "no other action takes the instance lock" },
+    { rule: "conflicts", name: "print-template", with: ["template", "init-store", "apply", "dump"], reason: "printing is read-only: it cannot be combined with an action that writes" },
     { rule: "conflicts", name: "json", with: ["template", "print-template", "init-store", "apply", "dump"], reason: "only the default report is structured" },
   ],
   prepare(call) {

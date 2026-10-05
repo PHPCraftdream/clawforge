@@ -251,6 +251,21 @@ function checkRules(where: string, args: readonly ArgumentSpec[], rules: readonl
   }
 }
 
+/** A `read` flag lowers the call to read: it may not meet a flag of another effect unrefused,
+ *  or the confirm stage is skipped for the stronger flag's action. */
+function checkEffectConflicts(where: string, declared: readonly ArgumentSpec[], rules: readonly ArgumentRule[]): void {
+  const flags = declared.filter((argument): argument is FlagSpec => argument.kind === "flag" && argument.effect !== undefined);
+  const refused = (a: string, b: string): boolean => rules.some((rule) => rule.rule === "conflicts"
+    && ((rule.name === a && rule.with.includes(b)) || (rule.name === b && rule.with.includes(a))));
+  for (const read of flags.filter((flag) => flag.effect === "read")) {
+    for (const other of flags.filter((flag) => flag.effect !== "read")) {
+      if (!refused(read.name, other.name)) {
+        fail("effect-flags-unrefused", where, `flag ${read.name} (read) and flag ${other.name} (${other.effect}) can be given together: add a conflicts rule`);
+      }
+    }
+  }
+}
+
 function phasesOf(source: { prepare?: unknown; run: unknown }): PhaseData {
   return { prepare: source.prepare, run: source.run } as unknown as PhaseData;
 }
@@ -260,6 +275,7 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
   const needs: Needs = body.needs ?? "target";
   checkArguments("command body", body.arguments);
   if (body.rules !== undefined) checkRules("command body", body.arguments, body.rules);
+  checkEffectConflicts("command body", body.arguments, body.rules ?? []);
   if (body.preparesEnvironment === true && needs !== "target") fail("prepares-environment-needs-target", "command body", "preparesEnvironment needs `needs: \"target\"`");
   const data: SingleData = {
     kind: "single", effect: body.effect, needs, arguments: body.arguments, refuse: body.refuse, rules: body.rules,
@@ -272,6 +288,7 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
 export function defineAction<const A extends readonly ArgumentSpec[], P = Values<A>>(action: ActionSpec<A, P>): Action {
   checkArguments(`action ${action.summary}`, action.arguments ?? []);
   if (action.rules !== undefined) checkRules(`action ${action.summary}`, action.arguments ?? [], action.rules);
+  checkEffectConflicts(`action ${action.summary}`, action.arguments ?? [], action.rules ?? []);
   const data: ActionData = {
     kind: "action", summary: action.summary, effect: action.effect, arguments: action.arguments ?? [], refuse: action.refuse, rules: action.rules, ...phasesOf(action),
   };

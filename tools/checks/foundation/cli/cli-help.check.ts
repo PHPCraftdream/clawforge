@@ -16,6 +16,7 @@ import { resolve } from "node:path";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { UNKNOWN_COMMAND } from "#framework/integration/gate.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
 
@@ -76,6 +77,15 @@ try {
   check("help status extra names the stray word", helpExtra.stdout.includes(unknownArgumentMessage("extra")), true);
   const helpStatus = await runGate(["--app", deploymentName, "help", "status", "--help"]);
   check("help status --help is still a help request", helpStatus.code, 0);
+
+  // The word after a bare `--` is the same positional: `help -- status` is `help status`.
+  const helpPlain = await runGate(["--app", deploymentName, "help", "status"]);
+  for (const argv of [["help", "--", "status"], ["help", "status", "--"]]) {
+    const dashed = await runGate(["--app", deploymentName, ...argv]);
+    check(`${argv.join(" ")} exits cleanly`, dashed.code, 0);
+    check(`${argv.join(" ")} prints what help status prints`, dashed.stdout, helpPlain.stdout);
+    check(`${argv.join(" ")} reports no unknown command`, dashed.stdout.includes(UNKNOWN_COMMAND), false);
+  }
 
   const helpHelp = await runGate(["--app", deploymentName, "help", "--help"]);
   check("help --help exits cleanly", helpHelp.code, 0);

@@ -3,7 +3,7 @@
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
 import { maskSecrets } from "../../core/io/log.ts";
-import { effectProfile, specOf, specShape, tokenize } from "../../core/command/index.ts";
+import { bindsAsFlag, effectProfile, specOf, specShape, tokenize } from "../../core/command/index.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
@@ -181,6 +181,11 @@ export function requiredArgumentMessage(name: string): string {
   return `${name} is required`;
 }
 
+/** The refusal of a positional value the tokenizer would read as a flag. */
+export function positionalDashMessage(name: string): string {
+  return `${name} cannot begin with -`;
+}
+
 /** The refusal a destructive gate command's tool call owes before anything runs — the same
  *  confirmation rule the deployment path enforces in the pipeline's confirm stage
  *  (core/command/execute.ts), read from the gate command's declared effect. */
@@ -223,6 +228,9 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
       problems.push(`${name} takes a string`);
       continue;
     }
+    // toArgv emits a positional bare, where the tokenizer would bind a leading dash as a flag.
+    // Refused here, not escaped with `--`: a variadic already owns the trailing `--`.
+    if (argument.kind === "positional" && bindsAsFlag(value)) problems.push(positionalDashMessage(name));
     if (spec === undefined && argument.choices !== undefined && !argument.choices.includes(value)) {
       problems.push(`${name} must be one of: ${argument.choices.join(", ")}`);
     }

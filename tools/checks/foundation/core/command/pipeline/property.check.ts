@@ -18,7 +18,7 @@ import { executeCommand } from "#framework/core/command/execute.ts";
 import { ArgumentError, UnknownActionError, specData } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf } from "#framework/core/command/spec.ts";
-import { gateConfirmationRefusal, requiredArgumentMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
+import { gateConfirmationRefusal, positionalDashMessage, requiredArgumentMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
 import { inputSchema } from "#framework/integration/mcp/server.ts";
 import { CONFIRM_REQUIRED, effectProfile } from "#framework/core/command/index.ts";
 import { commandRegistry } from "#framework/integration/gate.ts";
@@ -300,6 +300,65 @@ for (const unit of units) {
     checkTrue(`${kase.name}: MCP error names a member of the rule`, kase.members.includes((mcp.execution.error as ArgumentError).argument ?? ""));
     check(`${kase.name}: MCP never contacts the target`, mcp.contacts, []);
     check(`${kase.name}: MCP prints no document`, mcp.output, "");
+  }
+}
+
+// The operand of `recipe` is declared required per action, so the bare action word is refused
+// at parse on both surfaces — not by a usage line thrown in `run`, after the context (on a WSL
+// target: after /etc/wsl.conf was read). Only `list` takes none. Class: no run-stage operand refusal.
+for (const unit of units.filter((candidate) => candidate.command === "recipe" && candidate.action !== undefined)) {
+  const needsName = unit.args.some((argument) => argument.name === "name");
+  check(`${unit.label}: only list takes no <name>`, needsName, unit.action !== "list");
+  if (!needsName) continue;
+  const declaration = openclawCommands.recipe;
+  const terminal = await runCase("recipe", [unit.action!], "terminal");
+  cases += 1;
+  check(`${unit.label}: bare, console stops at the parse stage`, terminal.execution.stage, "parse");
+  check(`${unit.label}: bare, console error names <name>`, (terminal.execution.error as ArgumentError).argument, "name");
+  check(`${unit.label}: bare, console never contacts the target`, terminal.contacts, []);
+  const mcp = await runCase("recipe", toArgv(declaration, { action: unit.action }), "mcp");
+  cases += 1;
+  check(`${unit.label}: bare, MCP stops at the parse stage`, mcp.execution.stage, "parse");
+  check(`${unit.label}: bare, MCP never contacts the target`, mcp.contacts, []);
+}
+
+// A positional value that begins with a dash would be bound as a flag by the tokenizer (toArgv
+// emits positionals bare): validate refuses it for every declared positional, on MCP.
+for (const unit of units) {
+  const declaration = openclawCommands[unit.command];
+  for (const argument of unit.args.filter((candidate) => candidate.kind === "positional")) {
+    for (const value of ["--json", "-x"]) {
+      const mcpArgs = { ...(unit.action === undefined ? {} : { action: unit.action }), [argument.name]: value };
+      check(`${unit.label}: <${argument.name}> ${value}: MCP validate refuses`, validate(declaration, mcpArgs).includes(positionalDashMessage(argument.name)), true);
+    }
+  }
+}
+for (const [command, args] of [["accept", { recipe: "--with-model" }], ["restore", { archive: "--dry-run" }], ["operations", { id: "--json" }]] as const) {
+  check(`${command} ${JSON.stringify(args)}: MCP validate refuses it`, validate(openclawCommands[command], args).length, 1);
+}
+
+// A read-effect flag lowers the call to read, which skips the MCP confirm stage: every pair of
+// a read flag and a flag of another effect in one action must be refused at parse, on both
+// surfaces, so the stronger flag's action can never run unconfirmed (derived from the effects).
+for (const unit of units) {
+  const flags = unit.args.filter((argument): argument is ArgumentSpec & { kind: "flag"; effect?: string } => argument.kind === "flag");
+  const declaration = openclawCommands[unit.command];
+  for (const read of flags.filter((flag) => flag.effect === "read")) {
+    for (const other of flags.filter((flag) => flag.effect !== undefined && flag.effect !== "read")) {
+      const name = `${unit.label}: --${read.name} (read) with --${other.name} (${other.effect})`;
+      const extras = unit.args.filter((argument) => argument.kind === "positional" || (argument.kind === "option" && argument.required === true));
+      const mcpArgs: Record<string, unknown> = {
+        ...(unit.action === undefined ? {} : { action: unit.action }),
+        ...Object.fromEntries(extras.map((argument) => [argument.name, exampleOf(argument)])),
+        [read.name]: true,
+        [other.name]: true,
+      };
+      const mcp = await runCase(unit.command, toArgv(declaration, mcpArgs), "mcp");
+      cases += 1;
+      check(`${name}: MCP stops at the parse stage, not past the confirm stage`, mcp.execution.stage, "parse");
+      checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+      check(`${name}: MCP never contacts the target`, mcp.contacts, []);
+    }
   }
 }
 

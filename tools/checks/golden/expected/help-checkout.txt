@@ -132,6 +132,7 @@
     Generated from the live command declarations — names, flags, and a multi-action command's own flags under the right action — so it cannot drift from --help.
     Install: source <(./clawforge completion bash); ./clawforge completion zsh > "${fpath[1]}/_clawforge"; or ./clawforge completion pwsh | Out-String | Invoke-Expression.
     --app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.
+    Completes the built-in commands only: a command a deployment declares itself is not offered, since the script is generated without loading any deployment.
     No deployment is resolved, no .env is read, no lock is touched.
 
 === deployment commands (both entries render these identically) ===
@@ -725,6 +726,7 @@
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
       --json                 Emit the default read-only report as JSON (names/state/where-found only, never values) — refused with --template/--print-template/--init-store/--apply/--dump
       --break-foreign-lock requires --apply
+      --print-template cannot be combined with --template and --init-store and --apply and --dump
       --json cannot be combined with --template and --print-template and --init-store and --apply and --dump
     
     The manifest comes from two sources, not one: explicit SecretRefs in openclaw.json,

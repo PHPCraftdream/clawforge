@@ -22,10 +22,11 @@ interface ActionScope {
   readonly siblings: readonly CommandArgument[];
 }
 
-/** The `actions` entry — and the explicit action word — for backup's create: the default
- *  behaviour when no action word is typed, spelled so `backup create --dry-run` parses and
- *  "applies to `create`" names a word the CLI actually takes. */
-export const NO_ACTION = "create";
+/** Whether the tokenizer reads a word (before a bare `--`) as a flag or option rather than a
+ *  free word — the one rule, for whoever emits argv the tokenizer will read back. */
+export function bindsAsFlag(token: string): boolean {
+  return token.startsWith("-");
+}
 
 /** The refusals the parser prints; checks assert them by name. */
 export const APPLIES_TO = "applies to";
@@ -248,7 +249,7 @@ function scan(
 
     if (!optionsEnded) refuseToken(refuse, token);
 
-    if (!optionsEnded && token.startsWith("-")) {
+    if (!optionsEnded && bindsAsFlag(token)) {
       // --opt=value is split before lookup so --app=name (long understood at the gate)
       // and every other declared option read the same syntax consistently.
       let flagToken = token;

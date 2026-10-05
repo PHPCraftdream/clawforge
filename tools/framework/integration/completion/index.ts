@@ -72,6 +72,8 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
       '{clawforge completion zsh} > "${fpath[1]}/_clawforge"; or ' +
       "{clawforge completion pwsh} | Out-String | Invoke-Expression.\n" +
       (appFlag ? "--app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +
+      "Completes the built-in commands only: a command a deployment declares itself is not offered, " +
+      "since the script is generated without loading any deployment.\n" +
       "No deployment is resolved, no .env is read, no lock is touched.",
     arguments: COMPLETION_ARGUMENTS,
     run: async (args) => {

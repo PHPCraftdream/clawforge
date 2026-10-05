@@ -17,6 +17,7 @@ import { commandLine } from "../core/io/invocation/render.ts";
 import { shellLine } from "../core/io/invocation/advice.ts";
 import { bind, tokenize, tokenizeLenient } from "../core/command/parse.ts";
 import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
+import { specData, specOf } from "../core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
@@ -352,6 +353,8 @@ export interface RegistryEntry {
   readonly summary: string;
   readonly details?: string;
   readonly arguments?: readonly CommandArgument[];
+  /** only a multi-action deployment command with a default action: the action a bare call runs */
+  readonly defaultAction?: string;
   /** only "deployment": the spec, effect, group and run */
   readonly command?: AppCommand;
   /** only "gate" */
@@ -393,6 +396,12 @@ export const CONTROL_MCP_DETAILS = [
   "by hand outside of testing.",
 ].join("\n");
 
+function defaultActionOf(command: AppCommand): { readonly defaultAction?: string } {
+  const entry = specOf(command);
+  const data = entry === undefined ? undefined : specData(entry);
+  return data?.kind === "multi" && data.defaultAction !== undefined ? { defaultAction: data.defaultAction } : {};
+}
+
 /** Builds the one registry a surface reads: the deployment's commands, the gate's, and the two
  *  dispatcher entries the tail of `names` (`DISPATCHER_COMMANDS`) names. `help`'s positional
  *  carries every name as its `choices`, so completion, the docs table and the prose checks read
@@ -407,10 +416,20 @@ export function commandRegistry(source: {
     ...source.gate.map((gate) => gate.name),
     ...DISPATCHER_COMMANDS,
   ];
+  const origins = new Map<string, string>();
+  const claim = (name: string, origin: string): void => {
+    const first = origins.get(name);
+    if (first !== undefined) throw new Error(`command name "${name}" is claimed twice: by ${first} and by ${origin}`);
+    origins.set(name, origin);
+  };
+  for (const name of Object.keys(source.deployment)) claim(name, "the deployment's commands");
+  for (const gate of source.gate) claim(gate.name, "a gate command");
+  for (const name of DISPATCHER_COMMANDS) claim(name, "the dispatcher (reserved)");
   const entries: RegistryEntry[] = [
     ...Object.entries(source.deployment).map(([name, command]): RegistryEntry => ({
       name, origin: "deployment", summary: command.summary, details: command.details,
       arguments: command.arguments, command,
+      ...defaultActionOf(command),
     })),
     ...source.gate.map((gate): RegistryEntry => ({
       name: gate.name, origin: "gate", summary: gate.summary, details: gate.details,

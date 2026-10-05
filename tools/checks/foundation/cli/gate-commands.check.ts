@@ -34,6 +34,8 @@ import { makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integra
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
 import { ArgumentError, UnknownArgumentError, unknownArgumentMessage, missingArgumentMessage } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { commandRegistry } from "#framework/integration/gate.ts";
+import { checkoutGate } from "#framework/entry/registry.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function sample(overrides: Partial<GateCommand> = {}): GateCommand {
@@ -104,6 +106,30 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
   const declared = sample();
   check("the help comes from the declaration", written.join("").includes(declared.details ?? ""), true);
   check("and shows the declared argument", written.join("").includes(declared.arguments?.[0]?.description ?? ""), true);
+}
+
+// --- registry name collisions -----------------------------------------------------------------
+// Names are claimed once: a deployment command may not take a gate command's name or a
+// dispatcher name, and the refusal names both claimants.
+{
+  const command = openclawCommands.status;
+  const gate = checkoutGate();
+  const refusal = (deployment: Record<string, typeof command>, gates: readonly GateCommand[]): string => {
+    try { commandRegistry({ deployment, gate: gates, appName: "fixture" }); return "accepted"; }
+    catch (error) { return (error as Error).message; }
+  };
+  const gateName = gate[0]!.name;
+  check("a clean registry builds", refusal(openclawCommands, gate), "accepted");
+  check("a deployment command named like a gate command is refused, naming both", refusal({ ...openclawCommands, [gateName]: command }, gate),
+    `command name "${gateName}" is claimed twice: by the deployment's commands and by a gate command`);
+  check("a deployment command named help is refused, naming both", refusal({ ...openclawCommands, help: command }, gate),
+    `command name "help" is claimed twice: by the deployment's commands and by the dispatcher (reserved)`);
+  check("a deployment command named control-mcp is refused, naming both", refusal({ ...openclawCommands, "control-mcp": command }, gate),
+    `command name "control-mcp" is claimed twice: by the deployment's commands and by the dispatcher (reserved)`);
+  check("a gate command named help is refused", refusal({}, [sample({ name: "help" })]),
+    `command name "help" is claimed twice: by a gate command and by the dispatcher (reserved)`);
+  check("two gate commands of one name are refused", refusal({}, [sample({ name: "twin" }), sample({ name: "twin" })]),
+    `command name "twin" is claimed twice: by a gate command and by a gate command`);
 }
 
 // --- the command list ------------------------------------------------------------------------

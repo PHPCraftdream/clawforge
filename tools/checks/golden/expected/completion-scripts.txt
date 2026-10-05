@@ -38,7 +38,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -110,7 +110,7 @@ _clawforge_lookup() {
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe *") _clawforge_reply="--help" ;;
+    "after recipe *") _clawforge_reply="--help --json" ;;
     "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "after mcp-serve *") _clawforge_reply="--help" ;;
@@ -218,7 +218,7 @@ _clawforge_complete() {
     if [[ "$token" == "--" ]]; then ended=1; break; fi
     key="$token"; inline=0
     if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
-    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if (( ! inline )) && [[ -n "$token" && " $opts " == *" $token "* ]]; then swallow=1; continue; fi
     if [[ "$token" == -* ]]; then
       if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
       continue
@@ -291,7 +291,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -363,7 +363,7 @@ _clawforge_lookup() {
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe *") _clawforge_reply="--help" ;;
+    "after recipe *") _clawforge_reply="--help --json" ;;
     "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "after mcp-serve *") _clawforge_reply="--help" ;;
@@ -471,7 +471,7 @@ _clawforge_complete() {
     if [[ "$token" == "--" ]]; then ended=1; break; fi
     key="$token"; inline=0
     if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
-    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if (( ! inline )) && [[ -n "$token" && " $opts " == *" $token "* ]]; then swallow=1; continue; fi
     if [[ "$token" == -* ]]; then
       if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
       continue
@@ -504,7 +504,7 @@ complete -F _clawforge_complete ./clawforge
 # Install: ./clawforge completion pwsh | Out-String | Invoke-Expression
 $clawforgeApp = $true
 $clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v", "--app")
-$clawforgeFirst = @{
+$clawforgeFirst = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -539,7 +539,7 @@ $clawforgeFirst = @{
   "cli-stop" = @("--help")
   "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
   "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
-  "recipe" = @("--help", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
+  "recipe" = @("--help", "--json", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
   "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
   "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
   "mcp-serve" = @("--help")
@@ -554,8 +554,8 @@ $clawforgeFirst = @{
   "completion" = @("--help", "bash", "pwsh", "zsh")
   "control-mcp" = @("--help")
   "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
-}
-$clawforgeAfter = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeAfter = [hashtable]::new(@{
   "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up *" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart *" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -613,7 +613,7 @@ $clawforgeAfter = @{
   "recipe remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
   "recipe status" = @("--help")
   "recipe logs" = @("--help", "--tail")
-  "recipe *" = @("--help")
+  "recipe *" = @("--help", "--json")
   "provision-agent *" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
   "deploy *" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
   "mcp-serve *" = @("--help")
@@ -634,18 +634,18 @@ $clawforgeAfter = @{
   "completion *" = @("--help")
   "control-mcp *" = @("--help")
   "help *" = @("--help")
-}
-$clawforgeVerbatim = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeVerbatim = [hashtable]::new(@{
   "cli" = 0
   "exec" = 0
   "host" = 1
-}
-$clawforgeVerbatimFlags = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeVerbatimFlags = [hashtable]::new(@{
   "cli" = @()
   "exec" = @()
   "host" = @("--root", "--confirm-root")
-}
-$clawforgeValueOptions = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeValueOptions = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock")
   "up" = @("--break-foreign-lock")
   "restart" = @("--break-foreign-lock")
@@ -675,15 +675,15 @@ $clawforgeValueOptions = @{
   "mcp-setup" = @("--client")
   "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
   "check" = @("--jobs", "--require")
-}
-$clawforgeValues = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeValues = [hashtable]::new(@{
   "backup--profile" = @("full", "migrate", "share")
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
   "verify--profile" = @("full", "migrate", "share")
   "mcp-setup--client" = @("claude", "codex", "both")
   "setforget--kind" = @("agent", "mcp-server", "cron-job")
-}
+}, [System.StringComparer]::Ordinal)
 $clawforgeCompleter = {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
@@ -700,15 +700,15 @@ $clawforgeCompleter = {
   # command (and a value that looks like a command name does not shadow the real one).
   # The '--app=<name>' form carries its own value in one token: it is skipped alone.
   $i = 0
-  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -eq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -eq '--app') { 2 } else { 1 }) }
+  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }
   $candidates = @()
   if ($i -ge $scan.Count) {
-    if ($clawforgeApp -and $prev -eq '--app') {
+    if ($clawforgeApp -and $prev -ceq '--app') {
       # --app's own value, lazily: only while no command word has been typed — --app must
       # come before the command, so past one the command's flags return (R33-10). Whichever
       # of the system-wide command or the checkout shim was typed makes the call.
       $names = @(try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() })
-      $names | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+      $names | Where-Object { $_ -clike "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
       }
       return
@@ -729,13 +729,13 @@ $clawforgeCompleter = {
     $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)
     foreach ($w2 in $between) {
       if ($swallow) { $swallow = $false; continue }
-      if ($w2 -eq '--') { $ended = $true; break }
+      if ($w2 -ceq '--') { $ended = $true; break }
       $key = $w2
       $inline = $false
       if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }
-      if ((-not $inline) -and ($clawforgeValueOptions[$cmd] -contains $w2)) { $swallow = $true; continue }
+      if ((-not $inline) -and ($w2 -cne '') -and ($clawforgeValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }
       if ($w2.StartsWith('-')) {
-        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -contains $key)) { $tail = $true; break }
+        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }
         continue
       }
       $free = $free + 1
@@ -761,7 +761,7 @@ $clawforgeCompleter = {
       $candidates = @($clawforgeAfter["$cmd *"])
     }
   }
-  $candidates | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object -Unique | ForEach-Object {
+  $candidates | Where-Object { $_ -clike "$wordToComplete*" } | Sort-Object -Unique -CaseSensitive | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }
 }
@@ -807,7 +807,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -876,7 +876,7 @@ _clawforge_lookup() {
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe *") _clawforge_reply="--help" ;;
+    "after recipe *") _clawforge_reply="--help --json" ;;
     "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "after mcp-serve *") _clawforge_reply="--help" ;;
@@ -973,7 +973,7 @@ _clawforge_complete() {
     if [[ "$token" == "--" ]]; then ended=1; break; fi
     key="$token"; inline=0
     if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
-    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if (( ! inline )) && [[ -n "$token" && " $opts " == *" $token "* ]]; then swallow=1; continue; fi
     if [[ "$token" == -* ]]; then
       if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
       continue
@@ -1046,7 +1046,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -1115,7 +1115,7 @@ _clawforge_lookup() {
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe *") _clawforge_reply="--help" ;;
+    "after recipe *") _clawforge_reply="--help --json" ;;
     "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "after mcp-serve *") _clawforge_reply="--help" ;;
@@ -1212,7 +1212,7 @@ _clawforge_complete() {
     if [[ "$token" == "--" ]]; then ended=1; break; fi
     key="$token"; inline=0
     if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
-    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if (( ! inline )) && [[ -n "$token" && " $opts " == *" $token "* ]]; then swallow=1; continue; fi
     if [[ "$token" == -* ]]; then
       if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
       continue
@@ -1245,7 +1245,7 @@ complete -F _clawforge_complete ./clawforge
 # Install: clawforge completion pwsh | Out-String | Invoke-Expression
 $clawforgeApp = $false
 $clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v")
-$clawforgeFirst = @{
+$clawforgeFirst = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -1280,7 +1280,7 @@ $clawforgeFirst = @{
   "cli-stop" = @("--help")
   "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
   "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
-  "recipe" = @("--help", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
+  "recipe" = @("--help", "--json", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
   "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
   "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
   "mcp-serve" = @("--help")
@@ -1292,8 +1292,8 @@ $clawforgeFirst = @{
   "completion" = @("--help", "bash", "pwsh", "zsh")
   "control-mcp" = @("--help")
   "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
-}
-$clawforgeAfter = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeAfter = [hashtable]::new(@{
   "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up *" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart *" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -1351,7 +1351,7 @@ $clawforgeAfter = @{
   "recipe remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
   "recipe status" = @("--help")
   "recipe logs" = @("--help", "--tail")
-  "recipe *" = @("--help")
+  "recipe *" = @("--help", "--json")
   "provision-agent *" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
   "deploy *" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
   "mcp-serve *" = @("--help")
@@ -1369,18 +1369,18 @@ $clawforgeAfter = @{
   "completion *" = @("--help")
   "control-mcp *" = @("--help")
   "help *" = @("--help")
-}
-$clawforgeVerbatim = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeVerbatim = [hashtable]::new(@{
   "cli" = 0
   "exec" = 0
   "host" = 1
-}
-$clawforgeVerbatimFlags = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeVerbatimFlags = [hashtable]::new(@{
   "cli" = @()
   "exec" = @()
   "host" = @("--root", "--confirm-root")
-}
-$clawforgeValueOptions = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeValueOptions = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock")
   "up" = @("--break-foreign-lock")
   "restart" = @("--break-foreign-lock")
@@ -1409,15 +1409,15 @@ $clawforgeValueOptions = @{
   "deploy" = @("--path")
   "mcp-setup" = @("--client")
   "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
-}
-$clawforgeValues = @{
+}, [System.StringComparer]::Ordinal)
+$clawforgeValues = [hashtable]::new(@{
   "backup--profile" = @("full", "migrate", "share")
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
   "verify--profile" = @("full", "migrate", "share")
   "mcp-setup--client" = @("claude", "codex", "both")
   "setforget--kind" = @("agent", "mcp-server", "cron-job")
-}
+}, [System.StringComparer]::Ordinal)
 $clawforgeCompleter = {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
@@ -1434,15 +1434,15 @@ $clawforgeCompleter = {
   # command (and a value that looks like a command name does not shadow the real one).
   # The '--app=<name>' form carries its own value in one token: it is skipped alone.
   $i = 0
-  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -eq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -eq '--app') { 2 } else { 1 }) }
+  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }
   $candidates = @()
   if ($i -ge $scan.Count) {
-    if ($clawforgeApp -and $prev -eq '--app') {
+    if ($clawforgeApp -and $prev -ceq '--app') {
       # --app's own value, lazily: only while no command word has been typed — --app must
       # come before the command, so past one the command's flags return (R33-10). Whichever
       # of the system-wide command or the checkout shim was typed makes the call.
       $names = @(try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() })
-      $names | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+      $names | Where-Object { $_ -clike "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
       }
       return
@@ -1463,13 +1463,13 @@ $clawforgeCompleter = {
     $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)
     foreach ($w2 in $between) {
       if ($swallow) { $swallow = $false; continue }
-      if ($w2 -eq '--') { $ended = $true; break }
+      if ($w2 -ceq '--') { $ended = $true; break }
       $key = $w2
       $inline = $false
       if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }
-      if ((-not $inline) -and ($clawforgeValueOptions[$cmd] -contains $w2)) { $swallow = $true; continue }
+      if ((-not $inline) -and ($w2 -cne '') -and ($clawforgeValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }
       if ($w2.StartsWith('-')) {
-        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -contains $key)) { $tail = $true; break }
+        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }
         continue
       }
       $free = $free + 1
@@ -1495,7 +1495,7 @@ $clawforgeCompleter = {
       $candidates = @($clawforgeAfter["$cmd *"])
     }
   }
-  $candidates | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object -Unique | ForEach-Object {
+  $candidates | Where-Object { $_ -clike "$wordToComplete*" } | Sort-Object -Unique -CaseSensitive | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }
 }

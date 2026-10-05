@@ -4,13 +4,12 @@
 // declares its commands. Adding a command to an application must not require touching any
 // file in framework/ — that is the property this module exists to guarantee.
 
-import { reportError, UserError, CommandFailedError, info } from "../core/io/log.ts";
+import { reportError, UserError, CommandFailedError } from "../core/io/log.ts";
 import { UnknownArgumentError, tokenize } from "../core/command/index.ts";
 import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
-import { commandRegistry, dispatcherHelpLines, refuseUnknownTokens, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
+import { commandRegistry, dispatcherHelpLines, refuseUnknownTokens, reportUnknownArgument, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
 import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
-import { commandLine } from "../core/io/invocation/render.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 // Re-exported for tools/checks/foundation/cli/help-groups.check.ts, which asserts the console
@@ -107,13 +106,10 @@ function refuseDispatcherTokens(name: string, registry: ReturnType<typeof comman
   }
 }
 
-/** The standard answer to a token no declared argument matches: the refusal (already
- *  carrying a did-you-mean guess from parseDeclaredArgs) plus a pointer to that command's
- *  own --help. Mirrors reportUnknownCommand (integration/gate.ts) for the sibling case. */
-export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
-  reportError(error);
-  info(`run ${commandLine([commandName, "--help"])} for its full argument list`);
-}
+/** The standard answer to a token no declared argument matches — it lives beside its
+ *  sibling reportUnknownCommand in integration/gate.ts; re-exported so this module's
+ *  callers and checks keep one import site. */
+export { reportUnknownArgument };
 
 /** Wraps runApp with the error handling every entry point needs, so an application's own
  *  entry file stays a single call. */

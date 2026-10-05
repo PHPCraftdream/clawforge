@@ -5,6 +5,7 @@
 import { log, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import type { Context } from "#src/core/context.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
 export const CLI_HELPER_SERVICE = "cli-helper";
@@ -17,6 +18,9 @@ export const CLI_START = commandBody({
   effect: "change",
   arguments: [] as const,
   async run(ctx) {
+    // Preflight before anything touches the target: a never-bootstrapped deployment refuses
+    // with the bootstrap remedy, not the raw NotBootstrapped from isRunning().
+    await requireBootstrapped(ctx);
     if (!(await ctx.runtime.isRunning())) {
       die(`the gateway is not running. Start it with ${commandLine("up")}`);
     }

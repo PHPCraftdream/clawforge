@@ -211,6 +211,15 @@ try {
   check("a padded app name is trimmed, not stored raw", takeInvocationFromEnv(), { program: "clawforge", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
   process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
   check("an unknown app selection reads as unset", takeInvocationFromEnv(), undefined);
+  // Producers spell installed as the bare name and ./-relative as the checkout shim, the MCP
+  // launcher or the local-package copy — a ./-relative program under "installed" has no writer.
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"./clawforge","mode":"installed","audience":"terminal"}';
+  check("a checkout spelling under installed mode reads as unset", takeInvocationFromEnv(), undefined);
+  check("parseInvocation agrees with the env path", parseInvocation('{"version":1,"program":".\\\\clawforge","mode":"installed","audience":"terminal"}'), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":".\\\\clawforge","mode":"checkout","audience":"terminal"}';
+  check("the same spelling under checkout mode still parses", takeInvocationFromEnv(), { program: ".\\clawforge", mode: "checkout", audience: "terminal" });
+  process.env[INVOCATION_ENV] = serializeInvocation({ program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" });
+  check("the Windows bin spelling under local-package still parses", takeInvocationFromEnv(), { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" });
 
   process.env[INVOKED_AS_ENV] = "./clawforge --app staging";
   check("the legacy shim variable is mapped onto the value", takeInvocationFromEnv(), NAMED);

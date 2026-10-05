@@ -88,7 +88,10 @@ export async function runGateCommand(
     refuseAgainstDeclaration(command, args);
     return await command.run(args);
   } catch (error) {
-    reportError(error);
+    // Same parity as the app-command dispatcher (entry/cli.ts): only an unknown argument
+    // earns the --help pointer; every other refusal prints bare.
+    if (error instanceof UnknownArgumentError) reportUnknownArgument(command.name, error);
+    else reportError(error);
     return 1;
   }
 }
@@ -330,6 +333,14 @@ export function misplacedAppFlag(
     const stopped = args.indexOf(token);
     return stopped === -1 || tokenizeLenient(declared, args.slice(0, stopped)).optionsEnded ? undefined : token;
   }
+}
+
+/** The standard answer to a token no declared argument matches: the refusal (already
+ *  carrying a did-you-mean guess from parseDeclaredArgs) plus a pointer to that command's
+ *  own --help. Sits beside reportUnknownCommand, its sibling for the command-name case. */
+export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
+  reportError(error);
+  info(`run ${commandLine([commandName, "--help"])} for its full argument list`);
 }
 
 /** The standard answer to a command name nothing declares: the typo, a nearby spelling

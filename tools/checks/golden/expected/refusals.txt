@@ -22,17 +22,95 @@ error: unknown argument: --bogus
 error: unknown argument: --bogus
     run clawforge status --help for its full argument list
 
-=== unknown argument: list --bogus — checkout root (./clawforge) ===
+=== unknown argument: check --bogus (gate) — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge check --help for its full argument list
+
+=== unknown argument: check --bogus (gate) — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge check --help for its full argument list
+
+=== unknown argument: check --bogus (gate) — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge check --help for its full argument list
+
+=== unknown argument: new-app --bogus (gate) — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge new-app --help for its full argument list
+
+=== unknown argument: new-app --bogus (gate) — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge new-app --help for its full argument list
+
+=== unknown argument: new-app --bogus (gate) — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge new-app --help for its full argument list
+
+=== unknown argument: remove-app --bogus (gate) — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge remove-app --help for its full argument list
+
+=== unknown argument: remove-app --bogus (gate) — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge remove-app --help for its full argument list
+
+=== unknown argument: remove-app --bogus (gate) — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge remove-app --help for its full argument list
+
+=== unknown argument: list --bogus (gate) — checkout root (./clawforge) ===
 error: unknown argument: --bogus
     run ./clawforge list --help for its full argument list
 
-=== unknown argument: list --bogus — named deployment (./clawforge --app demo) ===
+=== unknown argument: list --bogus (gate) — named deployment (./clawforge --app demo) ===
 error: unknown argument: --bogus
     run ./clawforge list --help for its full argument list
 
-=== unknown argument: list --bogus — installed command (clawforge) ===
+=== unknown argument: list --bogus (gate) — installed command (clawforge) ===
 error: unknown argument: --bogus
     run clawforge list --help for its full argument list
+
+=== unknown argument: version --bogus (gate) — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge version --help for its full argument list
+
+=== unknown argument: version --bogus (gate) — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge version --help for its full argument list
+
+=== unknown argument: version --bogus (gate) — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge version --help for its full argument list
+
+=== unknown argument: completion --bogus (gate) — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge completion --help for its full argument list
+
+=== unknown argument: completion --bogus (gate) — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge completion --help for its full argument list
+
+=== unknown argument: completion --bogus (gate) — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge completion --help for its full argument list
+
+=== missing required: new-app (gate) — checkout root (./clawforge) ===
+error: new-app needs <name>
+
+=== missing required: new-app (gate) — named deployment (./clawforge --app demo) ===
+error: new-app needs <name>
+
+=== missing required: new-app (gate) — installed command (clawforge) ===
+error: new-app needs <name>
+
+=== invalid choice: completion fish (gate) — checkout root (./clawforge) ===
+error: <shell> takes one of bash, zsh, pwsh, not "fish"
+
+=== invalid choice: completion fish (gate) — named deployment (./clawforge --app demo) ===
+error: <shell> takes one of bash, zsh, pwsh, not "fish"
+
+=== invalid choice: completion fish (gate) — installed command (clawforge) ===
+error: <shell> takes one of bash, zsh, pwsh, not "fish"
 
 === <command> --help without a deployment: status --help — checkout root (./clawforge) ===
 ==> status — Show containers, image, health probes and data usage

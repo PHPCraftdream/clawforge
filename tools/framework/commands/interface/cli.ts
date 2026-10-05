@@ -6,7 +6,7 @@ import { commandLine } from "#src/core/io/invocation/render.ts";
 import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
-import { HelperNotRunning } from "#src/runtime/runtime.ts";
+import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
@@ -39,6 +39,10 @@ export async function cli(ctx: Context, args: string[]): Promise<void> {
 async function runCli(ctx: Context, passed: string[]): Promise<void> {
   // Empty argv is refused by the parser: the verbatim variadic is declared required, so bind
   // refuses before any phase runs.
+
+  // Same never-bootstrapped refusal as every other preflight path; without it the
+  // isRunning() preflight below dies with the bare NotBootstrapped message.
+  await requireBootstrapped(ctx);
 
   // Under a sink the child's own stdout would land in the middle of a JSON-RPC message, so
   // it is captured and re-emitted through the same sink as everything else. On a terminal

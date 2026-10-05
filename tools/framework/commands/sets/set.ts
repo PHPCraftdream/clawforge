@@ -17,6 +17,7 @@ import type { Problem } from "#src/service/inspection.ts";
 import { nextActions, nextAdvice } from "#src/service/inspection.ts";
 import { removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
 import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import { SET_TRY } from "./set-try.ts";
@@ -137,6 +138,9 @@ async function validateAction(
  *  memory — a decision for whoever runs this, not something a plan does automatically. */
 async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUMENTS>): Promise<void> {
   const { kind, name } = values;
+  // Same never-bootstrapped refusal as the sibling preflights; without it the isRunning()
+  // check below dies with the bare NotBootstrapped message.
+  await requireBootstrapped(ctx);
   if (!(await ctx.runtime.isRunning())) die(`the gateway is not running. Start it with ${commandLine("up")}`);
 
   // `apply` calls this indirectly while already holding the lock; nested, the second acquire

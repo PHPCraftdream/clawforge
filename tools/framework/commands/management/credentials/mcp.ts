@@ -49,6 +49,10 @@ export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
 }
 
 async function runMcpServe(ctx: Context, args: string[]): Promise<void> {
+  // Same refusal as every console path, before the exec preflight below can surface the raw
+  // NotBootstrapped without a remedy.
+  await requireBootstrapped(ctx);
+
   // Exact duplex stdio via transport pipes; never captured command output or a PTY.
   // The gateway token reaches the CLI via the compose environment. A successful helper
   // exec already proves reachability, before the fallback readiness preflight.

@@ -38,7 +38,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { COMPLETION_COMMAND_NAME, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
-import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand } from "#framework/integration/gate.ts";
+import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand, runGateCommand } from "#framework/integration/gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
 import { renderEntryMatrix } from "./matrix.ts";
@@ -47,6 +47,8 @@ import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { checkoutGate } from "#framework/entry/registry.ts";
 import { UnknownArgumentError } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
@@ -181,16 +183,22 @@ async function refusals(): Promise<string> {
   };
   parts.push(await underEveryInvocation("unknown argument: status --bogus", unknownArgument));
 
-  const listCommand = checkoutGateCommands.find((command) => command.name === "list");
-  const unknownListArgument = async () => {
-    try {
-      await listCommand?.run(["--bogus"]);
-    } catch (error) {
-      if (error instanceof UnknownArgumentError) reportUnknownArgument("list", error);
-      else throw error;
-    }
-  };
-  parts.push(await underEveryInvocation("unknown argument: list --bogus", unknownListArgument));
+  // The gate's own refusals, through the real dispatcher (runGateCommand) instead of a
+  // direct reporter call, so the catch's UnknownArgumentError branch is pinned too. The
+  // names are registered as gate commands first — the same registration tools/clawforge.ts
+  // does before dispatch — so the advice line omits `--app` exactly as the real gate prints
+  // it. No earlier section renders advice whose first word is a gate command, and none after
+  // either, so the persistent registration changes no other snapshot.
+  const gateCommands = checkoutGate();
+  useGateCommands(gateCommands.map((command) => command.name));
+  for (const command of gateCommands) {
+    parts.push(await underEveryInvocation(`unknown argument: ${command.name} --bogus (gate)`, async () => {
+      await runGateCommand(gateCommands, [command.name, "--bogus"]);
+    }));
+  }
+  parts.push(await underEveryInvocation("missing required: new-app (gate)", async () => { await runGateCommand(gateCommands, ["new-app"]); }));
+  // completion's `shell` positional carries choices, and bind refuses a bad value before run.
+  parts.push(await underEveryInvocation("invalid choice: completion fish (gate)", async () => { await runGateCommand(gateCommands, ["completion", "fish"]); }));
 
   const genericApp = {
     name: "clawforge",

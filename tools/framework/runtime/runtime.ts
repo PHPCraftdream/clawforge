@@ -37,7 +37,9 @@ export async function requireBootstrapped(ctx: Context): Promise<void> {
     await ctx.runtime.isRunning();
   } catch (error) {
     if (!(error instanceof NotBootstrapped)) throw error;
-    die(`${error.message} — run ${commandLine(["bootstrap"])}`);
+    // Structured advice, not prose: MCP/JSON surfaces render the advice field the same way
+    // the console renders its arrow line.
+    die(error.message, command(["bootstrap"]));
   }
 }
 
@@ -221,4 +223,4 @@ export async function safeConnectionFacts(
     return undefined;
   }
 }
-import { commandLine } from "../core/io/invocation/render.ts";
+import { command } from "../core/io/invocation/advice.ts";

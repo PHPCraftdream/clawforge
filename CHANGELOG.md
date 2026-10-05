@@ -42,6 +42,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   stops scanning for `--help` at a bare `--`, like the deployment commands: in
   `check -- --help` the `--help` is now the command's own data, not a request for check's help screen.
 * `apply-config --dry-run` declares its effect as read, like every other `--dry-run` flag.
+* A gate command's unknown-argument refusal (`version extra`, `check --bogus`) carries the same
+  `run <program> <cmd> --help for its full argument list` pointer as the deployment commands'.
+  `mcp-serve` on a never-bootstrapped deployment is refused with the `run <program> bootstrap`
+  remedy — like `cli`, `exec`, `cli-start` and `set forget`, whose preflights no longer surface
+  the raw "has never been bootstrapped" error without one; the bootstrap refusal's next step
+  travels as structured advice, so MCP envelopes list it in `nextSteps`.
 * Gate commands (`new-app`, `remove-app`, `completion`) refuse a missing required argument or
   an unsupported shell in the parser's own words, from their declarations, instead of
   hand-written `usage:` lines; `destroy --yes` without `--confirm-name` is refused at the

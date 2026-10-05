@@ -101,7 +101,7 @@ function refuseDispatcherTokens(name: string, registry: ReturnType<typeof comman
     return false;
   } catch (error) {
     if (!(error instanceof UnknownArgumentError)) throw error;
-    reportUnknownArgument(name, error);
+    reportUnknownArgument(name, error, registry.find(name)?.origin !== "deployment" ? { deploymentFree: true } : undefined);
     return true;
   }
 }

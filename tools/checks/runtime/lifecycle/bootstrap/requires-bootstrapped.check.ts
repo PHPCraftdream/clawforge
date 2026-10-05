@@ -36,6 +36,7 @@ import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { CLI_HELPER_SERVICE } from "#framework/commands/interface/cli-helper.ts";
+import { REASON_NEVER_BOOTSTRAPPED } from "#framework/commands/management/lock.ts";
 
 useDeployment(resolve("/tmp", "clawforge-requires-bootstrapped-check"));
 
@@ -108,6 +109,7 @@ function stubContext(execHandler: GuardCase["execHandler"], transportDescription
       async isRunning(): Promise<boolean> { throw new NotBootstrapped(DATA_DIR); },
       async execInHelper(): Promise<never> { throw new HelperNotRunning(CLI_HELPER_SERVICE); },
       async execCommand(): Promise<never> { throw new HelperNotRunning(CLI_HELPER_SERVICE); },
+      async imageReference(): Promise<string> { return "stub-image"; },
     },
     paths: { toContainer: (path: string) => path, toTarget: async (path: string) => path },
   } as unknown as Context;
@@ -160,6 +162,7 @@ for (const kase of [
   { name: "mcp-serve", run: (ctx: Context) => openclawCommands["mcp-serve"].run(ctx, []) },
   { name: "set forget", run: (ctx: Context) => openclawCommands.set.run(ctx, ["forget", "--kind", "agent", "--name", "orphaned"]) },
   { name: "upgrade", run: (ctx: Context) => openclawCommands.upgrade.run(ctx, []) },
+  { name: "lock", run: (ctx: Context) => openclawCommands.lock.run(ctx, []) },
   { name: "secrets --apply", run: (ctx: Context) => secrets(ctx, ["--apply"]), localFirstRefusal: true },
   { name: "mcp-creds", run: (ctx: Context) => mcpCreds(ctx, []) },
   { name: "provision-agent", run: (ctx: Context) => provisionAgent(ctx, ["vault"]), localFirstRefusal: true },
@@ -182,6 +185,26 @@ for (const kase of [
   },
 ] satisfies GuardCase[]) {
   await expectGuardRefusal(kase);
+}
+
+// --- lock --check is the deliberate carve-out -------------------------------------------------
+//
+// The read path is not guarded: it reports "never bootstrapped" as an unread inventory
+// (summarizeCheck's REASON_NEVER_BOOTSTRAPPED), not as the guard's refusal. It still exits
+// non-zero on the stub (no lock to compare against), but the error carries the unread-
+// inventory summary with empty advice — not a UserError naming bootstrap.
+
+{
+  const { ctx } = stubContext(undefined, "local");
+  let thrown: unknown;
+  await withOutputSink(() => {}, async () => { try { await openclawCommands.lock.run(ctx, ["--check"]); } catch (error) { thrown = error; } });
+  check(
+    "lock --check still reports a never-bootstrapped target instead of the guard's refusal",
+    thrown instanceof Error
+      && thrown.message.includes(REASON_NEVER_BOOTSTRAPPED)
+      && !(thrown instanceof UserError && thrown.advice.length > 0 && renderAdvice(thrown.advice[0]).endsWith("bootstrap")),
+    true,
+  );
 }
 
 // --- mcp-creds specifically: nothing reaches the terminal before the guard's own error -------

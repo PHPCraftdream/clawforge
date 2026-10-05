@@ -66,6 +66,7 @@ const INVOCATIONS: readonly [string, Invocation][] = [
   ["checkout root (./clawforge)", { program: "./clawforge", mode: "checkout", audience: "terminal" }],
   ["named deployment (./clawforge --app demo)", { program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" }],
   ["installed command (clawforge)", { program: "clawforge", mode: "installed", audience: "terminal" }],
+  ["sole deployment (./clawforge --app demo)", { program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" }],
 ];
 
 /** Replaces machine-specific path prefixes with the placeholders documented in the header. */
@@ -183,12 +184,14 @@ async function refusals(): Promise<string> {
   };
   parts.push(await underEveryInvocation("unknown argument: status --bogus", unknownArgument));
 
-  // The gate's own refusals, through the real dispatcher (runGateCommand) instead of a
-  // direct reporter call, so the catch's UnknownArgumentError branch is pinned too. The
-  // names are registered as gate commands first — the same registration tools/clawforge.ts
-  // does before dispatch — so the advice line omits `--app` exactly as the real gate prints
-  // it. No earlier section renders advice whose first word is a gate command, and none after
-  // either, so the persistent registration changes no other snapshot.
+  // The gate commands are registered as before (they run before a deployment is resolved,
+  // so the renderer omits `--app`); the dispatcher pointer is deployment-free by registry
+  // origin, derived in refuseDispatcherTokens.
+  const genericApp = {
+    name: "clawforge",
+    description: "self-hosting framework for OpenClaw — this checkout has no deployments yet",
+    commands: openclawCommands,
+  };
   const gateCommands = checkoutGate();
   useGateCommands(gateCommands.map((command) => command.name));
   for (const command of gateCommands) {
@@ -196,15 +199,15 @@ async function refusals(): Promise<string> {
       await runGateCommand(gateCommands, [command.name, "--bogus"]);
     }));
   }
+  for (const dispatcher of ["help", "control-mcp"] as const) {
+    parts.push(await underEveryInvocation(`unknown argument: ${dispatcher} --bogus (dispatcher)`, async () => {
+      await runApp(genericApp, [dispatcher, "--bogus"]);
+    }));
+  }
   parts.push(await underEveryInvocation("missing required: new-app (gate)", async () => { await runGateCommand(gateCommands, ["new-app"]); }));
   // completion's `shell` positional carries choices, and bind refuses a bad value before run.
   parts.push(await underEveryInvocation("invalid choice: completion fish (gate)", async () => { await runGateCommand(gateCommands, ["completion", "fish"]); }));
 
-  const genericApp = {
-    name: "clawforge",
-    description: "self-hosting framework for OpenClaw — this checkout has no deployments yet",
-    commands: openclawCommands,
-  };
   const helpWithoutApp = async () => { await runApp(genericApp, ["status", "--help"], []); };
   parts.push(await underEveryInvocation("<command> --help without a deployment: status --help", helpWithoutApp));
 

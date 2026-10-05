@@ -52,8 +52,7 @@ const argv = normalizeVersionAlias(process.argv.slice(2));
 // The gate's own commands, one list from entry/registry.ts — the declared check/new-app/
 // remove-app/list plus version and completion, closing completion over the finished array.
 const gateCommands: GateCommand[] = checkoutGate();
-// Registered before any command runs, so the renderer omits --app from these (they run before
-// a deployment is resolved).
+// Registered before any command runs, so the renderer omits --app from these (they run before a deployment is resolved).
 useGateCommands(gateCommands.map((command) => command.name));
 
 // The command list in the gate's `help`: the gate's own commands, plus the one line here that is

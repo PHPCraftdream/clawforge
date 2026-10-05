@@ -63,13 +63,13 @@ const DESIRED_STATE = `[
 // Bash-only, same as this monorepo's own; Windows users can use npm's
 // generated node_modules/.bin/clawforge.cmd or .ps1 instead. Without a local install it
 // hands over to a system-wide `clawforge`.
-const SHIM = `#!/usr/bin/env bash
+export const SHIM = `#!/usr/bin/env bash
 # Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
 # without typing a package path or npx by hand.
 set -Eeuo pipefail
 # Hints in the CLI say "./clawforge" for this entry, "clawforge" for the system-wide command.
 # Both variables: new frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
-export CLAWFORGE_INVOCATION='{"version":${INVOCATION_VERSION},"program":"./clawforge","mode":"installed","audience":"terminal"}'
+export CLAWFORGE_INVOCATION='{"version":${INVOCATION_VERSION},"program":"./clawforge","mode":"checkout","audience":"terminal"}'
 export CLAWFORGE_INVOKED_AS=./clawforge
 DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 node_bin=""

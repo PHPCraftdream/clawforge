@@ -23,6 +23,8 @@ import { die, formatError, registerSecret, UserError, reportError, info } from "
 import { defaultInvocation } from "#framework/entry/root.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
+import { SHIM } from "#framework/integration/deployment/init.ts";
+import { mcpLauncherContent } from "#framework/integration/mcp/project.ts";
 import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
 import { deploy } from "#framework/commands/management/deploy/index.ts";
@@ -212,7 +214,8 @@ try {
   process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
   check("an unknown app selection reads as unset", takeInvocationFromEnv(), undefined);
   // Producers spell installed as the bare name and ./-relative as the checkout shim, the MCP
-  // launcher or the local-package copy — a ./-relative program under "installed" has no writer.
+  // launcher or the local-package copy. The committed shim used to spell the rejected pair
+  // (./-relative under "installed"); every writer is now checked against this reader below.
   process.env[INVOCATION_ENV] = '{"version":1,"program":"./clawforge","mode":"installed","audience":"terminal"}';
   check("a checkout spelling under installed mode reads as unset", takeInvocationFromEnv(), undefined);
   check("parseInvocation agrees with the env path", parseInvocation('{"version":1,"program":".\\\\clawforge","mode":"installed","audience":"terminal"}'), undefined);
@@ -389,6 +392,32 @@ try {
   // 10. The renderer's fixed point is now the whole output layer: every line above prints
   //     exactly as renderAdvice() built it, so there is no rewriting left to describe.
   setInvocation(MONO);
+
+  // --- every producer of a CLAWFORGE_INVOCATION value hands over one the strict reader accepts ---
+  const shimLine = /export CLAWFORGE_INVOCATION='([^']+)'/.exec(SHIM)?.[1] ?? "";
+  check("the committed shim hands over an invocation the strict reader accepts", parseInvocation(shimLine),
+    { program: "./clawforge", mode: "checkout", audience: "terminal" });
+
+  const launcherSource = /CLAWFORGE_INVOCATION = JSON\.stringify\((.*)\);/.exec(mcpLauncherContent("monorepo"))?.[1] ?? "";
+  const launcherValue = new Function("basename", `return (${launcherSource.replaceAll("basename(root)", '"demo"')})`)((p: string) => p) as Invocation;
+  check("the monorepo MCP launcher hands over an invocation the strict reader accepts",
+    parseInvocation(JSON.stringify(launcherValue)),
+    { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
+  check("the installed launcher hands no invocation over — the system-wide command it spawns names itself",
+    mcpLauncherContent("installed").includes("CLAWFORGE_INVOCATION"), false);
+
+  // The entry re-serialises whatever invocation() holds (bin, the delegate), so every default
+  // must survive a serialize/parse cycle unchanged.
+  const roundTrips: Invocation[] = [
+    { program: "clawforge", mode: "installed", audience: "terminal" },
+    { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" },
+    { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" },
+    { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" },
+    { program: "clawforge", mode: "installed", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" },
+  ];
+  for (const [index, value] of roundTrips.entries()) {
+    check(`re-serialisation round-trip ${index + 1} of ${roundTrips.length}`, parseInvocation(serializeInvocation(value)), value);
+  }
 } finally {
   setInvocation(MONO);
   await teardownFixtureDeployment(deployment);

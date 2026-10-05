@@ -24,6 +24,7 @@ import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import { nextActions, nextAdvice, problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import {
   PLUGINS_LIST_ARGS,
   SKILLS_LIST_ARGS,
@@ -324,6 +325,9 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
 }
 
 async function runLock(ctx: Context, checkOnly: boolean, jsonOnly: boolean): Promise<void> {
+  // The write path claims the lock's home and reads live inventory — both only exist after
+  // bootstrap; --check reports the same fact as an unread inventory instead (summarizeCheck).
+  if (!checkOnly) await requireBootstrapped(ctx);
   const inventoryProblems: Problem[] = [];
   const current = await currentComposition(ctx, { includeExtensions: true, problems: inventoryProblems });
 

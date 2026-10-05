@@ -338,9 +338,9 @@ export function misplacedAppFlag(
 /** The standard answer to a token no declared argument matches: the refusal (already
  *  carrying a did-you-mean guess from parseDeclaredArgs) plus a pointer to that command's
  *  own --help. Sits beside reportUnknownCommand, its sibling for the command-name case. */
-export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
+export function reportUnknownArgument(commandName: string, error: UnknownArgumentError, options?: { readonly deploymentFree?: boolean }): void {
   reportError(error);
-  info(`run ${commandLine([commandName, "--help"])} for its full argument list`);
+  info(`run ${commandLine([commandName, "--help"], options)} for its full argument list`);
 }
 
 /** The standard answer to a command name nothing declares: the typo, a nearby spelling

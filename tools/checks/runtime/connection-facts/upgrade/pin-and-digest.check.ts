@@ -157,6 +157,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
     try { await openclawCommands.upgrade.run(ctx, ["--dry-run"]); } catch (error) { failure = error; }
   });
   check("a malformed OPENCLAW_IMAGE is refused locally, naming the value and the grammar", failure instanceof Error && failure.message.includes(garbage) && failure.message.includes(settingsImageRefusal(garbage)), true);
+  check("the OPENCLAW_IMAGE refusal is built from the image-grammar's own refusal", settingsImageRefusal(garbage).includes(invalidImageReference(garbage)), true);
   check("the OPENCLAW_IMAGE refusal happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
 }
 

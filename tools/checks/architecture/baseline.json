@@ -130,7 +130,7 @@
         "lines": {
           "# Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works": 1,
           "# Hints in the CLI say \"./clawforge\" for this entry, \"clawforge\" for the system-wide command.": 1,
-          "export CLAWFORGE_INVOCATION='{\"version\":${INVOCATION_VERSION},\"program\":\"./clawforge\",\"mode\":\"installed\",\"audience\":\"terminal\"}'": 1,
+          "export CLAWFORGE_INVOCATION='{\"version\":${INVOCATION_VERSION},\"program\":\"./clawforge\",\"mode\":\"checkout\",\"audience\":\"terminal\"}'": 1,
           "export CLAWFORGE_INVOKED_AS=./clawforge": 1
         }
       },

@@ -6,6 +6,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* A new deployment's committed shim (`init`) hands over a `CLAWFORGE_INVOCATION` the strict
+  reader accepts (`"mode":"checkout"`, was the incoherent `"installed"`, which the reader
+  discarded); hints no longer rely on the legacy variable fallback on Windows installed
+  deployments. `lock` on a never-bootstrapped deployment refuses up front with the `bootstrap`
+  remedy instead of running the full inventory and failing with a bare `lock not written: …`
+  error (`lock --check` still reports the target state). `help --bogus` and
+  `control-mcp --bogus` advice no longer pins a deployment: the suggested command carries no
+  `--app`. `upgrade`'s refusal of a malformed `OPENCLAW_IMAGE` is now phrased
+  `OPENCLAW_IMAGE: "<value>" is not a valid image reference — expected
+  [registry[:port]/]repo[:tag][@sha256:<64 hex characters>].`
 * An MCP call that gives a variadic (`host`'s `args`, `set diff`'s `artifacts`) but omits a required
   positional (`host`'s `context`, the `action`) is refused like a missing argument instead of
   running with the variadic's first word in its place. `help` and `control-mcp` refuse extra or

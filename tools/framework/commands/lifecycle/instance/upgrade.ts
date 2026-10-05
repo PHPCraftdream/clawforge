@@ -12,7 +12,7 @@ import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
-import { parse, tryParse, format, repositoryOf, withDigest, sameContent, digestOf, imageRefValue, type ImageRef } from "#src/runtime/docker/image-ref.ts";
+import { parse, tryParse, format, repositoryOf, withDigest, sameContent, digestOf, imageRefValue, invalidImageReference, type ImageRef } from "#src/runtime/docker/image-ref.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -24,8 +24,7 @@ export function pinAdviceLine(pinnedReference: string): string {
 }
 
 export function settingsImageRefusal(value: string): string {
-  return `OPENCLAW_IMAGE is "${value}" — not a valid image reference ` +
-    "(expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]).";
+  return `OPENCLAW_IMAGE: ${invalidImageReference(value)}.`;
 }
 
 export const UPGRADE_ARGUMENTS = [

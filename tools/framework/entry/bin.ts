@@ -75,8 +75,7 @@ resolveFrameworkFromSelf();
 // list from entry/registry.ts: init (carrying the placement decision this entry made), version
 // and completion, closing completion over the finished array.
 const gateCommands: GateCommand[] = installedGate(appRoot, { localTypesOnly, ancestor });
-// Registered before any command runs, so the renderer omits --app from these (they run before
-// a deployment is resolved).
+// Registered before any command runs, so the renderer omits --app from these (they run before a deployment is resolved).
 useGateCommands(gateCommands.map((command) => command.name));
 
 const gateExit = await runGateCommand(gateCommands, argv);

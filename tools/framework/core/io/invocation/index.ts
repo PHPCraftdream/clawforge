@@ -80,7 +80,7 @@ export function parseInvocation(text: string): Invocation | undefined {
   const trimmed = program.trim();
   // Producers spell the modes coherently: "installed" is the bare system-wide name, while a
   // `./`-relative program is always a checkout spelling — the committed shim, the monorepo MCP
-  // launcher or the local-package copy — never the installed one. No writer emits that pair.
+  // launcher or the local-package copy — never the installed one. Every producer of the variable is held to this by a check that runs each generated text through this parse.
   if (mode === "installed" && (trimmed.startsWith("./") || trimmed.startsWith(".\\"))) return undefined;
   if (app === undefined) return { program: trimmed, mode: mode as InvocationMode, audience: audience as InvocationAudience };
   if (!plainObject(app)) return undefined;

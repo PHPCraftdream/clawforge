@@ -64,7 +64,12 @@ export function renderProgram(on: Invocation): string {
   return SAFE_PROGRAM.test(on.program) ? on.program : renderArgument(on.program, on.program);
 }
 
-export function renderAdvice(advice: Advice, on: Invocation = invocation()): string {
+export function renderAdvice(
+  advice: Advice,
+  on: Invocation = invocation(),
+  // deploymentFree: a pointer to a command whose own usage never targets a deployment (the dispatcher's two).
+  options?: { readonly deploymentFree?: boolean },
+): string {
   if (advice.kind === "shell") {
     return advice.note === undefined ? advice.text : `${advice.text}  (${advice.note})`;
   }
@@ -78,6 +83,7 @@ export function renderAdvice(advice: Advice, on: Invocation = invocation()): str
     parts.push("--app", renderArgument(advice.app, on.program));
   } else if (
     !isGateCommand(advice.argv[0]) &&
+    options?.deploymentFree !== true &&
     on.app !== undefined &&
     (on.app.selectedBy === "flag" || on.app.selectedBy === "env" || on.app.selectedBy === "sole")
   ) {
@@ -90,6 +96,6 @@ export function renderAdvice(advice: Advice, on: Invocation = invocation()): str
   return advice.note === undefined ? line : `${line}  (${advice.note})`;
 }
 
-export function commandLine(argv: string | readonly string[], options?: { readonly app?: string }): string {
-  return renderAdvice(command(argv, options));
+export function commandLine(argv: string | readonly string[], options?: { readonly app?: string; readonly deploymentFree?: boolean }): string {
+  return renderAdvice(command(argv, options), invocation(), { deploymentFree: options?.deploymentFree });
 }

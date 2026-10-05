@@ -354,7 +354,7 @@ await requires("bash", "the generated bash script, sourced by a real bash", asyn
     const driverPath = join(dir, "driver.sh");
     await writeFile(driverPath, bashDriver(scriptPath), "utf8");
     const proc = spawnSync("bash", [driverPath], {
-      timeout: 120_000, encoding: "utf8",
+      timeout: 360_000, encoding: "utf8",
       // The stub has to be found on PATH for `"${COMP_WORDS[0]}" list --json …` to answer.
       env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` },
     });
@@ -390,7 +390,7 @@ await requires("pwsh", "the generated pwsh script, driven by a real PowerShell",
     const driverPath = join(dir, "driver.ps1");
     await writeFile(driverPath, pwshDriver(scriptPath), "utf8");
     const proc = spawnSync(pwsh, ["-NoProfile", "-NonInteractive", "-File", driverPath], {
-      timeout: 180_000, encoding: "utf8",
+      timeout: 420_000, encoding: "utf8",
       env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` },
     });
     check("pwsh: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);

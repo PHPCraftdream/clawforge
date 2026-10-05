@@ -77,7 +77,7 @@ async function runTool(command: string, args: string[], timeoutMs: number): Prom
 }
 
 async function windowsOwnerSid(file: string): Promise<string> {
-  const who = await runTool(systemTool("whoami.exe"), ["/user", "/fo", "csv", "/nh"], 10_000);
+  const who = await runTool(systemTool("whoami.exe"), ["/user", "/fo", "csv", "/nh"], 30_000);
   const sid = /S-1-\d+(?:-\d+)+/.exec(who.output)?.[0];
   if (who.code !== 0 || sid === undefined) {
     throw new Error(`cannot determine the Windows owner for ${file}: ${who.output.trim() || `exit ${who.code}`}`);

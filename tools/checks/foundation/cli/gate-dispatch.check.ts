@@ -36,7 +36,9 @@ import {
   NOT_FOUND,
   APP_ORDER,
 } from "#framework/integration/gate.ts";
-import { unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { UnknownArgumentError, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { tokenize } from "#framework/core/command/parse.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { GROUP_HEADINGS } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -133,6 +135,56 @@ check(
   misplacedAppFlag("verify", ["--app", "x"], ["check", "new-app", "list"]),
   "--app",
 );
+// The tokenizer differential: for every declared command, the gate's misplaced decision equals
+// "the parser would refuse --app as a standalone token" — an option's value and the command's
+// own flag are never misplaced (round 10, class E).
+{
+  const spellings = (option: string): readonly (readonly string[])[] => [
+    [option, "--app"],
+    [option, "--app", "x"],
+    [option + "=x", "--app"],
+    ["--app", "x"],
+    ["--app=x"],
+    ["--", "--app"],
+  ];
+  for (const [name, declaration] of Object.entries(openclawCommands)) {
+    const declared = declaration.arguments ?? [];
+    const option = declared.find((argument) => argument.kind === "option");
+    // Misplaced means "the parser refuses --app itself" — a leftover positional token it
+    // refuses instead (bootstrap --break-foreign-lock --app x) is not an --app refusal.
+    const oracle = (args: readonly string[]): string | undefined => {
+      try {
+        tokenize(declared, args);
+        return undefined;
+      } catch (error) {
+        if (!(error instanceof UnknownArgumentError) || !/^unknown argument: --app(=x)?( |$)/.test(error.message)) return undefined;
+        const stopped = args.findIndex((arg) => arg === "--app" || arg.startsWith("--app="));
+        return stopped === -1 || args.slice(0, stopped).includes("--") ? undefined : args[stopped];
+      }
+    };
+    const cases = option === undefined ? [["--app", "x"], ["--app=x"], ["--", "--app"]] as const : spellings(`--${option.name}`);
+    for (const args of cases) {
+      check(
+        `${name}: the gate's misplaced decision matches the tokenizer (${args.join(" ")})`,
+        misplacedAppFlag(name, args, [], declared),
+        oracle(args),
+      );
+    }
+  }
+  check(
+    "an option's value is not misplaced (accept p --set --app shape)",
+    misplacedAppFlag("accept", ["p", "--set", "--app"], [], [
+      { name: "project", kind: "positional", description: "project" },
+      { name: "set", kind: "option", valueName: "kv", description: "set a value" },
+    ]),
+    undefined,
+  );
+  check(
+    "a declared --app flag is not misplaced",
+    misplacedAppFlag("mine", ["--app", "x"], [], [{ name: "app", kind: "flag", description: "app" }]),
+    undefined,
+  );
+}
 check(
   "splitLeadingAppFlag takes the leading --app and leaves the post-/--app=x alone",
   splitLeadingAppFlag(["--app", "demo", "operations", "--", "--app=x"]),

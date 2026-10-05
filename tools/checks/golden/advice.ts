@@ -19,6 +19,7 @@ import { entryRefusalAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
 import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
+import { bootstrapRemoteLine } from "#framework/commands/management/deploy/sync.ts";
 import { cmdExeLine, displayCommandLine, schtasksCreateCommand } from "#framework/commands/operate/schedule.ts";
 import { toolSteps } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
@@ -115,7 +116,7 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   // fake layouts, plus the pointers the unknown-command/argument reporters print.
   ...entryRefusalAdvice(),
   // Group 4 (rf4-sweep-cmds1): the lines deploy builds for the remote server.
-  { label: "deploy: remote bootstrap hint (shell)", advice: shellLine("posix", "cd <remotePath> && ./clawforge --app <name> bootstrap") },
+  { label: "deploy: remote bootstrap hint (shell)", advice: shellLine("posix", bootstrapRemoteLine("<remotePath>", "<name>")) },
   { label: "deploy: remote bootstrap command", advice: command(["bootstrap"], { app: "<name>" }) },
   { label: "deploy: remote secrets --apply command", advice: command(["secrets", "--apply"], { app: "<name>" }) },
   // Group 4 (rf4-sweep-cmds2): the lines the schedulers get — cron's `cd <root> && <invocation>`

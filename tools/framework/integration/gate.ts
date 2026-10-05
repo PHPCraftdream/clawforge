@@ -16,7 +16,7 @@ import { command, manual } from "../core/io/invocation/advice.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import { shellLine } from "../core/io/invocation/advice.ts";
 import { bind, tokenize } from "../core/command/parse.ts";
-import { closestCommand } from "../core/command/errors.ts";
+import { closestCommand, UNKNOWN_ARGUMENT, UnknownArgumentError } from "../core/command/errors.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
@@ -269,8 +269,7 @@ export function isDeploymentHelpRequest(argv: readonly string[], deploymentComma
   if (argv[0] === undefined || !deploymentCommands.includes(argv[0])) return false;
   const rest = argv.slice(1);
   if (rest.length === 0) return false;
-  const sep = rest.indexOf("--");
-  return (sep === -1 ? rest : rest.slice(0, sep)).includes("--help");
+  return beforeBareDoubleDash(rest).includes("--help");
 }
 
 /** What a leading `--app <name>` or `--app=<name>` split off argv, if either was there. */
@@ -301,14 +300,25 @@ export function splitLeadingAppFlag(argv: string[]): AppFlagSplit {
 /** The first `--app`/`--app=<name>` among a command's own arguments (a leading one was already
  *  split off), stopping at a bare `--` — tokens after it are values, not flags. `exempt` names
  *  commands that read their argv verbatim: gate commands and those declaring a variadic argument
- *  (cli, exec, host), whose `--app` belongs to them. */
+ *  (cli, exec, host), whose `--app` belongs to them. With the command's `declared` arguments the
+ *  tokenizer decides: an `--app` it binds (the command's own flag) or swallows (an option's
+ *  value) is not misplaced; one it refuses before a bare `--` is. */
 export function misplacedAppFlag(
   commandName: string | undefined,
   args: readonly string[],
   exempt: readonly string[],
+  declared?: readonly CommandArgument[],
 ): string | undefined {
   if (commandName === undefined || exempt.includes(commandName)) return undefined;
-  return beforeBareDoubleDash(args).find((arg) => arg === "--app" || arg.startsWith("--app="));
+  if (declared === undefined) return beforeBareDoubleDash(args).find((arg) => arg === "--app" || arg.startsWith("--app="));
+  try {
+    tokenize(declared, args);
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof UnknownArgumentError) || !error.message.includes(`${UNKNOWN_ARGUMENT}: --app`)) return undefined;
+    const stopped = args.findIndex((arg) => arg === "--app" || arg.startsWith("--app="));
+    return stopped === -1 || args.slice(0, stopped).includes("--") ? undefined : args[stopped];
+  }
 }
 
 /** The standard answer to a command name nothing declares: the typo, a nearby spelling

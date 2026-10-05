@@ -6,6 +6,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* `init -- --local` no longer acts as `init --local`: the flag after a bare `--` is init's own
+  data, so the init-nesting refusal applies again. An `--app` that a command's declared option
+  consumes as its value (`accept p --set --app`) is no longer refused as misplaced. Completion
+  offers nothing after a bare `--` for any command (e.g. `logs --since 1h --`), while a `--`
+  that a pending option swallows as its value (`check --grep --`) no longer ends the options.
 * The docker-compose `OPENCLAW_GATEWAY_TOKEN` guard message no longer names a program: a missing
   token now says `run bootstrap to generate .env`.
 * A failing command no longer prints a `--json` error document when `--json` was an option's

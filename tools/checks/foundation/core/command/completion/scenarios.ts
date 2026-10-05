@@ -76,13 +76,26 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
     }
   }
 
-  // Any variadic command's bare `--` starts the literal tail, verbatim or not — and without it
-  // the command's own flags still come out (the guard pins the pre-`--` behaviour).
-  for (const command of data.variadic) {
+  // The bare `--` is the parser's own options-end marker for ANY command (round 10, class B):
+  // everything from it on is refused, so nothing may be offered — and without it the command's
+  // own flags still come out (the guard pins the pre-`--` behaviour).
+  for (const command of data.first.keys()) {
     if (data.verbatim.has(command)) continue; // the verbatim loop above already covers it
     const bareEnd = [command, "--", ""];
     scenarios.push({ name: `${command}'s bare -- starts the literal tail`, words: bareEnd, cword: bareEnd.length - 1 });
     scenarios.push({ name: `${command}'s flags without --`, words: [command, "--j"], cword: 1 });
+  }
+
+  // A `--` a pending value-option swallows is NOT the options-end marker: the parser reads it
+  // as the option's value, so the command's own flags still come out behind it — and once that
+  // value is filled, a later `--` ends the options for good.
+  for (const [command, options] of data.valueOptions) {
+    if (data.verbatim.has(command)) continue; // the verbatim loop above covers pass-through
+    const option = options[0]!;
+    const swallowed = [command, option, "--", ""];
+    scenarios.push({ name: `${command} ${option} swallows the bare --`, words: swallowed, cword: swallowed.length - 1 });
+    const endedLater = [command, option, "x", "--", ""];
+    scenarios.push({ name: `${command} ${option} x -- ends the options`, words: endedLater, cword: endedLater.length - 1 });
   }
 
   if (first !== "") scenarios.push({ name: "--app before the command", words: ["--app", "x", first, ""], cword: 3 });

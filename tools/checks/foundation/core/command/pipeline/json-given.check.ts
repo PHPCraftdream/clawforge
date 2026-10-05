@@ -18,7 +18,7 @@ import type { ArgumentSpec, CallShape, EffectShape } from "#framework/core/comma
 import { ArgumentError } from "#framework/core/command/index.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import type { AppDefinition } from "#framework/core/app.ts";
+import type { AppCommand, AppDefinition, CommandArgument } from "#framework/core/app.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
@@ -237,6 +237,44 @@ const execApp: AppDefinition = {
 };
 await differential("exec: --profile full run --json (a verbatim tail swallows --json)", execShape, "exec", ["--profile", "full", "run", "--json"], execApp);
 await differential("exec: --profile full --json run (the flag before the tail)", execShape, "exec", ["--profile", "full", "--json", "run"], execApp);
+
+// --- a deployment-authored LEGACY AppCommand: no spec body, argv parsed by the command —
+// the --json decision must still come from the tokenizer over the declared arguments.
+// The failure lands at the context stage (createContext refuses the bare fixture) — still a
+// failed() call, still exercising the document decision. The stage is recorded, not pinned.
+const legacyStages: string[] = [];
+async function legacyDifferential(label: string, shape: Shape, command: string, argv: string[], fixture: AppDefinition) {
+  const { execution, printed } = await runCase(command, argv, fixture);
+  cases += 1;
+  legacyStages.push(execution.stage);
+  check(`${label}: stops at the context stage`, execution.stage, "context");
+  const oracle = jsonTokenGiven(shape, argv);
+  check(`${label}: the document prints iff the tokenizer binds --json`, printed, oracle);
+}
+const legacyShape: Shape = {
+  effect: "change",
+  arguments: [
+    { name: "profile", kind: "option", valueName: "profile", description: "the profile" },
+    { name: "json", kind: "flag", description: "machine output" },
+  ],
+};
+const legacyCommand: AppCommand = {
+  summary: "legacy",
+  group: "low-level",
+  arguments: legacyShape.arguments as unknown as CommandArgument[],
+  run: async () => {
+    throw new Error("legacy boom");
+  },
+};
+const legacyApp: AppDefinition = {
+  name: "legacy-fixture",
+  description: "fixture",
+  commands: materializeCommands({ legacy: legacyCommand }),
+};
+await legacyDifferential("legacy: --profile full --json (the flag after a value)", legacyShape, "legacy", ["--profile", "full", "--json"], legacyApp);
+await legacyDifferential("legacy: --profile --json (R7: --json in the value position)", legacyShape, "legacy", ["--profile", "--json"], legacyApp);
+await legacyDifferential("legacy: --json --profile full (the flag first)", legacyShape, "legacy", ["--json", "--profile", "full"], legacyApp);
+await legacyDifferential("legacy: -- --json (after a bare --)", legacyShape, "legacy", ["--", "--json"], legacyApp);
 
 checkTrue("every differential case ran", cases > 60);
 finish("pipeline: the --json document agrees with the tokenizer on a parse failure");

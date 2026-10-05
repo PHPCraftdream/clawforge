@@ -1,5 +1,88 @@
 {
   "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it.",
+  "rawArgvScans": {
+    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails",
+    "files": {},
+    "total": 26,
+    "exempt": {
+      "tools/framework/core/command/parse.ts": {
+        "reason": "the tokenizer: the one reading every other site defers to",
+        "lines": {
+          "if (!token.startsWith(\"--\")) return false;": 1,
+          "if (token.startsWith(\"--\")) {": 1,
+          "const argument = flagToken.startsWith(\"--\") ? named.get(flagToken.slice(2)) : undefined;": 1,
+          "const key = flagToken.startsWith(\"--\") ? flagToken.slice(2) : undefined;": 1,
+          "const name = token.startsWith(\"--\") && eq !== -1 ? token.slice(0, eq) : token;": 1
+        }
+      },
+      "tools/framework/integration/gate.ts": {
+        "reason": "the bare-`--` boundary itself (requestsHelp, isDeploymentHelpRequest, misplacedAppFlag read through it); splitLeadingAppFlag: the leading --app pair the gate splits off before any command declaration applies; misplacedAppFlag's fallback for a command whose declarations the entry does not know — the declaration-known path is the tokenizer, differentially pinned by gate-dispatch.check.ts",
+        "lines": {
+          "const sep = args.indexOf(\"--\");": 1,
+          "return { value, missingValue: false, rest: argv.slice(2) };": 1,
+          "if (argv[0] !== undefined && argv[0].startsWith(\"--app=\")) {": 1,
+          "if (declared === undefined) return beforeBareDoubleDash(args).find((arg) => arg === \"--app\" || arg.startsWith(\"--app=\"));": 1,
+          "const stopped = args.findIndex((arg) => arg === \"--app\" || arg.startsWith(\"--app=\"));": 1
+        }
+      },
+      "tools/framework/integration/completion/table.ts": {
+        "reason": "completion's own --app pair skip (the gate's selector, not a command argument) and value-position lookup (prev is an option being valued, not a scan for a flag); the remaining args.* lines read the registry's declared CommandArgument descriptors, not raw argv",
+        "lines": {
+          "if (args.some((argument) => argument.kind === \"variadic\" && \"verbatim\" in argument && argument.verbatim === true)) {": 1,
+          "verbatim.set(name, args.filter((argument) => argument.kind === \"positional\").length);": 1,
+          "const actionArgument = args.find(": 1,
+          "const flagArgs = args.filter((argument) => argument.kind === \"flag\" || argument.kind === \"option\");": 1,
+          "const options = args.filter((argument) => argument.kind === \"option\").map(flagName);": 1,
+          "const positional = args.find(": 1,
+          "while (data.appFlag && (scan[i] === \"--app\" || scan[i]?.startsWith(\"--app=\") === true)) i += scan[i] === \"--app\" ? 2 : 1;": 1,
+          "if (prev !== undefined && prev.startsWith(\"--\")) {": 1
+        }
+      },
+      "tools/framework/entry/bin.ts": {
+        "reason": "the entry seam: rawArgv is born here; --project-root is decided before any command declaration exists",
+        "lines": {
+          "const rawArgv = process.argv.slice(2);": 1
+        }
+      },
+      "tools/framework/entry/resolve.ts": {
+        "reason": "the installed entry's --project-root consumption, before any command exists",
+        "lines": {
+          "const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : [...rawArgv]);": 1
+        }
+      },
+      "tools/clawforge.ts": {
+        "reason": "the entry seam: rawArgv is born here; --project-root is decided before any command declaration exists",
+        "lines": {
+          "const argv = normalizeVersionAlias(process.argv.slice(2));": 1
+        }
+      },
+      "tools/framework/integration/mcp/call.ts": {
+        "reason": "narrowing a document's structured advice payload field, not a process-argv scan",
+        "lines": {
+          "if (advice.kind === \"clawforge\") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === \"string\");": 1
+        }
+      },
+      "tools/framework/core/io/invocation/index.ts": {
+        "reason": "program spelling validation, not an argv membership scan",
+        "lines": {
+          "if (value.startsWith(\"--\") || /\\s/.test(value)) return undefined;": 1,
+          "if (program.startsWith(\"--\") || /\\s/.test(program)) return undefined;": 1
+        }
+      },
+      "tools/framework/commands/management/provision-agent/declaration.ts": {
+        "reason": "compares a stored entry's declared args against the spec's, not a scan of process argv",
+        "lines": {
+          "return entry.args.every((value, index) => value === spec.args[index]);": 1
+        }
+      },
+      "tools/framework/commands/operate/schedule.ts": {
+        "reason": "a ValueError message prefix, not argv",
+        "lines": {
+          "throw new ValueError(message.startsWith(\"--interval \") ? message.slice(\"--interval \".length) : `: ${message}`);": 1
+        }
+      }
+    }
+  },
   "dotClawforgeLiterals": {
     "comment": "stage 4 (Advice): ./clawforge must reach output only through one renderer",
     "files": {},

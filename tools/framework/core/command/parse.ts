@@ -159,6 +159,8 @@ export interface Tokens {
   readonly entries: readonly TokenEntry[];
   /** Flags and options, every occurrence, in typing order. */
   readonly given: readonly string[];
+  /** True once a bare `--` ended the options (a `--` an option swallowed as its value is not one). */
+  readonly optionsEnded: boolean;
 }
 
 /** Syntactic parsing only: which declared argument each token belongs to, and whether every
@@ -271,7 +273,7 @@ export function tokenize(declared: readonly CommandArgument[], argv: readonly st
     dieUnknownArgument(token);
   }
 
-  return { entries, given };
+  return { entries, given, optionsEnded };
 }
 
 /** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens,

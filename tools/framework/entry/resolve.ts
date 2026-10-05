@@ -9,11 +9,14 @@ import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { safeName } from "../core/values/names.ts";
 import type { InvocationApp } from "../core/io/invocation/index.ts";
+import type { CommandArgument } from "../core/app.ts";
 import { manual } from "../core/io/invocation/advice.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
 import { renderAdvice, shimInvocation } from "../core/io/invocation/render.ts";
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
+import { tokenize } from "../core/command/parse.ts";
+import { INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import {
   beforeBareDoubleDash,
   checkoutSubfolderReport,
@@ -97,6 +100,9 @@ export interface CheckoutEntryInput {
   readonly deploymentCommands: readonly string[];
   /** Deployment commands that read their argv verbatim — their `--app` is their own. */
   readonly variadicCommands: readonly string[];
+  /** The declared arguments of a command, for the tokenizer to read an `--app`'s position —
+   *  the deployment commands' and the gate commands' alike. */
+  readonly deploymentArguments?: (name: string) => readonly CommandArgument[] | undefined;
 }
 
 export type CheckoutEntryDecision =
@@ -144,7 +150,7 @@ function appFact(name: string, selectedBy: InvocationApp["selectedBy"], handedOv
 }
 
 export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDecision {
-  const { root, cwd, argv, ocApp, handedOver, fs, gateCommands, deploymentCommands, variadicCommands } = input;
+  const { root, cwd, argv, ocApp, handedOver, fs, gateCommands, deploymentCommands, variadicCommands, deploymentArguments } = input;
 
   // --app wins over the environment, the environment over the default.
   let name = ocApp ?? "openclaw";
@@ -157,8 +163,10 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   }
   const rest = [...appFlag.rest];
 
-  // --app after the command is refused, except where the command reads argv verbatim.
-  if (misplacedAppFlag(rest[0], rest.slice(1), [...gateCommands, ...variadicCommands]) !== undefined) {
+  // --app after the command is refused, except where the command reads argv verbatim. With the
+  // command's declared arguments the tokenizer decides; without them the bare `--` scan does.
+  const declared = rest[0] === undefined ? undefined : deploymentArguments?.(rest[0]);
+  if (misplacedAppFlag(rest[0], rest.slice(1), [...gateCommands, ...variadicCommands], declared) !== undefined) {
     return { kind: "refuse-misplaced-app-flag" };
   }
 
@@ -366,6 +374,16 @@ function sameDirectory(platform: NodeJS.Platform, a: string, b: string): boolean
   return platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
+/** The tokenizer's own reading of init's argv: `--local` counts only where the parser binds
+ *  it; a bare `--` or any refused token makes it not a `--local` call. */
+function localFlagGiven(args: readonly string[]): boolean {
+  try {
+    return tokenize(INIT_ARGUMENTS, args).given.includes("local");
+  } catch {
+    return false;
+  }
+}
+
 /** The installed entry's placement decisions (plan stage 2, item 2 — what bin.ts used to
  *  decide inline): `--project-root <abs>`, where init may write, which directory is the
  *  app root, and the argv a re-exec needs. Pure: same fs-probe discipline as the gate. */
@@ -386,7 +404,10 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
   const initializing = argv[0] === "init" && !beforeBareDoubleDash(argv).some((arg) => arg === "--help" || arg === "-h");
   const ancestor = scheduled ? undefined : findAppRootIn(cwd, fs);
   // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
-  const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
+  // The flag is the parser's own reading of argv — a `--local` after a bare `--` is init's
+  // passthrough, not the flag, and an unparseable argv is not a `--local` call.
+  const initArgs = initializing ? argv.slice(1) : [];
+  const localTypesOnly = initializing && localFlagGiven(initArgs) && ancestor !== undefined;
   if (initializing && !scheduled && ancestor !== undefined && ancestor !== here && !localTypesOnly) {
     return { kind: "refuse", refusals: [new UserError(`${ancestor} ${ALREADY_HOLDS_APP} — this directory is inside that deployment; init here would nest a second one`)], ancestor };
   }

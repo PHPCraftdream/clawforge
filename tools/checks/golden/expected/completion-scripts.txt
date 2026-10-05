@@ -134,16 +134,35 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
-    "variadic check") _clawforge_reply="" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
-    "variadic check") _clawforge_reply="" ;;
+    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawforge_reply="--profile" ;;
+    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawforge_reply="--set" ;;
+    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawforge_reply="--set" ;;
+    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawforge_reply="--path" ;;
+    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
+    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "valueOptions check") _clawforge_reply="--jobs --require" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -191,13 +210,19 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
-  # not: everything from it on is literal text. A pass-through command past its declared
-  # positionals is the other way the tail turns literal, so its own flags stop being offered.
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
+  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
+  # not one — the same consumption the parser itself makes (an option's value is skipped).
+  if (( ${#between[@]} > 0 )); then
+    # A missing arm answers empty: no option of this command swallows a `--`.
+    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
+    local ended=0 swallow=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+      if (( swallow )); then swallow=0; continue; fi
+      if [[ "$token" == "--" ]]; then ended=1; break; fi
+      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
     done
+    if (( ended )); then COMPREPLY=(); return; fi
   fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
@@ -359,16 +384,35 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
-    "variadic check") _clawforge_reply="" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
-    "variadic check") _clawforge_reply="" ;;
+    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawforge_reply="--profile" ;;
+    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawforge_reply="--set" ;;
+    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawforge_reply="--set" ;;
+    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawforge_reply="--path" ;;
+    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
+    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "valueOptions check") _clawforge_reply="--jobs --require" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -416,13 +460,19 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
-  # not: everything from it on is literal text. A pass-through command past its declared
-  # positionals is the other way the tail turns literal, so its own flags stop being offered.
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
+  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
+  # not one — the same consumption the parser itself makes (an option's value is skipped).
+  if (( ${#between[@]} > 0 )); then
+    # A missing arm answers empty: no option of this command swallows a `--`.
+    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
+    local ended=0 swallow=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+      if (( swallow )); then swallow=0; continue; fi
+      if [[ "$token" == "--" ]]; then ended=1; break; fi
+      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
     done
+    if (( ended )); then COMPREPLY=(); return; fi
   fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
@@ -584,12 +634,36 @@ $clawforgeVerbatim = @{
   "exec" = 0
   "host" = 1
 }
-$clawforgeVariadic = @{
-  "cli" = $true
-  "exec" = $true
-  "host" = $true
-  "set" = $true
-  "check" = $true
+$clawforgeValueOptions = @{
+  "bootstrap" = @("--break-foreign-lock")
+  "up" = @("--break-foreign-lock")
+  "restart" = @("--break-foreign-lock")
+  "down" = @("--break-foreign-lock")
+  "destroy" = @("--confirm-name", "--break-foreign-lock")
+  "logs" = @("--tail", "--since", "--grep")
+  "backup" = @("--profile", "--keep", "--break-foreign-lock", "--interval")
+  "restore" = @("--break-foreign-lock")
+  "pull" = @("--profile", "--break-foreign-lock")
+  "push" = @("--break-foreign-lock")
+  "verify" = @("--profile")
+  "upgrade" = @("--image", "--break-foreign-lock")
+  "plan" = @("--set")
+  "apply" = @("--set", "--expect", "--break-foreign-lock")
+  "accept" = @("--set")
+  "rollback" = @("--operation", "--break-foreign-lock")
+  "operations" = @("--limit")
+  "apply-config" = @("--break-foreign-lock")
+  "expose" = @("--local-port", "--break-foreign-lock")
+  "watch" = @("--interval", "--break-foreign-lock")
+  "incident" = @("--tail", "--break-foreign-lock")
+  "configure-provider" = @("--provider", "--env", "--break-foreign-lock")
+  "secrets" = @("--store", "--break-foreign-lock")
+  "recipe" = @("--break-foreign-lock", "--tail")
+  "provision-agent" = @("--break-foreign-lock")
+  "deploy" = @("--path")
+  "mcp-setup" = @("--client")
+  "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
+  "check" = @("--jobs", "--require")
 }
 $clawforgeValues = @{
   "backupcreate--profile" = @("full", "migrate", "share")
@@ -646,10 +720,17 @@ $clawforgeCompleter = {
       $candidates = @($clawforgeFirst[$cmd])
     } else {
       $afterKey = "$cmd $($between[0])"
-      # A bare `--` is the parser's own options-end marker for ANY variadic command,
-      # verbatim or not: everything from it on is literal text. A pass-through command
-      # past its declared positionals is the other way the tail turns literal.
-      if ($clawforgeVariadic.ContainsKey($cmd) -and $between -contains '--') {
+      # A bare `--` is the parser's own options-end marker for ANY command: everything
+      # from it on is literal text, so the command's flags stop. A `--` a pending
+      # value-option swallows is not one — the parser's own consumption.
+      $ended = $false
+      $swallow = $false
+      foreach ($w2 in $between) {
+        if ($swallow) { $swallow = $false; continue }
+        if ($w2 -eq '--') { $ended = $true; break }
+        if ($clawforgeValueOptions[$cmd] -contains $w2) { $swallow = $true }
+      }
+      if ($ended) {
         $candidates = @()
       } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {
         $free = 0
@@ -804,14 +885,34 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
+    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawforge_reply="--profile" ;;
+    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawforge_reply="--set" ;;
+    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawforge_reply="--set" ;;
+    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawforge_reply="--path" ;;
+    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
+    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -852,13 +953,19 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
-  # not: everything from it on is literal text. A pass-through command past its declared
-  # positionals is the other way the tail turns literal, so its own flags stop being offered.
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
+  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
+  # not one — the same consumption the parser itself makes (an option's value is skipped).
+  if (( ${#between[@]} > 0 )); then
+    # A missing arm answers empty: no option of this command swallows a `--`.
+    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
+    local ended=0 swallow=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+      if (( swallow )); then swallow=0; continue; fi
+      if [[ "$token" == "--" ]]; then ended=1; break; fi
+      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
     done
+    if (( ended )); then COMPREPLY=(); return; fi
   fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
@@ -1014,14 +1121,34 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
-    "variadic cli") _clawforge_reply="" ;;
-    "variadic exec") _clawforge_reply="" ;;
-    "variadic host") _clawforge_reply="" ;;
-    "variadic set") _clawforge_reply="" ;;
+    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawforge_reply="--profile" ;;
+    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawforge_reply="--set" ;;
+    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawforge_reply="--set" ;;
+    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawforge_reply="--path" ;;
+    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
+    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -1062,13 +1189,19 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
-  # not: everything from it on is literal text. A pass-through command past its declared
-  # positionals is the other way the tail turns literal, so its own flags stop being offered.
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
+  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
+  # not one — the same consumption the parser itself makes (an option's value is skipped).
+  if (( ${#between[@]} > 0 )); then
+    # A missing arm answers empty: no option of this command swallows a `--`.
+    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
+    local ended=0 swallow=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+      if (( swallow )); then swallow=0; continue; fi
+      if [[ "$token" == "--" ]]; then ended=1; break; fi
+      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
     done
+    if (( ended )); then COMPREPLY=(); return; fi
   fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
@@ -1224,11 +1357,35 @@ $clawforgeVerbatim = @{
   "exec" = 0
   "host" = 1
 }
-$clawforgeVariadic = @{
-  "cli" = $true
-  "exec" = $true
-  "host" = $true
-  "set" = $true
+$clawforgeValueOptions = @{
+  "bootstrap" = @("--break-foreign-lock")
+  "up" = @("--break-foreign-lock")
+  "restart" = @("--break-foreign-lock")
+  "down" = @("--break-foreign-lock")
+  "destroy" = @("--confirm-name", "--break-foreign-lock")
+  "logs" = @("--tail", "--since", "--grep")
+  "backup" = @("--profile", "--keep", "--break-foreign-lock", "--interval")
+  "restore" = @("--break-foreign-lock")
+  "pull" = @("--profile", "--break-foreign-lock")
+  "push" = @("--break-foreign-lock")
+  "verify" = @("--profile")
+  "upgrade" = @("--image", "--break-foreign-lock")
+  "plan" = @("--set")
+  "apply" = @("--set", "--expect", "--break-foreign-lock")
+  "accept" = @("--set")
+  "rollback" = @("--operation", "--break-foreign-lock")
+  "operations" = @("--limit")
+  "apply-config" = @("--break-foreign-lock")
+  "expose" = @("--local-port", "--break-foreign-lock")
+  "watch" = @("--interval", "--break-foreign-lock")
+  "incident" = @("--tail", "--break-foreign-lock")
+  "configure-provider" = @("--provider", "--env", "--break-foreign-lock")
+  "secrets" = @("--store", "--break-foreign-lock")
+  "recipe" = @("--break-foreign-lock", "--tail")
+  "provision-agent" = @("--break-foreign-lock")
+  "deploy" = @("--path")
+  "mcp-setup" = @("--client")
+  "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
 }
 $clawforgeValues = @{
   "backupcreate--profile" = @("full", "migrate", "share")
@@ -1285,10 +1442,17 @@ $clawforgeCompleter = {
       $candidates = @($clawforgeFirst[$cmd])
     } else {
       $afterKey = "$cmd $($between[0])"
-      # A bare `--` is the parser's own options-end marker for ANY variadic command,
-      # verbatim or not: everything from it on is literal text. A pass-through command
-      # past its declared positionals is the other way the tail turns literal.
-      if ($clawforgeVariadic.ContainsKey($cmd) -and $between -contains '--') {
+      # A bare `--` is the parser's own options-end marker for ANY command: everything
+      # from it on is literal text, so the command's flags stop. A `--` a pending
+      # value-option swallows is not one — the parser's own consumption.
+      $ended = $false
+      $swallow = $false
+      foreach ($w2 in $between) {
+        if ($swallow) { $swallow = $false; continue }
+        if ($w2 -eq '--') { $ended = $true; break }
+        if ($clawforgeValueOptions[$cmd] -contains $w2) { $swallow = $true }
+      }
+      if ($ended) {
         $candidates = @()
       } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {
         $free = 0

@@ -126,7 +126,7 @@ const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
   // one — so an installed script names it neither as a candidate nor in the lazy `list --json`
   // call that would fill it. pwsh keeps ONE fixed interpreter body (section 4): its --app branch
   // and that call live in it, guarded at run time by $clawforgeApp, so what the declarations
-  // reach it through — the flag line and the four data tables — is what must be free of --app.
+  // reach it through — the flag line and the five data tables — is what must be free of --app.
   check("the installed top level carries no --app", installed.top.includes("--app"), false);
   for (const shell of ["bash", "zsh"] as const) {
     const text = renderCompletion(shell, installed);
@@ -209,8 +209,8 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   // the child's literal text, so the command's own flags must not be offered there.
   check("a bare -- starts the verbatim tail: host's flags stop (R5-B F5-1)", [...at(data, ["host", "target", "--", ""], 3)], []);
   check("a bare -- starts the verbatim tail: cli's flags stop", [...at(data, ["cli", "--", ""], 2)], []);
-  // R9-4: the bare `--` cutoff is not a verbatim privilege — ANY variadic command's flags stop
-  // behind it, and without it they still come out.
+  // R9-4: the bare `--` cutoff is not a verbatim privilege — any command's flags stop behind
+  // it, and without it they still come out.
   check("a bare -- starts any variadic tail: check's flags stop (R9-4)", [...at(data, ["check", "--", ""], 2)], []);
   check("a bare -- starts any variadic tail: set diff's flags stop", [...at(data, ["set", "diff", "--", ""], 3)], []);
   check("check's flags without -- still complete", at(data, ["check", "--j"], 1).includes("--jobs"), true);

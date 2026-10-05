@@ -63,6 +63,7 @@ interface Baseline {
   readonly proseFlags: PerFileMetric;
   readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
   readonly adhocSkips: { readonly comment: string; readonly total: number; readonly exempt: Record<string, ExemptLines> };
+  readonly rawArgvScans: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
 }
 
 const root = monorepoRoot;
@@ -499,5 +500,68 @@ for (const [file, lines] of adhocExemptLeft) {
   }
 }
 report(ratchet("adhocSkips", baseline.adhocSkips.total, adhocCount, [], []));
+
+// 9. Raw-argv scans — the reason the bare-`--`/value-position findings kept surviving: no
+// ratchet counted the second argv parse beside the tokenizer. Every membership/prefix scan over
+// argv-like names in product code must be the tokenizer's, an entry seam, or a line recorded
+// below with a reason, verified correct by construction. The scan roots are the layers that
+// touch argv; tools/checks are excluded (they assert, they do not decide).
+const RAW_SCAN =
+  /\b(argv|args|rawArgv|launchArgv)\.(includes|indexOf|lastIndexOf|find|findIndex|filter|some|every)\(|\.indexOf\("--"\)|\.startsWith\("--|\b(argv|args|rawArgv)\.slice\(2\)/;
+const rawScanRoots = ["entry", "integration", "core", "commands"].map((dir) => resolve(root, "tools", "framework", dir));
+const rawScanExemptLeft = new Map<string, Map<string, number>>(
+  Object.entries(baseline.rawArgvScans.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+);
+const rawScanAfter = new Map<string, number>();
+let rawScanTotal = 0;
+let rawScanCount = 0;
+for (const dir of rawScanRoots) {
+  for (const full of await walk(dir)) {
+    const content = await readFile(full, "utf8");
+    const left = rawScanExemptLeft.get(rel(full));
+    let counted = 0;
+    for (const line of content.split("\n")) {
+      let stripped = line.replace(/(^|\s)\/\/.*$/, "$1");
+      stripped = stripped.replace(/\/\*.*?\*\//g, "");
+      const trimmed = stripped.trim();
+      if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+      if (!RAW_SCAN.test(stripped)) continue;
+      rawScanTotal += 1;
+      const remaining = left?.get(line.trim()) ?? 0;
+      const exempt = Math.min(remaining, 1);
+      if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
+      counted += 1 - exempt;
+    }
+    if (counted > 0) rawScanAfter.set(rel(full), counted);
+    rawScanCount += counted;
+  }
+}
+for (const full of [resolve(root, "tools", "clawforge.ts")]) {
+  const content = await readFile(full, "utf8");
+  const left = rawScanExemptLeft.get(rel(full));
+  let counted = 0;
+  for (const line of content.split("\n")) {
+    let stripped = line.replace(/(^|\s)\/\/.*$/, "$1");
+    stripped = stripped.replace(/\/\*.*?\*\//g, "");
+    const trimmed = stripped.trim();
+    if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+    if (!RAW_SCAN.test(stripped)) continue;
+    rawScanTotal += 1;
+    const remaining = left?.get(line.trim()) ?? 0;
+    const exempt = Math.min(remaining, 1);
+    if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
+    counted += 1 - exempt;
+  }
+  if (counted > 0) rawScanAfter.set(rel(full), counted);
+  rawScanCount += counted;
+}
+for (const [file, lines] of rawScanExemptLeft) {
+  for (const [line, unmatched] of lines) {
+    if (unmatched === 0) continue;
+    checkTrue(`rawArgvScans.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+  }
+}
+report(perFileRatchet("rawArgvScans", baseline.rawArgvScans.files, rawScanAfter));
+report(ratchet("rawArgvScans.total", baseline.rawArgvScans.total, rawScanTotal, [], []));
 
 finish("architecture ratchet");

@@ -10,6 +10,7 @@ import { commandLine, renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invo
 import { command, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { checkoutSubfolderReport, missingDeploymentReport } from "#framework/integration/gate.ts";
 import {
   resolveCheckoutEntry,
@@ -125,6 +126,7 @@ const ENVS: readonly (readonly [string, string | undefined])[] = [
 const PLATFORMS: readonly NodeJS.Platform[] = ["linux", "win32", "darwin"];
 
 const GATE_COMMANDS = checkoutGate().map((command) => command.name);
+const gateArguments = (name: string) => checkoutGate().find((command) => command.name === name)?.arguments;
 const DEPLOYMENT_COMMANDS = ["status", "bootstrap"];
 const VARIADIC_COMMANDS = ["exec"];
 
@@ -137,6 +139,7 @@ const INSTALLED_ARGVS: readonly (readonly string[])[] = [
   ["status", "--help"],
   ["init"],
   ["init", "--local"],
+  ["init", "--", "--local"],
   ["init", "--help"],
   ["init", "--", "--help"],
   ["--project-root"],
@@ -308,6 +311,7 @@ export function renderEntryMatrix(): string {
               gateCommands: GATE_COMMANDS,
               deploymentCommands: DEPLOYMENT_COMMANDS,
               variadicCommands: VARIADIC_COMMANDS,
+              deploymentArguments: (name) => gateArguments(name) ?? openclawCommands[name]?.arguments,
             })}`);
           }
           lines.push(`handover: ${handoverDecisionLine({

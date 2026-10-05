@@ -5,6 +5,7 @@
 // read, so a command completes because it is declared, not because a case arm named it.
 
 import { NO_ACTION } from "../../core/command/index.ts";
+import { tokenize } from "../../core/command/parse.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import type { CommandRegistry } from "../gate.ts";
 
@@ -34,9 +35,12 @@ export interface CompletionData {
   /** Pass-through commands (`verbatim: true` variadic) → their declared positional count. Once
    *  more non-flag words than that are typed, the tail is the child's literal text. */
   readonly verbatim: ReadonlyMap<string, number>;
-  /** Every command declaring a variadic argument, verbatim or not — a bare `--` starts the
-   *  literal tail for any of them. */
-  readonly variadic: ReadonlySet<string>;
+  /** Each command's declared arguments — the tokenizer's own value consumption decides whether
+   *  a `--` in `between` is the bare options-end marker or an option's value. Not rendered. */
+  readonly declared: ReadonlyMap<string, readonly CommandArgument[]>;
+  /** Each command's value-taking options (`--name`), for the emitted interpreters' mirrors of
+   *  the tokenizer's value consumption. */
+  readonly valueOptions: ReadonlyMap<string, readonly string[]>;
   readonly values: readonly OptionValues[];
 }
 
@@ -57,12 +61,13 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
   const after = new Map<string, readonly string[]>();
   const values: OptionValues[] = [];
   const verbatim = new Map<string, number>();
-  const variadic = new Set<string>();
+  const declared = new Map<string, readonly CommandArgument[]>();
+  const valueOptions = new Map<string, readonly string[]>();
 
   for (const entry of registry.entries) {
     const name = entry.name;
     const args = entry.arguments ?? [];
-    if (args.some((argument) => argument.kind === "variadic")) variadic.add(name);
+    declared.set(name, args);
     if (args.some((argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true)) {
       verbatim.set(name, args.filter((argument) => argument.kind === "positional").length);
     }
@@ -71,6 +76,8 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
         argument.kind === "positional" && argument.name === "action" && argument.choices !== undefined,
     );
     const flagArgs = args.filter((argument) => argument.kind === "flag" || argument.kind === "option");
+    const options = args.filter((argument) => argument.kind === "option").map(flagName);
+    if (options.length > 0) valueOptions.set(name, options);
     // A shared flag — core/app.ts documents an absent `actions` as belonging to the whole
     // command — plus --help, which every command answers.
     const globalFlags = [...new Set([...flagArgs.filter((argument) => argument.actions === undefined).map(flagName), "--help"])].sort();
@@ -117,7 +124,18 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
     after.set(`${name} *`, fallback);
   }
 
-  return { appFlag, top, first, after, verbatim, variadic, values };
+  return { appFlag, top, first, after, verbatim, declared, valueOptions, values };
+}
+
+/** The tokenizer's own options-end answer for the words after the command: true when a bare
+ *  `--` was seen. A refusal is not one — the fallback rows answer where the parser would
+ *  refuse, as they always have (an unknown action word still completes the command's flags). */
+function optionsEnded(declared: readonly CommandArgument[], between: readonly string[]): boolean {
+  try {
+    return tokenize(declared, between).optionsEnded;
+  } catch {
+    return false;
+  }
 }
 
 /** The candidates for one completion request — the one decision both emitted scripts
@@ -163,11 +181,12 @@ export function completionCandidates(
   // A pass-through command: once more non-flag words than declared positionals are typed, the
   // tail is the child's literal text and the command's own flags no longer apply. (An option's
   // value is not recognised here — without the declared arguments the tail is assumed first.)
-  // A bare `--` is the parser's own options-end marker: everything from it on is the child's
-  // literal text.
-  // A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
-  // not: everything from it on is literal text.
-  if (data.variadic.has(cmd) && between.includes("--")) return [];
+  // The bare `--` is the parser's own options-end marker for ANY command: everything from it
+  // on is literal text the parser refuses to bind — so nothing may be offered there. Whether
+  // the `--` is bare is the tokenizer's call: a pending option swallows one as its value
+  // (check --grep -- <Tab>), and a refusal is not the marker — the fallback rows still answer.
+  const declared = data.declared.get(cmd);
+  if (declared !== undefined && optionsEnded(declared, between)) return [];
   const positionals = data.verbatim.get(cmd);
   if (positionals !== undefined && between.filter((word) => !word.startsWith("-")).length > positionals) return [];
   return data.after.get(`${cmd} ${between[0]}`) ?? data.after.get(`${cmd} *`) ?? [];

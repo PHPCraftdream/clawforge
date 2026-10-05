@@ -67,9 +67,15 @@ function declaresJsonFlag(command: AppCommand, shape: EffectShape | undefined, a
   return action === undefined ? false : has(shape.actions[action]?.arguments);
 }
 
-function jsonRequested(argv: readonly string[]): boolean {
-  const sep = argv.indexOf("--");
-  return (sep === -1 ? argv : argv.slice(0, sep)).includes("--json");
+/** The legacy AppCommand path's json decision: the tokenizer over the flat declaration —
+ *  a `--json` an option swallows as its value does not request the document, and a
+ *  tokenizer refusal means the parser refuses the call, so json is never bound either. */
+function legacyJsonGiven(command: AppCommand, argv: readonly string[]): boolean {
+  try {
+    return tokenize(command.arguments ?? [], argv).given.includes("json");
+  } catch {
+    return false;
+  }
 }
 
 /** The pre-parse stand-in for a parsed call's `given`: the real tokenizer (parse.ts's
@@ -132,7 +138,7 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
   const failed = (stage: Stage, error: unknown, facts?: CallFacts, shape?: EffectShape, action?: string, jsonGiven?: boolean): Execution => {
     if (io.surface === "terminal" && !(error instanceof UnknownArgumentError)
       && declaresJsonFlag(command, shape, action)
-      && (jsonGiven ?? jsonRequested(argv))
+      && (jsonGiven ?? false)
       && machineWritesCount() === writesAtStart && stdoutBytesWritten() === stdoutAtStart) {
       const message = maskSecrets(error instanceof Error ? error.message : String(error));
       emit(`${JSON.stringify({ error: { message } }, null, 2)}\n`);
@@ -187,31 +193,31 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
 
   const facts = callFactsFor(command, [...argv]);
   if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {
-    return failed("confirm", new ConfirmationRequiredError(name), facts);
+    return failed("confirm", new ConfirmationRequiredError(name), facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
   try {
     useApplicationRecipesDir(app.recipesDir);
     clearRecipesDir();
   } catch (error) {
-    return failed("prepare", error, facts);
+    return failed("prepare", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
   try {
     // Only a mutating call prepares: legacyPreparesEnvironment also refuses argv the
     // command's own parser would reject, before anything is written.
     if (legacyPreparesEnvironment(command, [...argv])) await ensureEnvironment();
   } catch (error) {
-    return failed("environment", error, facts);
+    return failed("environment", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
   let ctx: Context;
   try {
     ctx = await createContext(contextOptions(app, io));
   } catch (error) {
-    return failed("context", error, facts);
+    return failed("context", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
   try {
     await command.run(ctx, [...argv]);
   } catch (error) {
-    return failed("run", error, facts);
+    return failed("run", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
   return { stage: "run", facts };
 }

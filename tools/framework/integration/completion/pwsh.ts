@@ -10,8 +10,8 @@ import type { CompletionData } from "./table.ts";
 /** The `$clawforgeCompleter = { … }` body — the decision completionCandidates() makes, branch
  *  for branch: skip `--app <value>`, take the command from the words before the cursor, let the
  *  word after the command scope an option's values, and fall back `first` → `after` (a
- *  "<cmd> *" entry when the word after the command is not a known action). `$clawforgeApp`,
- *  `$clawforgeTop`, `$clawforgeFirst`, `$clawforgeAfter`, `$clawforgeVerbatim`, `$clawforgeVariadic` and `$clawforgeValues` are the only
+ *  `"<cmd> *" entry when the word after the command is not a known action). `$clawforgeApp`,
+ *  `$clawforgeTop`, `$clawforgeFirst`, `$clawforgeAfter`, `$clawforgeVerbatim`, `$clawforgeValueOptions` and `$clawforgeValues` are the only
  *  things the data reaches the interpreter through.
  *  Plain double-quoted literals concatenated with `+`, never a template literal: one would eat
  *  `$wordToComplete`, `$commandAst`, `"$wordToComplete*"` and `$($between[0])` (design
@@ -67,10 +67,17 @@ export const PWSH_COMPLETER: string =
   "      $candidates = @($clawforgeFirst[$cmd])\n" +
   "    } else {\n" +
   "      $afterKey = \"$cmd $($between[0])\"\n" +
-  "      # A bare `--` is the parser's own options-end marker for ANY variadic command,\n" +
-  "      # verbatim or not: everything from it on is literal text. A pass-through command\n" +
-  "      # past its declared positionals is the other way the tail turns literal.\n" +
-  "      if ($clawforgeVariadic.ContainsKey($cmd) -and $between -contains '--') {\n" +
+  "      # A bare `--` is the parser's own options-end marker for ANY command: everything\n" +
+  "      # from it on is literal text, so the command's flags stop. A `--` a pending\n" +
+  "      # value-option swallows is not one — the parser's own consumption.\n" +
+  "      $ended = $false\n" +
+  "      $swallow = $false\n" +
+  "      foreach ($w2 in $between) {\n" +
+  "        if ($swallow) { $swallow = $false; continue }\n" +
+  "        if ($w2 -eq '--') { $ended = $true; break }\n" +
+  "        if ($clawforgeValueOptions[$cmd] -contains $w2) { $swallow = $true }\n" +
+  "      }\n" +
+  "      if ($ended) {\n" +
   "        $candidates = @()\n" +
   "      } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {\n" +
   "        $free = 0\n" +
@@ -113,7 +120,7 @@ export function renderPwsh(data: CompletionData): string {
     "\n" +
     block("clawforgeVerbatim", [...data.verbatim].map(([command, positionals]) => `  "${command}" = ${positionals}`)) +
     "\n" +
-    block("clawforgeVariadic", [...data.variadic].map((command) => `  "${command}" = $true`)) +
+    block("clawforgeValueOptions", [...data.valueOptions].map(([command, options]) => `  "${command}" = @(${quoted(options)})`)) +
     "\n" +
     block("clawforgeValues", values) +
     "\n" +

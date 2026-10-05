@@ -79,13 +79,19 @@ export const BASH_COMPLETER: string =
   "  # Nothing after the command: the word being completed IS its own first position, which\n" +
   "  # the lookup above already answered.\n" +
   "  if (( ${#between[@]} == 0 )); then return; fi\n" +
-  "  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or\n" +
-  "  # not: everything from it on is literal text. A pass-through command past its declared\n" +
-  "  # positionals is the other way the tail turns literal, so its own flags stop being offered.\n" +
-  "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"variadic $cmd\")\"; then\n" +
+  "  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on\n" +
+  "  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is\n" +
+  "  # not one — the same consumption the parser itself makes (an option's value is skipped).\n" +
+  "  if (( ${#between[@]} > 0 )); then\n" +
+  "    # A missing arm answers empty: no option of this command swallows a `--`.\n" +
+  "    reply=\"$(_clawforge_lookup \"valueOptions $cmd\" || true)\"\n" +
+  "    local ended=0 swallow=0 token\n" +
   "    for token in \"${between[@]}\"; do\n" +
-  "      if [[ \"$token\" == \"--\" ]]; then COMPREPLY=(); return; fi\n" +
+  "      if (( swallow )); then swallow=0; continue; fi\n" +
+  "      if [[ \"$token\" == \"--\" ]]; then ended=1; break; fi\n" +
+  "      if [[ \" $reply \" == *\" $token \"* ]]; then swallow=1; fi\n" +
   "    done\n" +
+  "    if (( ended )); then COMPREPLY=(); return; fi\n" +
   "  fi\n" +
   "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"verbatim $cmd\")\"; then\n" +
   "    local free=0 token\n" +
@@ -119,8 +125,7 @@ function caseArms(data: CompletionData): string {
     ...[...data.first].map(([command, words]) => caseArm("    ", `first ${command}`, words)),
     ...[...data.after].map(([key, words]) => caseArm("    ", `after ${key}`, words)),
     ...[...data.verbatim].map(([command, positionals]) => caseArm("    ", `verbatim ${command}`, [String(positionals)])),
-    ...[...data.variadic].map((command) => caseArm("    ", `variadic ${command}`, [])),
-    ...[...data.variadic].map((command) => caseArm("    ", `variadic ${command}`, [])),
+    ...[...data.valueOptions].map(([command, options]) => caseArm("    ", `valueOptions ${command}`, options)),
     ...data.values.map((row) => caseArm("    ", `values ${row.command}${row.scope}${row.option}`, row.values)),
   ].join("");
 }

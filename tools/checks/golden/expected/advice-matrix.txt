@@ -1311,19 +1311,19 @@
   tool form: —
 
 === deploy: remote bootstrap hint (shell) ===
-  checkout default (openclaw/default): cd <remotePath> && ./clawforge --app <name> bootstrap
-  --app openclaw: cd <remotePath> && ./clawforge --app <name> bootstrap
-  --app demo: cd <remotePath> && ./clawforge --app <name> bootstrap
-  OC_APP=demo: cd <remotePath> && ./clawforge --app <name> bootstrap
-  sole demo: cd <remotePath> && ./clawforge --app <name> bootstrap
-  cwd app1: cd <remotePath> && ./clawforge --app <name> bootstrap
-  gateway, no app yet: cd <remotePath> && ./clawforge --app <name> bootstrap
-  global (clawforge): cd <remotePath> && ./clawforge --app <name> bootstrap
-  global, handed to the checkout gate with --app demo: cd <remotePath> && ./clawforge --app <name> bootstrap
-  shim init (./clawforge, installed): cd <remotePath> && ./clawforge --app <name> bootstrap
-  local package: cd <remotePath> && ./clawforge --app <name> bootstrap
-  local package (win32): cd <remotePath> && ./clawforge --app <name> bootstrap
-  checkout MCP launcher (../../clawforge, demo/flag): cd <remotePath> && ./clawforge --app <name> bootstrap
+  checkout default (openclaw/default): cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  --app openclaw: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  --app demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  OC_APP=demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  sole demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  cwd app1: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  gateway, no app yet: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  global (clawforge): cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  global, handed to the checkout gate with --app demo: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  shim init (./clawforge, installed): cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  local package: cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  local package (win32): cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  checkout MCP launcher (../../clawforge, demo/flag): cd '<remotePath>' && ./clawforge --app <name> bootstrap
   tool form: —
 
 === deploy: remote bootstrap command ===

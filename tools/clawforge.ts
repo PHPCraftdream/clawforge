@@ -19,6 +19,7 @@ import {
   runGateCommand,
   gateHelpLines,
   reportUnknownCommand,
+  beforeBareDoubleDash,
   APP_ORDER,
   type GateCommand,
 } from "./framework/integration/gate.ts";
@@ -75,6 +76,7 @@ const decision = resolveCheckoutEntry({
   variadicCommands: Object.entries(openclawCommands)
     .filter(([, command]) => command.arguments?.some((argument) => argument.kind === "variadic") === true)
     .map(([commandName]) => commandName),
+  deploymentArguments: (name) => gateCommands.find((command) => command.name === name)?.arguments ?? openclawCommands[name]?.arguments,
 });
 
 switch (decision.kind) {
@@ -113,7 +115,7 @@ switch (decision.kind) {
     // --json output must stay parseable, and a non-interactive caller (script, cron) has no one
     // to read this for — only print for a human at a real terminal. A stderr note suppression:
     // over-suppressing the note is harmless.
-    if (decision.soleNote !== undefined && !decision.argv.includes("--json") && process.stderr.isTTY === true) {
+    if (decision.soleNote !== undefined && !beforeBareDoubleDash(decision.argv).includes("--json") && process.stderr.isTTY === true) {
       info(`using the only deployment: ${decision.soleNote}`);
     }
     if (decision.app !== undefined) setInvocation({ ...invocation(), app: decision.app });

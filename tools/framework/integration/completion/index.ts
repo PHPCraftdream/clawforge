@@ -63,6 +63,7 @@ export function renderCompletion(shell: CompletionShell, data: CompletionData): 
 export function makeCompletionGateCommand(siblings: readonly GateCommand[], appFlag: boolean): GateCommand {
   return {
     name: COMPLETION_COMMAND_NAME,
+    effect: "read",
     summary: "Print a shell completion script (bash, zsh or pwsh) to stdout",
     details:
       "Generated from the live command declarations — names, flags, and a multi-action " +

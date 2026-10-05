@@ -24,7 +24,7 @@ import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { executeCommand, type Execution } from "../../core/command/execute.ts";
 import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
-import { maskStructuredOutput, maskStructuredResult, toolEnvelope, validate, toArgv } from "./call.ts";
+import { gateConfirmationRefusal, maskStructuredOutput, maskStructuredResult, toolEnvelope, validate, toArgv } from "./call.ts";
 import { frameworkVersion } from "../../commands/management/lock.ts";
 
 export * from "./schema.ts";
@@ -48,13 +48,17 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
   "completion": "prints a shell script for a human's own shell profile; a tool call has no shell to register it in, and the byte budget is better spent on tools an agent actually calls",
 };
 
-const HELP_TOOL_SUMMARY = "Full description, usage and argument list for one command, or the command list when none is given";
+/** Exported so checks pin the `help` tool's summary to the declaration rather than a copy.
+ *  Deliberately not the registry `help` entry's summary (integration/gate.ts's
+ *  HELP_ENTRY_SUMMARY, "same as: <command> --help"): that sentence refers to the console
+ *  form; this one describes the tool. */
+export const HELP_TOOL_SUMMARY = "Full description, usage and argument list for one command, or the command list when none is given";
 
 /** The `help` tool: not a command, answered through renderHelp like the console's help. Its
  *  argument is the registry's own `help` entry, not a second declaration here — minus the
  *  `choices` list of every command name: tools/list already names every tool, and the enum
  *  would cost about 500 bytes of the byte budget for nothing a client lacks. */
-function helpTool(registry: CommandRegistry): Declared {
+export function helpTool(registry: CommandRegistry): Declared {
   const entry = registry.find("help");
   if (entry === undefined) throw new Error("the registry has no help entry");
   const argument = (entry.arguments ?? []).map((declared) => ({ ...declared, choices: undefined }));
@@ -239,6 +243,13 @@ async function handleGateToolCall(
       isError: true,
       content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
     });
+    return;
+  }
+  // A destructive gate command owes the same confirmation a deployment command's confirm
+  // stage does — before the command runs at all: a gate command has no pipeline behind it.
+  const refusal = gateConfirmationRefusal(name, gateCommand, args);
+  if (refusal !== undefined) {
+    reply(id, { isError: true, content: [{ type: "text", text: maskSecrets(refusal) }] });
     return;
   }
   const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));

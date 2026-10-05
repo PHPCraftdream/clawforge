@@ -7,16 +7,14 @@
 // here rather than drifting silently. A command missing from the table fails too: a new
 // command must state its position before this check passes, which is the point.
 //
-// version (integration/version.ts's versionGateCommand) is checked the same way — it is a
-// plain exported declaration, safe to import. `check`, `new-app` and `help` are gate-level
-// commands declared inline in tools/clawforge.ts (check, new-app) or built in to the
-// dispatcher (help) — importing tools/clawforge.ts here would run its own top-level argv
-// dispatch, so those three are documented below rather than cross-checked against a live
-// import; their own `--help`/MCP declarations are exercised by
-// tools/checks/foundation/cli/cli-help.check.ts and mcp-mirror.check.ts instead.
+// The gate commands (entry/checkout-gate.ts, integration/{version,completion,deployment/init}.ts
+// via entry/registry.ts) are declared without import-time side effects, so the GATE_TABLE below
+// cross-checks them live like any other command — none carries --json or --dry-run except
+// where stated, and their full flag lists are pinned, not just the two U9 flags.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { versionGateCommand } from "#framework/integration/version.ts";
+import { specOf, specShape } from "#framework/core/command/index.ts";
+import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 interface FlagPosition {
@@ -108,18 +106,48 @@ for (const name of liveCommands) {
   check(`${name} --dry-run matches its table position`, hasDryRun, position.dryRun);
 }
 
-// version (integration/version.ts) is a plain exported GateCommand, safe to import and check
-// the same way — --json only, no --dry-run (it prints a fact, not a plan).
-const versionArgs = versionGateCommand.arguments ?? [];
-check("version --json is declared", versionArgs.some((argument) => argument.name === "json"), true);
-check("version has no --dry-run (prints a fact, nothing to preview)", versionArgs.some((argument) => argument.name === "dry-run"), false);
+// --- the gate commands, cross-checked live -----------------------------------------------
+//
+// The full declared flag list per gate command, both gates (the union across them, since
+// completion/version appear in each). A flag gained or lost without this table changing
+// fails here.
+interface GateCommandLike {
+  readonly arguments?: readonly { readonly name: string }[];
+}
 
-// Documented, not cross-checked against a live import — see the file header for why.
-const GATE_ONLY_DOCUMENTED = {
-  check: { json: false, dryRun: false, reason: "runs this repository's own check suite; --list already previews which files would run" },
-  "new-app": { json: false, dryRun: false, reason: "scaffolds a new apps/<name> directory; refuses outright if the name is already taken, nothing to preview" },
-  help: { json: false, dryRun: false, reason: "already read-only text/JSON-RPC output, built into the dispatcher rather than a command of its own" },
-} as const;
-check("gate-only commands documented above stay exactly these three", Object.keys(GATE_ONLY_DOCUMENTED).sort(), ["check", "help", "new-app"]);
+const GATE_TABLE: Record<string, { readonly flags: readonly string[]; readonly json: boolean }> = {
+  check: { flags: ["filter", "list", "jobs", "require"], json: false },
+  "new-app": { flags: ["name"], json: false },
+  "remove-app": { flags: ["name", "yes"], json: false },
+  list: { flags: ["json", "no-status"], json: true },
+  init: { flags: ["local"], json: false },
+  version: { flags: ["verbose", "json"], json: true },
+  completion: { flags: ["shell"], json: false },
+};
+
+const gateCommands = new Map<string, GateCommandLike>();
+for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
+  for (const command of gate) if (!gateCommands.has(command.name)) gateCommands.set(command.name, command);
+}
+check("the gate table names exactly the gate commands", [...gateCommands.keys()].sort(), Object.keys(GATE_TABLE).sort());
+for (const [name, command] of gateCommands) {
+  const declared = command.arguments ?? [];
+  const row = GATE_TABLE[name] ?? { flags: [], json: false };
+  check(`${name} flags match its gate-table row`, declared.map((argument) => argument.name).sort(), [...row.flags].sort());
+  check(`${name} --json matches its gate-table row`, declared.some((argument) => argument.name === "json"), row.json);
+  check(`${name} declares no --dry-run (a gate command has nothing to preview)`, declared.some((argument) => argument.name === "dry-run"), false);
+}
+
+// --- every declared --dry-run flag carries effect "read" (I4) ------------------------------
+for (const [name, declaration] of Object.entries(openclawCommands)) {
+  if (!(declaration.arguments ?? []).some((argument) => argument.name === "dry-run")) continue;
+  const spec = specOf(declaration);
+  const shape = spec === undefined ? undefined : specShape(spec);
+  const declared = shape === undefined
+    ? undefined
+    : [...(shape.arguments ?? []), ...Object.values(shape.actions ?? {}).flatMap((action) => action.arguments ?? [])]
+      .find((argument) => argument.name === "dry-run");
+  check(`${name} --dry-run declares effect read`, declared !== undefined && declared.kind === "flag" ? declared.effect : undefined, "read");
+}
 
 finish("flags-matrix");

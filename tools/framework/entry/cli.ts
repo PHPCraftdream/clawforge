@@ -9,7 +9,7 @@ import { UnknownArgumentError } from "../core/command/index.ts";
 import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { commandRegistry, dispatcherHelpLines, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
-import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import type { AppDefinition } from "../core/app.ts";
 
@@ -17,30 +17,19 @@ import type { AppDefinition } from "../core/app.ts";
 // listing against the real grouping and wording rather than a copy that could drift from it.
 export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol };
 
-/** Lines shown between the command list and the closing "Run the gate's help ..." hint —
- *  gate-specific (monorepo: --app/new-app; installed: init), not something an AppDefinition
- *  could know. tools/clawforge.ts and bin.ts each pass their own; this default is tools/clawforge.ts's. */
-const DEFAULT_GATE_HELP = [
-  helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
-  helpEntryLine("new-app <name>", "create a deployment under apps/"),
-];
-
-/** Whether argv asks for this command's own `--help`, scanning only tokens before the
- *  first bare `--` (the same boundary `host`'s parser draws) — a command that passes argv
- *  through (`cli`, `exec`) reaches THAT tool's `--help` by putting it after `--`. */
-export function requestsHelp(args: string[]): boolean {
-  const sep = args.indexOf("--");
-  return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
-}
+// The help boundary is the gate's (integration/gate.ts); re-exported so this module's callers
+// and checks keep one import site.
+import { requestsHelp } from "../integration/gate.ts";
+export { requestsHelp };
 
 
 /** Entry point: dispatches argv against an application definition. `gateHelp` is the
- *  gate-specific footer (see DEFAULT_GATE_HELP) — omit it from a monorepo-style gate, or
- *  pass an installed-mode gate's own lines. */
+ *  gate-specific footer — the gate's own lines (monorepo: --app/new-app; installed: init),
+ *  which every entry passes from its gate list; there is no default. */
 export async function runApp(
   app: AppDefinition,
   argv: string[],
-  gateHelp: string[] = DEFAULT_GATE_HELP,
+  gateHelp: string[] = [],
   gateCommands: GateCommand[] = [],
 ): Promise<number> {
   const [name, ...args] = argv;
@@ -114,7 +103,7 @@ export async function main(
   gateCommands?: GateCommand[],
 ): Promise<void> {
   try {
-    process.exitCode = await runApp(app, argv, gateHelp, gateCommands);
+    process.exitCode = await runApp(app, argv, gateHelp ?? [], gateCommands);
   } catch (error) {
     reportError(error);
     // A UserError is an expected, explained failure; anything else is a bug worth a trace.

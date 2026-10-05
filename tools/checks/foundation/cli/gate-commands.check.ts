@@ -42,6 +42,7 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
     name: "new-app",
     summary: "Create a deployment under apps/",
     details: "Writes apps/<name>/ with its own .env.",
+    effect: "read",
     arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true }],
     run: async () => 0,
     ...overrides,
@@ -210,6 +211,30 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const refusedOutput = written.join("");
   check("naming the accepted ones", COMPLETION_SHELLS.every((shell) => refusedOutput.includes(shell))
     && refusedOutput.includes("ruby"), true);
+}
+
+// --- the help boundary: -- ends our own scan, like the deployment commands' ----------------
+
+{
+  let ran = false;
+  const written: string[] = [];
+  const filterDescription = "Pass-through filter";
+  const command = sample({
+    arguments: [{ name: "filter", description: filterDescription, kind: "variadic" }],
+    run: async () => { ran = true; return 0; },
+  });
+  const beforeHelp = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([command], ["new-app", "--help"]));
+  checkTrue("--help before a -- is still our help", beforeHelp === 0 && !ran);
+  checkTrue("it printed the help, not the command", written.join("").includes(filterDescription));
+
+  // After the bare -- the token is the command's own data (here: the filter value), like the
+  // deployment commands read it — the scan used to cross the boundary and print help.
+  written.length = 0;
+  ran = false;
+  const afterHelp = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([command], ["new-app", "--", "--help"]));
+  checkTrue("help after a -- belongs to what the command passes through, not to us", afterHelp === 0 && ran && !written.join("").includes(filterDescription));
 }
 
 // --- required and choices, enforced once from the declaration ------------------------------

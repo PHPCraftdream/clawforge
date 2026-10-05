@@ -46,6 +46,9 @@ export function callFactsFor(command: AppCommand, argv: readonly string[]): Call
  *  MCP tool's Declared all satisfy it. `run` is only a marker: specOf answers a body only
  *  while the command's run is a materialized one. */
 export interface EffectDeclaration {
+  /** A gate command's declared effect (an AppCommand's lives in its spec body); when present,
+   *  the same shape rules read the profile from it. */
+  readonly effect?: Effect;
   readonly destructive?: boolean;
   readonly readOnlyWhen?: (args: string[]) => boolean;
   readonly requiresConfirmationWhen?: (args: string[]) => boolean;
@@ -57,6 +60,11 @@ export interface EffectDeclaration {
 export function effectProfile(command: EffectDeclaration): EffectProfile {
   const entry = specOf(command);
   if (entry !== undefined) return shapeProfile(specShape(entry));
+  // A gate command's effect is the whole declaration: the same shape rules as a spec body's —
+  // a read flag (remove-app's dry-run default has none yet) would soften alwaysDestroys.
+  if (command.effect !== undefined) {
+    return shapeProfile({ effect: command.effect, arguments: command.arguments });
+  }
   const destructive = command.destructive === true;
   return {
     destructive,

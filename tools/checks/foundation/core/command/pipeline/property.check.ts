@@ -18,7 +18,11 @@ import { executeCommand } from "#framework/core/command/execute.ts";
 import { ArgumentError, UnknownActionError, specData } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf } from "#framework/core/command/spec.ts";
-import { toArgv, validate } from "#framework/integration/mcp/call.ts";
+import { gateConfirmationRefusal, requiredArgumentMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
+import { inputSchema } from "#framework/integration/mcp/server.ts";
+import { CONFIRM_REQUIRED, effectProfile } from "#framework/core/command/index.ts";
+import { commandRegistry } from "#framework/integration/gate.ts";
+import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
@@ -28,12 +32,13 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 const app: AppDefinition = { name: "property-fixture", description: "fixture", commands: openclawCommands };
 
 /** Every contact point records; nothing is expected to be reached before `run`. */
+const TRANSPORT_SENTINEL = "property check: the transport must not be contacted";
 function recordingTransport(): { transport: Transport; contacts: string[] } {
   const contacts: string[] = [];
   const transport = new Proxy({}, {
     get: (_target, property) => (...args: unknown[]) => {
       contacts.push(`${String(property)} ${args.map(String).join(" ")}`);
-      throw new Error("property check: the transport must not be contacted");
+      throw new Error(TRANSPORT_SENTINEL);
     },
   }) as unknown as Transport;
   return { transport, contacts };
@@ -78,12 +83,12 @@ function invalidOf(argument: ArgumentSpec): string | undefined {
   return argument.kind === "option" ? "" : undefined;
 }
 
-async function runCase(command: string, argv: string[], surface: "terminal" | "mcp") {
+async function runCase(command: string, argv: string[], surface: "terminal" | "mcp", on: AppDefinition = app) {
   const { transport, contacts } = recordingTransport();
   let output = "";
   const execution = await withOutputSink((chunk) => {
     output += chunk;
-  }, () => executeCommand(app, command, argv, { surface, transport }));
+  }, () => executeCommand(on, command, argv, { surface, transport }));
   return { execution, output, contacts };
 }
 
@@ -293,6 +298,36 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   check(`${command} ${word}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
   checkTrue(`${command} ${word}: MCP error is an UnknownActionError`, mcp.execution.error instanceof UnknownActionError);
   check(`${command} ${word}: MCP never contacts the target`, mcp.contacts, []);
+}
+
+// --- gate commands: effect declared, destructive confirmed, required enforced -----------------
+//
+// Every registry entry of origin "gate", from both gates: the effect is declared once, the
+// MCP tool schema's confirm field derives from it, a destructive gate command's tool call is
+// refused without confirm: true before anything runs, and required arguments are refused the
+// same way the deployment's commands are.
+for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
+  const registry = commandRegistry({ deployment: {}, gate, appName: "property-fixture" });
+  for (const entry of registry.entries) {
+    if (entry.origin !== "gate" || entry.gate === undefined) continue;
+    const command = entry.gate;
+    check(`${entry.name}: the effect is declared`, ["read", "change", "destroy"].includes(command.effect), true);
+    const profile = effectProfile(command);
+    const schema = inputSchema(command) as { properties: Record<string, unknown>; required: string[] };
+    if (profile.destructive) {
+      checkTrue(`${entry.name}: the MCP schema declares confirm`, schema.properties.confirm !== undefined);
+      if (profile.alwaysDestroys) checkTrue(`${entry.name}: confirm is required in the schema`, schema.required.includes("confirm"));
+      check(`${entry.name}: an MCP call without confirm is refused`, gateConfirmationRefusal(entry.name, command, {})?.includes(CONFIRM_REQUIRED), true);
+      check(`${entry.name}: confirm: true answers no refusal`, gateConfirmationRefusal(entry.name, command, { confirm: true }), undefined);
+    } else {
+      checkTrue(`${entry.name}: a non-destructive gate command declares no confirm`, schema.properties.confirm === undefined);
+      check(`${entry.name}: no refusal without confirm`, gateConfirmationRefusal(entry.name, command, {}), undefined);
+    }
+    for (const argument of command.arguments ?? []) {
+      if (argument.required !== true) continue;
+      checkTrue(`${entry.name}: a missing required ${argument.name} is refused by validate`, validate(command, {}).includes(requiredArgumentMessage(argument.name)));
+    }
+  }
 }
 
 checkTrue("the property check derived cases from the declarations", cases > 0);

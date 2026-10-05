@@ -3,7 +3,8 @@
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
 import { maskSecrets } from "../../core/io/log.ts";
-import { specOf, specShape, tokenize } from "../../core/command/index.ts";
+import { effectProfile, specOf, specShape, tokenize } from "../../core/command/index.ts";
+import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
 import type { Declared, StructuredResult, ToolStep } from "./schema.ts";
@@ -175,6 +176,19 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
   return maskSecrets(output.split(machineOutput).join(safePayload));
 }
 
+/** The one voice for a missing required argument, validate's and its checks'. */
+export function requiredArgumentMessage(name: string): string {
+  return `${name} is required`;
+}
+
+/** The refusal a destructive gate command's tool call owes before anything runs — the same
+ *  confirmation rule the deployment path enforces in the pipeline's confirm stage
+ *  (core/command/execute.ts), read from the gate command's declared effect. */
+export function gateConfirmationRefusal(commandName: string, command: Declared, args: Record<string, unknown>): string | undefined {
+  if (args.confirm === true) return undefined;
+  return effectProfile(command).destructive === true ? new ConfirmationRequiredError(commandName).message : undefined;
+}
+
 /** Checks tool arguments against the declaration. The client's schema is a courtesy, not a
  *  guarantee: anything may arrive on this stream, and a command's own parser sees argv, not
  *  types. For a spec command only the SHAPE is checked here — unknown property and value
@@ -219,7 +233,7 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
   for (const argument of declared.values()) {
     if (argument.required !== true) continue;
     const value = args[argument.name];
-    if (value === undefined || value === "") problems.push(`${argument.name} is required`);
+    if (value === undefined || value === "") problems.push(requiredArgumentMessage(argument.name));
   }
 
   return problems;

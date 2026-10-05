@@ -40,7 +40,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   accept: [[[], "change"]],
   rollback: [[[], "destroy"], [["--dry-run"], "read"]],
   operations: [[[], "read"]],
-  "apply-config": [[[], "change"], [["--dry-run"], "change"], [["--dump"], "change"]],
+  "apply-config": [[[], "change"], [["--dry-run"], "read"], [["--dump"], "change"]],
   expose: [
     [["ssh"], "read", false], [["status"], "read", false], [["tailscale"], "read", false], [["tailscale", "--apply"], "destroy", true],
   ],

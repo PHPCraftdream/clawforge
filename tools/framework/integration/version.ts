@@ -57,6 +57,7 @@ export function classifyCopy(packageDir: string, appRoot?: string): { source: Ve
 export function makeVersionGateCommand(appRoot?: string): GateCommand {
   return {
     name: VERSION_COMMAND_NAME,
+    effect: "read",
     summary: `Print clawforge's own version (also: ${VERSION_ALIASES.join(", ")})`,
     details:
       "Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. " +

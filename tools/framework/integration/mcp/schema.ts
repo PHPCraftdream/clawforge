@@ -6,6 +6,7 @@
 import type { CommandArgument } from "../../core/app.ts";
 import { destructiveMarker } from "../../core/io/help-render.ts";
 import { effectProfile, argumentScopes, type ArgumentScope } from "../../core/command/index.ts";
+import type { Effect } from "../../core/command/index.ts";
 
 /** What the functions below need from a command, and all they need: the description a
  *  client reads, and the arguments the schema, the validation and the argv are derived from.
@@ -13,6 +14,8 @@ import { effectProfile, argumentScopes, type ArgumentScope } from "../../core/co
  *  offered one surface and should not be able to tell which of the two it is calling. */
 export type Declared = {
   readonly summary: string;
+  /** A gate command's declared effect (an AppCommand's lives in its spec body). */
+  readonly effect?: Effect;
   readonly details?: string;
   readonly destructive?: boolean;
   readonly arguments?: CommandArgument[];

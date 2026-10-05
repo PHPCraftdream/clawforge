@@ -1788,7 +1788,7 @@
     },
     {
       "name": "remove-app",
-      "description": "Delete apps/<name>\n\nFull text: call help with command=remove-app.",
+      "description": "Delete apps/<name> (destructive)\n\nFull text: call help with command=remove-app.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1799,10 +1799,15 @@
           "yes": {
             "type": "boolean",
             "description": "Perform the removal instead of a dry run"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true: destroys state"
           }
         },
         "required": [
-          "name"
+          "name",
+          "confirm"
         ]
       }
     },

@@ -300,6 +300,7 @@ export function makeInitGateCommand(
 ): GateCommand {
   return {
     name: "init",
+    effect: "change",
     summary: "Initialise this directory as an OpenClaw deployment",
     details:
       "Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) " +

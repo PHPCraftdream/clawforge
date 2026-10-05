@@ -6,6 +6,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* `remove-app` over MCP now needs `confirm: true`: the gate command declares its effect, the
+  tool schema derives `confirm` from it (required, the command having no read form), and a
+  call without it is refused — with the same message the destructive deployment commands use —
+  before anything is deleted. The terminal command is unchanged (the `--yes` dry-run flow).
+* Gate command help (`check`, `new-app`, `remove-app`, `list`, `init`, `version`, `completion`)
+  stops scanning for `--help` at a bare `--`, like the deployment commands: in
+  `check -- --help` the `--help` is now the command's own data, not a request for check's help screen.
+* `apply-config --dry-run` declares its effect as read, like every other `--dry-run` flag.
 * Gate commands (`new-app`, `remove-app`, `completion`) refuse a missing required argument or
   an unsupported shell in the parser's own words, from their declarations, instead of
   hand-written `usage:` lines; `destroy --yes` without `--confirm-name` is refused at the

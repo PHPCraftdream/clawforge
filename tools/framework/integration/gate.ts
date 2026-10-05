@@ -17,7 +17,7 @@ import { commandLine } from "../core/io/invocation/render.ts";
 import { shellLine } from "../core/io/invocation/advice.ts";
 import { bind, tokenize } from "../core/command/parse.ts";
 import { closestCommand } from "../core/command/errors.ts";
-import type { ArgumentSpec } from "../core/command/spec.ts";
+import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 
@@ -44,6 +44,9 @@ export interface GateCommand {
   /** Alternative first-token spellings the gate rewrites onto this command (e.g. --version);
    *  completion offers them at the top level. */
   readonly aliases?: readonly string[];
+  /** What a call does to state, declared once like an AppCommand's: the MCP tool's confirm
+   *  field, its requirement and help's marker derive from it (core/command/effect.ts). */
+  readonly effect: Effect;
   /** No Context — there is no deployment yet. Returns the exit code. */
   readonly run: (args: string[]) => Promise<number>;
 }
@@ -72,7 +75,9 @@ export async function runGateCommand(
   if (command === undefined) return undefined;
 
   const args = argv.slice(1);
-  if (args.includes("--help") || args.includes("-h")) {
+  // Same boundary as the deployment commands: help after a bare `--` belongs to what the
+  // command passes through, not to us.
+  if (requestsHelp(args) || args.includes("-h")) {
     gateCommandHelp(command);
     return 0;
   }
@@ -84,6 +89,13 @@ export async function runGateCommand(
     reportError(error);
     return 1;
   }
+}
+
+/** Whether argv asks for this command's own `--help`, scanning only tokens before the first
+ *  bare `--` — the one boundary function for both entry points (entry/cli.ts re-exports it). */
+export function requestsHelp(args: readonly string[]): boolean {
+  const sep = args.indexOf("--");
+  return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
 }
 
 /** `required` and `choices`, enforced once here against the command's declaration — the same
@@ -237,7 +249,7 @@ export function checkoutSubfolderReport(first: string, checkout: string): UserEr
 }
 
 /** `<command> [<any arguments up to a bare --> --help>` for a deployment command: help must
- *  answer without a deployment. The scan matches entry/cli.ts's requestsHelp — so the natural
+ *  answer without a deployment. The scan is requestsHelp — so the natural
  *  `<command> <action> --help` form and `--json --help` count, while `-h` after a command,
  *  which requestsHelp also does not treat as help, does not. */
 export function isDeploymentHelpRequest(argv: readonly string[], deploymentCommands: readonly string[]): boolean {
@@ -326,6 +338,11 @@ export interface CommandRegistry {
  *  Context. The tail of every surface's command list, and the one place their names live. */
 export const DISPATCHER_COMMANDS = ["control-mcp", "help"] as const;
 
+/** The registry `help` entry's summary, exported so checks pin the rendered text to the
+ *  declaration rather than a copy (the MCP `help` TOOL's own summary is HELP_TOOL_SUMMARY,
+ *  integration/mcp/server.ts — a different surface, a different sentence). */
+export const HELP_ENTRY_SUMMARY = "same as: <command> --help";
+
 /** The description the `help` command's own positional takes. */
 // Short: the tool summary beside it already says the bare call lists every command, and the
 // enum of names is what the schema spends its bytes on.
@@ -372,7 +389,7 @@ export function commandRegistry(source: {
       details: CONTROL_MCP_DETAILS, arguments: [],
     },
     {
-      name: "help", origin: "dispatcher", summary: "same as: <command> --help",
+      name: "help", origin: "dispatcher", summary: HELP_ENTRY_SUMMARY,
       arguments: [{ name: "command", kind: "positional", description: HELP_COMMAND_DESCRIPTION, choices: names }],
     },
   ];

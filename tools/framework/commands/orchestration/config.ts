@@ -19,7 +19,7 @@ import { commandBody, parseCall, specShape } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 export const APPLY_CONFIG_ARGUMENTS = [
-  { name: "dry-run", summary: "Validate the apply without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag" },
+  { name: "dry-run", summary: "Validate the apply without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag", effect: "read" },
   { name: "dump", summary: "Reconstruct desired-state.json from the live instance's config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
   { name: "force", summary: "Overwrite an existing desired-state.json; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
   { name: "break-lock", summary: "Take over a held instance lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },

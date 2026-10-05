@@ -68,6 +68,7 @@ const checkArguments: CommandArgument[] = [
 export const checkoutGateCommands: readonly GateCommand[] = [
   {
     name: "check",
+    effect: "read",
     summary: "Run the framework's own checks (no instance needed)",
     details:
       "Paths, archives, the argument contract, what a server delivery contains, secret " +
@@ -96,6 +97,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
   },
   {
     name: "new-app",
+    effect: "change",
     summary: "Create a deployment under apps/",
     details:
       "Writes apps/<name>/ with a .env (own data directory and project-specific port), " +
@@ -116,6 +118,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
   },
   {
     name: "remove-app",
+    effect: "destroy",
     summary: "Delete apps/<name>",
     details:
       "Deletes apps/<name>/ — the repository-side deployment directory (.env, config/, " +
@@ -138,6 +141,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
   },
   {
     name: "list",
+    effect: "read",
     summary: "Overview of every deployment under apps/",
     details:
       "One line per apps/<name>: target (OC_TARGET_LOCATION, plus OC_SSH_HOST for ssh), " +

@@ -5,8 +5,9 @@
 // `./clawforge smoke` covers a live instance instead.
 
 import { availableParallelism } from "node:os";
-import { readdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
@@ -38,18 +39,52 @@ function defaultJobs(): number {
 
 // --- the checkout is left as the run found it (R33-02) ----------------------------------------
 
+/** One path below apps/: a file with its size and (when small enough) content hash, or a
+ *  directory marker — a deleted directory would otherwise be invisible to the walk. */
+export interface AppsEntry {
+  /** Path relative to apps/, forward slashes, "" for the root itself (never recorded). */
+  readonly path: string;
+  readonly directory?: true;
+  readonly size?: number;
+  /** sha256 of the content, only for files up to the {@link hashCapBytes} cap. */
+  readonly hash?: string;
+}
+
+/** Files larger than this are sized but not hashed — snapshots stay cheap on big outputs. */
+const hashCapBytes = 64 * 1024;
+
 export interface CheckoutSnapshot {
-  readonly apps: readonly string[];
+  readonly apps: readonly AppsEntry[];
   /** `git status --porcelain`, empty when git is unavailable (then it is not compared). */
   readonly gitStatus: string | undefined;
 }
 
-export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot): readonly string[] {
+function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[]): readonly string[] {
+  const beforeByPath = new Map(before.map((entry) => [entry.path, entry]));
+  const afterByPath = new Map(after.map((entry) => [entry.path, entry]));
+  const gained: string[] = [];
+  const lost: string[] = [];
+  const changed: string[] = [];
+  for (const [path, entry] of afterByPath) {
+    const was = beforeByPath.get(path);
+    if (was === undefined) {
+      gained.push(path);
+      continue;
+    }
+    const beforeKind = was.directory === true ? "dir" : `${was.size}B${was.hash === undefined ? "" : ` ${was.hash.slice(0, 8)}`}`;
+    const afterKind = entry.directory === true ? "dir" : `${entry.size}B${entry.hash === undefined ? "" : ` ${entry.hash.slice(0, 8)}`}`;
+    if (beforeKind !== afterKind) changed.push(`${path} (${beforeKind} → ${afterKind})`);
+  }
+  for (const path of beforeByPath.keys()) if (!afterByPath.has(path)) lost.push(path);
   const changes: string[] = [];
-  const appeared = after.apps.filter((name) => !before.apps.includes(name));
-  const disappeared = before.apps.filter((name) => !after.apps.includes(name));
-  if (appeared.length > 0) changes.push(`apps/ gained: ${appeared.join(", ")}`);
-  if (disappeared.length > 0) changes.push(`apps/ lost: ${disappeared.join(", ")}`);
+  if (gained.length > 0) changes.push(`apps/ gained: ${gained.sort().join(", ")}`);
+  if (lost.length > 0) changes.push(`apps/ lost: ${lost.sort().join(", ")}`);
+  if (changed.length > 0) changes.push(`apps/ changed: ${changed.sort().join(", ")}`);
+  return changes;
+}
+
+export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot): readonly string[] {
+  const changes = [...diffEntries(before.apps, after.apps)];
   if (before.gitStatus !== undefined && after.gitStatus !== undefined && before.gitStatus !== after.gitStatus) {
     const beforeLines = new Set(before.gitStatus.split("\n"));
     const afterLines = new Set(after.gitStatus.split("\n"));
@@ -61,13 +96,30 @@ export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot)
   return changes;
 }
 
-async function snapshotCheckout(): Promise<CheckoutSnapshot> {
-  let apps: string[] = [];
-  try {
-    apps = (await readdir(resolve(monorepoRoot, "apps"), { withFileTypes: true })).map((entry) => entry.name).sort();
-  } catch {
-    apps = [];
-  }
+// Recursively lists everything below `root` (default: the real checkout's apps/), so a write
+// INSIDE an existing app — invisible to top-level names and to --porcelain — is still caught.
+export async function snapshotCheckout(root: string = resolve(monorepoRoot, "apps")): Promise<CheckoutSnapshot> {
+  const apps: AppsEntry[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // absent root or unreadable subdir records nothing
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const rel = relative(root, join(dir, entry.name)).split("\\").join("/");
+      if (entry.isDirectory()) {
+        apps.push({ path: rel, directory: true });
+        await walk(join(dir, entry.name));
+      } else if (entry.isFile()) {
+        const size = (await stat(join(dir, entry.name))).size;
+        const file: AppsEntry = { path: rel, size, ...(size <= hashCapBytes ? { hash: createHash("sha256").update(await readFile(join(dir, entry.name))).digest("hex") } : {}) };
+        apps.push(file);
+      }
+    }
+  };
+  await walk(root);
   // Ignored output (dist/ rebuilds, scratch prefixes) never shows in --porcelain; an absent
   // git only means the comparison is skipped, with a visible note below.
   const git = await runProcess("git", ["status", "--porcelain"], { cwd: monorepoRoot, timeoutMs: 30_000 });

@@ -39,6 +39,7 @@ interface ExemptLines {
 interface Baseline {
   readonly about: string;
   readonly dotClawforgeLiterals: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
+  readonly dotClawforgeConcatLiterals: { readonly comment: string; readonly total: number };
   readonly localizeOptOuts: {
     readonly comment: string;
     readonly infoRaw: number;
@@ -166,6 +167,16 @@ for (const [file, lines] of exemptLeft) {
 report(perFileRatchet("dotClawforgeLiterals", baseline.dotClawforgeLiterals.files, literalAfter));
 report(ratchet("dotClawforgeLiterals.total", baseline.dotClawforgeLiterals.total, literalTotal, [], []));
 
+// 1b. The concatenation spelling escapes 1: `"." + "/clawforge"` builds the same literal —
+// same invariant, 0 outside the renderer.
+const CONCAT_LITERAL = /["'`]\.["'`]\s*\+\s*["'`]\/clawforge["'`]/;
+let concatTotal = 0;
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) {
+  const content = await readFile(full, "utf8");
+  for (const line of content.split("\n")) if (CONCAT_LITERAL.test(line)) concatTotal += 1;
+}
+report(ratchet("dotClawforgeConcatLiterals", baseline.dotClawforgeConcatLiterals.total, concatTotal, [], []));
+
 // 2. Raw-output opt-outs — stage 4: `infoRaw`/`reportErrorVerbatim`/`localizeHints` call
 // sites. Imports carry no parentheses; each function's own definition is the one site to
 // subtract, so the count is occurrences minus definitions.
@@ -288,7 +299,7 @@ report(ratchet("declaredArguments", baseline.declaredArguments.total, argumentCo
 // operations count. An occurrence on an `exempt` line is left out of the per-file counts
 // but still counted in the total, and the table fails in both directions, like section 1.
 const IMAGE_OPS =
-  /@sha256|split\(\s*\/@\s*\/|split\(\s*["'`]@["'`]\s*\)|includes\(\s*["'`]@["'`]\s*\)|indexOf\(\s*["'`]@["'`]\s*\)|lastIndexOf\(\s*["'`]@["'`]\s*\)|lastIndexOf\(\s*["'`]:["'`]\s*\)|startsWith\(\s*["'`]sha256|endsWith\(\s*["'`]sha256/;
+  /@sha256|split\(\s*\/@\s*\/|split\(\s*["'`]@["'`]\s*\)|includes\(\s*["'`]@["'`]\s*\)|indexOf\(\s*["'`]@["'`]\s*\)|lastIndexOf\(\s*["'`]@["'`]\s*\)|lastIndexOf\(\s*["'`]:["'`]\s*\)|split\(\s*["'`]:["'`]\s*\)|indexOf\(\s*["'`]:["'`]\s*\)|replace\(\s*["'`]:["'`]\s*\)|startsWith\(\s*["'`]sha256|includes\(\s*["'`]sha256:|endsWith\(\s*["'`]sha256/;
 const imageExemptLeft = new Map<string, Map<string, number>>(
   Object.entries(baseline.imageStringOps.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
 );
@@ -388,13 +399,24 @@ report(ratchet("retiredSymbols", baseline.retiredSymbols.total, retiredCount, []
 
 // 8. Ad-hoc host gates — invariant I10: a host-dependent check case is skipped only through a
 // declared capability (requires() from kit/harness.ts). Every line under tools/checks (kit,
-// architecture and golden excluded) matching process.platform / os.platform() / skip() must
-// sit on an exempt line: a recorded value selection (both platforms run; only an expected
-// value or transport choice differs), a transport helper kept for its probe, or a nested
-// availability note inside a requires() body. The table fails in both directions, like
+// architecture and golden excluded) matching any host-probe pattern — process.platform, a
+// bare platform() or platform ===, os.platform()/os.type(), a capability probe called outside
+// requires() (the gate-by-ternary shape), skipIf/runIf/.skip — must sit on an exempt
+// line: a recorded value selection (both platforms run; only an expected value or transport
+// choice differs), a transport helper kept for its probe, or a nested availability note
+// inside a requires() body. The table fails in both directions, like
 // section 1, and the total counts occurrences past the exemptions — so any new ad-hoc gate
 // fails the build at 0.
-const ADHOC = /process\.platform|os\.platform\(\)|\bskip\(/;
+const ADHOC = new RegExp([
+  "process\\.platform",
+  "os\\.platform\\(\\)",
+  "os\\.type\\(\\)",
+  "import \\{[^}]*\\bplatform\\b[^}]*\\} from \"node:(os|process)\"",
+  "\\bplatform\\(\\)|\\bplatform\\s*[!=]==",
+  "\\b(hasGnuUserland|hasDocker|hasDockerDesktopWsl|hasWsl|hasPosixSh|hasPosixModes|hasLocalPosix|hasBash|hasPwsh|hasRsync|hasSymlink|hasSshLoopback|hasAutoTarget|isLinuxHost|isWindowsHost|isPosixHost)\\s*\\(",
+  "\\bskipIf\\b|\\brunIf\\b|\\.skip\\b",
+  "\\bskip\\(",
+].join("|"));
 const adhocExemptLeft = new Map<string, Map<string, number>>(
   Object.entries(baseline.adhocSkips.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
 );

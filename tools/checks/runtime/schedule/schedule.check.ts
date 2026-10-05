@@ -325,7 +325,7 @@ try {
         )));
     check("a failing schtasks call is reported, not swallowed", message.includes("access denied"), true);
   });
-  await requires("linux-host", "--apply on a non-Windows host refuses outright — no scheduler here to drive", async () => {
+  await requires("posix-host", "--apply on a non-Windows host refuses outright — no scheduler here to drive", async () => {
     const message = await deathOf(() => withOutputSink(() => {}, () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], true)));
     check("--apply on a non-Windows host refuses outright — no scheduler here to drive", message.includes(REFUSING_APPLY), true);
   });

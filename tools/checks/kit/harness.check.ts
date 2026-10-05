@@ -21,7 +21,7 @@ interface Ran {
 
 async function runScript(dir: string, source: string, prologue = ""): Promise<Ran> {
   const file = join(dir, `${Math.random().toString(36).slice(2)}.ts`);
-  await writeFile(file, `import { check, checkTrue, requires, setCaseProbe, finish } from "${harnessUrl}";\n${prologue}\n${source}`);
+  await writeFile(file, `import { check, checkTrue, requires, setCaseProbe, finish, typeAssert } from "${harnessUrl}";\n${prologue}\n${source}`);
   const { code, output } = await runProcess(process.execPath, ["--experimental-strip-types", file]);
   return { code, output };
 }
@@ -49,6 +49,11 @@ try {
   check("checkTrue sugars check(name, cond, true)", allPass.output.includes("  ok   boolean sugar\n"), true);
   check("finish() prints the all-passed summary", allPass.output.includes("all demo checks passed\n"), true);
   check("finish() sets exit code 0 when nothing failed", allPass.code, 0);
+
+  const typed = await runScript(dir, 'typeAssert("the type-level assertions compiled");\nfinish("demo");\n');
+  check("typeAssert prints the same success line check() does", typed.output.includes("  ok   the type-level assertions compiled\n"), true);
+  checkTrue("typeAssert can neither fail nor skip", !typed.output.includes("FAIL") && !typed.output.includes("SKIP"));
+  check("typeAssert leaves the exit code clean", typed.code, 0);
 
   const mismatch = await runScript(dir, 'check("mismatch", { a: 1 }, { a: 2 });\nfinish("demo");\n');
   check(

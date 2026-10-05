@@ -16,7 +16,7 @@ import { composeProjectOverride, selectedDeployment, useComposeProjectOverride, 
 import { clearRecipesDir, useRecipesDir, recipeProjectName } from "#framework/service/recipe.ts";
 import { guardedWith, lockHeldHere } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { finish, typeAssert } from "#checks/kit/harness.ts";
 import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 const restore = openclawCommands.restore.run;
 const push = openclawCommands.push.run;
@@ -195,7 +195,7 @@ try {
   assert.equal(await readData(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
   assert.equal(await runtime.isRunning(), true);
   assert.equal(healthWaits, 2);
-  check("public restore/no-start/push ownership refusal preserves bytes, gateway and secrets; cutover restores and starts", true, true);
+  typeAssert("public restore/no-start/push ownership refusal preserves bytes, gateway and secrets; cutover restores and starts");
 } finally {
   unknown = false;
   if (docker) { await clearPolicy().catch(() => {}); await base.exec("docker", ["rm", "--force", gateway], { allowFailure: true }); }

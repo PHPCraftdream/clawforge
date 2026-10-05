@@ -6,8 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { EXCLUDES, FRAMEWORK_EXCLUDES } from "#framework/security/privacy/deploy-boundary.ts";
-import { hasRsync } from "#checks/kit/capabilities/capabilities.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,7 +84,7 @@ check("recipes retain authored build and dist paths", ["/build/", "/dist/", "bui
 check("both mirrors hide dependencies and worktrees", ["node_modules/", "worktrees/", ".git"].every((name) => EXCLUDES.includes(name)), true);
 check("only the framework hides root apps", FRAMEWORK_EXCLUDES.includes("/apps/") && !EXCLUDES.includes("/apps/"), true);
 
-if (await hasRsync()) {
+await requires("rsync", "rsync exercised over both payloads", async () => {
   const scratch = await mkdtemp(join(tmpdir(), "clawforge-rsync-list-"));
   try {
     const framework = join(scratch, "framework");
@@ -103,8 +102,6 @@ if (await hasRsync()) {
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
-} else {
-  process.stderr.write("local rsync unavailable; static filter checks passed\n");
-}
+});
 
 finish("deploy rsync file-list");

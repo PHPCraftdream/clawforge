@@ -13,7 +13,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot, type Settings } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, typeAssert } from "#checks/kit/harness.ts";
 
 const self = fileURLToPath(import.meta.url);
 const mode = process.argv[2];
@@ -132,7 +132,7 @@ else if (args[0] === 'exec' || args.includes('run')) {
       });
       assert.equal(code, 0, finiteStderr);
       assert.equal(finite.stdin.writableEnded, false);
-      check("finite empty input closes independently of client stdin", true, true);
+      typeAssert("finite empty input closes independently of client stdin");
     } finally {
       clearTimeout(deadline); finite.kill(); finite.stdin.destroy();
     }

@@ -11,7 +11,6 @@ import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
 import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { createContext } from "#framework/core/context.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AfterBackupInfo } from "#framework/core/app.ts";
@@ -20,8 +19,6 @@ import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 
 useLinuxHost();
 import { check, finish } from "#checks/kit/harness.ts";
-
-useDeployment(join(monorepoRoot, "apps", "example app"));
 
 // --- createContext binds `ctx` into the AppDefinition-level hook, the same way it already
 // binds applicationSecrets --------------------------------------------------------------

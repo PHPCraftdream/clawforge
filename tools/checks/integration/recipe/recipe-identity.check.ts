@@ -11,7 +11,7 @@ import { recipeProjectName, recipeStack, clearRecipesDir, useRecipesDir } from "
 import { runningRecipeStacks } from "#framework/commands/management/recipe/index.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { finish } from "#checks/kit/harness.ts";
 
 const root = await mkdtemp(resolve(tmpdir(), "recipe-identity-check-"));
 const previousRoot = selectedDeployment();
@@ -151,7 +151,7 @@ try {
   assert.equal(volumes.has(keyB), true);
   assert.equal(await pairB.isRunning(), true);
   assert.equal(await pairB.readLogs("10"), `container-${targetFile(fileB)}`);
-  check("isolated logs, broken discovery, both legacy refusals, default removal and report pair coexistence", true, true);
+
 } finally {
   clearRecipesDir();
   useComposeProjectOverride(previousOverride);

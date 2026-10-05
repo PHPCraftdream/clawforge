@@ -72,6 +72,15 @@ export function checkTrue(name: string, condition: boolean): void {
   check(name, condition, true);
 }
 
+/**
+ * Labels an assertion the checker already enforced — a compile-time assertType/Equal, or the
+ * assert.equal lines preceding it — so it cannot fail at runtime. Must only label, never
+ * assert: it prints check()'s success line without touching `failed`.
+ */
+export function typeAssert(name: string): void {
+  process.stderr.write(`  ok   ${name}\n`);
+}
+
 /** Prints the suite's summary line and sets process.exitCode. Call once, after every check()
  *  and requires(). Case-level capability skips are counted like the runner counts skipped
  *  files: named in a breakdown after the unchanged base wording. */

@@ -5,7 +5,7 @@
 import type { ArgumentSpec, Values } from "#framework/core/command/index.ts";
 import { countValue, regexValue, portValue, type ValueParser } from "#framework/core/values/value.ts";
 import { sinceValue } from "#framework/core/values/durations.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { finish, typeAssert } from "#checks/kit/harness.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 function assertType<_T extends true>(): void {}
@@ -45,5 +45,5 @@ const custom: ValueParser<{ readonly id: bigint }> = { expected: "an id", exampl
 const CUSTOM = [{ name: "id", kind: "option", valueName: "id", parse: custom, description: "d" }] as const satisfies readonly ArgumentSpec[];
 assertType<Equal<Values<typeof CUSTOM>["id"], { readonly id: bigint } | undefined>>();
 
-check("the type-level assertions compiled", true, true);
+typeAssert("the type-level assertions compiled");
 finish("values type inference");

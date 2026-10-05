@@ -53,8 +53,9 @@ async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
 
   const report = (result: ExecResult): void => {
     if (captured) {
+      // Both streams whatever the exit code: a successful command's diagnostics live on stderr.
       emitRaw(result.stdout);
-      if (result.code !== 0) emitRaw(result.stderr);
+      emitRaw(result.stderr);
     }
     if (result.code !== 0) dieWithExitCode(`exec ${rawArgs.join(" ")} failed (exit ${result.code})`, result.code);
   };

@@ -6,6 +6,17 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* The checkout's own entry run directly (`node tools/framework/entry/bin.ts …`, or an
+  npm-linked bin) hints the checkout's shim where it really is — `./clawforge` from the
+  checkout root, `../../clawforge` from `apps/<name>`, in checkout mode — instead of the
+  local-package spelling (`node_modules\.bin\clawforge` on Windows), which does not exist
+  in a checkout. `host -- <command>` (and the captured `cli`/`exec`) print a successful
+  command's stderr too: diagnostics live there, and a captured run used to drop them unless
+  the command failed. `pull` on a never-bootstrapped deployment refuses up front with the
+  `bootstrap` remedy, like the other mutating commands, instead of failing on the instance
+  lock it cannot take. A deployment whose `app.ts` declares a command named `help` or
+  `control-mcp` is refused at declaration — it would otherwise pass and make every command
+  of that deployment unreachable at dispatch.
 * A new deployment's committed shim (`init`) hands over a `CLAWFORGE_INVOCATION` the strict
   reader accepts (`"mode":"checkout"`, was the incoherent `"installed"`, which the reader
   discarded); hints no longer rely on the legacy variable fallback on Windows installed

@@ -52,13 +52,14 @@ async function runCli(ctx: Context, passed: string[]): Promise<void> {
   // (dieWithExitCode), never surfaced as the transport's own generic rejection.
   const options = captured ? { input: "", allowFailure: true } : { allowFailure: true };
 
-  /** stderr is added only on failure and only when captured: through `docker compose` it
-   *  carries progress-line noise, but is the whole reason a command failed; streamed output
-   *  already reached the terminal by the time this runs. */
+  /** Captured output is re-emitted whole — both streams, whatever the exit code: stderr is
+   *  where a command's diagnostics live (every framework log/info writes there), and
+   *  compose's progress noise on success is the price. Streamed output already reached the
+   *  terminal by the time this runs. */
   const report = (result: ExecResult): void => {
     if (captured) {
       emitRaw(result.stdout);
-      if (result.code !== 0) emitRaw(result.stderr);
+      emitRaw(result.stderr);
     }
     if (result.code !== 0) dieWithExitCode(`openclaw ${passed.join(" ")} failed (exit ${result.code})`, result.code);
   };

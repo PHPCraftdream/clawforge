@@ -410,6 +410,22 @@ function runtimeStub(overrides: {
   check("and its stderr, which on a failure is the reason", written.join("").includes("the real reason"), true);
 }
 
+{
+  // Same for a SUCCESSFUL command: its diagnostics live on stderr, so a captured run hands
+  // both streams back whatever the exit code says (review R16-2), in the transport's order.
+  const ctx = {
+    runtime: runtimeStub({
+      execInHelper: async (): Promise<ExecResult> => ({ code: 0, stdout: "OUT\n", stderr: "ERR\n" }),
+    }),
+  } as unknown as Context;
+
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await cli(ctx, ["doctor"]);
+  });
+  check("a successful command's stdout and stderr both reach the sink, in stream order", written.join(""), "OUT\nERR\n");
+}
+
 check("cli is declared destructive, so MCP requires a confirmation", openclawCommands.cli.destructive, true);
 check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, undefined);
 
@@ -460,6 +476,22 @@ check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, unde
     message = error instanceof Error ? error.message : String(error);
   }
   check("exec() dies when the gateway is not running and the helper is not up", message?.includes("./clawforge up"), true);
+}
+
+{
+  // exec's captured run: both streams reach the sink whatever the exit code, cli's shape
+  // again (review R16-2) — a successful probe's stderr is diagnostics, not silence.
+  const ctx = {
+    runtime: runtimeStub({
+      execCommand: async (): Promise<ExecResult> => ({ code: 0, stdout: "OUT\n", stderr: "ERR\n" }),
+    }),
+  } as unknown as Context;
+
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await exec(ctx, ["curl", "-fsS", "http://127.0.0.1:18789/healthz"]);
+  });
+  check("exec: a successful command's stdout and stderr both reach the sink", written.join(""), "OUT\nERR\n");
 }
 
 {

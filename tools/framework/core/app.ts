@@ -172,11 +172,22 @@ export interface AppDefinition {
   readonly commands: Record<string, AppCommand>;
 }
 
+/** The dispatcher's own two commands — not app commands, not the gate's: neither carries a
+ *  Context (entry/cli.ts answers them before the app.commands lookup). The one place their
+ *  names live; integration/gate.ts re-exports them for its registry claim. */
+export const DISPATCHER_COMMANDS = ["control-mcp", "help"] as const;
+
 /** Turns a plain object into a checked application definition at declaration time. */
 export function defineApp(definition: AppDefinition): AppDefinition {
   if (definition.name.trim() === "") throw new Error("an application needs a name");
   if (Object.keys(definition.commands).length === 0) {
     throw new Error(`application "${definition.name}" declares no commands`);
+  }
+  // A name the dispatcher answers would make every command of this deployment unreachable:
+  // the registry's claim refuses the dispatch, so refuse the declaration instead.
+  const reserved = Object.keys(definition.commands).find((name) => (DISPATCHER_COMMANDS as readonly string[]).includes(name));
+  if (reserved !== undefined) {
+    throw new Error(`command name "${reserved}" is reserved by the dispatcher — rename the command; the dispatcher answers ${DISPATCHER_COMMANDS.join(" and ")} itself`);
   }
   return definition;
 }

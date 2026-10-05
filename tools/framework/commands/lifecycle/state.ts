@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
 import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 import { archiveRoot, listArchive, listSnapshotArchives, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
@@ -321,12 +322,19 @@ export const PULL = commandBody({
   prepare: (call) => pullPlan(call),
   async run(ctx, plan, transaction: PullTransactionOptions = {}) {
     const pull = () => pullLocked(ctx, plan.profile, plan.hot, transaction.leaveStopped === true, transaction.purpose ?? "pull");
+    // The guard before the lock, like every sibling preflight: the lock home is only ever
+    // prepared by bootstrap, so on a never-bootstrapped target the lock claim would answer
+    // with its own refusal and the guard behind it would never run.
+    const guardedPull = async () => {
+      await requireBootstrapped(ctx);
+      return guardedWith(ctx, "pull", plan.takeover, pull);
+    };
     if (plan.jsonOnly) {
       let result: PullPaths | undefined;
       let caught: unknown;
       await withOutputSink(() => {}, async () => {
         try {
-          result = await guardedWith(ctx, "pull", plan.takeover, pull);
+          result = await guardedPull();
         } catch (error) {
           caught = error;
         }
@@ -340,7 +348,7 @@ export const PULL = commandBody({
       emit(`${JSON.stringify({ ok: true, changed: true, profile: plan.profile, snapshot: paths.snapshot, template: paths.snapshotTemplate }, null, 2)}\n`);
       return;
     }
-    await guardedWith(ctx, "pull", plan.takeover, pull);
+    await guardedPull();
   },
 });
 

@@ -20,6 +20,7 @@ import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts"
 import { specData, specOf } from "../core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
+import { DISPATCHER_COMMANDS } from "../core/app.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 import { VERSION_ALIASES } from "./version.ts";
 
@@ -382,9 +383,9 @@ export interface CommandRegistry {
   find(name: string): RegistryEntry | undefined;
 }
 
-/** The dispatcher's own two commands — not app commands, not the gate's: neither carries a
- *  Context. The tail of every surface's command list, and the one place their names live. */
-export const DISPATCHER_COMMANDS = ["control-mcp", "help"] as const;
+// The dispatcher's names live in core/app.ts beside the declaration-time refusal that
+// guards them; re-exported here, where the registry claims them as its backstop.
+export { DISPATCHER_COMMANDS };
 
 /** The registry `help` entry's summary, exported so checks pin the rendered text to the
  *  declaration rather than a copy (the MCP `help` TOOL's own summary is HELP_TOOL_SUMMARY,

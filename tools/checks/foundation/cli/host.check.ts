@@ -419,6 +419,18 @@ try {
     check("and its stderr, which on a failure is the reason", written.join("").includes(reason), true);
   }
 
+  {
+    // Both streams whatever the exit code: a SUCCESSFUL command's diagnostics live on stderr
+    // (all framework log/info writes there), so a captured run that drops them hides every
+    // diagnostic whose output is on stderr (review R16-2). The order is the transport's own.
+    const stub = recordingTransport(0, "OUT\n", "ERR\n");
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), async () => {
+      await host(ctxWith(stub.transport), ["target", "--", "sh", "-c", "echo OUT; echo ERR >&2"]);
+    });
+    check("a successful command's stdout and stderr both reach the sink, in stream order", written.join(""), "OUT\nERR\n");
+  }
+
   // U7: the wrapped command's own exit status reaches process.exitCode (via CommandFailedError,
   // read by entry/cli.ts's main()) instead of the generic 1 every other UserError gets.
   {

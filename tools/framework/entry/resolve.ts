@@ -361,7 +361,7 @@ export interface InstalledEntryInput {
 export type InstalledEntryDecision =
   /** reportError refusals: the --project-root refusal, init nesting inside a deployment,
    *  and init inside a ClawForge checkout (its bash spelling rides as shell advice). */
-  | { readonly kind: "refuse"; readonly refusals: readonly UserError[]; readonly ancestor?: string }
+  | { readonly kind: "refuse"; readonly refusals: readonly UserError[]; readonly ancestor?: string; readonly checkout?: string }
   /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
   | { readonly kind: "checkout-types-note"; readonly line: string }
   | {
@@ -445,6 +445,9 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
     }
     return {
       kind: "refuse",
+      // The checkout rides along: the refusal's advice names its gate, spelled from where
+      // the run decided it is (root.ts's checkout branch).
+      checkout,
       refusals: [
         new UserError(
           `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +

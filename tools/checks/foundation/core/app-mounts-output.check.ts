@@ -39,6 +39,14 @@ check(
   'application "myapp" declares no commands',
 );
 
+// A dispatcher name in an app's commands would make EVERY command of the deployment
+// unreachable: the registry refuses the dispatch ("claimed twice"), so the declaration
+// itself refuses first (review R16-4) — naming the command and the rename advice.
+for (const name of ["help", "control-mcp"]) {
+  const refusal = errorMessage(() => defineApp({ name: "r", description: "d", commands: { [name]: stubCommand() } }));
+  check(`a command named ${name} is refused at declaration`, refusal.includes(name) && refusal.includes("reserved") && refusal.includes("rename"), true);
+}
+
 const validDefinition: AppDefinition = {
   name: "hello",
   description: "Example",

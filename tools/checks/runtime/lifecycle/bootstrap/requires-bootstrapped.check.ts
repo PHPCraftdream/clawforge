@@ -1,7 +1,9 @@
 // requireBootstrapped() (runtime/runtime.ts) and every mutating command that now calls it
 // BEFORE takeLock()/any target write: backup, incident, configure-provider, smoke,
 // apply-config (incl. --dry-run), up, restart, down, logs, upgrade, secrets --apply,
-// provision-agent, expose tailscale --apply, watch install --apply, backup install --apply —
+// provision-agent, expose tailscale --apply, watch install --apply, backup install --apply,
+// pull — whose body used to take the operation lock first (the lock home is only prepared by
+// bootstrap, so a never-bootstrapped target read the lock claim's refusal, not the guard's).
 // plus mcp-creds, read-only but guarded for a stricter reason: its whole job is printing a
 // live gateway token, and it must fail on "never bootstrapped" before that token line, not
 // after (U7, docs/internal/review-2026-09-29-round-13.md).
@@ -162,6 +164,7 @@ for (const kase of [
   { name: "mcp-serve", run: (ctx: Context) => openclawCommands["mcp-serve"].run(ctx, []) },
   { name: "set forget", run: (ctx: Context) => openclawCommands.set.run(ctx, ["forget", "--kind", "agent", "--name", "orphaned"]) },
   { name: "upgrade", run: (ctx: Context) => openclawCommands.upgrade.run(ctx, []) },
+  { name: "pull", run: (ctx: Context) => openclawCommands.pull.run(ctx, []) },
   { name: "lock", run: (ctx: Context) => openclawCommands.lock.run(ctx, []) },
   { name: "secrets --apply", run: (ctx: Context) => secrets(ctx, ["--apply"]), localFirstRefusal: true },
   { name: "mcp-creds", run: (ctx: Context) => mcpCreds(ctx, []) },
@@ -228,5 +231,7 @@ for (const args of [[], ["--token"], ["--json"]]) {
 // "nothing on the target yet" state and must keep doing so — asserted by their own existing
 // checks (restore-symlink-boundary.check.ts, bootstrap-lock.check.ts, bootstrap-provider-
 // order.check.ts); nothing further is pinned here, this file only owns the refusal side.
+// pull is the opposite case — it archives an EXISTING instance (createBackup), so it belongs
+// with the guarded commands; push shares restore's body and stays with the creators.
 
 finish("requires-bootstrapped");

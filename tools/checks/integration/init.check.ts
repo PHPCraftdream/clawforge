@@ -11,13 +11,13 @@ import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { initApp, ALREADY_EXISTS, ALREADY_INITIALISED, NOT_EXIST, NEEDS_ESM, NOT_VALID_JSON, noSaveInstall } from "#framework/integration/deployment/init.ts";
 import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore, ROOT_OWNED } from "#framework/integration/deployment/deployment-template.ts";
-import { commandLine, renderAdvice, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { commandLine, renderAdvice, shimInvocation } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { IN_BASH_NOTE } from "#framework/entry/resolve.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, finish, requires } from "#checks/kit/harness.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
 async function run(root: string): Promise<string | undefined> {
   let message: string | undefined;
@@ -499,7 +499,10 @@ async function gatewayPortOf(root: string): Promise<number> {
 // R6-5: the entry applies its invocation default only after the placement decision, so a
 // local-package (npx, node_modules/.bin) init that refuses was advised `clawforge new-app`
 // although no global `clawforge` exists. Spawned end to end: the running framework is the
-// checkout's own copy, so the default is the local-package spelling.
+// checkout's own copy, and the cwd sits in a SECOND checkout-shaped tree, so the refusal's
+// advice names that walked-to checkout's gate spelled from where the run stands — the
+// committed shim one level up from apps/<name>, the monorepo launcher's spelling — not the
+// running copy's, and never the bare global command (review R16-1).
 {
   const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
   const fake = join(base, "checkout");
@@ -521,20 +524,15 @@ async function gatewayPortOf(root: string): Promise<number> {
       child.once("close", () => resolvePromise(output));
       child.once("error", () => resolvePromise(output));
     });
-    // The entry spells the local-package program per host (root.ts): npm's bin wrapper on
-    // Windows, the committed shim elsewhere. Both host cases render the same two advice
-    // lines, compared whole so the bare global command cannot sneak into either.
+    // The walked-to checkout is one level up from the cwd's apps/<name>, so the advice names
+    // its shim two levels up — the same spelling on every host, compared whole so neither
+    // the bare global command nor the running copy's own checkout can sneak in.
     const lines = plain(refused).split(String.fromCharCode(10)).map((line) => line.trim()).filter((line) => line.startsWith("→"));
-    const local = (program: string) => renderAdvice(command(["new-app", "<name>"]), { program, mode: "local-package", audience: "terminal" });
+    const walkedTo = renderAdvice(command(["new-app", "<name>"]), { program: "../../clawforge", mode: "checkout", audience: "terminal" });
     const bashLine = `${renderAdvice(command(["new-app", "<name>"]), shimInvocation())}  (${IN_BASH_NOTE})`;
     // The empty apps/<name> directory also earns the takeover note as the third line.
     check("init inside a checkout refuses with the checkout advice", lines.length, 3);
-    await requires("windows-host", "the refusal advice names npm's bin wrapper (Windows spelling)", () => {
-      check("...the Windows spelling is npm's bin wrapper", lines.slice(0, 2), [`→ ${local(WINDOWS_BIN_PROGRAM)}`, `→ ${bashLine}`]);
-    });
-    await requires("posix-host", "the refusal advice names the committed shim (POSIX spelling)", () => {
-      check("...the POSIX spelling is the committed shim", lines.slice(0, 2), [`→ ${local(SHIM_PROGRAM)}`, `→ ${bashLine}`]);
-    });
+    check("...the refusal names the walked-to checkout's gate, not the running copy's", lines.slice(0, 2), [`→ ${walkedTo}`, `→ ${bashLine}`]);
     check("the refusal names the checkout it walked up to", plain(refused).includes(fake), true);
   } finally {
     await rm(base, { recursive: true, force: true });

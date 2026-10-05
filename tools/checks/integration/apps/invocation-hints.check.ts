@@ -2,8 +2,9 @@
 // from the monorepo gate or the committed shim, `clawforge` from the system-wide command
 // (where `./clawforge` does not even run in cmd.exe or PowerShell). Covered: the helper
 // itself, help (Usage and footer), doctor's refusal and its JSON, the MCP envelope built
-// from it, and the entry's hand-over of the prefix.
+// from it, the entry's hand-over of the prefix, and the entry's own default invocation.
 
+import { resolve } from "node:path";
 import { renderUsage, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import {
   INVOKED_AS_ENV,
@@ -168,12 +169,17 @@ try {
   check("the entry default is the monorepo prefix, without an app part", commandLine([]), HINT);
   check("the default names no deployment", invocation().app, undefined);
 
-  // entry/root.ts picks the local-package spelling per host (review R-A F2): the committed
-  // shim is bash-only, so Windows names npm's bin wrapper, which cmd resolves through
-  // PATHEXT and PowerShell through its own lookup. Here the running framework is the
-  // checkout's own copy, so defaultInvocation answers the local-package branch.
-  check("local-package on Windows names npm's bin wrapper", await defaultInvocation(process.cwd(), "win32"), { program: WINDOWS_BIN_PROGRAM, mode: "local-package" });
-  check("local-package elsewhere keeps the committed shim", await defaultInvocation(process.cwd(), "linux"), { program: SHIM_PROGRAM, mode: "local-package" });
+  // entry/root.ts decides by the copy that runs (review R16-1). The checkout's own copy is
+  // the checkout gate's installed-style entry, so its default names the checkout's shim
+  // where it really is — the root spelling from the checkout root, the monorepo MCP
+  // launcher's two-levels-up path from apps/<name> — in checkout mode, per the strict
+  // reader's coherence rule. The local-package branch (an app's own dependency: the
+  // committed shim is bash-only, so Windows names npm's bin wrapper) cannot come out of the
+  // checkout copy this process runs, so it is pinned end to end by system-install.check.ts,
+  // on a real local package.
+  const probeAppRoot = resolve(process.cwd(), "apps", "invocation-hints-probe");
+  check("a checkout copy from the checkout root names the root shim", await defaultInvocation(process.cwd()), { program: SHIM_PROGRAM, mode: "checkout" });
+  check("a checkout copy from apps/<name> names the launcher's two-levels-up path", await defaultInvocation(probeAppRoot), { program: "../../clawforge", mode: "checkout" });
 
   // --- the value between processes: versioned JSON in CLAWFORGE_INVOCATION -------------------
 
@@ -405,6 +411,24 @@ try {
     { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
   check("the installed launcher hands no invocation over — the system-wide command it spawns names itself",
     mcpLauncherContent("installed").includes("CLAWFORGE_INVOCATION"), false);
+
+  // The entry default is a producer too: bin.ts re-serialises whatever defaultInvocation()
+  // answers into CLAWFORGE_INVOCATION for the delegate (entry/delegate.ts), so the real
+  // function's checkout answers must survive the strict reader for the roots it is called
+  // with (the checkout root, and an apps/<name> deployment).
+  for (const [label, root] of [["checkout root", process.cwd()], ["apps/<name>", probeAppRoot]] as const) {
+    const value = { ...(await defaultInvocation(root)), audience: "terminal" as const };
+    check(`defaultInvocation (${label}) hands over an invocation the strict reader accepts`,
+      parseInvocation(serializeInvocation(value)), value);
+  }
+  // A run that refused inside a DIFFERENT checkout-shaped tree names that walked-to
+  // checkout's gate (bin.ts passes the decision's checkout), not the running copy's.
+  {
+    const other = resolve(process.cwd(), "apps", "another-checkout");
+    const value = { ...(await defaultInvocation(resolve(process.cwd(), "apps", "invocation-hints-probe"), undefined, other)), audience: "terminal" as const };
+    check("defaultInvocation names a decided checkout that differs from the running copy's",
+      value, { program: "../another-checkout/clawforge", mode: "checkout", audience: "terminal" });
+  }
 
   // The entry re-serialises whatever invocation() holds (bin, the delegate), so every default
   // must survive a serialize/parse cycle unchanged.

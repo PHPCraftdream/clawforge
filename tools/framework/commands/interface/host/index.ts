@@ -152,8 +152,9 @@ async function runInvocation(ctx: Context, parsed: HostInvocation, environment: 
   const result = await run(parsed.command[0], parsed.command.slice(1), options);
 
   if (!follow) {
+    // Both streams whatever the exit code: a successful command's diagnostics live on stderr.
     emitRaw(result.stdout);
-    if (result.code !== 0) emitRaw(result.stderr);
+    emitRaw(result.stderr);
   }
   if (result.code !== 0) {
     dieWithExitCode(commandFailedMessage(parsed.context, parsed.command, result.code), result.code);

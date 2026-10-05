@@ -44,12 +44,12 @@ const rawArgv = process.argv.slice(2);
 const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs });
 // Before any refusal can render: a refusal's advice is this invocation's spelling (the
 // checkout-refusal's "new-app" line included), so the default must be applied first. The
-// refusals carry the root they decided about (the nesting refusal its deployment); the
-// checkout refusal has none, so the cwd stands in — its own directory is the only root
-// the decision walked.
+// refusals carry the root they decided about (the nesting refusal its deployment, the
+// checkout refusal the checkout it walked up to); a refusal with neither stands in the cwd.
 if (handed === undefined) {
   const root = entry.kind === "run" ? entry.appRoot : entry.kind === "refuse" ? (entry.ancestor ?? process.cwd()) : process.cwd();
-  setInvocation({ ...(await defaultInvocation(root, process.platform)), audience: "terminal" });
+  const checkout = entry.kind === "run" || entry.kind === "refuse" ? entry.checkout : undefined;
+  setInvocation({ ...(await defaultInvocation(root, process.platform, checkout)), audience: "terminal" });
 }
 switch (entry.kind) {
   case "refuse": {

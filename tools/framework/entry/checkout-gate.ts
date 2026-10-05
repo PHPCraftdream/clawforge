@@ -4,7 +4,7 @@
 // declarations. version/completion stay wired in the gate script itself: completion's
 // declaration closes over the finished command array (see completion.ts).
 
-import { parseDeclaredArgs, type UnknownArgumentError } from "../core/command/index.ts";
+import { parseDeclaredArgs } from "../core/command/index.ts";
 import { countValue } from "../core/values/value.ts";
 import { emit } from "../core/io/output.ts";
 import { createApp } from "../integration/deployment/scaffold.ts";
@@ -154,14 +154,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "{--json} prints the same rows as an array of objects instead.",
     arguments: LIST_ARGUMENTS,
     run: async (args) => {
-      let parsed;
-      try {
-        parsed = parseDeclaredArgs(LIST_ARGUMENTS, args);
-      } catch (error) {
-        const { reportUnknownArgument } = await import("./cli.ts");
-        reportUnknownArgument("list", error as UnknownArgumentError);
-        return 1;
-      }
+      const parsed = parseDeclaredArgs(LIST_ARGUMENTS, args);
       const checkStatus = parsed["no-status"] !== true;
       const summaries = await listDeployments({ checkStatus, includeOthers: parsed.json !== true });
       if (parsed.json === true) emit(`${JSON.stringify(summaries)}\n`);

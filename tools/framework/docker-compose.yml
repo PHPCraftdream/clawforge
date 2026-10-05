@@ -16,7 +16,7 @@ x-openclaw-env: &openclaw-env
   OPENCLAW_CONFIG_DIR: /home/node/.openclaw
   OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
   OPENCLAW_GATEWAY_PORT: "18789"
-  OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?run ./clawforge bootstrap to generate .env}
+  OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?run bootstrap to generate .env}
   # Bonjour/mDNS discovery is useless inside a container network.
   OPENCLAW_DISABLE_BONJOUR: ${OPENCLAW_DISABLE_BONJOUR:-1}
   TZ: ${OPENCLAW_TZ:-UTC}
@@ -59,7 +59,7 @@ services:
       start_period: 20s
 
   # One-shot CLI container: shares the gateway's network namespace, so 127.0.0.1:18789
-  # inside it is the gateway. Started on demand by `./clawforge cli` and `./clawforge mcp-serve` whenever
+  # inside it is the gateway. Started on demand by the `cli` and `mcp-serve` commands whenever
   # cli-helper below is not running.
   cli:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:extended-stable}
@@ -80,11 +80,11 @@ services:
       - gateway
 
   # Persistent twin of `cli`: same image, mounts and network, but its entrypoint just idles
-  # instead of running OpenClaw's CLI, so the container stays up. `./clawforge cli`/`./clawforge mcp-serve`
+  # instead of running OpenClaw's CLI, so the container stays up. the `cli`/`mcp-serve` commands
   # then `docker exec` into it instead of paying `compose run --rm`'s create/destroy cost on
   # every call — measured directly against this deployment: ~5-7s one-off vs ~1-3s exec.
-  # Started/stopped explicitly with `./clawforge cli-start`/`./clawforge cli-stop`; `./clawforge up` never starts
-  # it, `./clawforge down` removes it along with anything else under the "cli" profile.
+  # Started/stopped explicitly with `cli-start`/`cli-stop`; `up` never starts
+  # it, `down` removes it along with anything else under the "cli" profile.
   cli-helper:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:extended-stable}
     profiles: ["cli"]

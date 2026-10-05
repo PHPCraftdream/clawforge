@@ -40,6 +40,7 @@ import type { Context } from "#framework/core/context.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useLinuxHost();
@@ -311,6 +312,21 @@ try {
   {
     const { output } = await capture(() => main(contractApp, ["boom"]));
     check("a failing non-json command prints no JSON document at all", output.includes("{"), false);
+  }
+
+  // R7-1: a `--json` that is an OPTION's value (`--interval --json`) is not the flag — the
+  // pre-parse stand-in for a parsed call's `given` (jsonTokenRequested) must refuse it. The
+  // existing `boom --json` case above is the given-flag control: a declared flag still prints.
+  {
+    const backupApp: AppDefinition = {
+      name: "json-value-fixture",
+      description: "fixture",
+      commands: { backup: lifecycleCommands.backup },
+    };
+    const { output } = await capture(() => main(backupApp, ["backup", "install", "--interval", "--json"]));
+    checkTrue("a --json that is an option's value still names the parse refusal", output.includes('got "--json"'));
+    check("a --json that is an option's value prints no error document", output.includes('"error"'), false);
+    checkTrue("the parse failure still exits non-zero", process.exitCode === 1);
   }
 
   {

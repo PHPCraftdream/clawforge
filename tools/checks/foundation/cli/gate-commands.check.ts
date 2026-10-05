@@ -32,8 +32,7 @@ import { normalizeVersionAlias, versionGateCommand } from "#framework/integratio
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
-import { reportUnknownArgument } from "#framework/entry/cli.ts";
-import { parseDeclaredArgs, ArgumentError, UnknownArgumentError, unknownArgumentMessage, missingArgumentMessage } from "#framework/core/command/index.ts";
+import { ArgumentError, UnknownArgumentError, unknownArgumentMessage, missingArgumentMessage } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -363,22 +362,24 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
 }
 
 {
-  // `list` parses through parseDeclaredArgs and answers an unknown argument the standard
-  // way — the same reporter the dispatcher uses, pointing at the command's own --help.
+  // `list` parses through parseDeclaredArgs and dies on an unknown argument in the parser's
+  // own voice: runGateCommand's refuseAgainstDeclaration (and the MCP validate) enforces the
+  // declaration before run, so run itself carries no local catch — the same error surfaces
+  // whether a caller enforces first or not.
   const list = checkoutGateCommands.find((command) => command.name === "list");
   if (list === undefined) throw new Error("list is not declared in entry/checkout-gate.ts");
-  const actual: string[] = [];
-  const code = await withOutputSink((chunk) => actual.push(chunk), async () => list.run(["--bogus"]));
-  let reference: string[] = [];
+  let raised: unknown;
   try {
-    parseDeclaredArgs(list.arguments ?? [], ["--bogus"]);
+    await list.run(["--bogus"]);
   } catch (error) {
-    if (error instanceof UnknownArgumentError) {
-      await withOutputSink((chunk) => reference.push(chunk), async () => reportUnknownArgument("list", error));
-    } else throw error;
+    raised = error;
   }
-  check("list --bogus is refused", code, 1);
-  check("list --bogus answers exactly the standard unknown-argument report", actual, reference);
+  check("list --bogus is refused by the parser", raised instanceof UnknownArgumentError, true);
+  check(
+    "list --bogus raises the standard unknown-argument message",
+    raised instanceof UnknownArgumentError && raised.message,
+    unknownArgumentMessage("--bogus", undefined),
+  );
 }
 
 {

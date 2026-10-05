@@ -39,6 +39,7 @@ interface ExemptLines {
 interface Baseline {
   readonly about: string;
   readonly dotClawforgeLiterals: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
+  readonly dotClawforgeLiteralsNonTs: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly dotClawforgeConcatLiterals: { readonly comment: string; readonly total: number };
   readonly localizeOptOuts: {
     readonly comment: string;
@@ -166,6 +167,54 @@ for (const [file, lines] of exemptLeft) {
 }
 report(perFileRatchet("dotClawforgeLiterals", baseline.dotClawforgeLiterals.files, literalAfter));
 report(ratchet("dotClawforgeLiterals.total", baseline.dotClawforgeLiterals.total, literalTotal, [], []));
+
+// 1a. The same literal in the static non-.ts product files under tools/framework (yml/yaml/
+// sh/json/md/txt) — the compose `:?` guard message named a program rendered by docker compose,
+// where it does not exist, and the .ts-only scan above never saw it. Same exempt semantics:
+// occurrences on an exempt line are left out of the per-file counts but still counted in the
+// total, and the table fails in both directions, like section 1.
+const TEXT_EXTENSIONS = [".yml", ".yaml", ".sh", ".json", ".md", ".txt"];
+async function walkTextFiles(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "dist" || entry.name === "node_modules") continue;
+      found.push(...(await walkTextFiles(full)));
+    } else if (entry.isFile() && TEXT_EXTENSIONS.some((extension) => entry.name.endsWith(extension))) {
+      found.push(full);
+    }
+  }
+  return found;
+}
+const nonTsExemptLeft = new Map<string, Map<string, number>>(
+  Object.entries(baseline.dotClawforgeLiteralsNonTs.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+);
+const nonTsAfter = new Map<string, number>();
+let nonTsTotal = 0;
+for (const full of await walkTextFiles(resolve(root, "tools", "framework"))) {
+  const content = await readFile(full, "utf8");
+  const left = nonTsExemptLeft.get(rel(full));
+  let counted = 0;
+  for (const line of content.split("\n")) {
+    const occurrences = line.split(LITERAL).length - 1;
+    if (occurrences === 0) continue;
+    nonTsTotal += occurrences;
+    const remaining = left?.get(line.trim()) ?? 0;
+    const exempt = Math.min(remaining, occurrences);
+    if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
+    counted += occurrences - exempt;
+  }
+  if (counted > 0) nonTsAfter.set(rel(full), counted);
+}
+for (const [file, lines] of nonTsExemptLeft) {
+  for (const [line, unmatched] of lines) {
+    if (unmatched === 0) continue;
+    checkTrue(`dotClawforgeLiteralsNonTs.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+  }
+}
+report(perFileRatchet("dotClawforgeLiteralsNonTs", baseline.dotClawforgeLiteralsNonTs.files, nonTsAfter));
+report(ratchet("dotClawforgeLiteralsNonTs.total", baseline.dotClawforgeLiteralsNonTs.total, nonTsTotal, [], []));
 
 // 1b. The concatenation spelling escapes 1: `"." + "/clawforge"` builds the same literal —
 // same invariant, 0 outside the renderer.

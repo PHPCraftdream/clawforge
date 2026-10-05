@@ -55,6 +55,12 @@ try {
   check("control-mcp --help exits cleanly", controlHelp.code, 0);
   check("control-mcp --help explains itself, not silence", controlHelp.stdout.includes("MCP tools"), true);
 
+  // Same boundary, short spelling: `-h` after a `--` belongs to the command's own parser,
+  // so control-mcp starts serving (blocking on stdin until the deadline) instead of printing
+  // its help — assert on stdout, never on the exit code or the timeout.
+  const controlShortAfterSeparator = await runGate(["--app", deploymentName, "control-mcp", "--", "-h"]);
+  check("`-h` after a `--` does not print control-mcp's help", controlShortAfterSeparator.stdout.includes("MCP tools"), false);
+
   const helpHelp = await runGate(["--app", deploymentName, "help", "--help"]);
   check("help --help exits cleanly", helpHelp.code, 0);
   check("help --help falls back to the command list", helpHelp.stdout.includes(`Usage: ./clawforge --app ${deploymentName} <command>`), true);

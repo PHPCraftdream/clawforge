@@ -21,6 +21,7 @@ import {
   missingDeploymentReport,
   soleDeploymentFallback,
   splitLeadingAppFlag,
+  DISPATCHER_COMMANDS,
 } from "../integration/gate.ts";
 
 /** The file system as the resolver may see it — real at the entries, fake in the matrix check. */
@@ -170,7 +171,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     return { kind: "refuse", refusals: [new UserError((error as Error).message)] };
   }
 
-  const baseCommandNames = [...deploymentCommands, ...gateCommands, "help", "control-mcp"];
+  const baseCommandNames = [...deploymentCommands, ...gateCommands, ...DISPATCHER_COMMANDS];
 
   const deploymentDir = resolve(root, "apps", name);
   if (!fs.exists(resolve(deploymentDir, "app.ts"))) {

@@ -183,7 +183,12 @@ async function refusals(): Promise<string> {
 
   const listCommand = checkoutGateCommands.find((command) => command.name === "list");
   const unknownListArgument = async () => {
-    await listCommand?.run(["--bogus"]);
+    try {
+      await listCommand?.run(["--bogus"]);
+    } catch (error) {
+      if (error instanceof UnknownArgumentError) reportUnknownArgument("list", error);
+      else throw error;
+    }
   };
   parts.push(await underEveryInvocation("unknown argument: list --bogus", unknownListArgument));
 

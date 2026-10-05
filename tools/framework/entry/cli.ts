@@ -19,8 +19,8 @@ export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol };
 
 // The help boundary is the gate's (integration/gate.ts); re-exported so this module's callers
 // and checks keep one import site.
-import { requestsHelp } from "../integration/gate.ts";
-export { requestsHelp };
+import { requestsHelp, requestsShortHelp } from "../integration/gate.ts";
+export { requestsHelp, requestsShortHelp };
 
 
 /** Entry point: dispatches argv against an application definition. `gateHelp` is the
@@ -50,7 +50,7 @@ export async function runApp(
   // Serves the application's commands as MCP tools, so the instance can be driven from a
   // chat client too. --help is checked before starting: the server owns stdio once it runs.
   if (name === "control-mcp") {
-    if (args.includes("--help") || args.includes("-h")) {
+    if (requestsShortHelp(args)) {
       // From the registry entry renderHelp reads, so `help control-mcp` and this never answer
       // differently — the same declaration, not a bespoke help printer.
       const entry = registry.find("control-mcp");

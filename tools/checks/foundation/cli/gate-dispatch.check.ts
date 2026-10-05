@@ -196,6 +196,18 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   );
 }
 
+// --- the real gate: `-h` after a bare `--` runs the command instead of printing help ----
+
+{
+  // remove-app passes nothing through, so its own parser refuses the trailing `-h` that
+  // follows the `--`; before the boundary covered both spellings, the gate answered with
+  // remove-app's help screen and exit 0 instead of ever running the command.
+  const afterSeparator = await runGate(["remove-app", "nosuch-xyz-probe", "--", "-h"]);
+  check("`-h` after a `--` runs remove-app instead of printing its help", afterSeparator.stdout.includes("Delete apps/<name>"), false);
+  check("remove-app's own parser refuses the trailing `-h`", afterSeparator.code === 0, false);
+  check("and the refusal is not silence", afterSeparator.stdout.trim().length > 0, true);
+}
+
 // --- --version: answers from an empty directory, no deployment or apps/ around at all -------
 //
 // The regression this guards: --version/-v/version used to fall through to

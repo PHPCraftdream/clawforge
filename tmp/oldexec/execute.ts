@@ -71,23 +71,6 @@ function jsonRequested(argv: readonly string[]): boolean {
   return (sep === -1 ? argv : argv.slice(0, sep)).includes("--json");
 }
 
-/** The pre-parse stand-in for a parsed call's `given`: a standalone `--json` token before
- *  the first bare `--` that is not directly preceded by a declared option — a token right
- *  after an option is that option's value (`--interval --json`), not the flag. */
-function jsonTokenRequested(argv: readonly string[], shape: EffectShape | undefined): boolean {
-  const sep = argv.indexOf("--");
-  const head = sep === -1 ? argv : argv.slice(0, sep);
-  const options = new Set<string>();
-  const collect = (args?: readonly { readonly name: string; readonly kind: string }[]): void => {
-    for (const argument of args ?? []) if (argument.kind === "option") options.add(argument.name);
-  };
-  collect(shape?.arguments);
-  for (const action of Object.values(shape?.actions ?? {})) collect(action?.arguments);
-  return head.some((token, index) =>
-    token === "--json"
-    && !(index > 0 && options.has(head[index - 1].replace(/^--/, "").split("=", 1)[0])));
-}
-
 /** The context both spec and legacy target commands run on: built here, not by the command —
  *  an application never constructs a transport itself. */
 function contextOptions(app: AppDefinition, io: CommandIo): ContextOptions {
@@ -114,10 +97,10 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
   // Terminal `--json` failure contract: a command invoked with its own declared --json flag
   // that fails still prints a machine-readable answer, unless it already printed (or
   // streamed) something of its own. Never for an unknown-argument error — that is reported as such.
-  const failed = (stage: Stage, error: unknown, facts?: CallFacts, shape?: EffectShape, action?: string, jsonGiven?: boolean): Execution => {
+  const failed = (stage: Stage, error: unknown, facts?: CallFacts, shape?: EffectShape, action?: string): Execution => {
     if (io.surface === "terminal" && !(error instanceof UnknownArgumentError)
       && declaresJsonFlag(command, shape, action)
-      && (jsonGiven ?? jsonRequested(argv))
+      && jsonRequested(argv)
       && machineWritesCount() === writesAtStart && stdoutBytesWritten() === stdoutAtStart) {
       const message = maskSecrets(error instanceof Error ? error.message : String(error));
       emit(`${JSON.stringify({ error: { message } }, null, 2)}\n`);
@@ -131,13 +114,11 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
     try {
       call = parseCall(shape, argv, name);
     } catch (error) {
-      // shape stays out of declaresJsonFlag here: before the call parses there is no chosen
-      // action, so the flat command declaration is the contract's original gate.
-      return failed("parse", error, undefined, undefined, undefined, jsonTokenRequested(argv, shape));
+      return failed("parse", error);
     }
     const facts = callFacts(shape, call);
     if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {
-      return failed("confirm", new ConfirmationRequiredError(name), facts, shape, call.action, call.given.includes("json"));
+      return failed("confirm", new ConfirmationRequiredError(name), facts, shape, call.action);
     }
     const data = specData(entry);
     const phases = data.kind === "single" ? data : data.actions[call.action!];
@@ -147,12 +128,12 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
       clearRecipesDir();
       plan = phases.prepare === undefined ? call.values : await phases.prepare(call, localScope());
     } catch (error) {
-      return failed("prepare", error, facts, shape, call.action, call.given.includes("json"));
+      return failed("prepare", error, facts, shape, call.action);
     }
     try {
       if (data.kind === "single" && data.preparesEnvironment && facts.effect !== "read") await ensureEnvironment();
     } catch (error) {
-      return failed("environment", error, facts, shape, call.action, call.given.includes("json"));
+      return failed("environment", error, facts, shape, call.action);
     }
     let on: Context | DeploymentScope;
     try {
@@ -160,12 +141,12 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
         ? await deploymentScope(app, io)
         : await createContext(contextOptions(app, io));
     } catch (error) {
-      return failed("context", error, facts, shape, call.action, call.given.includes("json"));
+      return failed("context", error, facts, shape, call.action);
     }
     try {
       await (phases.run as (on: unknown, plan: unknown) => Promise<void>)(on, plan);
     } catch (error) {
-      return failed("run", error, facts, shape, call.action, call.given.includes("json"));
+      return failed("run", error, facts, shape, call.action);
     }
     return { stage: "run", facts };
   }

@@ -6,6 +6,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* The docker-compose `OPENCLAW_GATEWAY_TOKEN` guard message no longer names a program: a missing
+  token now says `run bootstrap to generate .env`.
+* A failing command no longer prints a `--json` error document when `--json` was an option's
+  value (e.g. `--interval --json`).
+* `-h` placed after a bare `--` is passed through to the command instead of printing help.
 * `remove-app` over MCP now needs `confirm: true`: the gate command declares its effect, the
   tool schema derives `confirm` from it (required, the command having no read form), and a
   call without it is refused — with the same message the destructive deployment commands use —

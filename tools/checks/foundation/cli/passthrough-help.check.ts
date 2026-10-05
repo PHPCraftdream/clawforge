@@ -9,7 +9,7 @@
 
 import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { runApp, requestsHelp } from "#framework/entry/cli.ts";
+import { runApp, requestsHelp, requestsShortHelp } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { missingArgumentMessage } from "#framework/core/command/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -18,6 +18,15 @@ checkTrue("--help alone requests our own help", requestsHelp(["--help"]));
 checkTrue("--help before a later -- still requests our own help", requestsHelp(["--help", "--", "x"]));
 check("--help after a -- is the wrapped tool's own, not ours", requestsHelp(["--", "--help"]), false);
 check("no --help anywhere requests nothing", requestsHelp(["config", "get", "x"]), false);
+
+// The short spelling is ours only for the commands that pass nothing through (gate commands,
+// control-mcp), through requestsShortHelp, and shares the same before-the-first-`--` boundary:
+// `-h` after a bare `--` belongs to the wrapped tool's own parser. A deployment command keeps
+// a literal `-h` (`exec df -h`): requestsHelp never reads it.
+checkTrue("`-h` alone requests a pass-through-free command's own help", requestsShortHelp(["-h"]));
+checkTrue("`-h` before a later -- still requests that help", requestsShortHelp(["-h", "--", "x"]));
+check("`-h` after a `--` is the wrapped tool's own, not ours", requestsShortHelp(["--", "-h"]), false);
+check("a deployment command passes `-h` through (exec df -h): requestsHelp ignores it", requestsHelp(["exec", "df", "-h"]), false);
 
 const app = defineApp({ name: "passthrough-help-check", description: "fixture", commands: openclawCommands });
 

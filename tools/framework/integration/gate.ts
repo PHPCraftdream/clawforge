@@ -75,9 +75,9 @@ export async function runGateCommand(
   if (command === undefined) return undefined;
 
   const args = argv.slice(1);
-  // Same boundary as the deployment commands: help after a bare `--` belongs to what the
-  // command passes through, not to us.
-  if (requestsHelp(args) || args.includes("-h")) {
+  // Same boundary as the deployment commands: help before a bare `--` belongs to us; help
+  // after it belongs to what the command passes through, not to us.
+  if (requestsShortHelp(args)) {
     gateCommandHelp(command);
     return 0;
   }
@@ -92,10 +92,19 @@ export async function runGateCommand(
 }
 
 /** Whether argv asks for this command's own `--help`, scanning only tokens before the first
- *  bare `--` — the one boundary function for both entry points (entry/cli.ts re-exports it). */
+ *  bare `--` — the one boundary function for both entry points (entry/cli.ts re-exports it).
+ *  Only `--help`: a deployment command may pass a literal `-h` through (`exec df -h`). */
 export function requestsHelp(args: readonly string[]): boolean {
   const sep = args.indexOf("--");
   return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
+}
+
+/** requestsHelp for the commands that pass nothing through (gate commands, control-mcp):
+ *  `-h` before the first bare `--` asks for help too. */
+export function requestsShortHelp(args: readonly string[]): boolean {
+  if (requestsHelp(args)) return true;
+  const sep = args.indexOf("--");
+  return (sep === -1 ? args : args.slice(0, sep)).includes("-h");
 }
 
 /** `required` and `choices`, enforced once here against the command's declaration — the same

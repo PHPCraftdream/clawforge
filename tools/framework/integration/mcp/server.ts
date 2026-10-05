@@ -197,7 +197,6 @@ async function handleHelpTool(
   id: number | string | undefined,
   args: Record<string, unknown>,
   app: AppDefinition,
-  gateCommands: GateCommand[],
   gateHelp: string[],
   registry: CommandRegistry,
 ): Promise<void> {
@@ -365,7 +364,7 @@ async function handleToolsCall(
   // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts) —
   // so it is handled here rather than through the `tools`/`gateTools` lookup below.
   if (name === "help") {
-    await handleHelpTool(request.id, args, app, gateCommands, gateHelp, registry);
+    await handleHelpTool(request.id, args, app, gateHelp, registry);
     return;
   }
 

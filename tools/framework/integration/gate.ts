@@ -91,20 +91,24 @@ export async function runGateCommand(
   }
 }
 
+/** The tokens before the first bare `--`; everything after belongs to the command's
+ *  passthrough, not to the gate's scan. */
+export function beforeBareDoubleDash(args: readonly string[]): readonly string[] {
+  const sep = args.indexOf("--");
+  return sep === -1 ? args : args.slice(0, sep);
+}
+
 /** Whether argv asks for this command's own `--help`, scanning only tokens before the first
  *  bare `--` — the one boundary function for both entry points (entry/cli.ts re-exports it).
  *  Only `--help`: a deployment command may pass a literal `-h` through (`exec df -h`). */
 export function requestsHelp(args: readonly string[]): boolean {
-  const sep = args.indexOf("--");
-  return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
+  return beforeBareDoubleDash(args).includes("--help");
 }
 
 /** requestsHelp for the commands that pass nothing through (gate commands, control-mcp):
  *  `-h` before the first bare `--` asks for help too. */
 export function requestsShortHelp(args: readonly string[]): boolean {
-  if (requestsHelp(args)) return true;
-  const sep = args.indexOf("--");
-  return (sep === -1 ? args : args.slice(0, sep)).includes("-h");
+  return requestsHelp(args) || beforeBareDoubleDash(args).includes("-h");
 }
 
 /** `required` and `choices`, enforced once here against the command's declaration — the same
@@ -295,15 +299,16 @@ export function splitLeadingAppFlag(argv: string[]): AppFlagSplit {
 }
 
 /** The first `--app`/`--app=<name>` among a command's own arguments (a leading one was already
- *  split off). `exempt` names commands that read their argv verbatim: gate commands and those
- *  declaring a variadic argument (cli, exec, host), whose `--app` belongs to them. */
+ *  split off), stopping at a bare `--` — tokens after it are values, not flags. `exempt` names
+ *  commands that read their argv verbatim: gate commands and those declaring a variadic argument
+ *  (cli, exec, host), whose `--app` belongs to them. */
 export function misplacedAppFlag(
   commandName: string | undefined,
   args: readonly string[],
   exempt: readonly string[],
 ): string | undefined {
   if (commandName === undefined || exempt.includes(commandName)) return undefined;
-  return args.find((arg) => arg === "--app" || arg.startsWith("--app="));
+  return beforeBareDoubleDash(args).find((arg) => arg === "--app" || arg.startsWith("--app="));
 }
 
 /** The standard answer to a command name nothing declares: the typo, a nearby spelling

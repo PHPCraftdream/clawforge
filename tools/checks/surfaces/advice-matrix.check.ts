@@ -18,7 +18,7 @@ import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, renderArgument, shimInvocation, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderArgument, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -203,6 +203,24 @@ check(
 check("renderArgument still POSIX-quotes under a path spelling", renderArgument("a$b", SHIM_PROGRAM), "'a$b'");
 check("renderArgument still double-quotes an inert word under the bare program", renderArgument("two words", "clawforge"), '"two words"');
 check("renderAdvice single-quotes a shell-active word under the bare program", renderAdvice(command(["status", "--reason", "a$b`c"]), BARE_PROGRAM), "clawforge status --reason 'a$b`c'");
+
+/** The program itself quotes by the same rule (review R9-A R9-4): a hand-set
+ *  CLAWFORGE_INVOCATION whose program carries a space must render a line that pastes.
+ *  A path spelling gets the POSIX quoting the program's own slashes select. */
+const SPACED_PROGRAM: Invocation = { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" };
+check(
+  "a spaced program renders quoted under a path spelling",
+  renderAdvice(command(["status"]), SPACED_PROGRAM),
+  `'<programs dir>/clawforge' status`,
+);
+/** The three shipped spellings are safe words and must stay byte-identical — the npm bin
+ *  wrapper's backslashes included, which POSIX quoting would mangle. */
+const WRAPPER_PROGRAM: Invocation = { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" };
+check(
+  "the shipped program spellings render bare",
+  [renderAdvice(command(["status"]), PATH_SPELLING), renderAdvice(command(["status"]), BARE_PROGRAM), renderAdvice(command(["status"]), WRAPPER_PROGRAM)],
+  [`${SHIM_PROGRAM} status`, "clawforge status", `${WINDOWS_BIN_PROGRAM} status`],
+);
 
 /** P3 — a `shell` line is byte for byte what the advice carries, note included, under every
  *  column: nothing in the output layer rewrites a line for another shell or host. */

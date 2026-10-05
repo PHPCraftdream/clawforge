@@ -55,6 +55,10 @@ export function renderArgument(word: string, program: string): string {
   return `"${word.replaceAll('"', '\\"')}"`;
 }
 
+/** SAFE_WORD plus backslash: the invocation's own program is spelled for the user's shell
+ *  already (npm's bin wrapper carries `\`), so it renders bare like any safe word. */
+const SAFE_PROGRAM = /^[A-Za-z0-9_@%+=:,./\\-]+$/;
+
 export function renderAdvice(advice: Advice, on: Invocation = invocation()): string {
   if (advice.kind === "shell") {
     return advice.note === undefined ? advice.text : `${advice.text}  (${advice.note})`;
@@ -62,7 +66,9 @@ export function renderAdvice(advice: Advice, on: Invocation = invocation()): str
   if (advice.kind === "manual") {
     return advice.text;
   }
-  const parts = [on.program];
+  // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
+  // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
+  const parts = [SAFE_PROGRAM.test(on.program) ? on.program : renderArgument(on.program, on.program)];
   if (advice.app !== undefined) {
     parts.push("--app", renderArgument(advice.app, on.program));
   } else if (

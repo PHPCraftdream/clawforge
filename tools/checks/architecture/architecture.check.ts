@@ -8,7 +8,7 @@
 // Per-file counts are stored for the location-based metrics (dotClawforgeLiterals,
 // imageStringOps, prosePins) so a failure names the files that grew.
 
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -169,11 +169,15 @@ report(perFileRatchet("dotClawforgeLiterals", baseline.dotClawforgeLiterals.file
 report(ratchet("dotClawforgeLiterals.total", baseline.dotClawforgeLiterals.total, literalTotal, [], []));
 
 // 1a. The same literal in the static non-.ts product files under tools/framework (yml/yaml/
-// sh/json/md/txt) — the compose `:?` guard message named a program rendered by docker compose,
-// where it does not exist, and the .ts-only scan above never saw it. Same exempt semantics:
-// occurrences on an exempt line are left out of the per-file counts but still counted in the
-// total, and the table fails in both directions, like section 1.
+// sh/json/md/txt, plus dot/extensionless text files — .env.example ships into every
+// deployment) — the compose `:?` guard message named a program rendered by docker compose,
+// where it does not exist, and the .ts-only scan above never saw it. The dot/extensionless
+// names have no extension to filter on, so they are taken as text up to a size cap that
+// keeps the heuristic off binaries. Same exempt semantics: occurrences on an exempt line
+// are left out of the per-file counts but still counted in the total, and the table fails
+// in both directions, like section 1.
 const TEXT_EXTENSIONS = [".yml", ".yaml", ".sh", ".json", ".md", ".txt"];
+const TEXT_SIZE_CAP = 1024 * 1024;
 async function walkTextFiles(dir: string): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -181,7 +185,11 @@ async function walkTextFiles(dir: string): Promise<string[]> {
     if (entry.isDirectory()) {
       if (entry.name === "dist" || entry.name === "node_modules") continue;
       found.push(...(await walkTextFiles(full)));
-    } else if (entry.isFile() && TEXT_EXTENSIONS.some((extension) => entry.name.endsWith(extension))) {
+    } else if (entry.isFile()) {
+      const byExtension = TEXT_EXTENSIONS.some((extension) => entry.name.endsWith(extension));
+      const byName = !byExtension && (entry.name.startsWith(".") || !entry.name.includes("."));
+      if (!byExtension && !byName) continue;
+      if (byName && (await stat(full)).size > TEXT_SIZE_CAP) continue;
       found.push(full);
     }
   }

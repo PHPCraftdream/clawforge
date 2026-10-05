@@ -11,7 +11,7 @@ import type { CompletionData } from "./table.ts";
  *  for branch: skip `--app <value>`, take the command from the words before the cursor, let the
  *  word after the command scope an option's values, and fall back `first` → `after` (a
  *  "<cmd> *" entry when the word after the command is not a known action). `$clawforgeApp`,
- *  `$clawforgeTop`, `$clawforgeFirst`, `$clawforgeAfter`, `$clawforgeVerbatim` and `$clawforgeValues` are the only
+ *  `$clawforgeTop`, `$clawforgeFirst`, `$clawforgeAfter`, `$clawforgeVerbatim`, `$clawforgeVariadic` and `$clawforgeValues` are the only
  *  things the data reaches the interpreter through.
  *  Plain double-quoted literals concatenated with `+`, never a template literal: one would eat
  *  `$wordToComplete`, `$commandAst`, `"$wordToComplete*"` and `$($between[0])` (design
@@ -67,12 +67,14 @@ export const PWSH_COMPLETER: string =
   "      $candidates = @($clawforgeFirst[$cmd])\n" +
   "    } else {\n" +
   "      $afterKey = \"$cmd $($between[0])\"\n" +
-  "      # A pass-through command: past its declared positionals the tail is literal child\n" +
-  "      # text, so the command's own flags stop being offered; a bare `--` is the parser's\n" +
-  "      # own options-end marker, so everything from it on is the child's literal text.\n" +
-  "      if ($clawforgeVerbatim.ContainsKey($cmd)) {\n" +
+  "      # A bare `--` is the parser's own options-end marker for ANY variadic command,\n" +
+  "      # verbatim or not: everything from it on is literal text. A pass-through command\n" +
+  "      # past its declared positionals is the other way the tail turns literal.\n" +
+  "      if ($clawforgeVariadic.ContainsKey($cmd) -and $between -contains '--') {\n" +
+  "        $candidates = @()\n" +
+  "      } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {\n" +
   "        $free = 0\n" +
-  "        foreach ($w2 in $between) { if ($w2 -eq '--') { $free = $clawforgeVerbatim[$cmd] + 1 } elseif (-not $w2.StartsWith('-')) { $free = $free + 1 } }\n" +
+  "        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }\n" +
   "        if ($free -gt $clawforgeVerbatim[$cmd]) {\n" +
   "          $candidates = @()\n" +
   "        } elseif ($clawforgeAfter.ContainsKey($afterKey)) {\n" +
@@ -110,6 +112,8 @@ export function renderPwsh(data: CompletionData): string {
     block("clawforgeAfter", entries(data.after)) +
     "\n" +
     block("clawforgeVerbatim", [...data.verbatim].map(([command, positionals]) => `  "${command}" = ${positionals}`)) +
+    "\n" +
+    block("clawforgeVariadic", [...data.variadic].map((command) => `  "${command}" = $true`)) +
     "\n" +
     block("clawforgeValues", values) +
     "\n" +

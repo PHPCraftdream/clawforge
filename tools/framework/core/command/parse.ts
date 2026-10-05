@@ -367,7 +367,7 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
 }
 
 /** Whether the declared variadic is a pass-through one (`verbatim: true`). */
-function isVerbatim(declared: readonly ArgumentSpec[]): boolean {
+export function isVerbatim(declared: readonly ArgumentSpec[]): boolean {
   return declared.some((argument) => argument.kind === "variadic" && argument.verbatim === true);
 }
 
@@ -381,12 +381,15 @@ export interface CallShape {
 }
 
 /** An exact token (before a bare `--`) the declaration refuses with its own reason: an
- *  ArgumentError naming the token without its leading dashes. */
+ *  ArgumentError naming the token without its leading dashes. A refused `--flag` also
+ *  covers its inline spelling `--flag=...`. */
 function refuseTokens(refuse: Readonly<Record<string, string>> | undefined, argv: readonly string[]): void {
   if (refuse === undefined) return;
   for (const token of argv) {
     if (token === "--") return;
-    if (Object.hasOwn(refuse, token)) throw new ArgumentError(refuse[token], token.replace(/^-+/, ""));
+    const eq = token.indexOf("=");
+    const name = token.startsWith("--") && eq !== -1 ? token.slice(0, eq) : token;
+    if (Object.hasOwn(refuse, name)) throw new ArgumentError(refuse[name], name.replace(/^-+/, ""));
   }
 }
 

@@ -315,7 +315,7 @@ try {
   }
 
   // R7-1: a `--json` that is an OPTION's value (`--interval --json`) is not the flag — the
-  // pre-parse stand-in for a parsed call's `given` (jsonTokenRequested) must refuse it. The
+  // parse-failure gate (jsonTokenGiven, the real tokenizer) must refuse it. The
   // existing `boom --json` case above is the given-flag control: a declared flag still prints.
   {
     const backupApp: AppDefinition = {

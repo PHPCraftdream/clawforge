@@ -209,6 +209,11 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   // the child's literal text, so the command's own flags must not be offered there.
   check("a bare -- starts the verbatim tail: host's flags stop (R5-B F5-1)", [...at(data, ["host", "target", "--", ""], 3)], []);
   check("a bare -- starts the verbatim tail: cli's flags stop", [...at(data, ["cli", "--", ""], 2)], []);
+  // R9-4: the bare `--` cutoff is not a verbatim privilege — ANY variadic command's flags stop
+  // behind it, and without it they still come out.
+  check("a bare -- starts any variadic tail: check's flags stop (R9-4)", [...at(data, ["check", "--", ""], 2)], []);
+  check("a bare -- starts any variadic tail: set diff's flags stop", [...at(data, ["set", "diff", "--", ""], 3)], []);
+  check("check's flags without -- still complete", at(data, ["check", "--j"], 1).includes("--jobs"), true);
 
   check("help completes command names",
     [at(data, ["help", "st"], 1).includes("status"), at(data, ["help", ""], 1).includes("backup")], [true, true]);

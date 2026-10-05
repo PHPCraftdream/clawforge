@@ -1702,6 +1702,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=linux layout=checkout-root argv=["init","--help"]
 installed: run appRoot=clawforge-checkout argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=linux layout=checkout-root argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=linux layout=checkout-root argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=checkout-root argv=["--project-root","/home/u/app"]
@@ -1735,6 +1737,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=linux layout=checkout-subfolder argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/docs argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=linux layout=checkout-subfolder argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=linux layout=checkout-subfolder argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=checkout-subfolder argv=["--project-root","/home/u/app"]
@@ -1768,6 +1772,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash) | new-app fresh takes over this empty directory, or remove it
 == installed platform=linux layout=checkout-fresh-apps argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/apps/fresh argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=linux layout=checkout-fresh-apps argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash) | new-app fresh takes over this empty directory, or remove it
 == installed platform=linux layout=checkout-fresh-apps argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=checkout-fresh-apps argv=["--project-root","/home/u/app"]
@@ -1797,6 +1803,8 @@ installed: run appRoot=home/u/app argv=["init"] launchArgv=["init"] initializing
 installed: run appRoot=home/u/app argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
 == installed platform=linux layout=installed-app argv=["init","--help"]
 installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["init","--","--help"]
+installed: run appRoot=home/u/app argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=home/u/app
 == installed platform=linux layout=installed-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=installed-app argv=["--project-root","/home/u/app"]
@@ -1823,6 +1831,8 @@ installed: run appRoot=home/u/app-local argv=["init"] launchArgv=["init"] initia
 installed: run appRoot=home/u/app-local argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app-local
 == installed platform=linux layout=installed-app-local argv=["init","--help"]
 installed: run appRoot=home/u/app-local argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["init","--","--help"]
+installed: run appRoot=home/u/app-local argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=home/u/app-local
 == installed platform=linux layout=installed-app-local argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=installed-app-local argv=["--project-root","/home/u/app"]
@@ -1849,6 +1859,8 @@ installed: run appRoot=clawforge-checkout/stray-sub argv=["init"] launchArgv=["i
 installed: checkout-types-note
 == installed platform=linux layout=stray-checkout-app argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--help"] launchArgv=["init","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["init","--","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
 == installed platform=linux layout=stray-checkout-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=stray-checkout-app argv=["--project-root","/home/u/app"]
@@ -1879,6 +1891,8 @@ installed: run appRoot=home/u/empty argv=["init"] launchArgv=["init"] initializi
 installed: run appRoot=home/u/empty argv=["init","--local"] launchArgv=["init","--local"] initializing
 == installed platform=linux layout=empty-directory argv=["init","--help"]
 installed: run appRoot=home/u/empty argv=["init","--help"] launchArgv=["init","--help"]
+== installed platform=linux layout=empty-directory argv=["init","--","--help"]
+installed: run appRoot=home/u/empty argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing
 == installed platform=linux layout=empty-directory argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=empty-directory argv=["--project-root","/home/u/app"]
@@ -1908,6 +1922,8 @@ installed: refuse: home/u/app already holds app.ts — this directory is inside 
 installed: run appRoot=home/u/app/recipes/sub argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
 == installed platform=linux layout=nested-app argv=["init","--help"]
 installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["--project-root","home/u/app","init","--help"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["init","--","--help"]
+installed: refuse: home/u/app already holds app.ts — this directory is inside that deployment; init here would nest a second one
 == installed platform=linux layout=nested-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=linux layout=nested-app argv=["--project-root","/home/u/app"]
@@ -1938,6 +1954,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=win32 layout=checkout-root argv=["init","--help"]
 installed: run appRoot=clawforge-checkout argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=win32 layout=checkout-root argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=win32 layout=checkout-root argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=checkout-root argv=["--project-root","/home/u/app"]
@@ -1971,6 +1989,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=win32 layout=checkout-subfolder argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/docs argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=win32 layout=checkout-subfolder argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=win32 layout=checkout-subfolder argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=checkout-subfolder argv=["--project-root","/home/u/app"]
@@ -2004,6 +2024,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash) | new-app fresh takes over this empty directory, or remove it
 == installed platform=win32 layout=checkout-fresh-apps argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/apps/fresh argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=win32 layout=checkout-fresh-apps argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash) | new-app fresh takes over this empty directory, or remove it
 == installed platform=win32 layout=checkout-fresh-apps argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=checkout-fresh-apps argv=["--project-root","/home/u/app"]
@@ -2033,6 +2055,8 @@ installed: run appRoot=home/u/app argv=["init"] launchArgv=["init"] initializing
 installed: run appRoot=home/u/app argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
 == installed platform=win32 layout=installed-app argv=["init","--help"]
 installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["init","--","--help"]
+installed: run appRoot=home/u/app argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=home/u/app
 == installed platform=win32 layout=installed-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=installed-app argv=["--project-root","/home/u/app"]
@@ -2059,6 +2083,8 @@ installed: run appRoot=home/u/app-local argv=["init"] launchArgv=["init"] initia
 installed: run appRoot=home/u/app-local argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app-local
 == installed platform=win32 layout=installed-app-local argv=["init","--help"]
 installed: run appRoot=home/u/app-local argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["init","--","--help"]
+installed: run appRoot=home/u/app-local argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=home/u/app-local
 == installed platform=win32 layout=installed-app-local argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=installed-app-local argv=["--project-root","/home/u/app"]
@@ -2085,6 +2111,8 @@ installed: run appRoot=clawforge-checkout/stray-sub argv=["init"] launchArgv=["i
 installed: checkout-types-note
 == installed platform=win32 layout=stray-checkout-app argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--help"] launchArgv=["init","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["init","--","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
 == installed platform=win32 layout=stray-checkout-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=stray-checkout-app argv=["--project-root","/home/u/app"]
@@ -2115,6 +2143,8 @@ installed: run appRoot=home/u/empty argv=["init"] launchArgv=["init"] initializi
 installed: run appRoot=home/u/empty argv=["init","--local"] launchArgv=["init","--local"] initializing
 == installed platform=win32 layout=empty-directory argv=["init","--help"]
 installed: run appRoot=home/u/empty argv=["init","--help"] launchArgv=["init","--help"]
+== installed platform=win32 layout=empty-directory argv=["init","--","--help"]
+installed: run appRoot=home/u/empty argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing
 == installed platform=win32 layout=empty-directory argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=empty-directory argv=["--project-root","/home/u/app"]
@@ -2144,6 +2174,8 @@ installed: refuse: home/u/app already holds app.ts — this directory is inside 
 installed: run appRoot=home/u/app/recipes/sub argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
 == installed platform=win32 layout=nested-app argv=["init","--help"]
 installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["--project-root","home/u/app","init","--help"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["init","--","--help"]
+installed: refuse: home/u/app already holds app.ts — this directory is inside that deployment; init here would nest a second one
 == installed platform=win32 layout=nested-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=win32 layout=nested-app argv=["--project-root","/home/u/app"]
@@ -2174,6 +2206,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=darwin layout=checkout-root argv=["init","--help"]
 installed: run appRoot=clawforge-checkout argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=darwin layout=checkout-root argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=darwin layout=checkout-root argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=checkout-root argv=["--project-root","/home/u/app"]
@@ -2207,6 +2241,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=darwin layout=checkout-subfolder argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/docs argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=darwin layout=checkout-subfolder argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash)
 == installed platform=darwin layout=checkout-subfolder argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=checkout-subfolder argv=["--project-root","/home/u/app"]
@@ -2240,6 +2276,8 @@ installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an
 installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash) | new-app fresh takes over this empty directory, or remove it
 == installed platform=darwin layout=checkout-fresh-apps argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/apps/fresh argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=darwin layout=checkout-fresh-apps argv=["init","--","--help"]
+installed: refuse: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root: => ./clawforge new-app <name> | ./clawforge new-app <name>  (in bash) | new-app fresh takes over this empty directory, or remove it
 == installed platform=darwin layout=checkout-fresh-apps argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=checkout-fresh-apps argv=["--project-root","/home/u/app"]
@@ -2269,6 +2307,8 @@ installed: run appRoot=home/u/app argv=["init"] launchArgv=["init"] initializing
 installed: run appRoot=home/u/app argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
 == installed platform=darwin layout=installed-app argv=["init","--help"]
 installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["init","--","--help"]
+installed: run appRoot=home/u/app argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=home/u/app
 == installed platform=darwin layout=installed-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=installed-app argv=["--project-root","/home/u/app"]
@@ -2295,6 +2335,8 @@ installed: run appRoot=home/u/app-local argv=["init"] launchArgv=["init"] initia
 installed: run appRoot=home/u/app-local argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app-local
 == installed platform=darwin layout=installed-app-local argv=["init","--help"]
 installed: run appRoot=home/u/app-local argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["init","--","--help"]
+installed: run appRoot=home/u/app-local argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=home/u/app-local
 == installed platform=darwin layout=installed-app-local argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=installed-app-local argv=["--project-root","/home/u/app"]
@@ -2321,6 +2363,8 @@ installed: run appRoot=clawforge-checkout/stray-sub argv=["init"] launchArgv=["i
 installed: checkout-types-note
 == installed platform=darwin layout=stray-checkout-app argv=["init","--help"]
 installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--help"] launchArgv=["init","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["init","--","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
 == installed platform=darwin layout=stray-checkout-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=stray-checkout-app argv=["--project-root","/home/u/app"]
@@ -2351,6 +2395,8 @@ installed: run appRoot=home/u/empty argv=["init"] launchArgv=["init"] initializi
 installed: run appRoot=home/u/empty argv=["init","--local"] launchArgv=["init","--local"] initializing
 == installed platform=darwin layout=empty-directory argv=["init","--help"]
 installed: run appRoot=home/u/empty argv=["init","--help"] launchArgv=["init","--help"]
+== installed platform=darwin layout=empty-directory argv=["init","--","--help"]
+installed: run appRoot=home/u/empty argv=["init","--","--help"] launchArgv=["init","--","--help"] initializing
 == installed platform=darwin layout=empty-directory argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=empty-directory argv=["--project-root","/home/u/app"]
@@ -2380,6 +2426,8 @@ installed: refuse: home/u/app already holds app.ts — this directory is inside 
 installed: run appRoot=home/u/app/recipes/sub argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
 == installed platform=darwin layout=nested-app argv=["init","--help"]
 installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["--project-root","home/u/app","init","--help"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["init","--","--help"]
+installed: refuse: home/u/app already holds app.ts — this directory is inside that deployment; init here would nest a second one
 == installed platform=darwin layout=nested-app argv=["--project-root"]
 installed: refuse: --project-root requires an absolute directory
 == installed platform=darwin layout=nested-app argv=["--project-root","/home/u/app"]

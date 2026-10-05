@@ -79,13 +79,17 @@ export const BASH_COMPLETER: string =
   "  # Nothing after the command: the word being completed IS its own first position, which\n" +
   "  # the lookup above already answered.\n" +
   "  if (( ${#between[@]} == 0 )); then return; fi\n" +
-  "  # A pass-through command: past its declared positionals the tail is literal child text,\n" +
-  "  # so the command's own flags stop being offered; a bare `--` is the parser's own\n" +
-  "  # options-end marker, so everything from it on is the child's literal text.\n" +
+  "  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or\n" +
+  "  # not: everything from it on is literal text. A pass-through command past its declared\n" +
+  "  # positionals is the other way the tail turns literal, so its own flags stop being offered.\n" +
+  "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"variadic $cmd\")\"; then\n" +
+  "    for token in \"${between[@]}\"; do\n" +
+  "      if [[ \"$token\" == \"--\" ]]; then COMPREPLY=(); return; fi\n" +
+  "    done\n" +
+  "  fi\n" +
   "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"verbatim $cmd\")\"; then\n" +
   "    local free=0 token\n" +
   "    for token in \"${between[@]}\"; do\n" +
-  "      if [[ \"$token\" == \"--\" ]]; then free=$((reply + 1)); break; fi\n" +
   "      if [[ \"$token\" != -* ]]; then free=$((free + 1)); fi\n" +
   "    done\n" +
   "    if (( free > reply )); then COMPREPLY=(); return; fi\n" +
@@ -115,6 +119,8 @@ function caseArms(data: CompletionData): string {
     ...[...data.first].map(([command, words]) => caseArm("    ", `first ${command}`, words)),
     ...[...data.after].map(([key, words]) => caseArm("    ", `after ${key}`, words)),
     ...[...data.verbatim].map(([command, positionals]) => caseArm("    ", `verbatim ${command}`, [String(positionals)])),
+    ...[...data.variadic].map((command) => caseArm("    ", `variadic ${command}`, [])),
+    ...[...data.variadic].map((command) => caseArm("    ", `variadic ${command}`, [])),
     ...data.values.map((row) => caseArm("    ", `values ${row.command}${row.scope}${row.option}`, row.values)),
   ].join("");
 }

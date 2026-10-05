@@ -138,6 +138,7 @@ const INSTALLED_ARGVS: readonly (readonly string[])[] = [
   ["init"],
   ["init", "--local"],
   ["init", "--help"],
+  ["init", "--", "--help"],
   ["--project-root"],
   ["--project-root", APP],
   ["--project-root", "relative/dir"],

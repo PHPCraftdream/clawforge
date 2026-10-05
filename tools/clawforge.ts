@@ -111,7 +111,8 @@ switch (decision.kind) {
   }
   case "run": {
     // --json output must stay parseable, and a non-interactive caller (script, cron) has no one
-    // to read this for — only print for a human at a real terminal.
+    // to read this for — only print for a human at a real terminal. A stderr note suppression:
+    // over-suppressing the note is harmless.
     if (decision.soleNote !== undefined && !decision.argv.includes("--json") && process.stderr.isTTY === true) {
       info(`using the only deployment: ${decision.soleNote}`);
     }

@@ -118,6 +118,26 @@ for (const passthrough of ["cli", "exec", "host"]) {
   );
 }
 check("no command name at all is not misplaced", misplacedAppFlag(undefined, ["--app", "x"], []), undefined);
+check(
+  "--app after a bare -- is a passthrough value, not misplaced",
+  misplacedAppFlag("verify", ["--", "--app"], ["check", "new-app", "list"]),
+  undefined,
+);
+check(
+  "a --app after a bare -- is not misplaced even when one led argv",
+  misplacedAppFlag("operations", ["--", "--app=x"], ["check", "new-app", "list"]),
+  undefined,
+);
+check(
+  "without a bare -- the guard still holds",
+  misplacedAppFlag("verify", ["--app", "x"], ["check", "new-app", "list"]),
+  "--app",
+);
+check(
+  "splitLeadingAppFlag takes the leading --app and leaves the post-/--app=x alone",
+  splitLeadingAppFlag(["--app", "demo", "operations", "--", "--app=x"]),
+  { value: "demo", missingValue: false, rest: ["operations", "--", "--app=x"] },
+);
 
 // --- closestCommand() / reportUnknownCommand(): the typo pool ----------------------------
 

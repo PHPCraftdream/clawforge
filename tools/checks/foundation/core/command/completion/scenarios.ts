@@ -76,6 +76,15 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
     }
   }
 
+  // Any variadic command's bare `--` starts the literal tail, verbatim or not — and without it
+  // the command's own flags still come out (the guard pins the pre-`--` behaviour).
+  for (const command of data.variadic) {
+    if (data.verbatim.has(command)) continue; // the verbatim loop above already covers it
+    const bareEnd = [command, "--", ""];
+    scenarios.push({ name: `${command}'s bare -- starts the literal tail`, words: bareEnd, cword: bareEnd.length - 1 });
+    scenarios.push({ name: `${command}'s flags without --`, words: [command, "--j"], cword: 1 });
+  }
+
   if (first !== "") scenarios.push({ name: "--app before the command", words: ["--app", "x", first, ""], cword: 3 });
   // The `=` form the parser's splitLeadingAppFlag also accepts: one token with its own value.
   if (first !== "") scenarios.push({ name: "--app= before the command", words: [`--app=x`, first, ""], cword: 2 });

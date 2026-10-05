@@ -134,6 +134,16 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
+    "variadic check") _clawforge_reply="" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
+    "variadic check") _clawforge_reply="" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -181,13 +191,17 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered; a bare `--` is the parser's own
-  # options-end marker, so everything from it on is the child's literal text.
+  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
+  # not: everything from it on is literal text. A pass-through command past its declared
+  # positionals is the other way the tail turns literal, so its own flags stop being offered.
+  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+    for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+    done
+  fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -345,6 +359,16 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
+    "variadic check") _clawforge_reply="" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
+    "variadic check") _clawforge_reply="" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -392,13 +416,17 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered; a bare `--` is the parser's own
-  # options-end marker, so everything from it on is the child's literal text.
+  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
+  # not: everything from it on is literal text. A pass-through command past its declared
+  # positionals is the other way the tail turns literal, so its own flags stop being offered.
+  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+    for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+    done
+  fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -556,6 +584,13 @@ $clawforgeVerbatim = @{
   "exec" = 0
   "host" = 1
 }
+$clawforgeVariadic = @{
+  "cli" = $true
+  "exec" = $true
+  "host" = $true
+  "set" = $true
+  "check" = $true
+}
 $clawforgeValues = @{
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
@@ -611,12 +646,14 @@ $clawforgeCompleter = {
       $candidates = @($clawforgeFirst[$cmd])
     } else {
       $afterKey = "$cmd $($between[0])"
-      # A pass-through command: past its declared positionals the tail is literal child
-      # text, so the command's own flags stop being offered; a bare `--` is the parser's
-      # own options-end marker, so everything from it on is the child's literal text.
-      if ($clawforgeVerbatim.ContainsKey($cmd)) {
+      # A bare `--` is the parser's own options-end marker for ANY variadic command,
+      # verbatim or not: everything from it on is literal text. A pass-through command
+      # past its declared positionals is the other way the tail turns literal.
+      if ($clawforgeVariadic.ContainsKey($cmd) -and $between -contains '--') {
+        $candidates = @()
+      } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {
         $free = 0
-        foreach ($w2 in $between) { if ($w2 -eq '--') { $free = $clawforgeVerbatim[$cmd] + 1 } elseif (-not $w2.StartsWith('-')) { $free = $free + 1 } }
+        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }
         if ($free -gt $clawforgeVerbatim[$cmd]) {
           $candidates = @()
         } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
@@ -767,6 +804,14 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -807,13 +852,17 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered; a bare `--` is the parser's own
-  # options-end marker, so everything from it on is the child's literal text.
+  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
+  # not: everything from it on is literal text. A pass-through command past its declared
+  # positionals is the other way the tail turns literal, so its own flags stop being offered.
+  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+    for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+    done
+  fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -965,6 +1014,14 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
+    "variadic cli") _clawforge_reply="" ;;
+    "variadic exec") _clawforge_reply="" ;;
+    "variadic host") _clawforge_reply="" ;;
+    "variadic set") _clawforge_reply="" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -1005,13 +1062,17 @@ _clawforge_complete() {
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered; a bare `--` is the parser's own
-  # options-end marker, so everything from it on is the child's literal text.
+  # A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
+  # not: everything from it on is literal text. A pass-through command past its declared
+  # positionals is the other way the tail turns literal, so its own flags stop being offered.
+  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "variadic $cmd")"; then
+    for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then COMPREPLY=(); return; fi
+    done
+  fi
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
-      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -1163,6 +1224,12 @@ $clawforgeVerbatim = @{
   "exec" = 0
   "host" = 1
 }
+$clawforgeVariadic = @{
+  "cli" = $true
+  "exec" = $true
+  "host" = $true
+  "set" = $true
+}
 $clawforgeValues = @{
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
@@ -1218,12 +1285,14 @@ $clawforgeCompleter = {
       $candidates = @($clawforgeFirst[$cmd])
     } else {
       $afterKey = "$cmd $($between[0])"
-      # A pass-through command: past its declared positionals the tail is literal child
-      # text, so the command's own flags stop being offered; a bare `--` is the parser's
-      # own options-end marker, so everything from it on is the child's literal text.
-      if ($clawforgeVerbatim.ContainsKey($cmd)) {
+      # A bare `--` is the parser's own options-end marker for ANY variadic command,
+      # verbatim or not: everything from it on is literal text. A pass-through command
+      # past its declared positionals is the other way the tail turns literal.
+      if ($clawforgeVariadic.ContainsKey($cmd) -and $between -contains '--') {
+        $candidates = @()
+      } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {
         $free = 0
-        foreach ($w2 in $between) { if ($w2 -eq '--') { $free = $clawforgeVerbatim[$cmd] + 1 } elseif (-not $w2.StartsWith('-')) { $free = $free + 1 } }
+        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }
         if ($free -gt $clawforgeVerbatim[$cmd]) {
           $candidates = @()
         } elseif ($clawforgeAfter.ContainsKey($afterKey)) {

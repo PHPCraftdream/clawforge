@@ -9,8 +9,9 @@
 import type { AppCommand, AppDefinition } from "#src/core/app.ts";
 import { callFacts, callFactsFor, legacyPreparesEnvironment, type CallFacts, type EffectShape } from "#src/core/command/effect.ts";
 import { ConfirmationRequiredError, UnknownArgumentError } from "#src/core/command/errors.ts";
-import { parseCall } from "#src/core/command/parse.ts";
+import { isVerbatim, parseCall, tokenize, type CallShape } from "#src/core/command/parse.ts";
 import { localScope, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
+import { scopeByAction } from "#src/core/command/view.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError } from "#src/core/io/log.ts";
 import { emit, machineWritesCount, stdoutBytesWritten } from "#src/core/io/output.ts";
@@ -71,22 +72,35 @@ function jsonRequested(argv: readonly string[]): boolean {
   return (sep === -1 ? argv : argv.slice(0, sep)).includes("--json");
 }
 
-/** The pre-parse stand-in for a parsed call's `given`: a standalone `--json` token before
- *  the first bare `--` that is not directly preceded by a declared option — a token right
- *  after a bare option is that option's value (`--interval --json`), not the flag; an option
- *  written `--opt=value` is complete and does not own the next token. */
-function jsonTokenRequested(argv: readonly string[], shape: EffectShape | undefined): boolean {
-  const sep = argv.indexOf("--");
-  const head = sep === -1 ? argv : argv.slice(0, sep);
-  const options = new Set<string>();
-  const collect = (args?: readonly { readonly name: string; readonly kind: string }[]): void => {
-    for (const argument of args ?? []) if (argument.kind === "option") options.add(argument.name);
-  };
-  collect(shape?.arguments);
-  for (const action of Object.values(shape?.actions ?? {})) collect(action?.arguments);
-  return head.some((token, index) =>
-    token === "--json"
-    && !(index > 0 && !head[index - 1].includes("=") && options.has(head[index - 1].replace(/^--/, ""))));
+/** The pre-parse stand-in for a parsed call's `given`: the real tokenizer (parse.ts's
+ *  tokenize, bound to the action parseCall would choose and the same verbatim-tail
+ *  decision) over the raw argv — so an option's value (`--interval --json`), a repeated
+ *  option (`--profile full --profile --json`), `--opt=value --json` and a post-`--` token
+ *  read exactly as the parser reads them. A tokenizer refusal means the parser stops
+ *  before `--json`, so it would not bind it. */
+function jsonTokenGiven(shape: CallShape & EffectShape, argv: readonly string[]): boolean {
+  try {
+    if (shape.actions === undefined) {
+      const declared = shape.arguments ?? [];
+      return tokenize(declared, argv, undefined, isVerbatim(declared)).given.includes("json");
+    }
+    const names = Object.keys(shape.actions);
+    const first = argv[0];
+    let action: string;
+    let rest: readonly string[];
+    if (first !== undefined && !first.startsWith("-") && names.includes(first)) {
+      action = first;
+      rest = argv.slice(1);
+    } else if (shape.defaultAction !== undefined) {
+      action = shape.defaultAction;
+      rest = argv;
+    } else return false;
+    const declared = shape.actions[action]?.arguments ?? [];
+    const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, shape.actions![name]?.arguments ?? []])));
+    return tokenize(declared, rest, { action, siblings }, isVerbatim(declared)).given.includes("json");
+  } catch {
+    return false;
+  }
 }
 
 /** The context both spec and legacy target commands run on: built here, not by the command —
@@ -134,7 +148,7 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
     } catch (error) {
       // shape stays out of declaresJsonFlag here: before the call parses there is no chosen
       // action, so the flat command declaration is the contract's original gate.
-      return failed("parse", error, undefined, undefined, undefined, jsonTokenRequested(argv, shape));
+      return failed("parse", error, undefined, undefined, undefined, jsonTokenGiven(shape, argv));
     }
     const facts = callFacts(shape, call);
     if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {

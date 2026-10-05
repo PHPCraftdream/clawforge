@@ -34,6 +34,9 @@ export interface CompletionData {
   /** Pass-through commands (`verbatim: true` variadic) → their declared positional count. Once
    *  more non-flag words than that are typed, the tail is the child's literal text. */
   readonly verbatim: ReadonlyMap<string, number>;
+  /** Every command declaring a variadic argument, verbatim or not — a bare `--` starts the
+   *  literal tail for any of them. */
+  readonly variadic: ReadonlySet<string>;
   readonly values: readonly OptionValues[];
 }
 
@@ -54,10 +57,12 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
   const after = new Map<string, readonly string[]>();
   const values: OptionValues[] = [];
   const verbatim = new Map<string, number>();
+  const variadic = new Set<string>();
 
   for (const entry of registry.entries) {
     const name = entry.name;
     const args = entry.arguments ?? [];
+    if (args.some((argument) => argument.kind === "variadic")) variadic.add(name);
     if (args.some((argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true)) {
       verbatim.set(name, args.filter((argument) => argument.kind === "positional").length);
     }
@@ -112,7 +117,7 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
     after.set(`${name} *`, fallback);
   }
 
-  return { appFlag, top, first, after, verbatim, values };
+  return { appFlag, top, first, after, verbatim, variadic, values };
 }
 
 /** The candidates for one completion request — the one decision both emitted scripts
@@ -160,8 +165,10 @@ export function completionCandidates(
   // value is not recognised here — without the declared arguments the tail is assumed first.)
   // A bare `--` is the parser's own options-end marker: everything from it on is the child's
   // literal text.
+  // A bare `--` is the parser's own options-end marker for ANY variadic command, verbatim or
+  // not: everything from it on is literal text.
+  if (data.variadic.has(cmd) && between.includes("--")) return [];
   const positionals = data.verbatim.get(cmd);
-  if (positionals !== undefined &&
-    (between.includes("--") || between.filter((word) => !word.startsWith("-")).length > positionals)) return [];
+  if (positionals !== undefined && between.filter((word) => !word.startsWith("-")).length > positionals) return [];
   return data.after.get(`${cmd} ${between[0]}`) ?? data.after.get(`${cmd} *`) ?? [];
 }

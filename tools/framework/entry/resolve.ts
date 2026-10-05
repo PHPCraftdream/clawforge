@@ -15,6 +15,7 @@ import { renderAdvice, shimInvocation } from "../core/io/invocation/render.ts";
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
 import {
+  beforeBareDoubleDash,
   checkoutSubfolderReport,
   isDeploymentHelpRequest,
   misplacedAppFlag,
@@ -382,7 +383,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
 
   // Without --project-root the deployment is the nearest app.ts at or above the cwd. `init` is
   // the exception: it always initialises the cwd itself, and refuses under an existing deployment.
-  const initializing = argv[0] === "init" && !argv.includes("--help") && !argv.includes("-h");
+  const initializing = argv[0] === "init" && !beforeBareDoubleDash(argv).some((arg) => arg === "--help" || arg === "-h");
   const ancestor = scheduled ? undefined : findAppRootIn(cwd, fs);
   // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
   const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;

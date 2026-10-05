@@ -11,6 +11,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 * A failing command no longer prints a `--json` error document when `--json` was an option's
   value (e.g. `--interval --json`).
 * `-h` placed after a bare `--` is passed through to the command instead of printing help.
+* The `--json` error-document decision on a parse failure now reads the real parser's tokens
+  instead of a raw argv scan, so a failing command no longer prints the document in shapes
+  where the parser would not bind `--json` (e.g. `pull --opt a --opt --json`); `--app` after
+  a bare `--` (e.g. `verify -- --app`) is no longer refused as misplaced and `init -- --help`
+  no longer skips the init-nesting refusal; `expose tailscale --funnel=1` reports the declared
+  never-funnel reason instead of `unknown argument: --funnel=1`.
+* Completion no longer offers a command's flags after a bare `--` for variadic commands (`check`,
+  `set diff`), matching what the parser accepts there.
 * `remove-app` over MCP now needs `confirm: true`: the gate command declares its effect, the
   tool schema derives `confirm` from it (required, the command having no read form), and a
   call without it is refused — with the same message the destructive deployment commands use —

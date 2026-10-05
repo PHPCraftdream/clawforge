@@ -575,6 +575,15 @@ check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", r
     check(`refuse: ${argv.join(" ")} names the token without dashes`, argumentOf(error), "bad");
   }
   check("refuse: after a bare -- the token is not refused (it is only an unknown positional)", refusal(() => parseCall(SINGLE, ["--", "bad"])) instanceof UnknownArgumentError, true);
+  // R9-2: the inline spelling of a refused flag carries the same reason, not unknown-argument.
+  {
+    const error = refusal(() => parseCall(SINGLE, ["--bad=1"]));
+    check("refuse: --bad=1 is an ArgumentError with the reason", [error instanceof ArgumentError, error instanceof UnknownArgumentError, (error as Error).message], [true, false, REASON]);
+    check("refuse: --bad=1 names the token without dashes", argumentOf(error), "bad");
+  }
+  check("refuse: after a bare -- even the inline spelling is not refused", refusal(() => parseCall(SINGLE, ["--", "--bad=1"])) instanceof UnknownArgumentError, true);
+  check("refuse: an exact --bad is still refused", (refusal(() => parseCall(SINGLE, ["--bad"])) as Error).message, REASON);
+  check("refuse: an unrelated inline value is not a refusal", refusal(() => parseCall(SINGLE, ["--nope=1"])) instanceof UnknownArgumentError, true);
   check("refuse: an unrelated token parses", parseCall(SINGLE, ["--go"]).values.go, true);
   const ACTIONS = { effect: "read", actions: { one: { arguments: [], refuse: { zap: REASON } }, two: { arguments: [] } } } as const;
   check("refuse: an action's own token is refused", (refusal(() => parseCall(ACTIONS, ["one", "zap"])) as Error).message, REASON);

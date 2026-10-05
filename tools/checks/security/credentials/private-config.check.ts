@@ -233,7 +233,7 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   check("the wrapper sources the resolved env file", script.includes('. "$file"'), true);
   check("Windows path conversion quotes the positional value", script.includes('cygpath -u -- "$file"'), true);
   check("the wrapper script never contains the marker", script.includes(MARKER), false);
-  check("the env file path reaches the wrapper args", wrapperArgs.includes(write?.path ?? " never"), true);
+  check("the env file path reaches the wrapper args", wrapperArgs.includes(write?.path ?? "\0never"), true);
   check(
     "the wrapper tail carries the inner command unchanged",
     JSON.stringify(wrapperArgs.slice(wrapperArgs.length - (1 + innerArgs.length))) ===

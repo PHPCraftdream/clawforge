@@ -68,10 +68,11 @@ export const PWSH_COMPLETER: string =
   "    } else {\n" +
   "      $afterKey = \"$cmd $($between[0])\"\n" +
   "      # A pass-through command: past its declared positionals the tail is literal child\n" +
-  "      # text, so the command's own flags stop being offered.\n" +
+  "      # text, so the command's own flags stop being offered; a bare `--` is the parser's\n" +
+  "      # own options-end marker, so everything from it on is the child's literal text.\n" +
   "      if ($clawforgeVerbatim.ContainsKey($cmd)) {\n" +
   "        $free = 0\n" +
-  "        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }\n" +
+  "        foreach ($w2 in $between) { if ($w2 -eq '--') { $free = $clawforgeVerbatim[$cmd] + 1 } elseif (-not $w2.StartsWith('-')) { $free = $free + 1 } }\n" +
   "        if ($free -gt $clawforgeVerbatim[$cmd]) {\n" +
   "          $candidates = @()\n" +
   "        } elseif ($clawforgeAfter.ContainsKey($afterKey)) {\n" +

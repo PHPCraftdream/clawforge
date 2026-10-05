@@ -182,10 +182,12 @@ _clawforge_complete() {
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
   # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered.
+  # so the command's own flags stop being offered; a bare `--` is the parser's own
+  # options-end marker, so everything from it on is the child's literal text.
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -391,10 +393,12 @@ _clawforge_complete() {
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
   # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered.
+  # so the command's own flags stop being offered; a bare `--` is the parser's own
+  # options-end marker, so everything from it on is the child's literal text.
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -608,10 +612,11 @@ $clawforgeCompleter = {
     } else {
       $afterKey = "$cmd $($between[0])"
       # A pass-through command: past its declared positionals the tail is literal child
-      # text, so the command's own flags stop being offered.
+      # text, so the command's own flags stop being offered; a bare `--` is the parser's
+      # own options-end marker, so everything from it on is the child's literal text.
       if ($clawforgeVerbatim.ContainsKey($cmd)) {
         $free = 0
-        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }
+        foreach ($w2 in $between) { if ($w2 -eq '--') { $free = $clawforgeVerbatim[$cmd] + 1 } elseif (-not $w2.StartsWith('-')) { $free = $free + 1 } }
         if ($free -gt $clawforgeVerbatim[$cmd]) {
           $candidates = @()
         } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
@@ -803,10 +808,12 @@ _clawforge_complete() {
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
   # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered.
+  # so the command's own flags stop being offered; a bare `--` is the parser's own
+  # options-end marker, so everything from it on is the child's literal text.
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -999,10 +1006,12 @@ _clawforge_complete() {
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
   # A pass-through command: past its declared positionals the tail is literal child text,
-  # so the command's own flags stop being offered.
+  # so the command's own flags stop being offered; a bare `--` is the parser's own
+  # options-end marker, so everything from it on is the child's literal text.
   if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
     local free=0 token
     for token in "${between[@]}"; do
+      if [[ "$token" == "--" ]]; then free=$((reply + 1)); break; fi
       if [[ "$token" != -* ]]; then free=$((free + 1)); fi
     done
     if (( free > reply )); then COMPREPLY=(); return; fi
@@ -1210,10 +1219,11 @@ $clawforgeCompleter = {
     } else {
       $afterKey = "$cmd $($between[0])"
       # A pass-through command: past its declared positionals the tail is literal child
-      # text, so the command's own flags stop being offered.
+      # text, so the command's own flags stop being offered; a bare `--` is the parser's
+      # own options-end marker, so everything from it on is the child's literal text.
       if ($clawforgeVerbatim.ContainsKey($cmd)) {
         $free = 0
-        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }
+        foreach ($w2 in $between) { if ($w2 -eq '--') { $free = $clawforgeVerbatim[$cmd] + 1 } elseif (-not $w2.StartsWith('-')) { $free = $free + 1 } }
         if ($free -gt $clawforgeVerbatim[$cmd]) {
           $candidates = @()
         } elseif ($clawforgeAfter.ContainsKey($afterKey)) {

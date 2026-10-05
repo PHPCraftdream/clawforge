@@ -14,10 +14,7 @@
 // unrelated directory and mirroring it with --delete would be dangerous.
 
 import { log, info } from "#src/core/io/log.ts";
-import { renderAdvice, shimInvocation } from "#src/core/io/invocation/render.ts";
-import { command } from "#src/core/io/invocation/advice.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
-import { quoted } from "#src/security/privacy/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { Values } from "#src/core/command/index.ts";
@@ -25,7 +22,7 @@ import type { DeployPlan } from "./arguments.ts";
 import { frameworkSourceRoot, resolveDeployArguments, DEPLOY_ARGUMENTS } from "./arguments.ts";
 import { assertDeployable } from "./refusals.ts";
 import { checkServerReady, prepareRemoteRoot } from "./server.ts";
-import { syncTrees, bootstrapAndReport } from "./sync.ts";
+import { syncTrees, bootstrapAndReport, bootstrapRemoteLine } from "./sync.ts";
 
 export { DEPLOY_ARGUMENTS, frameworkSourceRoot, remoteRecipesPath } from "./arguments.ts";
 export { runRemote } from "./server.ts";
@@ -68,7 +65,7 @@ async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan):
   info("connection and remote dependencies: checked, OK");
   info("framework mirror: --delete, credentials excluded (.env, apps/, data/, snapshots/, secrets/)");
   info(`deployment mirror: declaration, desired state, recipes -> ${plan.remoteApp}`);
-  if (plan.runBootstrap) info(`would bootstrap remotely afterwards: cd ${quoted(plan.remotePath)} && ${renderAdvice(command("bootstrap", { app: plan.name }), shimInvocation(plan.name))}`);
+  if (plan.runBootstrap) info(`would bootstrap remotely afterwards: ${bootstrapRemoteLine(plan.remotePath, plan.name)}`);
   else info("bootstrap skipped (--no-bootstrap)");
   if (plan.remotePathNote !== undefined) info(plan.remotePathNote);
   info(

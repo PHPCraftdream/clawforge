@@ -17,7 +17,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   `.env` carries the canonical form of the parsed reference.
 * Shell completion offers `--version` and `-v` as the first word (they were accepted but never
   offered), and after the first argument of a pass-through command (`host`, `cli`, `exec`) it
-  offers nothing more: what follows is the child's own text. Regenerate a completion script saved to a
+  offers nothing more: what follows is the child's own text. After a bare `--` it offers nothing
+  more either: everything from it on is the child's own text (previously the command's own flags
+  were still offered). Regenerate a completion script saved to a
   file. On Windows, `clawforge` run in a deployment folder whose directory name differs in case
   from the name it is known by no longer fails with `invalid deployment name`.
 * On Windows, a deployment that depends on its own `@clawforge/framework` copy gets advice

@@ -5,7 +5,7 @@
 // unlock it.
 
 import { log, info, die } from "#src/core/io/log.ts";
-import { renderAdvice, shimInvocation, SHIM_PROGRAM } from "#src/core/io/invocation/render.ts";
+import { renderAdvice, shimInvocation } from "#src/core/io/invocation/render.ts";
 import { command } from "#src/core/io/invocation/advice.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
 import {
@@ -15,6 +15,12 @@ import {
 import type { Context } from "#src/core/context.ts";
 import { runRemote } from "./server.ts";
 import type { RemoteRoot } from "./server.ts";
+
+/** The pasted hint and the executed remote line share one construction: cd into the remote
+ *  path, then the shim's own bootstrap for the named deployment. */
+export function bootstrapRemoteLine(remotePath: string, name: string): string {
+  return `cd ${quoted(remotePath)} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`;
+}
 
 const RSYNC_ENV = { RSYNC_PROTECT_ARGS: "0", RSYNC_OLD_ARGS: "0" };
 
@@ -140,7 +146,7 @@ export async function bootstrapAndReport(
 ): Promise<void> {
   if (!runBootstrap) {
     log(`files synced to ${target}:${remotePath} (bootstrap skipped)`);
-    info(`bring it up there with: cd ${quoted(remotePath)} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`);
+    info(`bring it up there with: ${bootstrapRemoteLine(remotePath, name)}`);
     if (remotePathNote !== undefined) info(remotePathNote);
     return;
   }
@@ -148,7 +154,7 @@ export async function bootstrapAndReport(
   log(`bootstrapping ${name} on ${target}`);
   // The deployment is named: the server's default would otherwise be a different one.
   // -t only when we have a terminal to give it.
-  await runRemote(ctx, target, `cd ${quoted(remotePath)} && ${SHIM_PROGRAM} --app ${quoted(name)} bootstrap`, {
+  await runRemote(ctx, target, bootstrapRemoteLine(remotePath, name), {
     stream: true,
     tty: process.stdout.isTTY === true,
   });

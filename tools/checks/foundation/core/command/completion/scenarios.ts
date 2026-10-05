@@ -66,6 +66,14 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
       const boundary = [command, ...Array.from({ length: positionals }, (_, index) => `zz${index}`), ""];
       scenarios.push({ name: `${command}'s last free slot still offers flags`, words: boundary, cword: boundary.length - 1 });
     }
+    // The bare `--` is the parser's own options-end marker (tokenize's optionsEnded): past it
+    // every word is the child's literal tail, even before the positionals run out.
+    const bareEnd = [command, "--", ""];
+    scenarios.push({ name: `${command}'s bare -- starts the literal tail`, words: bareEnd, cword: bareEnd.length - 1 });
+    if (positionals > 0) {
+      const pastEnd = [command, ...Array.from({ length: positionals }, (_, index) => `zz${index}`), "--", ""];
+      scenarios.push({ name: `${command}'s flags stop after -- past its positionals`, words: pastEnd, cword: pastEnd.length - 1 });
+    }
   }
 
   if (first !== "") scenarios.push({ name: "--app before the command", words: ["--app", "x", first, ""], cword: 3 });

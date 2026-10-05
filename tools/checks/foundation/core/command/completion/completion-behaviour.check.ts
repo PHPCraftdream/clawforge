@@ -205,6 +205,10 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   check("exec's verbatim tail offers nothing (R4-1)", [...at(data, ["exec", "ls", "--raw"], 3)], []);
   check("an option's value at a verbatim command's last free slot still completes",
     at(data, ["host", "--context", "docker", ""], 3).includes("--help"), true);
+  // R5-B F5-1: a bare `--` starts the verbatim tail — the parser binds everything after it as
+  // the child's literal text, so the command's own flags must not be offered there.
+  check("a bare -- starts the verbatim tail: host's flags stop (R5-B F5-1)", [...at(data, ["host", "target", "--", ""], 3)], []);
+  check("a bare -- starts the verbatim tail: cli's flags stop", [...at(data, ["cli", "--", ""], 2)], []);
 
   check("help completes command names",
     [at(data, ["help", "st"], 1).includes("status"), at(data, ["help", ""], 1).includes("backup")], [true, true]);

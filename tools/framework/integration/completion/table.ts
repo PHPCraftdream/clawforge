@@ -158,7 +158,10 @@ export function completionCandidates(
   // A pass-through command: once more non-flag words than declared positionals are typed, the
   // tail is the child's literal text and the command's own flags no longer apply. (An option's
   // value is not recognised here — without the declared arguments the tail is assumed first.)
+  // A bare `--` is the parser's own options-end marker: everything from it on is the child's
+  // literal text.
   const positionals = data.verbatim.get(cmd);
-  if (positionals !== undefined && between.filter((word) => !word.startsWith("-")).length > positionals) return [];
+  if (positionals !== undefined &&
+    (between.includes("--") || between.filter((word) => !word.startsWith("-")).length > positionals)) return [];
   return data.after.get(`${cmd} ${between[0]}`) ?? data.after.get(`${cmd} *`) ?? [];
 }

@@ -80,10 +80,12 @@ export const BASH_COMPLETER: string =
   "  # the lookup above already answered.\n" +
   "  if (( ${#between[@]} == 0 )); then return; fi\n" +
   "  # A pass-through command: past its declared positionals the tail is literal child text,\n" +
-  "  # so the command's own flags stop being offered.\n" +
+  "  # so the command's own flags stop being offered; a bare `--` is the parser's own\n" +
+  "  # options-end marker, so everything from it on is the child's literal text.\n" +
   "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"verbatim $cmd\")\"; then\n" +
   "    local free=0 token\n" +
   "    for token in \"${between[@]}\"; do\n" +
+  "      if [[ \"$token\" == \"--\" ]]; then free=$((reply + 1)); break; fi\n" +
   "      if [[ \"$token\" != -* ]]; then free=$((free + 1)); fi\n" +
   "    done\n" +
   "    if (( free > reply )); then COMPREPLY=(); return; fi\n" +

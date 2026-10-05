@@ -26,7 +26,6 @@ export type Declared = {
   readonly readOnlyWhen?: (args: string[]) => boolean;
   readonly changedWhen?: (args: string[]) => boolean;
   readonly requiresConfirmationWhen?: (args: string[]) => boolean;
-  readonly forceOnConfirmation?: boolean;
 };
 
 /** One remedy as a tool call: the inverse of the argv an advice spells out. */

@@ -507,8 +507,19 @@ report(ratchet("adhocSkips", baseline.adhocSkips.total, adhocCount, [], []));
 // argv-like names in product code must be the tokenizer's, an entry seam, or a line recorded
 // below with a reason, verified correct by construction. The scan roots are the layers that
 // touch argv; tools/checks are excluded (they assert, they do not decide).
-const RAW_SCAN =
-  /\b(argv|args|rawArgv|launchArgv)\.(includes|indexOf|lastIndexOf|find|findIndex|filter|some|every)\(|\.indexOf\("--"\)|\.startsWith\("--|\b(argv|args|rawArgv)\.slice\(2\)/;
+const ARGV_RECEIVER = String.raw`(argv|args|rawArgv|launchArgv|tokens|rest|params|process\.argv)`;
+const SCAN_METHOD = "(includes|indexOf|lastIndexOf|find|findIndex|filter|some|every)";
+const RAW_SCAN = new RegExp([
+  String.raw`\b${ARGV_RECEIVER}\.${SCAN_METHOD}\(`,
+  // the helper's own result is still raw argv: beforeBareDoubleDash(args).includes("--help")
+  String.raw`\bbeforeBareDoubleDash\([^)]*\)\.${SCAN_METHOD}\(`,
+  String.raw`\b${ARGV_RECEIVER}\.slice\([^)]*\)\.${SCAN_METHOD}\(`,
+  String.raw`\.indexOf\("--"\)`,
+  String.raw`\.startsWith\("-`,
+  String.raw`\b(argv|args|rawArgv)\.slice\(2\)`,
+  String.raw`new Set\(${ARGV_RECEIVER}\)\.has`,
+  String.raw`\b${ARGV_RECEIVER}\.join\(" "\)`,
+].join("|"));
 const rawScanRoots = ["entry", "integration", "core", "commands"].map((dir) => resolve(root, "tools", "framework", dir));
 const rawScanExemptLeft = new Map<string, Map<string, number>>(
   Object.entries(baseline.rawArgvScans.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
@@ -516,28 +527,9 @@ const rawScanExemptLeft = new Map<string, Map<string, number>>(
 const rawScanAfter = new Map<string, number>();
 let rawScanTotal = 0;
 let rawScanCount = 0;
-for (const dir of rawScanRoots) {
-  for (const full of await walk(dir)) {
-    const content = await readFile(full, "utf8");
-    const left = rawScanExemptLeft.get(rel(full));
-    let counted = 0;
-    for (const line of content.split("\n")) {
-      let stripped = line.replace(/(^|\s)\/\/.*$/, "$1");
-      stripped = stripped.replace(/\/\*.*?\*\//g, "");
-      const trimmed = stripped.trim();
-      if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
-      if (!RAW_SCAN.test(stripped)) continue;
-      rawScanTotal += 1;
-      const remaining = left?.get(line.trim()) ?? 0;
-      const exempt = Math.min(remaining, 1);
-      if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
-      counted += 1 - exempt;
-    }
-    if (counted > 0) rawScanAfter.set(rel(full), counted);
-    rawScanCount += counted;
-  }
-}
-for (const full of [resolve(root, "tools", "clawforge.ts")]) {
+/** One file's scan lines, comments stripped: each counts toward the total, and toward the
+ *  ratchet unless an exempt table line covers it (each exempt entry covers one occurrence). */
+async function scanFile(full: string): Promise<void> {
   const content = await readFile(full, "utf8");
   const left = rawScanExemptLeft.get(rel(full));
   let counted = 0;
@@ -556,6 +548,10 @@ for (const full of [resolve(root, "tools", "clawforge.ts")]) {
   if (counted > 0) rawScanAfter.set(rel(full), counted);
   rawScanCount += counted;
 }
+for (const dir of rawScanRoots) {
+  for (const full of await walk(dir)) await scanFile(full);
+}
+await scanFile(resolve(root, "tools", "clawforge.ts"));
 for (const [file, lines] of rawScanExemptLeft) {
   for (const [line, unmatched] of lines) {
     if (unmatched === 0) continue;

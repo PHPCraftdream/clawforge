@@ -134,6 +134,9 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "verbatimFlags cli") _clawforge_reply="" ;;
+    "verbatimFlags exec") _clawforge_reply="" ;;
+    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
     "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
@@ -163,6 +166,7 @@ _clawforge_lookup() {
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
     "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
     "valueOptions check") _clawforge_reply="--jobs --require" ;;
+    "values backup--profile") _clawforge_reply="full migrate share" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -170,7 +174,6 @@ _clawforge_lookup() {
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
-  printf '%s' "$_clawforge_reply"
 }
 
 _clawforge_complete() {
@@ -192,50 +195,50 @@ _clawforge_complete() {
     COMPREPLY=( $(compgen -W "$("${COMP_WORDS[0]}" list --json --no-status 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | grep -v '^[.]')" -- "$cur") )
     return
   fi
-    if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes an option's values; the option itself, last of
-  # `between`, is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
-  # An option's own values, keyed command + scope + option, take the value position.
-  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-    return
-  fi
+  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
-  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
-  # not one — the same consumption the parser itself makes (an option's value is skipped).
-  if (( ${#between[@]} > 0 )); then
-    # A missing arm answers empty: no option of this command swallows a `--`.
-    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
-    local ended=0 swallow=0 token
-    for token in "${between[@]}"; do
-      if (( swallow )); then swallow=0; continue; fi
-      if [[ "$token" == "--" ]]; then ended=1; break; fi
-      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
-    done
-    if (( ended )); then COMPREPLY=(); return; fi
-  fi
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
-    local free=0 token
-    for token in "${between[@]}"; do
-      if [[ "$token" != -* ]]; then free=$((free + 1)); fi
-    done
-    if (( free > reply )); then COMPREPLY=(); return; fi
+  # The words typed so far, read the way the parser reads them: an option takes the next word
+  # as its value (so a `--` there is no marker), a bare `--` ends the options, and a
+  # pass-through command's literal tail starts at its first undeclared dash word or its first
+  # word past the declared positionals. Missing arms answer empty.
+  local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
+  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  for token in "${between[@]}"; do
+    if (( swallow )); then swallow=0; continue; fi
+    if [[ "$token" == "--" ]]; then ended=1; break; fi
+    key="$token"; inline=0
+    if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
+    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if [[ "$token" == -* ]]; then
+      if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
+      continue
+    fi
+    free=$((free + 1))
+    if (( isverb && free > verb )); then tail=1; break; fi
+  done
+  if (( ended || tail )); then COMPREPLY=(); return; fi
+  # The first word names the action; an option still waiting for its value completes that
+  # value (keyed command + action + option), or nothing when it has no choices.
+  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if (( swallow )); then
+    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-  elif reply="$(_clawforge_lookup "after $cmd *")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  if _clawforge_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  elif _clawforge_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
@@ -384,6 +387,9 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "verbatimFlags cli") _clawforge_reply="" ;;
+    "verbatimFlags exec") _clawforge_reply="" ;;
+    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
     "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
@@ -413,6 +419,7 @@ _clawforge_lookup() {
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
     "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
     "valueOptions check") _clawforge_reply="--jobs --require" ;;
+    "values backup--profile") _clawforge_reply="full migrate share" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -420,7 +427,6 @@ _clawforge_lookup() {
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
-  printf '%s' "$_clawforge_reply"
 }
 
 _clawforge_complete() {
@@ -442,50 +448,50 @@ _clawforge_complete() {
     COMPREPLY=( $(compgen -W "$("${COMP_WORDS[0]}" list --json --no-status 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | grep -v '^[.]')" -- "$cur") )
     return
   fi
-    if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes an option's values; the option itself, last of
-  # `between`, is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
-  # An option's own values, keyed command + scope + option, take the value position.
-  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-    return
-  fi
+  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
-  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
-  # not one — the same consumption the parser itself makes (an option's value is skipped).
-  if (( ${#between[@]} > 0 )); then
-    # A missing arm answers empty: no option of this command swallows a `--`.
-    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
-    local ended=0 swallow=0 token
-    for token in "${between[@]}"; do
-      if (( swallow )); then swallow=0; continue; fi
-      if [[ "$token" == "--" ]]; then ended=1; break; fi
-      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
-    done
-    if (( ended )); then COMPREPLY=(); return; fi
-  fi
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
-    local free=0 token
-    for token in "${between[@]}"; do
-      if [[ "$token" != -* ]]; then free=$((free + 1)); fi
-    done
-    if (( free > reply )); then COMPREPLY=(); return; fi
+  # The words typed so far, read the way the parser reads them: an option takes the next word
+  # as its value (so a `--` there is no marker), a bare `--` ends the options, and a
+  # pass-through command's literal tail starts at its first undeclared dash word or its first
+  # word past the declared positionals. Missing arms answer empty.
+  local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
+  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  for token in "${between[@]}"; do
+    if (( swallow )); then swallow=0; continue; fi
+    if [[ "$token" == "--" ]]; then ended=1; break; fi
+    key="$token"; inline=0
+    if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
+    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if [[ "$token" == -* ]]; then
+      if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
+      continue
+    fi
+    free=$((free + 1))
+    if (( isverb && free > verb )); then tail=1; break; fi
+  done
+  if (( ended || tail )); then COMPREPLY=(); return; fi
+  # The first word names the action; an option still waiting for its value completes that
+  # value (keyed command + action + option), or nothing when it has no choices.
+  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if (( swallow )); then
+    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-  elif reply="$(_clawforge_lookup "after $cmd *")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  if _clawforge_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  elif _clawforge_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
@@ -634,6 +640,11 @@ $clawforgeVerbatim = @{
   "exec" = 0
   "host" = 1
 }
+$clawforgeVerbatimFlags = @{
+  "cli" = @()
+  "exec" = @()
+  "host" = @("--root", "--confirm-root")
+}
 $clawforgeValueOptions = @{
   "bootstrap" = @("--break-foreign-lock")
   "up" = @("--break-foreign-lock")
@@ -666,6 +677,7 @@ $clawforgeValueOptions = @{
   "check" = @("--jobs", "--require")
 }
 $clawforgeValues = @{
+  "backup--profile" = @("full", "migrate", "share")
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
   "verify--profile" = @("full", "migrate", "share")
@@ -706,47 +718,47 @@ $clawforgeCompleter = {
     $cmd = $scan[$i]
     $between = @()
     if ($scan.Count - $i - 1 -gt 0) { $between = @($scan[($i + 1)..($scan.Count - 1)]) }
-    # An option's values are keyed command + scope + option, where the scope is the word
-    # after the command; the option itself (last of `between` after a trailing space) is
-    # not a scope.
+    # The words typed so far, read the way the parser reads them: an option takes the next
+    # word as its value (so a `--` there is no marker), a bare `--` ends the options, and a
+    # pass-through command's literal tail starts at its first undeclared dash word or its
+    # first word past the declared positionals.
+    $ended = $false
+    $swallow = $false
+    $tail = $false
+    $free = 0
+    $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)
+    foreach ($w2 in $between) {
+      if ($swallow) { $swallow = $false; continue }
+      if ($w2 -eq '--') { $ended = $true; break }
+      $key = $w2
+      $inline = $false
+      if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }
+      if ((-not $inline) -and ($clawforgeValueOptions[$cmd] -contains $w2)) { $swallow = $true; continue }
+      if ($w2.StartsWith('-')) {
+        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -contains $key)) { $tail = $true; break }
+        continue
+      }
+      $free = $free + 1
+      if ($isVerbatim -and $free -gt $clawforgeVerbatim[$cmd]) { $tail = $true; break }
+    }
+    # The first word names the action; an option still waiting for its value completes that
+    # value (keyed command + action + option), or nothing when it has no choices.
     $scope = ''
-    if ($between.Count -gt 0 -and $between[0] -ne $prev) { $scope = $between[0] }
-    $key = "$cmd$scope$prev"
-    if ($prev -ne $null -and $prev.StartsWith('--') -and $clawforgeValues.ContainsKey($key)) {
-      $candidates = @($clawforgeValues[$key])
-    } elseif ($between.Count -eq 0) {
+    $afterKey = "$cmd $($between[0])"
+    if ($between.Count -gt 0 -and $clawforgeAfter.ContainsKey($afterKey)) { $scope = $between[0] }
+    if ($between.Count -eq 0) {
       # An unknown command reaches `first` with nothing under that key: the @() keeps the
       # type an array and the filter below drops the $null — nothing is offered.
       $candidates = @($clawforgeFirst[$cmd])
+    } elseif ($ended -or $tail) {
+      $candidates = @()
+    } elseif ($swallow) {
+      $key = "$cmd$scope$prev"
+      if ($clawforgeValues.ContainsKey($key)) { $candidates = @($clawforgeValues[$key]) } else { $candidates = @() }
+    } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
+      $candidates = @($clawforgeAfter[$afterKey])
     } else {
-      $afterKey = "$cmd $($between[0])"
-      # A bare `--` is the parser's own options-end marker for ANY command: everything
-      # from it on is literal text, so the command's flags stop. A `--` a pending
-      # value-option swallows is not one — the parser's own consumption.
-      $ended = $false
-      $swallow = $false
-      foreach ($w2 in $between) {
-        if ($swallow) { $swallow = $false; continue }
-        if ($w2 -eq '--') { $ended = $true; break }
-        if ($clawforgeValueOptions[$cmd] -contains $w2) { $swallow = $true }
-      }
-      if ($ended) {
-        $candidates = @()
-      } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {
-        $free = 0
-        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }
-        if ($free -gt $clawforgeVerbatim[$cmd]) {
-          $candidates = @()
-        } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
-          $candidates = @($clawforgeAfter[$afterKey])
-        } else {
-          $candidates = @($clawforgeAfter["$cmd *"])
-        }
-      } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
-        $candidates = @($clawforgeAfter[$afterKey])
-      } else {
-        $candidates = @($clawforgeAfter["$cmd *"])
-      }
+      $candidates = @($clawforgeAfter["$cmd *"])
     }
   }
   $candidates | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object -Unique | ForEach-Object {
@@ -885,6 +897,9 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "verbatimFlags cli") _clawforge_reply="" ;;
+    "verbatimFlags exec") _clawforge_reply="" ;;
+    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
     "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
@@ -913,6 +928,7 @@ _clawforge_lookup() {
     "valueOptions deploy") _clawforge_reply="--path" ;;
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
     "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "values backup--profile") _clawforge_reply="full migrate share" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -920,7 +936,6 @@ _clawforge_lookup() {
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
-  printf '%s' "$_clawforge_reply"
 }
 
 _clawforge_complete() {
@@ -935,50 +950,50 @@ _clawforge_complete() {
         cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-        if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
+        if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes an option's values; the option itself, last of
-  # `between`, is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
-  # An option's own values, keyed command + scope + option, take the value position.
-  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-    return
-  fi
+  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
-  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
-  # not one — the same consumption the parser itself makes (an option's value is skipped).
-  if (( ${#between[@]} > 0 )); then
-    # A missing arm answers empty: no option of this command swallows a `--`.
-    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
-    local ended=0 swallow=0 token
-    for token in "${between[@]}"; do
-      if (( swallow )); then swallow=0; continue; fi
-      if [[ "$token" == "--" ]]; then ended=1; break; fi
-      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
-    done
-    if (( ended )); then COMPREPLY=(); return; fi
-  fi
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
-    local free=0 token
-    for token in "${between[@]}"; do
-      if [[ "$token" != -* ]]; then free=$((free + 1)); fi
-    done
-    if (( free > reply )); then COMPREPLY=(); return; fi
+  # The words typed so far, read the way the parser reads them: an option takes the next word
+  # as its value (so a `--` there is no marker), a bare `--` ends the options, and a
+  # pass-through command's literal tail starts at its first undeclared dash word or its first
+  # word past the declared positionals. Missing arms answer empty.
+  local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
+  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  for token in "${between[@]}"; do
+    if (( swallow )); then swallow=0; continue; fi
+    if [[ "$token" == "--" ]]; then ended=1; break; fi
+    key="$token"; inline=0
+    if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
+    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if [[ "$token" == -* ]]; then
+      if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
+      continue
+    fi
+    free=$((free + 1))
+    if (( isverb && free > verb )); then tail=1; break; fi
+  done
+  if (( ended || tail )); then COMPREPLY=(); return; fi
+  # The first word names the action; an option still waiting for its value completes that
+  # value (keyed command + action + option), or nothing when it has no choices.
+  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if (( swallow )); then
+    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-  elif reply="$(_clawforge_lookup "after $cmd *")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  if _clawforge_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  elif _clawforge_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
@@ -1121,6 +1136,9 @@ _clawforge_lookup() {
     "verbatim cli") _clawforge_reply="0" ;;
     "verbatim exec") _clawforge_reply="0" ;;
     "verbatim host") _clawforge_reply="1" ;;
+    "verbatimFlags cli") _clawforge_reply="" ;;
+    "verbatimFlags exec") _clawforge_reply="" ;;
+    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
     "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
@@ -1149,6 +1167,7 @@ _clawforge_lookup() {
     "valueOptions deploy") _clawforge_reply="--path" ;;
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
     "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "values backup--profile") _clawforge_reply="full migrate share" ;;
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
@@ -1156,7 +1175,6 @@ _clawforge_lookup() {
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
-  printf '%s' "$_clawforge_reply"
 }
 
 _clawforge_complete() {
@@ -1171,50 +1189,50 @@ _clawforge_complete() {
         cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-        if reply="$(_clawforge_lookup "top")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); fi
+        if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
-  # The word after the command scopes an option's values; the option itself, last of
-  # `between`, is not a scope.
-  if (( ${#between[@]} > 0 )) && [[ "${between[0]}" != "$prev" ]]; then scope="${between[0]}"; fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if reply="$(_clawforge_lookup "first $cmd")"; then COMPREPLY=( $(compgen -W "$reply" -- "$cur") ); else COMPREPLY=(); return; fi
-  # An option's own values, keyed command + scope + option, take the value position.
-  if [[ "$prev" == --* ]] && reply="$(_clawforge_lookup "values ${cmd}${scope}${prev}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-    return
-  fi
+  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
-  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on
-  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is
-  # not one — the same consumption the parser itself makes (an option's value is skipped).
-  if (( ${#between[@]} > 0 )); then
-    # A missing arm answers empty: no option of this command swallows a `--`.
-    reply="$(_clawforge_lookup "valueOptions $cmd" || true)"
-    local ended=0 swallow=0 token
-    for token in "${between[@]}"; do
-      if (( swallow )); then swallow=0; continue; fi
-      if [[ "$token" == "--" ]]; then ended=1; break; fi
-      if [[ " $reply " == *" $token "* ]]; then swallow=1; fi
-    done
-    if (( ended )); then COMPREPLY=(); return; fi
-  fi
-  if (( ${#between[@]} > 0 )) && reply="$(_clawforge_lookup "verbatim $cmd")"; then
-    local free=0 token
-    for token in "${between[@]}"; do
-      if [[ "$token" != -* ]]; then free=$((free + 1)); fi
-    done
-    if (( free > reply )); then COMPREPLY=(); return; fi
+  # The words typed so far, read the way the parser reads them: an option takes the next word
+  # as its value (so a `--` there is no marker), a bare `--` ends the options, and a
+  # pass-through command's literal tail starts at its first undeclared dash word or its first
+  # word past the declared positionals. Missing arms answer empty.
+  local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
+  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
+  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  for token in "${between[@]}"; do
+    if (( swallow )); then swallow=0; continue; fi
+    if [[ "$token" == "--" ]]; then ended=1; break; fi
+    key="$token"; inline=0
+    if [[ "$token" == --*=* ]]; then key="${token%%=*}"; inline=1; fi
+    if (( ! inline )) && [[ " $opts " == *" $token "* ]]; then swallow=1; continue; fi
+    if [[ "$token" == -* ]]; then
+      if (( isverb )) && [[ " $flags " != *" $key "* ]]; then tail=1; break; fi
+      continue
+    fi
+    free=$((free + 1))
+    if (( isverb && free > verb )); then tail=1; break; fi
+  done
+  if (( ended || tail )); then COMPREPLY=(); return; fi
+  # The first word names the action; an option still waiting for its value completes that
+  # value (keyed command + action + option), or nothing when it has no choices.
+  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if (( swallow )); then
+    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if reply="$(_clawforge_lookup "after $cmd ${between[0]}")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
-  elif reply="$(_clawforge_lookup "after $cmd *")"; then
-    COMPREPLY=( $(compgen -W "$reply" -- "$cur") )
+  if _clawforge_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  elif _clawforge_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
@@ -1357,6 +1375,11 @@ $clawforgeVerbatim = @{
   "exec" = 0
   "host" = 1
 }
+$clawforgeVerbatimFlags = @{
+  "cli" = @()
+  "exec" = @()
+  "host" = @("--root", "--confirm-root")
+}
 $clawforgeValueOptions = @{
   "bootstrap" = @("--break-foreign-lock")
   "up" = @("--break-foreign-lock")
@@ -1388,6 +1411,7 @@ $clawforgeValueOptions = @{
   "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
 }
 $clawforgeValues = @{
+  "backup--profile" = @("full", "migrate", "share")
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
   "verify--profile" = @("full", "migrate", "share")
@@ -1428,47 +1452,47 @@ $clawforgeCompleter = {
     $cmd = $scan[$i]
     $between = @()
     if ($scan.Count - $i - 1 -gt 0) { $between = @($scan[($i + 1)..($scan.Count - 1)]) }
-    # An option's values are keyed command + scope + option, where the scope is the word
-    # after the command; the option itself (last of `between` after a trailing space) is
-    # not a scope.
+    # The words typed so far, read the way the parser reads them: an option takes the next
+    # word as its value (so a `--` there is no marker), a bare `--` ends the options, and a
+    # pass-through command's literal tail starts at its first undeclared dash word or its
+    # first word past the declared positionals.
+    $ended = $false
+    $swallow = $false
+    $tail = $false
+    $free = 0
+    $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)
+    foreach ($w2 in $between) {
+      if ($swallow) { $swallow = $false; continue }
+      if ($w2 -eq '--') { $ended = $true; break }
+      $key = $w2
+      $inline = $false
+      if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }
+      if ((-not $inline) -and ($clawforgeValueOptions[$cmd] -contains $w2)) { $swallow = $true; continue }
+      if ($w2.StartsWith('-')) {
+        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -contains $key)) { $tail = $true; break }
+        continue
+      }
+      $free = $free + 1
+      if ($isVerbatim -and $free -gt $clawforgeVerbatim[$cmd]) { $tail = $true; break }
+    }
+    # The first word names the action; an option still waiting for its value completes that
+    # value (keyed command + action + option), or nothing when it has no choices.
     $scope = ''
-    if ($between.Count -gt 0 -and $between[0] -ne $prev) { $scope = $between[0] }
-    $key = "$cmd$scope$prev"
-    if ($prev -ne $null -and $prev.StartsWith('--') -and $clawforgeValues.ContainsKey($key)) {
-      $candidates = @($clawforgeValues[$key])
-    } elseif ($between.Count -eq 0) {
+    $afterKey = "$cmd $($between[0])"
+    if ($between.Count -gt 0 -and $clawforgeAfter.ContainsKey($afterKey)) { $scope = $between[0] }
+    if ($between.Count -eq 0) {
       # An unknown command reaches `first` with nothing under that key: the @() keeps the
       # type an array and the filter below drops the $null — nothing is offered.
       $candidates = @($clawforgeFirst[$cmd])
+    } elseif ($ended -or $tail) {
+      $candidates = @()
+    } elseif ($swallow) {
+      $key = "$cmd$scope$prev"
+      if ($clawforgeValues.ContainsKey($key)) { $candidates = @($clawforgeValues[$key]) } else { $candidates = @() }
+    } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
+      $candidates = @($clawforgeAfter[$afterKey])
     } else {
-      $afterKey = "$cmd $($between[0])"
-      # A bare `--` is the parser's own options-end marker for ANY command: everything
-      # from it on is literal text, so the command's flags stop. A `--` a pending
-      # value-option swallows is not one — the parser's own consumption.
-      $ended = $false
-      $swallow = $false
-      foreach ($w2 in $between) {
-        if ($swallow) { $swallow = $false; continue }
-        if ($w2 -eq '--') { $ended = $true; break }
-        if ($clawforgeValueOptions[$cmd] -contains $w2) { $swallow = $true }
-      }
-      if ($ended) {
-        $candidates = @()
-      } elseif ($clawforgeVerbatim.ContainsKey($cmd)) {
-        $free = 0
-        foreach ($w2 in $between) { if (-not $w2.StartsWith('-')) { $free = $free + 1 } }
-        if ($free -gt $clawforgeVerbatim[$cmd]) {
-          $candidates = @()
-        } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
-          $candidates = @($clawforgeAfter[$afterKey])
-        } else {
-          $candidates = @($clawforgeAfter["$cmd *"])
-        }
-      } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
-        $candidates = @($clawforgeAfter[$afterKey])
-      } else {
-        $candidates = @($clawforgeAfter["$cmd *"])
-      }
+      $candidates = @($clawforgeAfter["$cmd *"])
     }
   }
   $candidates | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object -Unique | ForEach-Object {

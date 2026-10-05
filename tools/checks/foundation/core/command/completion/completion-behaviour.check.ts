@@ -203,8 +203,10 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   // text — its own flags must not be offered where the parser would bind them as child text.
   check("host's verbatim tail offers nothing (R4-1)", [...at(data, ["host", "target", "id", "--ro"], 4)], []);
   check("exec's verbatim tail offers nothing (R4-1)", [...at(data, ["exec", "ls", "--raw"], 3)], []);
-  check("an option's value at a verbatim command's last free slot still completes",
-    at(data, ["host", "--context", "docker", ""], 3).includes("--help"), true);
+  check("a declared flag before a verbatim command's positionals keeps offering its flags",
+    at(data, ["host", "--root", ""], 2).includes("--confirm-root"), true);
+  // An undeclared dash word is where the parser's verbatim mode starts the child's literal tail.
+  check("an undeclared dash word starts the verbatim tail (host --bogus)", [...at(data, ["host", "--bogus", ""], 2)], []);
   // R5-B F5-1: a bare `--` starts the verbatim tail — the parser binds everything after it as
   // the child's literal text, so the command's own flags must not be offered there.
   check("a bare -- starts the verbatim tail: host's flags stop (R5-B F5-1)", [...at(data, ["host", "target", "--", ""], 3)], []);
@@ -213,6 +215,16 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   // it, and without it they still come out.
   check("a bare -- starts any variadic tail: check's flags stop (R9-4)", [...at(data, ["check", "--", ""], 2)], []);
   check("a bare -- starts any variadic tail: set diff's flags stop", [...at(data, ["set", "diff", "--", ""], 3)], []);
+  // One rule after a bare `--` that is no option's value: nothing, refused or not — the word
+  // behind it (`status -- x`) and a refusal before it (`check --bogus --`) change nothing.
+  check("a bare -- followed by a refused word still offers nothing", [...at(data, ["status", "--", "x", ""], 3)], []);
+  check("a bare -- behind a refused flag offers nothing", [...at(data, ["check", "--bogus", "--", ""], 3)], []);
+  // An option still waiting for its value completes that value: its choices, or nothing.
+  check("an option with no choices offers nothing at its value (logs --grep)", [...at(data, ["logs", "--grep", ""], 2)], []);
+  check("the default action's option values are offered (backup --profile)",
+    [...at(data, ["backup", "--profile", ""], 2)].sort(), [...at(data, ["backup", "create", "--profile", ""], 3)].sort());
+  check("backup --profile's choices are not empty", at(data, ["backup", "--profile", ""], 2).length > 0, true);
+  check("an option's value is no marker or flag position (check --jobs -- offers flags)", at(data, ["check", "--jobs", "--", ""], 3).includes("--list"), true);
   check("check's flags without -- still complete", at(data, ["check", "--j"], 1).includes("--jobs"), true);
 
   check("help completes command names",

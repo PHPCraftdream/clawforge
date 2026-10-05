@@ -116,8 +116,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
   }
 }
 
-// A spec command's confirmation-set flag rides an MCP confirm: true, the way
-// forceOnConfirmation always has for legacy commands.
+// A spec command's confirmation-set flag rides an MCP confirm: true.
 {
   const CONFIRM_FLAG = commandBody({
     effect: "destroy",

@@ -15,8 +15,8 @@ import { info, log, reportError, UserError } from "../core/io/log.ts";
 import { command, manual } from "../core/io/invocation/advice.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import { shellLine } from "../core/io/invocation/advice.ts";
-import { bind, tokenize } from "../core/command/parse.ts";
-import { closestCommand, UNKNOWN_ARGUMENT, UnknownArgumentError } from "../core/command/errors.ts";
+import { bind, tokenize, tokenizeLenient } from "../core/command/parse.ts";
+import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
@@ -117,6 +117,13 @@ export function requestsShortHelp(args: readonly string[]): boolean {
 function refuseAgainstDeclaration(command: GateCommand, args: readonly string[]): void {
   const declared = command.arguments ?? [];
   bind(declared as readonly ArgumentSpec[], tokenize(declared, args), { command: command.name });
+}
+
+/** The syntactic half of refuseAgainstDeclaration, for the dispatcher's own commands (help,
+ *  control-mcp): a token the declaration has no slot for is refused; `choices` stay with the
+ *  command, whose own answer to an unknown name is richer than a choices refusal. */
+export function refuseUnknownTokens(entry: RegistryEntry | undefined, args: readonly string[]): void {
+  if (entry !== undefined) tokenize(entry.arguments ?? [], args);
 }
 
 /** What the help without a deployment knows about its surroundings. */
@@ -269,7 +276,7 @@ export function isDeploymentHelpRequest(argv: readonly string[], deploymentComma
   if (argv[0] === undefined || !deploymentCommands.includes(argv[0])) return false;
   const rest = argv.slice(1);
   if (rest.length === 0) return false;
-  return beforeBareDoubleDash(rest).includes("--help");
+  return requestsHelp(rest);
 }
 
 /** What a leading `--app <name>` or `--app=<name>` split off argv, if either was there. */
@@ -315,9 +322,11 @@ export function misplacedAppFlag(
     tokenize(declared, args);
     return undefined;
   } catch (error) {
-    if (!(error instanceof UnknownArgumentError) || !error.message.includes(`${UNKNOWN_ARGUMENT}: --app`)) return undefined;
-    const stopped = args.findIndex((arg) => arg === "--app" || arg.startsWith("--app="));
-    return stopped === -1 || args.slice(0, stopped).includes("--") ? undefined : args[stopped];
+    const token = error instanceof UnknownArgumentError ? error.argument : undefined;
+    if (token === undefined || !(token === "--app" || token.startsWith("--app="))) return undefined;
+    // A token the tokenizer reached behind an options-end `--` is a literal, not a flag.
+    const stopped = args.indexOf(token);
+    return stopped === -1 || tokenizeLenient(declared, args.slice(0, stopped)).optionsEnded ? undefined : token;
   }
 }
 

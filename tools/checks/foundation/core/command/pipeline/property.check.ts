@@ -177,6 +177,41 @@ for (const unit of units) {
   }
 }
 
+// A variadic given while a required positional (or the action word) is omitted: toArgv puts
+// the variadic after a bare `--`, where the tokenizer would fill the gap from its first word,
+// so the call must be refused before anything runs — by validate on MCP, by the parser's own
+// refusal of the shifted word on the console (checked where the omitted slot has choices).
+for (const unit of units) {
+  const variadic = unit.args.find((argument) => argument.kind === "variadic");
+  if (variadic === undefined) continue;
+  const declaration = openclawCommands[unit.command];
+  const positionals = unit.args.filter((argument) => argument.kind === "positional");
+  const values = Array.from({ length: (variadic as { count?: number }).count ?? 1 }, () => exampleOf(variadic));
+  const omissions: Array<{ readonly name: string; readonly choices?: readonly string[] }> = [
+    ...(unit.action === undefined ? [] : [{ name: "action" }]),
+    ...positionals.filter((argument) => argument.required === true).map((argument) => ({ name: argument.name, choices: (argument as { choices?: readonly string[] }).choices })),
+  ];
+  for (const omitted of omissions) {
+    const name = `${unit.label}: <${variadic.name}…> given, <${omitted.name}> omitted`;
+    const mcpArgs: Record<string, unknown> = {
+      ...(unit.action === undefined || omitted.name === "action" ? {} : { action: unit.action }),
+      ...Object.fromEntries(positionals.filter((other) => other.name !== omitted.name).map((other) => [other.name, exampleOf(other)])),
+      [variadic.name]: values,
+    };
+    checkTrue(`${name}: MCP validate refuses`, validate(declaration, mcpArgs).includes(requiredArgumentMessage(omitted.name)));
+    if (omitted.name !== "action" && omitted.choices === undefined) continue;
+    const argv = [
+      ...(unit.action === undefined || omitted.name === "action" ? [] : [unit.action]),
+      ...positionals.filter((other) => other.name !== omitted.name).map(exampleOf),
+      ...values,
+    ];
+    const terminal = await runCase(unit.command, argv, "terminal");
+    cases += 1;
+    check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+    check(`${name}: console never contacts the target`, terminal.contacts, []);
+  }
+}
+
 // Declared presence rules and variadic counts refuse at parse on both surfaces, derived
 // from the declarations: the same one pipeline enforces the rules before any phase runs.
 for (const unit of units) {

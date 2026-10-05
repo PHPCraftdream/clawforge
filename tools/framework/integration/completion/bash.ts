@@ -44,7 +44,6 @@ export const BASH_COMPLETER: string =
   "    __CLAWFORGE_CASE_ARMS__" +
   "    *) return 1 ;;\n" +
   "  esac\n" +
-  "  printf '%s' \"$_clawforge_reply\"\n" +
   "}\n" +
   "\n" +
   "_clawforge_complete() {\n" +
@@ -61,50 +60,50 @@ export const BASH_COMPLETER: string =
   "  done\n" +
   "  if [[ -z \"$cmd\" ]]; then\n" +
   "    __CLAWFORGE_APP_VALUES__" +
-  "    if reply=\"$(_clawforge_lookup \"top\")\"; then COMPREPLY=( $(compgen -W \"$reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
+  "    if _clawforge_lookup \"top\"; then COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
   "    return\n" +
   "  fi\n" +
   "  if (( cword - idx - 1 > 0 )); then between=(\"${words[@]:$((idx + 1)):$((cword - idx - 1))}\"); fi\n" +
-  "  # The word after the command scopes an option's values; the option itself, last of\n" +
-  "  # `between`, is not a scope.\n" +
-  "  if (( ${#between[@]} > 0 )) && [[ \"${between[0]}\" != \"$prev\" ]]; then scope=\"${between[0]}\"; fi\n" +
   "  # The command's own first candidates; a command the table does not carry completes to\n" +
   "  # nothing at all.\n" +
-  "  if reply=\"$(_clawforge_lookup \"first $cmd\")\"; then COMPREPLY=( $(compgen -W \"$reply\" -- \"$cur\") ); else COMPREPLY=(); return; fi\n" +
-  "  # An option's own values, keyed command + scope + option, take the value position.\n" +
-  "  if [[ \"$prev\" == --* ]] && reply=\"$(_clawforge_lookup \"values ${cmd}${scope}${prev}\")\"; then\n" +
-  "    COMPREPLY=( $(compgen -W \"$reply\" -- \"$cur\") )\n" +
-  "    return\n" +
-  "  fi\n" +
+  "  if _clawforge_lookup \"first $cmd\"; then COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") ); else COMPREPLY=(); return; fi\n" +
   "  # Nothing after the command: the word being completed IS its own first position, which\n" +
   "  # the lookup above already answered.\n" +
   "  if (( ${#between[@]} == 0 )); then return; fi\n" +
-  "  # A bare `--` is the parser's own options-end marker for ANY command: everything from it on\n" +
-  "  # is literal text, so the command's flags stop. A `--` a pending value-option swallows is\n" +
-  "  # not one — the same consumption the parser itself makes (an option's value is skipped).\n" +
-  "  if (( ${#between[@]} > 0 )); then\n" +
-  "    # A missing arm answers empty: no option of this command swallows a `--`.\n" +
-  "    reply=\"$(_clawforge_lookup \"valueOptions $cmd\" || true)\"\n" +
-  "    local ended=0 swallow=0 token\n" +
-  "    for token in \"${between[@]}\"; do\n" +
-  "      if (( swallow )); then swallow=0; continue; fi\n" +
-  "      if [[ \"$token\" == \"--\" ]]; then ended=1; break; fi\n" +
-  "      if [[ \" $reply \" == *\" $token \"* ]]; then swallow=1; fi\n" +
-  "    done\n" +
-  "    if (( ended )); then COMPREPLY=(); return; fi\n" +
-  "  fi\n" +
-  "  if (( ${#between[@]} > 0 )) && reply=\"$(_clawforge_lookup \"verbatim $cmd\")\"; then\n" +
-  "    local free=0 token\n" +
-  "    for token in \"${between[@]}\"; do\n" +
-  "      if [[ \"$token\" != -* ]]; then free=$((free + 1)); fi\n" +
-  "    done\n" +
-  "    if (( free > reply )); then COMPREPLY=(); return; fi\n" +
+  "  # The words typed so far, read the way the parser reads them: an option takes the next word\n" +
+  "  # as its value (so a `--` there is no marker), a bare `--` ends the options, and a\n" +
+  "  # pass-through command's literal tail starts at its first undeclared dash word or its first\n" +
+  "  # word past the declared positionals. Missing arms answer empty.\n" +
+  "  local opts=\"\" flags=\"\" verb=\"\" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline\n" +
+  "  if _clawforge_lookup \"valueOptions $cmd\"; then opts=\"$_clawforge_reply\"; fi\n" +
+  "  if _clawforge_lookup \"verbatim $cmd\"; then isverb=1; verb=\"$_clawforge_reply\"; fi\n" +
+  "  if _clawforge_lookup \"verbatimFlags $cmd\"; then flags=\"$_clawforge_reply\"; fi\n" +
+  "  for token in \"${between[@]}\"; do\n" +
+  "    if (( swallow )); then swallow=0; continue; fi\n" +
+  "    if [[ \"$token\" == \"--\" ]]; then ended=1; break; fi\n" +
+  "    key=\"$token\"; inline=0\n" +
+  "    if [[ \"$token\" == --*=* ]]; then key=\"${token%%=*}\"; inline=1; fi\n" +
+  "    if (( ! inline )) && [[ \" $opts \" == *\" $token \"* ]]; then swallow=1; continue; fi\n" +
+  "    if [[ \"$token\" == -* ]]; then\n" +
+  "      if (( isverb )) && [[ \" $flags \" != *\" $key \"* ]]; then tail=1; break; fi\n" +
+  "      continue\n" +
+  "    fi\n" +
+  "    free=$((free + 1))\n" +
+  "    if (( isverb && free > verb )); then tail=1; break; fi\n" +
+  "  done\n" +
+  "  if (( ended || tail )); then COMPREPLY=(); return; fi\n" +
+  "  # The first word names the action; an option still waiting for its value completes that\n" +
+  "  # value (keyed command + action + option), or nothing when it has no choices.\n" +
+  "  if [[ \"${between[0]}\" != -* ]] && _clawforge_lookup \"after $cmd ${between[0]}\"; then scope=\"${between[0]}\"; fi\n" +
+  "  if (( swallow )); then\n" +
+  "    if _clawforge_lookup \"values ${cmd}${scope}${prev}\"; then COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
+  "    return\n" +
   "  fi\n" +
   "  # Past a word after the command: that word's own list, else the command's fallback.\n" +
-  "  if reply=\"$(_clawforge_lookup \"after $cmd ${between[0]}\")\"; then\n" +
-  "    COMPREPLY=( $(compgen -W \"$reply\" -- \"$cur\") )\n" +
-  "  elif reply=\"$(_clawforge_lookup \"after $cmd *\")\"; then\n" +
-  "    COMPREPLY=( $(compgen -W \"$reply\" -- \"$cur\") )\n" +
+  "  if _clawforge_lookup \"after $cmd ${between[0]}\"; then\n" +
+  "    COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") )\n" +
+  "  elif _clawforge_lookup \"after $cmd *\"; then\n" +
+  "    COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") )\n" +
   "  else\n" +
   "    COMPREPLY=()\n" +
   "  fi\n" +
@@ -125,6 +124,7 @@ function caseArms(data: CompletionData): string {
     ...[...data.first].map(([command, words]) => caseArm("    ", `first ${command}`, words)),
     ...[...data.after].map(([key, words]) => caseArm("    ", `after ${key}`, words)),
     ...[...data.verbatim].map(([command, positionals]) => caseArm("    ", `verbatim ${command}`, [String(positionals)])),
+    ...[...data.verbatimFlags].map(([command, flags]) => caseArm("    ", `verbatimFlags ${command}`, flags)),
     ...[...data.valueOptions].map(([command, options]) => caseArm("    ", `valueOptions ${command}`, options)),
     ...data.values.map((row) => caseArm("    ", `values ${row.command}${row.scope}${row.option}`, row.values)),
   ].join("");

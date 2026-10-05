@@ -184,6 +184,24 @@ check(
     misplacedAppFlag("mine", ["--app", "x"], [], [{ name: "app", kind: "flag", description: "app" }]),
     undefined,
   );
+  // The unknown token is compared whole, not by message prefix: --application is not --app.
+  const withInterval = openclawCommands.backup.arguments ?? [];
+  check(
+    "an unknown --application after an option's --app value is not a misplaced --app",
+    misplacedAppFlag("backup", ["install", "--interval", "--app", "--application"], [], withInterval),
+    undefined,
+  );
+  // A `--` an option swallowed as its value is no options-end: the `--app` behind it is a flag.
+  check(
+    "an --app behind a `--` that an option swallowed is still misplaced",
+    misplacedAppFlag("backup", ["install", "--interval", "--", "--app"], [], withInterval),
+    "--app",
+  );
+  check(
+    "a genuinely unknown --app is still misplaced",
+    misplacedAppFlag("backup", ["install", "--app"], [], withInterval),
+    "--app",
+  );
 }
 check(
   "splitLeadingAppFlag takes the leading --app and leaves the post-/--app=x alone",
@@ -266,6 +284,15 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
     passedThrough.stdout.includes(NOT_FOUND),
     true,
   );
+
+  // Only a command that reads its argv VERBATIM is exempt: set declares a (non-verbatim)
+  // variadic, so a misplaced --app after it is still an ordering mistake.
+  const setMisplaced = await runGate(["set", "try", "--app", "x"]);
+  check("set try --app x is refused as a misplaced --app", setMisplaced.stdout.includes(APP_ORDER), true);
+  for (const verbatim of [["exec", "echo", "--app", "x"], ["cli", "config", "--app", "x"], ["host", "local", "echo", "--app", "x"]]) {
+    const run = await runGate(["--app", neverCreatedForExec, ...verbatim]);
+    check(`${verbatim.join(" ")}: --app belongs to the verbatim command, not misplaced`, run.stdout.includes(APP_ORDER), false);
+  }
 }
 
 // --- the real gate: `-h` after a bare `--` runs the command instead of printing help ----

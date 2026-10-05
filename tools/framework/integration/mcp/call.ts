@@ -228,7 +228,22 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
     }
   }
 
-  if (spec !== undefined) return problems;
+  if (spec !== undefined) {
+    // toArgv puts a variadic after a bare `--`, where the tokenizer would fill a missing
+    // positional from its first word: with a variadic given, a required positional must be too.
+    const variadicGiven = [...declared.values()].some((argument) => {
+      const value = args[argument.name];
+      return argument.kind === "variadic" && Array.isArray(value) && value.length > 0;
+    });
+    if (variadicGiven) {
+      for (const argument of declared.values()) {
+        if (argument.kind !== "positional" || argument.required !== true) continue;
+        const value = args[argument.name];
+        if (value === undefined || value === "") problems.push(requiredArgumentMessage(argument.name));
+      }
+    }
+    return problems;
+  }
 
   for (const argument of declared.values()) {
     if (argument.required !== true) continue;
@@ -261,13 +276,9 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
     else named.push(`--${argument.name}=${String(value)}`);
   }
 
-  if (command.forceOnConfirmation === true && args.confirm === true && declared.some((argument) => argument.name === "force")) {
-    if (!named.includes("--force")) named.push("--force");
-  }
-
-  // A spec command's confirmation-set flags ride the confirmation instead of the caller:
-  // the same append forceOnConfirmation does, read back from the action the call selects
-  // (the action word, or the body's default) — never another action's flags.
+  // A spec command's confirmation-set flags ride the confirmation instead of the caller,
+  // read back from the action the call selects (the action word, or the body's default) —
+  // never another action's flags.
   const entry = args.confirm === true ? specOf(command as { readonly run?: unknown }) : undefined;
   if (entry !== undefined) {
     const shape = specShape(entry);

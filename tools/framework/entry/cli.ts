@@ -8,7 +8,7 @@ import { reportError, UserError, CommandFailedError, info } from "../core/io/log
 import { UnknownArgumentError } from "../core/command/index.ts";
 import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
-import { commandRegistry, dispatcherHelpLines, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
+import { commandRegistry, dispatcherHelpLines, refuseUnknownTokens, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
 import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import type { AppDefinition } from "../core/app.ts";
@@ -44,6 +44,9 @@ export async function runApp(
   // --help` does. Shared with the MCP `help` tool (integration/mcp/server.ts) through
   // renderHelp, so the two never answer the same question differently.
   if (name === "help") {
+    // Extra or unknown tokens are refused against the declared positional; a help request
+    // (`help --help`, `help status -h`) is answered first, as for every command.
+    if (!requestsShortHelp(args) && refuseDispatcherTokens("help", registry, args)) return 1;
     return renderHelp(args[0], app, registry, gateHelp) ? 0 : 1;
   }
 
@@ -57,6 +60,7 @@ export async function runApp(
       if (entry !== undefined) renderCommandHelp("control-mcp", entry);
       return 0;
     }
+    if (refuseDispatcherTokens("control-mcp", registry, args)) return 1;
     // Gate commands travel with the application's — the surface mirrors what the gate
     // can do. gateHelp rides along too, for the MCP `help` tool's no-argument form.
     await serveMcp(app, gateCommands, gateHelp);
@@ -84,6 +88,19 @@ export async function runApp(
     return 1;
   }
   throw execution.error;
+}
+
+/** Refuses a token the dispatcher command's declaration has no slot for, in the standard
+ *  unknown-argument voice; true when it did. */
+function refuseDispatcherTokens(name: string, registry: ReturnType<typeof commandRegistry>, args: readonly string[]): boolean {
+  try {
+    refuseUnknownTokens(registry.find(name), args);
+    return false;
+  } catch (error) {
+    if (!(error instanceof UnknownArgumentError)) throw error;
+    reportUnknownArgument(name, error);
+    return true;
+  }
 }
 
 /** The standard answer to a token no declared argument matches: the refusal (already

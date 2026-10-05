@@ -588,6 +588,18 @@ check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", r
   const ACTIONS = { effect: "read", actions: { one: { arguments: [], refuse: { zap: REASON } }, two: { arguments: [] } } } as const;
   check("refuse: an action's own token is refused", (refusal(() => parseCall(ACTIONS, ["one", "zap"])) as Error).message, REASON);
   check("refuse: another action does not inherit it", refusal(() => parseCall(ACTIONS, ["two", "zap"])) instanceof UnknownArgumentError, true);
+  // A token the tokenizer binds as an option's value is never refused, whatever it spells.
+  {
+    const WITH_OPTION = { effect: "read", arguments: [{ name: "holder", kind: "option", valueName: "h", description: "d" }, { name: "go", kind: "flag", description: "d" }], refuse: { "--bad": REASON, bad: REASON } } as const;
+    check("refuse: a refused word bound as an option's value parses", parseCall(WITH_OPTION, ["--holder", "bad"]).values.holder, "bad");
+    check("refuse: a refused flag spelling bound as an option's value parses", parseCall(WITH_OPTION, ["--holder", "--bad"]).values.holder, "--bad");
+    check("refuse: the inline value spelling parses", parseCall(WITH_OPTION, ["--holder=bad"]).values.holder, "bad");
+    check("refuse: the same word standing alone is still refused", (refusal(() => parseCall(WITH_OPTION, ["--holder", "x", "bad"])) as Error).message, REASON);
+    const real = specShape(specOf(openclawCommands.expose!)!);
+    const holder = parseCall(real, ["tailscale", "--break-foreign-lock", "funnel"]);
+    check("refuse: expose tailscale --break-foreign-lock funnel binds funnel as the lock holder", holder.values["break-foreign-lock"], "funnel");
+    check("refuse: expose tailscale funnel is still refused", (refusal(() => parseCall(real, ["tailscale", "funnel"])) as Error).message.includes("never runs `tailscale funnel`"), true);
+  }
   check("refuse: the funnel tokens are not arguments of expose", (openclawCommands.expose!.arguments ?? []).some((argument) => argument.name.includes("funnel")), false);
 }
 

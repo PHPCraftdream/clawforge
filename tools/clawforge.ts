@@ -35,6 +35,7 @@ import { openclawCommands } from "./framework/commands/interface/index.ts";
 import { normalizeVersionAlias } from "./framework/integration/version.ts";
 import type { AppDefinition } from "./framework/core/app.ts";
 import { resolveFrameworkFromSources } from "./framework/entry/delegate.ts";
+import { isVerbatim } from "./framework/core/command/parse.ts";
 import { nodeFs, resolveCheckoutEntry } from "./framework/entry/resolve.ts";
 import { checkoutGate } from "./framework/entry/registry.ts";
 
@@ -74,7 +75,7 @@ const decision = resolveCheckoutEntry({
   gateCommands: gateCommands.map((command) => command.name),
   deploymentCommands: Object.keys(openclawCommands),
   variadicCommands: Object.entries(openclawCommands)
-    .filter(([, command]) => command.arguments?.some((argument) => argument.kind === "variadic") === true)
+    .filter(([, command]) => isVerbatim(command.arguments ?? []))
     .map(([commandName]) => commandName),
   deploymentArguments: (name) => gateCommands.find((command) => command.name === name)?.arguments ?? openclawCommands[name]?.arguments,
 });

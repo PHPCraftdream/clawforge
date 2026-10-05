@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
 
@@ -55,11 +56,26 @@ try {
   check("control-mcp --help exits cleanly", controlHelp.code, 0);
   check("control-mcp --help explains itself, not silence", controlHelp.stdout.includes("MCP tools"), true);
 
-  // Same boundary, short spelling: `-h` after a `--` belongs to the command's own parser,
-  // so control-mcp starts serving (blocking on stdin until the deadline) instead of printing
-  // its help — assert on stdout, never on the exit code or the timeout.
+  // Same boundary, short spelling: `-h` after a `--` is no help request, so control-mcp does
+  // not print its help (it declares no arguments, so the token is refused) — assert on stdout.
   const controlShortAfterSeparator = await runGate(["--app", deploymentName, "control-mcp", "--", "-h"]);
   check("`-h` after a `--` does not print control-mcp's help", controlShortAfterSeparator.stdout.includes("MCP tools"), false);
+
+  // `help` declares one positional and control-mcp none: extra or unknown tokens are refused
+  // instead of being silently dropped (a started server, a help page for a typo'd call).
+  const controlBogus = await runGate(["--app", deploymentName, "control-mcp", "--bogus", "extra"]);
+  check("control-mcp --bogus extra does not start the server", controlBogus.timedOut, false);
+  check("control-mcp --bogus extra exits non-zero", controlBogus.code, 1);
+  check("control-mcp --bogus extra names the unknown argument", controlBogus.stdout.includes(unknownArgumentMessage("--bogus")), true);
+  const helpBogus = await runGate(["--app", deploymentName, "help", "status", "--bogus", "extra"]);
+  check("help status --bogus extra exits non-zero", helpBogus.code, 1);
+  check("help status --bogus extra names the unknown argument", helpBogus.stdout.includes(unknownArgumentMessage("--bogus")), true);
+  check("help status --bogus extra prints no help page", helpBogus.stdout.includes("Usage:"), false);
+  const helpExtra = await runGate(["--app", deploymentName, "help", "status", "extra"]);
+  check("help status extra (a second positional) exits non-zero", helpExtra.code, 1);
+  check("help status extra names the stray word", helpExtra.stdout.includes(unknownArgumentMessage("extra")), true);
+  const helpStatus = await runGate(["--app", deploymentName, "help", "status", "--help"]);
+  check("help status --help is still a help request", helpStatus.code, 0);
 
   const helpHelp = await runGate(["--app", deploymentName, "help", "--help"]);
   check("help --help exits cleanly", helpHelp.code, 0);

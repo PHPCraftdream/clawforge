@@ -18,7 +18,7 @@ import { normalizeVersionAlias } from "../integration/version.ts";
 import { tokenize } from "../core/command/parse.ts";
 import { INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import {
-  beforeBareDoubleDash,
+  requestsShortHelp,
   checkoutSubfolderReport,
   isDeploymentHelpRequest,
   misplacedAppFlag,
@@ -401,7 +401,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
 
   // Without --project-root the deployment is the nearest app.ts at or above the cwd. `init` is
   // the exception: it always initialises the cwd itself, and refuses under an existing deployment.
-  const initializing = argv[0] === "init" && !beforeBareDoubleDash(argv).some((arg) => arg === "--help" || arg === "-h");
+  const initializing = argv[0] === "init" && !requestsShortHelp(argv);
   const ancestor = scheduled ? undefined : findAppRootIn(cwd, fs);
   // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
   // The flag is the parser's own reading of argv — a `--local` after a bare `--` is init's

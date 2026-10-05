@@ -98,8 +98,6 @@ export interface AppCommand {
   readonly changedWhen?: (args: string[]) => boolean;
   /** Refines which calls need explicit MCP confirmation for a mixed command. */
   readonly requiresConfirmationWhen?: (args: string[]) => boolean;
-  /** Appends an explicit command-level --force only after MCP confirmation. */
-  readonly forceOnConfirmation?: boolean;
   /** Successful output carries registered credential values on purpose (`mcp-creds`), so
    *  the response redaction that guards every other answer lets it through instead of
    *  masking with "***". A failure is never exempt — the mask still applies to it. */

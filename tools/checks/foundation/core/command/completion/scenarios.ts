@@ -120,5 +120,48 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
     scenarios.push({ name: `${prefix} prefix`, words: [found.command, prefix], cword: 1 });
   }
 
+  scenarios.push(...sweepScenarios(data));
+  return scenarios;
+}
+
+/** The 2- and 3-word sequences over one command's own vocabulary — taken from its declaration,
+ *  never hand-written: its first flag, its first option, a bare `--`, a plain word (its first
+ *  action word for a multi-action command, else `zz`), each followed by the word being completed.
+ *  Every command gets all 2-word sequences; the 3-word ones (where a `--` behind an option, a
+ *  refusal or a verbatim tail interact) are taken once per vocabulary shape — flag/option/
+ *  action/verbatim/variadic/choices present or not — because the interpreters branch on shape,
+ *  not on a command's name. Exhaustive within that bound, so a rule the three implementations
+ *  disagree on shows up as a failing sequence rather than as a case someone thought of. */
+function sweepScenarios(data: CompletionData): CompletionScenario[] {
+  const scenarios: CompletionScenario[] = [];
+  const shapes = new Set<string>();
+  for (const [command, declared] of data.declared) {
+    if (!data.first.has(command)) continue;
+    const flag = declared.find((argument) => argument.kind === "flag");
+    const option = declared.find((argument) => argument.kind === "option");
+    const action = [...data.after.keys()].map((key) => key.split(" ")).find(([owner, word]) => owner === command && word !== "*")?.[1];
+    const alphabet = [
+      ...(flag === undefined ? [] : [`--${flag.name}`]),
+      ...(option === undefined ? [] : [`--${option.name}`]),
+      "--",
+      action ?? "zz",
+    ];
+    const shape = [
+      flag !== undefined, option !== undefined, action !== undefined, data.verbatim.has(command),
+      declared.some((argument) => argument.kind === "variadic"),
+      option !== undefined && data.values.some((row) => row.command === command && row.option === `--${option.name}`),
+    ].join();
+    const depth = shapes.has(shape) ? 2 : 3;
+    shapes.add(shape);
+    let sequences: string[][] = [[]];
+    for (let length = 1; length <= depth; length += 1) {
+      sequences = sequences.flatMap((head) => alphabet.map((word) => [...head, word]));
+      if (length === 1) continue;
+      for (const sequence of sequences) {
+        const words = [command, ...sequence, ""];
+        scenarios.push({ name: `sweep: ${words.slice(0, -1).join(" ")} <Tab>`, words, cword: words.length - 1 });
+      }
+    }
+  }
   return scenarios;
 }

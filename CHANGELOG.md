@@ -6,6 +6,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* An MCP call that gives a variadic (`host`'s `args`, `set diff`'s `artifacts`) but omits a required
+  positional (`host`'s `context`, the `action`) is refused like a missing argument instead of
+  running with the variadic's first word in its place. `help` and `control-mcp` refuse extra or
+  unknown tokens (`help status --bogus extra`, `control-mcp --bogus`) instead of ignoring them.
+  Completion offers nothing after a bare `--` whether or not the parser would refuse what
+  follows it, nothing at the value of an option with no declared choices (`logs --grep`), the
+  choices for the default action (`backup --profile`), and nothing after an undeclared dash
+  word of a pass-through command (`host --bogus`). `set try --app x` is refused with the
+  "`--app` must come before the command" advice again; a refused word that is an option's value
+  (`expose tailscale --break-foreign-lock funnel`) is accepted as the value.
 * `init -- --local` no longer acts as `init --local`: the flag after a bare `--` is init's own
   data, so the init-nesting refusal applies again. An `--app` that a command's declared option
   consumes as its value (`accept p --set --app`) is no longer refused as misplaced. Completion

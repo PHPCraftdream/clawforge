@@ -221,6 +221,21 @@ The command table in `docs/guide/commands.md`, between its `<!-- commands:begin 
 `npm run docs:commands` rewrites it, and `docs-commands.check.ts` fails on a hand-edited block.
 The page's narrative stays manual.
 
+## Negative controls
+
+Every evidence-bearing check — one that asserts an observable behavior, not a product table
+against itself — ships with a negative control (invariant I11): a declaration in
+`tools/checks/controls/controls.ts` naming the product file, a textual edit (a search/replace
+that must match exactly once) that would reintroduce the defect, the check file that MUST
+fail with the edit applied, and a stable fragment of the failing assertion's name.
+`npm run check:controls` copies the repository once into the OS temp directory, applies each
+edit to the copy, and demands: the unedited copy passes the check, the edited copy fails
+naming the declared assertion, and the copy is restored (proven by hash). The gate fails if
+any control fails. A control whose edit no longer matches the product is itself a failure of
+`check:controls` — a stale control is a finding, never a skip. To add a control: append a
+declaration to `CONTROLS`, run the command, and land it only once it holds against the
+unchanged product.
+
 ## Pull requests
 
 Explain the user-visible behavior, security implications, and validation performed. Keep
@@ -234,7 +249,7 @@ confirmation behavior need a focused regression check and a security review.
 Run `npm run format:check` before sending a change; generated `dist/` files stay ignored.
 
 A change is handed over only with a green `npm run gate` (`npm run typecheck && npm run lint
-&& npm run check`). The architecture ratchets (`tools/checks/architecture/`) pin the counts of
+&& npm run check && npm run check:controls`). The architecture ratchets (`tools/checks/architecture/`) pin the counts of
 known duplication patterns: a number may go down only together with the code change that
 lowers it — edit `baseline.json` in the same commit, since the check fails on both growth and
 an unrecorded decrease.

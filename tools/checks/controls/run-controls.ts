@@ -1,0 +1,272 @@
+#!/usr/bin/env node
+// Runs the negative controls (stage 7, S0.3): copies the repository ONCE into the OS temp
+// dir (tracked + untracked-not-ignored files, NUL-delimited git output, modes preserved;
+// node_modules linked, never copied), then for each control applies its edit to the copy,
+// runs the declared check, and demands that the UNEDITED copy passes while the EDITED copy
+// fails ON A FAILING ASSERTION whose name carries the declared fragment — the harness prints
+// assertion names on success lines too, so only "  FAIL <name>" lines count. A timeout, a
+// signal or a spawn error is never a held control. Edits are reverted byte-exactly (SHA-256
+// of the original Buffer, mode re-applied) and the first restore drift aborts the run —
+// later controls must not run on a possibly corrupted copy.
+//
+// A control whose edit no longer matches the product (it was refactored) is a FAILURE of
+// check:controls — a stale control, never a skip. Every declared path must resolve inside
+// the temp copy itself, never through the node_modules junction or any symlink.
+
+import { createHash } from "node:crypto";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { runProcess } from "#checks/kit/spawn.ts";
+import { CONTROLS, type ControlDecl } from "./controls.ts";
+
+export const FAIL_MARKER = "  FAIL ";
+
+export type ControlKind =
+  | "held"
+  | "stale"
+  | "invalid-baseline"
+  | "not-failing"
+  | "fragment-missing"
+  | "check-crashed"
+  | "restore-failed"
+  | "escaped-path";
+
+export interface ControlResult {
+  readonly id: string;
+  readonly kind: ControlKind;
+  readonly ok: boolean;
+  /** Human-readable why, beyond kind. */
+  readonly reason?: string;
+  /** The failing assertion line that carried the fragment, when held. */
+  readonly matchedFailLine?: string;
+  /** The edited run's FAIL lines (capped) — the evidence a fragment verdict is judged on. */
+  readonly failLines?: readonly string[];
+  /** SHA-256 of the product file inside the copy, before the edit and after the restore. */
+  readonly productHashBefore?: string;
+  readonly productHashAfter?: string;
+  readonly durationMs: number;
+}
+
+export interface ControlsRun {
+  readonly results: readonly ControlResult[];
+  /** Set when the run stopped early (restore drift): remaining controls did not run. */
+  readonly aborted?: string;
+  readonly copyMs: number;
+  readonly baselineMs: number;
+  readonly totalMs: number;
+}
+
+/** Roots of the checkout that are never copied, and never valid control paths. */
+const COPY_EXCLUDES = [".git", "apps", "worktrees", ".rush", "node_modules"];
+
+function excluded(path: string): boolean {
+  return COPY_EXCLUDES.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
+/** Tracked files plus untracked-but-not-ignored ones — the repository as git would ship it.
+ *  NUL-delimited output, so names git would quote survive verbatim. */
+async function repoFiles(repoRoot: string): Promise<string[]> {
+  const files = new Set<string>();
+  for (const args of [["ls-files", "-z"], ["ls-files", "-o", "--exclude-standard", "-z"]]) {
+    const git = await runProcess("git", args, { cwd: repoRoot, timeoutMs: 60_000 });
+    if (git.code !== 0) throw new Error(`git ${args.join(" ")} failed: ${git.output}`);
+    for (const path of git.stdout.split("\0")) {
+      if (path !== "" && !excluded(path)) files.add(path);
+    }
+  }
+  return [...files];
+}
+
+async function copyRepo(repoRoot: string, tempRoot: string): Promise<void> {
+  for (const path of await repoFiles(repoRoot)) {
+    const source = join(repoRoot, path);
+    const destination = join(tempRoot, path);
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, await readFile(source));
+    await chmod(destination, (await stat(source)).mode);
+  }
+  const nodeModules = join(repoRoot, "node_modules");
+  try {
+    if (!(await stat(nodeModules)).isDirectory()) throw new Error(`${nodeModules} is not a directory`);
+    await symlink(nodeModules, join(tempRoot, "node_modules"), "junction"); // type is used on Windows only, ignored elsewhere
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EEXIST" && code !== "ENOENT") throw error; // no node_modules here is fine
+  }
+}
+
+/** A declared path is only usable when it names a real file inside the copy, reached through
+ *  real directories: not absolute, not outside, not an excluded root, never across the
+ *  node_modules junction or any other symlink. */
+async function escapeProblem(tempRoot: string, rel: string): Promise<string | undefined> {
+  if (rel === "" || rel.includes("\0")) return "empty or NUL-carrying path";
+  rel = rel.replaceAll("\\", "/"); // Windows separators must not hide a junction segment
+  const full = resolve(tempRoot, rel);
+  if (full !== tempRoot && !full.startsWith(tempRoot + sep)) return `resolves outside the copy: ${rel}`;
+  const parts = rel.split("/");
+  if (parts.some((part) => part === "..")) return `climbs out of the copy: ${rel}`;
+  if (excluded(rel)) return `names an excluded root: ${rel}`;
+  let current = tempRoot;
+  for (const part of parts) {
+    current = join(current, part);
+    const entry = await lstat(current).catch(() => undefined);
+    if (entry === undefined) return `does not exist in the copy: ${rel}`;
+    if (entry.isSymbolicLink()) return `reached through a symlink or junction: ${rel}`;
+  }
+  return undefined;
+}
+
+interface CheckRun {
+  readonly code: number | null;
+  readonly output: string;
+  readonly timedOut: boolean;
+  readonly spawnError?: string;
+}
+
+function runCheckFile(tempRoot: string, check: string, timeoutMs: number): Promise<CheckRun> {
+  return runProcess(process.execPath, ["--experimental-strip-types", join(tempRoot, check)], { cwd: tempRoot, timeoutMs })
+    .then((run) => ({ code: run.code, output: run.output, timedOut: run.timedOut, ...(run.error === undefined ? {} : { spawnError: run.error.message }) }));
+}
+
+/** The harness prints assertion names on success lines too — only failing ones count. */
+function failLines(output: string): readonly string[] {
+  return output.split("\n").filter((line) => line.startsWith(FAIL_MARKER));
+}
+
+/** Applies, tests and reverts one control against the shared copy. The check file's
+ *  repo-relative path selects the baseline outcome recorded by the caller. */
+async function runOne(
+  tempRoot: string,
+  control: ControlDecl,
+  baseline: CheckRun | undefined,
+  options: { readonly timeoutMs: number; readonly breakRestore?: boolean },
+): Promise<ControlResult> {
+  const started = Date.now();
+  const done = (kind: ControlKind, ok: boolean, extra: Partial<ControlResult> = {}): ControlResult => ({
+    id: control.id,
+    kind,
+    ok,
+    durationMs: Date.now() - started,
+    ...extra,
+  });
+  for (const declared of [control.product, control.check]) {
+    const problem = await escapeProblem(tempRoot, declared);
+    if (problem !== undefined) return done("escaped-path", false, { reason: problem });
+  }
+  const productPath = join(tempRoot, control.product);
+  const original = await readFile(productPath);
+  const mode = (await stat(productPath)).mode;
+  const beforeHash = createHash("sha256").update(original).digest("hex");
+  const text = original.toString("utf8");
+  const matches = text.split(control.search).length - 1;
+  if (matches !== 1) return done("stale", false, { reason: `stale control: the edit no longer matches (${matches} matches)`, productHashBefore: beforeHash, productHashAfter: beforeHash });
+  if (baseline === undefined) return done("invalid-baseline", false, { reason: "invalid control: no baseline run", productHashBefore: beforeHash, productHashAfter: beforeHash });
+  if (baseline.code !== 0 || baseline.timedOut || baseline.spawnError !== undefined || failLines(baseline.output).length > 0) {
+    return done("invalid-baseline", false, { reason: "invalid control: the check does not pass cleanly on the unedited copy", productHashBefore: beforeHash, productHashAfter: beforeHash });
+  }
+  await writeFile(productPath, text.replaceAll(control.search, control.replace));
+  const run = await runCheckFile(tempRoot, control.check, options.timeoutMs);
+  await writeFile(productPath, options.breakRestore === true ? Buffer.from(text.replaceAll(control.search, control.replace) + "\n// restore deliberately broken\n") : original);
+  await chmod(productPath, mode);
+  const afterBytes = await readFile(productPath);
+  const afterHash = createHash("sha256").update(afterBytes).digest("hex");
+  if (afterHash !== beforeHash) {
+    return done("restore-failed", false, { reason: "restore verification failed: the copy's product file does not match the original bytes", productHashBefore: beforeHash, productHashAfter: afterHash });
+  }
+  if (run.timedOut) return done("check-crashed", false, { reason: "not held: the edited run timed out", productHashBefore: beforeHash, productHashAfter: afterHash });
+  if (run.spawnError !== undefined || run.code === null) {
+    return done("check-crashed", false, { reason: `not held: the edited run never finished: ${run.spawnError ?? "no exit code"}`, productHashBefore: beforeHash, productHashAfter: afterHash });
+  }
+  if (run.code === 0) return done("not-failing", false, { reason: "not failing: the check still passes with the edit applied", productHashBefore: beforeHash, productHashAfter: afterHash });
+  const lines = failLines(run.output);
+  const matched = lines.find((line) => line.slice(FAIL_MARKER.length).includes(control.fragment));
+  if (lines.length === 0) return done("not-failing", false, { reason: "not failing: the edited run exited non-zero without a failing assertion", failLines: lines.slice(0, 5), productHashBefore: beforeHash, productHashAfter: afterHash });
+  if (matched === undefined) {
+    return done("fragment-missing", false, {
+      reason: `the edited run failed on other assertions; none of the ${lines.length} FAIL lines names "${control.fragment}"`,
+      failLines: lines.slice(0, 5),
+      productHashBefore: beforeHash,
+      productHashAfter: afterHash,
+    });
+  }
+  return done("held", true, { matchedFailLine: matched, failLines: [matched], productHashBefore: beforeHash, productHashAfter: afterHash });
+}
+
+export async function runControls(
+  repoRoot: string,
+  controls: readonly ControlDecl[],
+  options: { readonly timeoutMs?: number; /** Test hook (kit self-check): corrupt the restore to prove the abort. */ readonly breakRestore?: boolean } = {},
+): Promise<ControlsRun> {
+  const timeoutMs = options.timeoutMs ?? 600_000;
+  const totalStart = Date.now();
+  const copyStart = Date.now();
+  const tempRoot = await mkdtemp(join(tmpdir(), "clawforge-controls-"));
+  try {
+    await copyRepo(repoRoot, tempRoot);
+    const copyMs = Date.now() - copyStart;
+    const baselineStart = Date.now();
+    const baselines = new Map<string, CheckRun>();
+    for (const check of new Set(controls.map((control) => control.check))) {
+      // A check path is validated like a product path BEFORE anything runs.
+      if (await escapeProblem(tempRoot, check) !== undefined) continue;
+      baselines.set(check, await runCheckFile(tempRoot, check, timeoutMs));
+    }
+    const baselineMs = Date.now() - baselineStart;
+    const results: ControlResult[] = [];
+    let aborted: string | undefined;
+    for (const control of controls) {
+      const result = await runOne(tempRoot, control, baselines.get(control.check), { timeoutMs, breakRestore: options.breakRestore });
+      results.push(result);
+      if (result.kind === "restore-failed") {
+        aborted = `${control.id}: restore verification failed — the remaining controls did not run on a possibly corrupted copy`;
+        break;
+      }
+    }
+    return { results, ...(aborted === undefined ? {} : { aborted }), copyMs, baselineMs, totalMs: Date.now() - totalStart };
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true }).catch((error: unknown) => {
+      process.stderr.write(`note: the temp copy could not be removed: ${(error as Error).message}\n`);
+    });
+  }
+}
+
+async function main(): Promise<number> {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const selected = process.argv.slice(2);
+  const controls = selected.length === 0
+    ? CONTROLS
+    : CONTROLS.filter((control) => selected.includes(control.id));
+  if (controls.length === 0) {
+    process.stderr.write(`no control matches: ${selected.join(", ")}\n`);
+    return 1;
+  }
+  const run = await runControls(root, controls);
+  for (const result of run.results) {
+    const declaration = controls.find((control) => control.id === result.id)!;
+    process.stdout.write(`${result.id} ${declaration.finding} ${result.ok ? "held" : `FAIL — ${result.kind}: ${result.reason}`}\n`);
+    for (const line of failLinesOf(result)) process.stdout.write(`    ${line}\n`);
+  }
+  if (run.aborted !== undefined) process.stdout.write(`aborted: ${run.aborted}\n`);
+  const held = run.results.filter((result) => result.ok).length;
+  const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
+  process.stdout.write(
+    `controls: ${held}/${run.results.length} held (copy ${seconds(run.copyMs)}, baseline ${seconds(run.baselineMs)}, total ${seconds(run.totalMs)})\n`,
+  );
+  return held === run.results.length && run.aborted === undefined ? 0 : 1;
+}
+
+/** The edited run's failing assertions — the evidence each verdict is judged on. */
+function failLinesOf(result: ControlResult): readonly string[] {
+  return result.failLines ?? [];
+}
+
+if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? "")).href) {
+  try {
+    process.exit(await main());
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    process.exit(1);
+  }
+}

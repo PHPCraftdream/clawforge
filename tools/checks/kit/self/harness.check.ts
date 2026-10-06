@@ -8,11 +8,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { check, checkTrue, requires, setCaseProbe, finish } from "./harness.ts";
-import { runProcess } from "./spawn.ts";
-import { CapabilityProbe, CAPABILITIES } from "./capabilities/capabilities.ts";
+import { check, checkTrue, requires, setCaseProbe, finish } from "../harness.ts";
+import { runProcess } from "../spawn.ts";
+import { CapabilityProbe, CAPABILITIES } from "../capabilities/capabilities.ts";
 
-const harnessUrl = pathToFileURL(resolve(import.meta.dirname, "harness.ts")).href;
+const harnessUrl = pathToFileURL(resolve(import.meta.dirname, "..", "harness.ts")).href;
 
 interface Ran {
   readonly code: number | null;
@@ -30,7 +30,7 @@ async function runScript(dir: string, source: string, prologue = ""): Promise<Ra
  *  (which imports only the harness, so it carries its own capabilities import). */
 function fakeProbeScript(present: Record<string, boolean | string[]>): string {
   return [
-    `import { CapabilityProbe, CAPABILITIES } from "${pathToFileURL(resolve(import.meta.dirname, "capabilities", "capabilities.ts")).href}";`,
+    `import { CapabilityProbe, CAPABILITIES } from "${pathToFileURL(resolve(import.meta.dirname, "..", "capabilities", "capabilities.ts")).href}";`,
     `const present = ${JSON.stringify(present)};`,
     `const answers = Object.fromEntries(CAPABILITIES.map((c) => [c, present[c] ?? true]));`,
     `const probes = Object.fromEntries(CAPABILITIES.map((c) => [c, async () => answers[c]]));`,

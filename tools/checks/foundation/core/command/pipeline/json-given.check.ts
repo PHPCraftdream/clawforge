@@ -16,13 +16,14 @@ import {
 } from "#framework/core/command/index.ts";
 import type { ArgumentSpec, CallShape, EffectShape } from "#framework/core/command/index.ts";
 import { ArgumentError } from "#framework/core/command/index.ts";
-import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "#framework/core/app.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const app: AppDefinition = { name: "json-given-fixture", description: "fixture", commands: openclawCommands };
+const fixture = await createDeploymentFixture();
 
 /** The oracle: tokenize the raw argv exactly as parseCall would (same action pick, same
  *  verbatim-tail decision); a tokenizer refusal means `--json` is never bound. */
@@ -52,20 +53,12 @@ function jsonTokenGiven(shape: Shape, argv: readonly string[]): boolean {
   }
 }
 
-function recordingTransport(): Transport {
-  return new Proxy({}, {
-    get: () => () => {
-      throw new Error("json-given check: the transport must not be contacted");
-    },
-  }) as unknown as Transport;
-}
-
 /** Whether the pipeline printed the {error:{message}} document. */
 async function runCase(command: string, argv: string[], on: AppDefinition = app) {
   const chunks: string[] = [];
   const execution = await withOutputSink((chunk) => {
     chunks.push(chunk);
-  }, () => executeCommand(on, command, argv, { surface: "terminal", transport: recordingTransport() }));
+  }, () => executeCommand(on, command, argv, { surface: "terminal", transport: fixture.transport() }));
   const printed = chunks.some((chunk) => {
     try {
       return typeof (JSON.parse(chunk) as { error?: { message?: unknown } }).error?.message === "string";
@@ -97,9 +90,11 @@ function invalidOf(argument: ArgumentSpec): string {
 }
 
 let cases = 0;
-async function differential(label: string, shape: Shape, command: string, argv: string[], fixture: AppDefinition = app) {
-  const { execution, printed } = await runCase(command, argv, fixture);
+const stages = stageTally();
+async function differential(label: string, shape: Shape, command: string, argv: string[], on: AppDefinition = app) {
+  const { execution, printed } = await runCase(command, argv, on);
   cases += 1;
+  stages.case(label, execution.stage, execution.error);
   const oracle = jsonTokenGiven(shape, argv);
   check(`${label}: stops at the parse stage`, execution.stage, "parse");
   check(`${label}: the document prints iff the tokenizer binds --json`, printed, oracle);
@@ -240,14 +235,13 @@ await differential("exec: --profile full --json run (the flag before the tail)",
 
 // --- a deployment-authored LEGACY AppCommand: no spec body, argv parsed by the command —
 // the --json decision must still come from the tokenizer over the declared arguments.
-// The failure lands at the context stage (createContext refuses the bare fixture) — still a
-// failed() call, still exercising the document decision. The stage is recorded, not pinned.
-const legacyStages: string[] = [];
-async function legacyDifferential(label: string, shape: Shape, command: string, argv: string[], fixture: AppDefinition) {
-  const { execution, printed } = await runCase(command, argv, fixture);
+// With the kit fixture selected, the legacy call reaches the guarded run phase, so the
+// document decision is exercised on a run failure — and the stage is asserted as a valid
+// control, not pinned to a refusal stage.
+async function legacyDifferential(label: string, shape: Shape, command: string, argv: string[], on: AppDefinition) {
+  const { execution, printed } = await runCase(command, argv, on);
   cases += 1;
-  legacyStages.push(execution.stage);
-  check(`${label}: stops at the context stage`, execution.stage, "context");
+  stages.control(label, execution.stage);
   const oracle = jsonTokenGiven(shape, argv);
   check(`${label}: the document prints iff the tokenizer binds --json`, printed, oracle);
 }
@@ -276,5 +270,7 @@ await legacyDifferential("legacy: --profile --json (R7: --json in the value posi
 await legacyDifferential("legacy: --json --profile full (the flag first)", legacyShape, "legacy", ["--json", "--profile", "full"], legacyApp);
 await legacyDifferential("legacy: -- --json (after a bare --)", legacyShape, "legacy", ["--", "--json"], legacyApp);
 
+await fixture.dispose();
+stages.print("pipeline: the --json document agrees with the tokenizer on a parse failure");
 checkTrue("every differential case ran", cases > 60);
 finish("pipeline: the --json document agrees with the tokenizer on a parse failure");

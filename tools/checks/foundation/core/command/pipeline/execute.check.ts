@@ -15,7 +15,7 @@
 //     {error:{message}} on stdout and exits non-zero, unless it already printed a JSON
 //     document of its own (status/doctor/upgrade --dry-run do) or streamed to a child.
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main, runApp } from "#framework/entry/cli.ts";
@@ -32,43 +32,23 @@ import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { provisionAgent } from "#framework/commands/management/provision-agent/index.ts";
 import { secrets } from "#framework/commands/management/secrets.ts";
-import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { spawnLocal } from "#framework/runtime/transport/exec.ts";
 import { die, dieWithExitCode, UserError, registerSecret } from "#framework/core/io/log.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import { ArgumentError, ConfirmationRequiredError, UnknownArgumentError } from "#framework/core/command/index.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { Transport } from "#framework/runtime/transport/transport.ts";
-import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
 import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";
 
 useLinuxHost();
+const fixture = await createDeploymentFixture();
+const stages = stageTally();
 
 const UNREACHABLE = "ssh:r32-unreachable.invalid: connection refused";
-
-/** A transport whose every contact point records and then throws — any entry means the
- *  command reached the target before finishing its own argument parsing. */
-function recordingTransport(): { transport: Transport; contacts: string[] } {
-  const contacts: string[] = [];
-  const transport = {
-    description: "stub",
-    exec(command: string, args: string[]): never {
-      contacts.push(`exec ${command} ${args.join(" ")}`);
-      throw new Error(UNREACHABLE);
-    },
-    exists(): never {
-      contacts.push("exists");
-      throw new Error(UNREACHABLE);
-    },
-    readFile(): never {
-      contacts.push("readFile");
-      throw new Error(UNREACHABLE);
-    },
-  } as unknown as Transport;
-  return { transport, contacts };
-}
 
 /** Captures stdout and turns a thrown error into its message (plus its constructor name). */
 async function capture(body: () => Promise<unknown>): Promise<{ output: string; error: string; errorName: string }> {
@@ -96,11 +76,12 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
   };
 
   {
-    const { transport, contacts } = recordingTransport();
+    const transport = fixture.transport();
     const execution = await executeCommand(app, "recover-env", ["--zzz"], { surface: "terminal", transport });
+    stages.case("recover-env --zzz stops at the parse stage", execution.stage, execution.error);
     check("recover-env --zzz stops at the parse stage", execution.stage, "parse");
     checkTrue("recover-env --zzz is refused as an unknown argument", execution.error instanceof UnknownArgumentError);
-    check("recover-env --zzz never contacts the target", contacts, []);
+    check("recover-env --zzz never contacts the target", fixture.contacts(), []);
   }
 
   {
@@ -108,12 +89,14 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
     // lands before the pipeline builds the deployment scope (no transport call either).
     const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-pipeline-noenv-"));
     useDeployment(emptyDir);
-    const { transport, contacts } = recordingTransport();
+    const transport = fixture.transport();
     const execution = await executeCommand(app, "recover-env", [], { surface: "terminal", transport });
+    stages.case("recover-env without .env stops at the prepare stage", execution.stage, execution.error);
     check("recover-env without .env stops at the prepare stage", execution.stage, "prepare");
     checkTrue("recover-env without .env is refused as a user error", execution.error instanceof UserError);
-    check("recover-env without .env never contacts the target", contacts, []);
+    check("recover-env without .env never contacts the target", fixture.contacts(), []);
     await rm(emptyDir, { recursive: true, force: true });
+    fixture.select();
   }
 }
 
@@ -164,7 +147,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
 {
   const fixed = {
     settings: { dataDir: "/srv/data", gatewayPort: "18799", serviceUrl: "http://127.0.0.1:18799", env: {}, location: "ssh", sshHost: "user@host" },
-    transport: recordingTransport().transport,
+    transport: fixture.transport(),
     paths: { toContainer: (path: string) => path, toTarget: async (path: string) => path },
   } as unknown as Context;
   const { error } = await capture(() => exposeSsh(fixed, ["--local-port", "99999"]));
@@ -172,14 +155,6 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
 }
 
 // --- legacy commands: same pipeline, argv as is, still no contact on a typo ---------------------
-
-const deployDir = await mkdtemp(join(tmpdir(), "clawforge-json-contract-"));
-useDeployment(deployDir);
-await writeFile(
-  envFile(),
-  ["OC_TARGET_LOCATION=local", "OC_DATA_DIR=/srv/data", "OPENCLAW_GATEWAY_PORT=18799", "OPENCLAW_GATEWAY_TOKEN=not-a-real-token-check-only-value", ""].join("\n"),
-  "utf8",
-);
 
 // --- confirm: an MCP call to a destructive command without confirm: true stops there ------------
 
@@ -199,17 +174,19 @@ await writeFile(
       },
     },
   };
-  const { transport, contacts } = recordingTransport();
+  const transport = fixture.transport();
   const refused = await executeCommand(app, "wipe", [], { surface: "mcp", transport });
+  stages.case("a destructive MCP call without confirm stops at the confirm stage", refused.stage, refused.error);
   check("a destructive MCP call without confirm stops at the confirm stage", refused.stage, "confirm");
   checkTrue("the confirm refusal is a ConfirmationRequiredError", refused.error instanceof ConfirmationRequiredError);
   checkTrue("the confirm refusal names the command", (refused.error as Error).message.startsWith("wipe "));
-  check("a refused destructive call never contacts the target", contacts, []);
+  check("a refused destructive call never contacts the target", fixture.contacts(), []);
   check("a refused destructive call never runs", ran, false);
 
   // The confirmed control builds a real local context; the run itself touches nothing.
   const allowed = await executeCommand(app, "wipe", [], { surface: "mcp", confirmed: true });
   check("the same call with confirm: true reaches the run stage", allowed.stage, "run");
+  stages.control("wipe with confirm: true reaches the run stage", allowed.stage);
   check("the confirmed call ran", ran, true);
 }
 
@@ -221,7 +198,7 @@ try {
     { name: "configure-provider --zzz", command: "configure-provider", argv: ["--zzz"] },
     { name: "configure-provider --provider", command: "configure-provider", argv: ["--provider"] },
   ] as const) {
-    const { transport, contacts } = recordingTransport();
+    const transport = fixture.transport();
     // Legacy commands keep their (ctx, args) signature; the pipeline is driven with a
     // declaration whose run delegates to the real function, so the whole console path
     // (environment decision, context, run) is exercised, not just the parser. A refusal
@@ -242,8 +219,9 @@ try {
       { surface: "terminal", transport },
     );
     checkTrue(`${kase.name} stops at the run stage`, execution.stage === "run");
+    stages.case(`${kase.name} stops at the run stage`, execution.stage, execution.error);
     checkTrue(`${kase.name} is refused by the command's own argument parsing`, execution.error instanceof UserError);
-    check(`${kase.name}: the target was never contacted`, contacts, []);
+    check(`${kase.name}: the target was never contacted`, fixture.contacts(), []);
   }
 
   // --- the --json failure contract, through the real entry point --------------------------------
@@ -376,39 +354,43 @@ try {
   // (stage run) and the document was already emitted by executeCommand.
   {
     let output = "";
-    const { transport } = recordingTransport();
+    const transport = fixture.transport();
     const execution = await withOutputSink((chunk) => {
       output += chunk;
     }, async () => executeCommand(contractApp, "boom", ["--json"], { surface: "terminal", transport }));
     check("a failing command's execution names the run stage", execution.stage, "run");
     checkTrue("and carries the error", execution.error instanceof Error);
     checkTrue("the pipeline itself emitted the error document", output.includes('"error"') && output.includes("unreachable"));
+    stages.case("a failing command's execution names the run stage", execution.stage, execution.error);
   }
 
   process.exitCode = previousExit;
-} finally {
-  await rm(deployDir, { recursive: true, force: true });
-}
+
+  // The typo sections below stay inside the try: they still need the fixture's selected
+  // deployment (the local recipe/store lookups read it before refusing), and the finally
+  // then disposes the fixture whichever way the suite ends.
 
 // --- recipe/provision-agent/secrets: a typo refuses locally, before lock or transport ---------
 // R33-07 (the R32-08 class): the purely local check for a bad recipe or store name must run
 // before requireBootstrapped/guarded/any transport call, so `--dry-run` and the real run
 // answer the same typo identically and no round trip is spent on it.
 
-function unreachableContext(): { ctx: Context; contacts: string[] } {
-  const { transport, contacts } = recordingTransport();
+function unreachableContext(): { ctx: Context; runtimeContacts: string[] } {
+  const transport = fixture.transport();
+  // Only the isRunning stub feeds this: it measures the runtime seam, not the transport.
+  const runtimeContacts: string[] = [];
   const ctx = {
     settings: { dataDir: "/srv/data", gatewayPort: "18799", serviceUrl: "http://127.0.0.1:18799", env: {} },
     transport,
     runtime: {
       isRunning(): never {
-        contacts.push("isRunning");
+        runtimeContacts.push("isRunning");
         throw new Error(UNREACHABLE);
       },
     },
     paths: { toContainer: (path: string) => path, toTarget: async (path: string) => path },
   } as unknown as Context;
-  return { ctx, contacts };
+  return { ctx, runtimeContacts };
 }
 
 {
@@ -422,7 +404,8 @@ function unreachableContext(): { ctx: Context; contacts: string[] } {
     const recording = unreachableContext();
     const { error } = await capture(() => recipe(recording.ctx, [...kase.args]));
     checkTrue(`${kase.name} with a typo is refused by the recipe lookup`, error.includes(kase.expect));
-    check(`${kase.name}: the target was never contacted`, recording.contacts, []);
+    check(`${kase.name}: the target was never contacted`, fixture.contacts(), []);
+    check(`${kase.name}: the instance state was never probed`, recording.runtimeContacts, []);
   }
 }
 
@@ -430,7 +413,8 @@ function unreachableContext(): { ctx: Context; contacts: string[] } {
   const recording = unreachableContext();
   const { error } = await capture(() => provisionAgent(recording.ctx, ["nosuch"]));
   checkTrue("provision-agent with a typo is refused by the recipe lookup", error.includes('recipe "nosuch" not found') || error.includes("nosuch"));
-  check("provision-agent: the target was never contacted", recording.contacts, []);
+  check("provision-agent: the target was never contacted", fixture.contacts(), []);
+  check("provision-agent: the instance state was never probed", recording.runtimeContacts, []);
 }
 
 {
@@ -441,7 +425,8 @@ function unreachableContext(): { ctx: Context; contacts: string[] } {
     const recording = unreachableContext();
     const { error } = await capture(() => secrets(recording.ctx, ["--apply", "--store", kase.store]));
     checkTrue(`${kase.name} is refused locally`, error.includes(kase.expect));
-    check(`${kase.name}: the target was never contacted`, recording.contacts, []);
+    check(`${kase.name}: the target was never contacted`, fixture.contacts(), []);
+    check(`${kase.name}: the instance state was never probed`, recording.runtimeContacts, []);
   }
 }
 
@@ -452,4 +437,9 @@ function unreachableContext(): { ctx: Context; contacts: string[] } {
   check("an ArgumentError names its argument", error.argument, "tail");
 }
 
+} finally {
+  await fixture.dispose();
+}
+
+stages.print("pipeline: failure order, stages and --json contract");
 finish("pipeline: failure order, stages and --json contract");

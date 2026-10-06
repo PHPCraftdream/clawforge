@@ -30,6 +30,11 @@ export function selectedDeployment(): string | undefined {
   return activeDir;
 }
 
+/** Clears the selection — the state before any entry point called useDeployment(). */
+export function clearDeployment(): void {
+  activeDir = undefined;
+}
+
 /** Selects an application's recipe root for the active deployment. */
 export function useApplicationRecipesDir(directory: string | undefined): void {
   if (directory === undefined) {

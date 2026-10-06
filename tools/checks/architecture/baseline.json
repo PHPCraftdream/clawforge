@@ -271,7 +271,7 @@
       "tools/checks/integration/recipe/recipe-arguments.check.ts": 3,
       "tools/checks/integration/recipe/recipe-import-portable.check.ts": 7,
       "tools/checks/integration/recipe/recipe-new.check.ts": 5,
-      "tools/checks/kit/harness.check.ts": 16,
+      "tools/checks/kit/self/harness.check.ts": 16,
       "tools/checks/kit/spawn.ts": 1,
       "tools/checks/release/release/installed-consumer.check.ts": 1,
       "tools/checks/release/release/operations.check.ts": 3,

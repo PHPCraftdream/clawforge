@@ -61,6 +61,20 @@ file cannot affect another. A fixture that stands in for the host
 its sibling check files) inherit normally. `npm run check:linux` runs the same suite, filtered
 the same way, inside a Linux container — see "Reproducing Linux CI locally" below.
 
+Sweeps that drive every command through the real pipeline (`executeCommand`) share one
+deployment fixture: `createDeploymentFixture()` (`tools/checks/kit/deployment-fixture.ts`)
+lays out a valid deployment in a temporary root — the `.env` a context builds from, `app.ts`,
+`config/`, a probe recipe — selects it with `useDeployment()`, and hands out a recording
+transport (`fixture.transport()` once per case, contacts read back with `fixture.contacts()`):
+every contact is recorded and none is ever answered, so one sweep can assert both "refused
+before any contact" and "reached run". Selecting the deployment is what lets a case that
+passes `prepare` reach the guarded `run` phase instead of stopping at the context's
+"no deployment selected" refusal. Pass `{ root }` to place the root yourself; `dispose()`
+removes it either way and restores the previous selection. Each case reports the stage it
+reached to a `stageTally()`: a valid control that stops before `run` fails the check, a
+fixture setup error fails it too (never silently counted as a refusal), and the sweep prints
+its stage histogram so a reviewer can read which phases its cases actually reached.
+
 ### Host capability labels
 
 Most checks assert everything without touching a real docker daemon, WSL distro, POSIX shell,

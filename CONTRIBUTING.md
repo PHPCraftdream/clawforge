@@ -236,6 +236,44 @@ any control fails. A control whose edit no longer matches the product is itself 
 declaration to `CONTROLS`, run the command, and land it only once it holds against the
 unchanged product.
 
+### Independent expectations — the ownProductExpectations ratchet
+
+A check's expectation must not be computed by the same product function or table the check
+guards. When the EXPECTED operand and the ACTUAL operand of a `check()`/`assert.*` call share
+a symbol imported from `tools/framework`, one product mutation moves both sides and the
+assertion can no longer fail — it restates the product instead of guarding it (review rounds
+18-19: `CRONTAB_FAILURES[28] ?? SCHEDULER_TRANSACTION_FAILED`, `engineDistroNote(...)`,
+`crontabUpdateFailure(...)` used as expectations). Prefer an independent expectation: a
+literal, or a check-local table of literals (see `UPDATE_REFUSALS` in
+runtime/schedule/schedule.check.ts).
+
+The ratchet `ownProductExpectations` (tools/checks/architecture/, tokenizer-based, like
+proseHeld) counts the remaining assertions whose expected operand — or an
+`.includes(...)`/`.startsWith(...)`/`.endsWith(...)`/`.match(...)` argument nested in the
+actual operand — and the actual operand use the same framework symbol. The total and the
+per-file counts are recorded in `baseline.json`: growth in ANY single file fails the build
+(including a file absent from the baseline), the aggregate total must equal the recorded
+total, and a decrease must be recorded by lowering `baseline.json` in the same commit. The
+expected operand may be product-derived through one level of local derivation — a
+`const`/`let` initialized from product code counts as product — template-literal
+interpolations count, and markers are recognized only in real comments. Exemptions, both
+printed in the check output: the file is named by a registered
+negative control's `check` field (the control proves the file's assertions fail when the
+product is mutated), or the assertion's line carries `// control: <id>` for an existing
+control id (single-assertion exemption). A marker naming an unknown control id fails the
+architecture check.
+
+### Prose measurement decision
+
+The prose measurement stays on the tokenizer (tools/checks/architecture/prose-held.ts,
+merged as the proseHeld ratchet): it reads the token stream — string literals, regexes,
+calls, argument positions — so a const-held pin, an `assert.match` regex, an
+`includes(<spaced const>)` and an array expectation are all counted by one implementation
+instead of four regexes that each covered one spelling. The older regex ratchets (prosePins,
+proseMatchers, proseEquality) stay as they are: they are conservative undercounts whose
+baselines already hold, and widening them would renumber recorded state without catching
+anything the tokenizer misses. New prose ratchets are written against the tokenizer.
+
 ## Pull requests
 
 Explain the user-visible behavior, security implications, and validation performed. Keep

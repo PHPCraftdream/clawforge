@@ -23,6 +23,8 @@ import { versionGateCommand } from "#framework/integration/version.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specOf } from "#framework/core/command/index.ts";
 import { measureProseHeld } from "./prose-held.ts";
+import { CONTROLS } from "#checks/controls/controls.ts";
+import { importedFrameworkSymbols, scanOwnProduct, SCANNER_SELF_CHECKS } from "./own-product.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
 
 interface PerFileMetric {
@@ -60,6 +62,7 @@ interface Baseline {
   readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
   readonly adhocSkips: { readonly comment: string; readonly total: number; readonly exempt: Record<string, ExemptLines> };
   readonly rawArgvScans: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
+  readonly ownProductExpectations: PerFileMetric;
 }
 
 const root = monorepoRoot;
@@ -91,22 +94,29 @@ interface Ratchet {
   readonly name: string;
   readonly expected: number;
   readonly actual: number;
-  /** What changed the count: files that grew, or the decrease to record. */
+  /** Per-file ratchets only: files that grew (a file absent from the baseline was 0). */
+  readonly grew: readonly string[];
+  /** Per-file ratchets only: files that shrank while the total decrease was not recorded. */
+  readonly unrecordedShrank: readonly string[];
+  /** Per-file ratchets only: one failure message per shrank file, naming that file's new count. */
+  readonly unrecordedMessages: readonly string[];
+  /** What changed the count, for printing. */
   readonly details: readonly string[];
 }
 
-function ratchet(name: string, expected: number, actual: number, grew: readonly string[], shrank: readonly string[]): Ratchet {
-  const details: string[] = grew.map((file) => `a new occurrence was added: ${file}`);
-  if (actual < expected) {
-    details.push(`lower the baseline to ${actual} in the same commit`);
-    details.push(...shrank.map((file) => `  decreased: ${file}`));
-  }
-  return { name, expected, actual, details };
+function ratchet(name: string, expected: number, actual: number, grew: readonly string[] = [], shrank: readonly string[] = []): Ratchet {
+  return {
+    name, expected, actual, grew,
+    unrecordedShrank: actual < expected ? shrank : [],
+    unrecordedMessages: [],
+    details: actual < expected ? [`lower the baseline to ${actual} in the same commit`] : [],
+  };
 }
 
 function perFileRatchet(name: string, before: Record<string, number>, after: Map<string, number>): Ratchet {
   const grew: string[] = [];
   const shrank: string[] = [];
+  const unrecordedMessages: string[] = [];
   const files = new Set([...Object.keys(before), ...after.keys()]);
   let expectedTotal = 0;
   let actualTotal = 0;
@@ -116,9 +126,22 @@ function perFileRatchet(name: string, before: Record<string, number>, after: Map
     expectedTotal += was;
     actualTotal += now;
     if (now > was) grew.push(`${file} (${was} → ${now})`);
-    if (now < was) shrank.push(`${file} (${was} → ${now})`);
+    if (now < was) {
+      shrank.push(`${file} (${was} → ${now})`);
+      unrecordedMessages.push(`${name}: lower the baseline to ${now} in the same commit (decreased: ${file} (${was} → ${now}))`);
+    }
   }
-  return ratchet(name, expectedTotal, actualTotal, grew, shrank);
+  const details = [...grew];
+  if (shrank.length > 0) details.push(`lower the baseline to ${actualTotal} in the same commit`, ...shrank);
+  return { name, expected: expectedTotal, actual: actualTotal, grew, unrecordedShrank: shrank, unrecordedMessages, details };
+}
+
+/** Human-readable problems for a ratchet, without touching the harness failure counter —
+ *  the self-checks below call this directly. */
+function ratchetFailures(result: Ratchet): readonly string[] {
+  const out = result.grew.map((file) => `${result.name}: a new occurrence was added: ${file}`);
+  out.push(...(result.unrecordedMessages.length > 0 ? result.unrecordedMessages : result.unrecordedShrank.map((file) => `${result.name}: lower the baseline to ${result.actual} in the same commit (decreased: ${file})`)));
+  return out;
 }
 
 function report(result: Ratchet): void {
@@ -126,7 +149,26 @@ function report(result: Ratchet): void {
     `${result.name} equals the baseline (${result.actual} measured, ${result.expected} recorded)`,
     result.actual === result.expected,
   );
-  for (const line of result.details) process.stderr.write(`    ${line}\n`);
+  const problems = ratchetFailures(result);
+  checkTrue(`${result.name}: no single-file growth and no unrecorded decrease`, problems.length === 0);
+  for (const line of [...problems, ...result.details]) process.stderr.write(`    ${line}\n`);
+}
+
+// Self-checks for the per-file ratchet failure modes, against the real perFileRatchet +
+// ratchetFailures pipeline (not report(), which would count harness failures).
+{
+  const mixed = ratchetFailures(perFileRatchet("self", { "a.ts": 1, "b.ts": 1 }, new Map([["a.ts", 2], ["b.ts", 0]])));
+  checkTrue("ratchet self-check: offsetting growth and shrink report both files", mixed.length === 2 && mixed[0]?.includes("a.ts (1 → 2)") === true && mixed[1]?.includes("b.ts (1 → 0)") === true);
+  const fresh = ratchetFailures(perFileRatchet("self", {}, new Map([["new.ts", 1]])));
+  checkTrue("ratchet self-check: a file absent from the baseline counts as growth", fresh.length === 1 && fresh[0]?.includes("new.ts (0 → 1)") === true);
+  checkTrue("ratchet self-check: exact equality reports nothing", ratchetFailures(perFileRatchet("self", { "a.ts": 1 }, new Map([["a.ts", 1]]))).length === 0);
+  const unrecorded = ratchetFailures(perFileRatchet("self", { "a.ts": 2, "b.ts": 2 }, new Map([["a.ts", 1], ["b.ts", 2]])));
+  checkTrue("ratchet self-check: an unrecorded decrease is reported", unrecorded.length === 1 && unrecorded[0]?.includes("lower the baseline to 1 in the same commit") === true && unrecorded[0]?.includes("a.ts (2 → 1)") === true);
+}
+// Scanner adverse self-checks, run in the gate with the architecture check.
+for (const selfCheck of SCANNER_SELF_CHECKS) {
+  const scan = scanOwnProduct(selfCheck.source);
+  checkTrue(`scanner self-check: ${selfCheck.name}`, selfCheck.expect({ ...scan, imports: importedFrameworkSymbols(selfCheck.source) }));
 }
 
 // 1. `./clawforge` literals in tools/framework and in the checkout entry — stage 4
@@ -555,5 +597,44 @@ for (const [file, lines] of rawScanExemptLeft) {
 }
 report(perFileRatchet("rawArgvScans", baseline.rawArgvScans.files, rawScanAfter));
 report(ratchet("rawArgvScans.total", baseline.rawArgvScans.total, rawScanTotal, [], []));
+
+// 10. ownProductExpectations — stage 7 S0.5 (independent expectations): the EXPECTED operand
+// of a check()/assert.* must not be computed from the same tools/framework symbol the ACTUAL
+// operand uses — one product mutation would move both sides. Exempt: a file a registered
+// negative control covers (controls.ts `check` field), and a line carrying
+// `// control: <id>` for an existing control id; every exemption is printed, and a marker
+// naming an unknown control id fails here.
+const CONTROL_IDS = new Set(CONTROLS.map((control) => control.id));
+const CONTROLLED_FILES = new Set(CONTROLS.map((control) => control.check));
+const ownAfter = new Map<string, number>();
+let ownTotal = 0;
+const ownExempt: string[] = [];
+for (const file of checkFiles) {
+  const source = await readFile(resolve(root, file), "utf8");
+  const scan = scanOwnProduct(source);
+  const covered = CONTROLLED_FILES.has(file);
+  for (const marker of scan.markers) {
+    if (!CONTROL_IDS.has(marker.id)) {
+      checkTrue(`ownProductExpectations: ${file}:${marker.line} names an unknown control id "${marker.id}"`, false);
+    }
+  }
+  let counted = 0;
+  for (const site of scan.sites) {
+    if (covered) {
+      ownExempt.push(`${file}:${site.line} file covered by a registered control (${site.symbols.join(", ")})`);
+      continue;
+    }
+    if (site.marker !== undefined && CONTROL_IDS.has(site.marker)) {
+      ownExempt.push(`${file}:${site.line} control ${site.marker} (${site.symbols.join(", ")})`);
+      continue;
+    }
+    counted += 1;
+  }
+  if (counted > 0) ownAfter.set(file, counted);
+  ownTotal += counted;
+}
+report(perFileRatchet("ownProductExpectations", baseline.ownProductExpectations.files, ownAfter));
+report(ratchet("ownProductExpectations.total", baseline.ownProductExpectations.total, ownTotal, [], []));
+for (const line of ownExempt) process.stderr.write(`    ownProductExpectations exempt: ${line}` + String.fromCharCode(10));
 
 finish("architecture ratchet");

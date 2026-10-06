@@ -19,6 +19,8 @@ export interface ControlDecl {
   readonly check: string;
   /** A stable fragment of the failing assertion's name in the check's output. */
   readonly fragment: string;
+  /** The check's baseline needs git metadata in the temp copy (e.g. deploy's tracked-files vetting). */
+  readonly needsGit?: boolean;
 }
 
 export const CONTROLS: readonly ControlDecl[] = [
@@ -110,6 +112,68 @@ export const CONTROLS: readonly ControlDecl[] = [
   },
   {
     id: "C9",
+    finding: "R19-15",
+    note: "SSH-operator and target-local scheduler ownership derive independently and the check demands equality, so a drift in one path fails it",
+    product: "tools/framework/commands/operate/schedule.ts",
+    search: `root = await realpath(deploymentDir());`,
+    replace: `root = "clawforge-drift";`,
+    check: "tools/checks/runtime/schedule/identity.check.ts",
+    fragment: "same-basename Windows task names differ",
+  },
+  {
+    id: "C11",
+    finding: "R19-18",
+    note: "the receipt writer/reader path is compared against the fixture, so a writer or reader that loses identity fails",
+    product: "tools/framework/set/artifacts/receipt.ts",
+    search: "    await handle.close();\n  }\n  return receipt;",
+    replace: "    await handle.close();\n  }\n  return { ...receipt, setName: `${receipt.setName}-drift` };",
+    check: "tools/checks/sets/artifact/set-receipt.check.ts",
+    fragment: "preserves the receipt",
+  },
+  {
+    id: "C10",
+    finding: "R19-15",
+    note: "the scheduler's crontab-update refusal keeps the exit code in the operator's text",
+    product: "tools/framework/commands/operate/schedule.ts",
+    search: "  return `could not update crontab on ${description} (exit ${code}): ${reason}`;",
+    replace: "  return `could not update crontab on ${description}: ${reason}`;",
+    check: "tools/checks/runtime/schedule/schedule.check.ts",
+    fragment: "account lock refusal reaches the operator",
+  },
+  {
+    id: "C12",
+    finding: "R19-18",
+    note: "the identity probe's evidence names the probe itself (id -u), not just the answer",
+    product: "tools/framework/commands/interface/host/contexts.ts",
+    search: "  return `the identity probe id -u answered uid ${uid} on ${description}`;",
+    replace: "  return `the identity probe answered uid ${uid} on ${description}`;",
+    check: "tools/checks/foundation/cli/host.check.ts",
+    fragment: "the refusal names where the uid answer came from",
+  },
+  {
+    id: "C13",
+    finding: "R18-19",
+    note: "the provision-agent recipe mirror copies asset bytes verbatim",
+    product: "tools/framework/commands/management/provision-agent/reconcile.ts",
+    search: "const content = await readFile(resolve(recipeDir, ...rel.split(\"/\")));",
+    replace: "const content = (await readFile(resolve(recipeDir, ...rel.split(\"/\")))).subarray(1);",
+    check: "tools/checks/runtime/lifecycle/recipe-portable-content.check.ts",
+    fragment: "byte-identical",
+    needsGit: true,
+  },
+  {
+    id: "C14",
+    finding: "R19-18",
+    note: "the deploy framework sync's rsync source is the checkout root itself",
+    product: "tools/framework/commands/management/deploy/sync.ts",
+    search: "    `${source}/`,\n",
+    replace: "    `${source.slice(0, source.lastIndexOf(\"/\"))}/`,\n",
+    check: "tools/checks/runtime/service/deploy/checkout-policy/checkout-policy.check.ts",
+    fragment: "used the checkout root",
+    needsGit: true,
+  },
+  {
+    id: "C15",
     finding: "R19-05",
     note: "a local tar invocation with an unnormalized -C path back inside the owner module",
     product: "tools/framework/set/artifacts/tar.ts",
@@ -119,7 +183,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     fragment: "unnormalized -C in the owner",
   },
   {
-    id: "C10",
+    id: "C16",
     finding: "R19-05",
     note: "path normalization removed from the owner's tar arguments",
     product: "tools/framework/set/artifacts/tar.ts",

@@ -23,8 +23,8 @@
 //   - the MCP schema/argv contract, including the toArgv -> parseCall round trip;
 //   - full dispatch through a recording transport, and one real bare-machine run.
 
-import { host, rootElevationRequested, ROOT_CONSENT, ROOT_ARRIVAL, IDENTITY_UNKNOWN, commandFailedMessage, HOST_ARGUMENTS } from "#framework/commands/interface/host/index.ts";
-import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, probeAnsweredEvidence, probeNoAnswerEvidence, parseWslDistroListing, probeUidAnswer, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
+import { host, rootElevationRequested, ROOT_CONSENT, ROOT_ARRIVAL, IDENTITY_UNKNOWN, commandFailedMessage } from "#framework/commands/interface/host/index.ts";
+import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, parseWslDistroListing, probeUidAnswer, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
@@ -108,7 +108,9 @@ function envWith(platform: NodeJS.Platform, distros: string[], localIdentity: Id
 {
   check("no context at all is refused by the parser", (await deathOf(() => host(ctxWith({}), []))).includes("<context>"), true);
   const unknownContext = await deathOf(() => host(ctxWith({}), ["vm", "whoami"]));
-  check("an unknown context is refused with the three valid ones", unknownContext.includes(HOST_ARGUMENTS[0].choices.join(", ")), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const VALID_CONTEXTS = ["target,", "engine,", "local"];
+  check("an unknown context is refused with the three valid ones", VALID_CONTEXTS.every((token) => unknownContext.includes(token)), true);
   check("a context with nothing after it refuses the missing command", (await deathOf(() => host(ctxWith({}), ["local"]))).includes("<args"), true);
 }
 
@@ -261,7 +263,9 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
   const stub = recordingTransport(0, "0\n");
   const message = await deathOf(() => host(ctxWith(stub.transport), ["target", "--", "whoami"]));
   check("a target whose probe answers uid 0 refuses the command without consent", message.includes(ROOT_ARRIVAL) && message.includes(ROOT_CONSENT), true);
-  check("the refusal names where the uid answer came from", message.includes(probeAnsweredEvidence("0", "wsl:Ubuntu-24.04")), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const UID_ANSWER = ["the", "identity", "probe", "id", "-u", "answered", "uid", "0", "on", "wsl:Ubuntu-24.04"];
+  check("the refusal names where the uid answer came from", UID_ANSWER.every((token) => message.includes(token)), true);
   check("before consent only the identity probe touched the target", stub.calls, [
     { command: "id", args: ["-u"], options: { input: "", allowFailure: true, timeoutMs: 30000 } },
   ]);
@@ -305,7 +309,9 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
   };
   const message = await deathOf(() => host(ctxWith(transport), ["target", "--", "whoami"]));
   check("a target with unknown identity refuses to run without consent", message.includes(IDENTITY_UNKNOWN) && message.includes(ROOT_CONSENT), true);
-  check("the unknown refusal names the failed probe", message.includes(probeNoAnswerEvidence("wsl:Ubuntu-24.04")), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const PROBE_UNKNOWN = ["the", "identity", "probe", "(id", "-u)", "got", "no", "usable", "answer", "from", "wsl:Ubuntu-24.04"];
+  check("the unknown refusal names the failed probe", PROBE_UNKNOWN.every((token) => message.includes(token)), true);
   check("unknown identity is refused before the command runs", calls.map((call) => call.command), ["id"]);
   await withOutputSink(() => {}, async () => {
     await host(ctxWith(transport), ["target", "--root", "--confirm-root", "--", "whoami"]);

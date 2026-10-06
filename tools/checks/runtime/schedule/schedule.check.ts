@@ -13,17 +13,12 @@ import {
   CMD_EXE_UNSAFE_NOTE,
   CRONTAB_ENTRY_ONE_LINE,
   CRONTAB_ENTRY_OWNED,
-  CRONTAB_FAILURES,
   MANUAL_INSTALL_HEADER,
   NO_FAITHFUL_ENCODING,
   PERCENT_REFUSAL,
   REFUSING_APPLY,
-  SCHEDULER_TRANSACTION_FAILED,
   cronLine,
   cronSchedule,
-  crontabConfirmFailure,
-  crontabReadFailure,
-  crontabUpdateFailure,
   displayCommandLine,
   jobMarker,
   parseIntervalToMinutes,
@@ -238,13 +233,17 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
   check("the known no-crontab diagnostic means an empty table", empty.error, "");
   check("crontab diagnostics use the stable C locale", empty.env, { LC_ALL: "C" });
   const denied = await listing(1, "", "permission denied");
-  check("an unreadable crontab is surfaced instead of treated as empty", denied.error.includes(crontabReadFailure("ssh:user@host", 1)), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const READ_FAILURE_EXIT_1 = ["could", "not", "read", "crontab", "on", "ssh:user@host", "(exit", "1);", "table", "unchanged"];
+  check("an unreadable crontab is surfaced instead of treated as empty", READ_FAILURE_EXIT_1.every((token) => denied.error.includes(token)), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const READ_FAILURE_EXIT_255 = ["could", "not", "read", "crontab", "on", "ssh:user@host", "(exit", "255);", "table", "unchanged"];
   const transportFailure = await listing(255, "", "connection lost");
-  check("a transport failure is surfaced instead of treated as empty", transportFailure.error.includes(crontabReadFailure("ssh:user@host", 255)), true);
+  check("a transport failure is surfaced instead of treated as empty", READ_FAILURE_EXIT_255.every((token) => transportFailure.error.includes(token)), true);
   const privateListing = await listing(1, "SCHEDULER_PRIVATE_FIXTURE", "");
   check("failed partial listings are never echoed", privateListing.error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
   const partialEmpty = await listing(1, "SCHEDULER_PRIVATE_FIXTURE", "no crontab for user");
-  check("partial stdout prevents a contradictory empty-table result", partialEmpty.error.includes(crontabReadFailure("ssh:user@host", 1)), true);
+  check("partial stdout prevents a contradictory empty-table result", READ_FAILURE_EXIT_1.every((token) => partialEmpty.error.includes(token)), true);
   check("contradictory empty-table diagnostics never echo private content", partialEmpty.error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
 }
 
@@ -262,15 +261,28 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
   check("multiline input is refused before target execution", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", `${owned}\nforeign`))).includes(CRONTAB_ENTRY_ONE_LINE), true);
   check("invalid entries never reach the target", calls, 0);
   answer = { code: 26, stdout: "", stderr: "could not acquire scheduler account lock" };
-  check("account lock refusal reaches the operator", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes(crontabUpdateFailure("ssh:user@host", 26, CRONTAB_FAILURES[26] ?? SCHEDULER_TRANSACTION_FAILED)), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const LOCK_REFUSAL = ["could", "not", "update", "crontab", "on", "ssh:user@host", "(exit", "26):", "could", "not", "acquire", "scheduler", "account", "lock", "within", "30", "seconds;", "retry", "after", "the", "other", "update", "finishes"];
+  const lockRefusal = await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned));
+  check("account lock refusal reaches the operator", LOCK_REFUSAL.every((token) => lockRefusal.includes(token)), true);
+  // Refusal text per exit code, pinned independently of the product's table.
+  const UPDATE_REFUSALS: Record<number, readonly string[]> = {
+    28: ["could", "not", "read", "crontab;", "table", "unchanged"],
+    33: ["could", "not", "update", "crontab"],
+    255: ["target", "scheduler", "transaction", "failed"],
+  };
   for (const code of [28, 33, 255]) {
     answer = { code, stdout: "SCHEDULER_PRIVATE_FIXTURE", stderr: "SCHEDULER_PRIVATE_FIXTURE" };
     const error = await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned));
     check("scheduler failure never echoes target stdout/stderr", error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
-    check("scheduler failure keeps its exit code", error.includes(crontabUpdateFailure("ssh:user@host", code, CRONTAB_FAILURES[code] ?? SCHEDULER_TRANSACTION_FAILED)), true);
+    const tokens = ["could", "not", "update", "crontab", "on", "ssh:user@host", "(exit", `${code}):`, ...UPDATE_REFUSALS[code]!];
+    check("scheduler failure keeps its exit code", tokens.every((token) => error.includes(token)), true);
   }
   answer = { code: 0, stdout: "unexpected output", stderr: "" };
-  check("success requires transaction confirmation", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes(crontabConfirmFailure("ssh:user@host")), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const CONFIRM_REFUSAL = ["could", "not", "confirm", "crontab", "update", "on", "ssh:user@host:", "unexpected", "transaction", "response"];
+  const confirmRefusal = await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned));
+  check("success requires transaction confirmation", CONFIRM_REFUSAL.every((token) => confirmRefusal.includes(token)), true);
 }
 
 

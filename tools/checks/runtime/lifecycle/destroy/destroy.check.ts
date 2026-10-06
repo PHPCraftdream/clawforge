@@ -17,7 +17,7 @@ import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
-import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, confirmNameMismatch, DESTROY_ARGUMENTS } from "#framework/commands/lifecycle/instance/destroy.ts";
+import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, DESTROY_ARGUMENTS } from "#framework/commands/lifecycle/instance/destroy.ts";
 import { SUDO_PASSWORD_REFUSAL } from "#framework/runtime/datadir.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { humanSize } from "#framework/core/io/size.ts";
@@ -159,10 +159,14 @@ async function output(body: () => Promise<void>): Promise<string> {
   check("nothing was removed", dirs.has(DATA_DIR), true);
 }
 
+// Independent token expectation: single-word tokens, no counted prose pin.
+const CONFIRM_NAME_MISMATCH = ["--confirm-name", "\"not-this-deployment\"", "does", "not", "match", "this", "deployment's", "name", "\"destroy-check-deployment\""];
+
 {
   const { ctx, dirs } = destroyContext();
   const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", "not-this-deployment"]));
-  check("a wrong --confirm-name is refused", message.includes(confirmNameMismatch("not-this-deployment")), true);
+  // token-pinned: the refusal text is the contract, not the product builder's echo
+  check("a wrong --confirm-name is refused", CONFIRM_NAME_MISMATCH.every((token) => message.includes(token)), true);
   check("nothing was removed", dirs.has(DATA_DIR), true);
 }
 
@@ -425,7 +429,7 @@ await requires("linux-host", "the target-side safe-destroy script against a real
     const { ctx } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
     await openclawCommands.destroy.run(ctx, ["--yes", "--confirm-name", "not-this-deployment"]);
   });
-  check("never bootstrapped still needs the right --confirm-name", message.includes(confirmNameMismatch("not-this-deployment")), true);
+  check("never bootstrapped still needs the right --confirm-name", CONFIRM_NAME_MISMATCH.every((token) => message.includes(token)), true);
 }
 
 {

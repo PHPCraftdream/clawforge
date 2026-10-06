@@ -12,8 +12,7 @@ import { compareLock, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, P
 import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
-import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList, pluginReinstall, skillReinstall, inventoryPrefix, NEVER_BOOTSTRAPPED_HINT, NOT_RUNNING_HINT, UNKNOWN_INVENTORY_TAIL, NO_LONGER_INSTALLED, REVIEW_BEFORE_REMOVAL } from "#framework/commands/management/extensions.ts";
-import { renderAdvice } from "#framework/core/io/invocation/render.ts";
+import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList, inventoryPrefix, NEVER_BOOTSTRAPPED_HINT, NOT_RUNNING_HINT, UNKNOWN_INVENTORY_TAIL, NO_LONGER_INSTALLED, REVIEW_BEFORE_REMOVAL } from "#framework/commands/management/extensions.ts";
 import type { LockPlugin, LockSkill } from "#framework/commands/management/extensions.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -234,7 +233,9 @@ check(
     const found = compareLock(withExtensions([lockedPlugin], []), withExtensions([], []));
     check("a plugin removed since the lock is drift", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
     check("saying it is no longer installed", found[0].detail.includes(NO_LONGER_INSTALLED), true);
-    check("and naming the reinstall command", found[0].detail.includes(renderAdvice(pluginReinstall("@acme/tool", "1.0.0"))), true);
+    // Independent token expectation: single-word tokens, no counted prose pin.
+    const PLUGIN_REINSTALL = ["./clawforge", "cli", "plugins", "install", "@acme/tool@1.0.0", "--force"];
+    check("and naming the reinstall command", PLUGIN_REINSTALL.every((token) => found[0].detail.includes(token)), true);
   }
 
   {
@@ -252,7 +253,9 @@ check(
   {
     const found = compareLock(withExtensions([], [lockedSkill]), withExtensions([], []));
     check("a skill removed since the lock is drift", found.map((entry) => entry.code), ["SKILL_DRIFT"]);
-    check("naming the reinstall command", found[0].detail.includes(renderAdvice(skillReinstall("acme-skill"))), true);
+    // Independent token expectation: single-word tokens, no counted prose pin.
+    const SKILL_REINSTALL = ["./clawforge", "cli", "skills", "install", "acme-skill", "--force"];
+    check("naming the reinstall command", SKILL_REINSTALL.every((token) => found[0].detail.includes(token)), true);
   }
 
   {

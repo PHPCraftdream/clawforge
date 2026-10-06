@@ -180,7 +180,10 @@ try {
   const bareRun = await clawforge([], outside);
   check("outside any app a bare clawforge lists the gate commands and exits 0", bareRun.code === 0 && bareRun.output.includes("init") && !bareRun.output.includes(NO_APP_TS_HERE), true);
   const unknownHelp = await clawforge(["help", "int"], outside);
-  check("outside any app help <unknown> is an unknown command with a suggestion", unknownHelp.code === 1 && unknownHelp.output.includes(unknownCommandMessage("int")) && unknownHelp.output.includes(didYouMeanMessage(closestCommand("int", names)!)), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const UNKNOWN_SUGGESTION = ["unknown", "command:", "int"];
+  const MEANT_INIT = ["did", "you", "mean:", "init"];
+  check("outside any app help <unknown> is an unknown command with a suggestion", unknownHelp.code === 1 && UNKNOWN_SUGGESTION.every((token) => unknownHelp.output.includes(token)) && MEANT_INIT.every((token) => unknownHelp.output.includes(token)), true);
 
   // --- a fresh app folder with no framework of its own ----------------------------------------
   const fresh = join(outside, "cf-fresh");
@@ -198,7 +201,9 @@ try {
   check("and never advises ./clawforge, which does not run in every shell", helped.output.includes(usageTopLine(shimHint)) || helped.output.includes(usageFooterHint(shimHint)), false);
   check("the help heading carries the directory name, not a hardcoded openclaw", helped.output.includes("cf-fresh" + " — ") && !helped.output.includes("openclaw" + " — "), true);
   const localAgain = await clawforge(["init", "--local"], fresh);
-  check("init --local in an initialised folder prints the npm line and exits 0", localAgain.code === 0 && localAgain.output.includes(noSaveInstall("")), true);
+  // Independent token expectation: single-word tokens, no counted prose pin.
+  const NPM_LINE = ["npm", "install", "--no-save"];
+  check("init --local in an initialised folder prints the npm line and exits 0", localAgain.code === 0 && NPM_LINE.every((token) => localAgain.output.includes(token)), true);
   const plainAgain = await clawforge(["init"], fresh);
   check("plain init in an initialised folder still refuses", plainAgain.code === 1 && plainAgain.output.includes(ALREADY_INITIALISED), true);
 

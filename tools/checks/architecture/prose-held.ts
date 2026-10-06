@@ -1,18 +1,18 @@
 // Narrow token measurement for held prose pins; comments and descriptions never become code.
-type Token = { kind: "id" | "str" | "regex" | "p"; text: string };
-function tokensOf(source: string): Token[] {
+export type Token = { kind: "id" | "str" | "regex" | "p"; text: string; at: number };
+export function tokensOf(source: string): Token[] {
   const out: Token[] = [];
   for (let i = 0; i < source.length;) {
     const c = source[i] ?? "";
     if (/\s/.test(c)) { i += 1; continue; }
     if (source.startsWith("//", i)) { const e = source.indexOf("\n", i + 2); i = e < 0 ? source.length : e + 1; continue; }
     if (source.startsWith("/*", i)) { const e = source.indexOf("*/", i + 2); i = e < 0 ? source.length : e + 2; continue; }
-    if (c === "'" || c === '"' || c === "`") { let j = i + 1; let v = ""; while (j < source.length && source[j] !== c) { if (source[j] === "\\") { v += source[j + 1] ?? ""; j += 2; } else v += source[j++]; } out.push({ kind: "str", text: v }); i = j + 1; continue; }
+    if (c === "'" || c === '"' || c === "`") { let j = i + 1; let v = ""; while (j < source.length && source[j] !== c) { if (source[j] === "\\") { v += source[j + 1] ?? ""; j += 2; } else v += source[j++]; } out.push({ kind: "str", text: v, at: i }); i = j + 1; continue; }
     const previous = out[out.length - 1];
     const regexMayStart = previous === undefined || (previous.kind === "p" && ["(", ",", ":", "=", "!", "?", "[", "{", ";", "|", "&"].includes(previous.text));
-    if (c === "/" && regexMayStart) { let j = i + 1; let v = ""; let cls = false; while (j < source.length && (source[j] !== "/" || cls)) { if (source[j] === "\\") { v += source[j] + (source[j + 1] ?? ""); j += 2; continue; } if (source[j] === "[") cls = true; if (source[j] === "]") cls = false; v += source[j++]; } if (source[j] === "/") { j += 1; while (/[a-z]/i.test(source[j] ?? "")) j += 1; out.push({ kind: "regex", text: v }); i = j; continue; } }
-    if (/[A-Za-z_$]/.test(c)) { let j = i + 1; while (/[\w$]/.test(source[j] ?? "")) j += 1; out.push({ kind: "id", text: source.slice(i, j) }); i = j; continue; }
-    out.push({ kind: "p", text: c }); i += 1;
+    if (c === "/" && regexMayStart) { let j = i + 1; let v = ""; let cls = false; while (j < source.length && (source[j] !== "/" || cls)) { if (source[j] === "\\") { v += source[j] + (source[j + 1] ?? ""); j += 2; continue; } if (source[j] === "[") cls = true; if (source[j] === "]") cls = false; v += source[j++]; } if (source[j] === "/") { j += 1; while (/[a-z]/i.test(source[j] ?? "")) j += 1; out.push({ kind: "regex", text: v, at: i }); i = j; continue; } }
+    if (/[A-Za-z_$]/.test(c)) { let j = i + 1; while (/[\w$]/.test(source[j] ?? "")) j += 1; out.push({ kind: "id", text: source.slice(i, j), at: i }); i = j; continue; }
+    out.push({ kind: "p", text: c, at: i }); i += 1;
   }
   return out;
 }

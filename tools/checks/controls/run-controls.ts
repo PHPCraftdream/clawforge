@@ -104,6 +104,21 @@ export async function copyRepo(repoRoot: string, tempRoot: string): Promise<void
   }
 }
 
+/** Git metadata for the temp copy, when a control's check vets against tracked files.
+ *  `git ls-files` needs only the index, but the sensitive-name vetting also hashes committed
+ *  blobs (`git ls-tree -r HEAD`) and treats staged paths as dirty — so one throwaway commit. */
+async function initGitIndex(tempRoot: string): Promise<void> {
+  const steps: readonly (readonly string[])[] = [
+    ["init", "-q"],
+    ["add", "-A"],
+    ["-c", "user.email=check@invalid", "-c", "user.name=check", "commit", "-qm", "init"],
+  ];
+  for (const args of steps) {
+    const git = await runProcess("git", [...args], { cwd: tempRoot, timeoutMs: 60_000 });
+    if (git.code !== 0) throw new Error(`git ${args.join(" ")} failed in the temp copy: ${git.output}`);
+  }
+}
+
 /** A declared path is only usable when it names a real file inside the copy, reached through
  *  real directories: not absolute, not outside, not an excluded root, never across the
  *  node_modules junction or any other symlink. */
@@ -212,6 +227,7 @@ export async function runControls(
   const tempRoot = await mkdtemp(join(tmpdir(), "clawforge-controls-"));
   try {
     await copyRepo(repoRoot, tempRoot);
+    if (controls.some((control) => control.needsGit === true)) await initGitIndex(tempRoot);
     const copyMs = Date.now() - copyStart;
     const baselineStart = Date.now();
     const baselines = new Map<string, CheckRun>();

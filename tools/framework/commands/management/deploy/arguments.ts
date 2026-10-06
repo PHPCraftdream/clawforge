@@ -2,7 +2,8 @@
 // parsed --target/--path/--adopt/--no-bootstrap, and the two remote paths derived from them.
 
 import { die } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
+import { renderAdvice, shimInvocation } from "#src/core/io/invocation/render.ts";
+import { command, shellLine } from "#src/core/io/invocation/advice.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
 import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
@@ -40,13 +41,18 @@ export const INSTALLED_PACKAGE_MODE = "the framework is running from an installe
 
 export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<string> {
   if (!(await isMonorepoCheckout(root))) {
+    // The bootstrap line runs on the SERVER, so it is spelled for that host, not for
+    // wherever this run stands (rf6-fix33): the shim's own spelling — under a Windows
+    // local-package copy this run's program names a node_modules wrapper the server has
+    // none of. A shell row, so no surface re-spells it for the local invocation.
     die(
       "deploy mirrors a ClawForge checkout to the server with rsync, and there is no " +
         `checkout here — ${INSTALLED_PACKAGE_MODE}\n` +
         "Deploying in this mode means installing @clawforge/framework on the server and " +
         "sending only this deployment's own files, which is a different command and does " +
         "not exist yet. Deploy from a checkout, or copy this deployment's directory across " +
-        `and run ${commandLine("bootstrap")} there.`,
+        "and run the bootstrap there:",
+      shellLine("posix", renderAdvice(command("bootstrap"), shimInvocation())),
     );
   }
   return root;

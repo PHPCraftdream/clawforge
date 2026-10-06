@@ -11,7 +11,7 @@ import { createRequire, registerHooks } from "node:module";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { INVOCATION_ENV, invocation, serializeInvocation } from "../core/io/invocation/index.ts";
+import { INVOCATION_ENV, invocation, serializeInvocation, type Invocation } from "../core/io/invocation/index.ts";
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
@@ -61,13 +61,15 @@ function runInstead(entry: string, args: string[], flag: boolean): never {
  *  spells the gate from there for the copy this run is (the at mark re-roots it), and row
  *  2 is the bash shim's own spelling, dropped when it duplicates row 1 — the same frame
  *  rule as entry/resolve.ts's checkout refusals. */
-export function appConflictRefusal(decision: { readonly typed: string; readonly app: string }): UserError {
+export function appConflictRefusal(decision: { readonly typed: string; readonly app: string }, frame: Invocation): UserError {
+  // The frame arrives from the caller (bin.ts's one source, rf6-fix33): the bash row's
+  // drop decision and the typed name's quoting spell it, no process-global read.
   const advice: Advice[] = [command([], { app: decision.typed, at: "checkout-root" })];
-  if (checkoutRootProgram(invocation().program) !== SHIM_PROGRAM) {
+  if (checkoutRootProgram(frame.program) !== SHIM_PROGRAM) {
     advice.push(shellLine("posix", renderAdvice(command([], { app: decision.typed }), shimInvocation()), { note: IN_BASH_NOTE }));
   }
   return new UserError(
-    `--app ${renderArgument(decision.typed, invocation().program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — ${APP_CONFLICT_FROM_ROOT}:`,
+    `--app ${renderArgument(decision.typed, frame.program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — ${APP_CONFLICT_FROM_ROOT}:`,
     { advice },
   );
 }
@@ -76,7 +78,7 @@ export function appConflictRefusal(decision: { readonly typed: string; readonly 
  *  only when this package is the one to run. `launchArgv` is passed on untouched to a local
  *  install (same entry point), `argv` (without --project-root) to a checkout gate. Which
  *  copy that is — the decision — is entry/resolve.ts's; here only the effects remain. */
-export function delegateToOwnFramework(self: string, appRoot: string, launchArgv: string[], argv: string[], handedOver: boolean): void {
+export function delegateToOwnFramework(self: string, appRoot: string, launchArgv: string[], argv: string[], handedOver: boolean, frame: Invocation): void {
   const decision = frameworkOwner({ self, appRoot, launchArgv, argv, handedOver, platform: process.platform, fs: nodeFs, localEntry: localEntry(appRoot) });
   if (decision.kind === "run-here") return;
   if (decision.kind === "spawn") {
@@ -91,7 +93,7 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
     reportError(decision.message);
     process.exit(1);
   }
-  reportError(appConflictRefusal(decision));
+  reportError(appConflictRefusal(decision, frame));
   process.exit(1);
 }
 

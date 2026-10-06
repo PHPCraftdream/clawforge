@@ -3,6 +3,7 @@
 // the deployment's own config/, an arbitrary checkout subtree), one required outcome — refuse
 // before any remote command — plus the scan's own failure and skip rules.
 
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,7 +15,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe } from "#checks/runtime/service/deploy/fixture.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 // --- the sensitive-name policy refuses too ----------------------------------------
 //
@@ -336,6 +337,10 @@ import { check, finish } from "#checks/kit/harness.ts";
       );
     } finally {
       if (planted) await rm(claudeScratch, { recursive: true, force: true });
+      // Asserted, not assumed: the run guard now sees inside .claude/ (rf6-fix33), so a
+      // leftover here would fail the next run's snapshot diff on its own — this names the
+      // fixture as the cause in the same run.
+      checkTrue("the .claude/ fixture cleaned up after itself", !existsSync(claudeScratch));
     }
   }
 

@@ -127,6 +127,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\
   // RepoDigests always reports — the channel survives only because bootstrap rejoins it.
   check(".env is rewritten to the digest the tag just proved, WITH the tag kept alongside it", imageValue(envNow), PINNED_WITH_TAG);
   check("bootstrap says so", output.includes(PINNED_WITH_TAG) && output.includes("pinned"), true);
+  check("the running image line reports the same pinned string as .env", output.split("running image: ")[1]?.split(String.fromCharCode(10))[0]?.trim(), PINNED_WITH_TAG);
   check("and names ./clawforge upgrade as how to move it from here", output.includes("./clawforge upgrade"), true);
   // Bootstrap's own final summary also reads imageReference() (to report "running image: …"),
   // unconditionally and unrelated to this pin — so the pin is what pushed the count to two,

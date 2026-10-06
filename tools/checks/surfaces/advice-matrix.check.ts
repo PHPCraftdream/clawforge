@@ -15,12 +15,13 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
-import { FROM_CHECKOUT_ROOT, IN_BASH_NOTE, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
+import { FROM_CHECKOUT_ROOT, IN_BASH_NOTE, handoverArgv, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { CHECKOUT_ROOT_NOTE, DISPATCHER_COMMANDS } from "#framework/integration/gate.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type Advice, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { checkoutRootProgram, renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { CWD_CONFLICT_NOTE, renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
@@ -56,11 +57,13 @@ function expectedApp(advice: CommandAdvice, on: Invocation, gateWords: ReadonlyS
   return inheritedApp(on);
 }
 
-/** The line without its trailing note, so the token split below reads the command only. */
+/** The line without its trailing note, so the token split below reads the command only.
+ *  A paste-conflict row's note is the renderer's own (rf6-fix33), not the advice's, so it
+ *  is stripped whatever the advice carries. */
 function withoutNote(line: string, advice: CommandAdvice): string {
-  if (advice.note === undefined) return line;
-  const suffix = `  (${advice.note})`;
-  return line.endsWith(suffix) ? line.slice(0, -suffix.length) : line;
+  const suffixes = advice.note === undefined ? [`  (${CWD_CONFLICT_NOTE})`] : [`  (${advice.note})`, `  (${advice.note})  (${CWD_CONFLICT_NOTE})`];
+  for (const suffix of suffixes) if (line.endsWith(suffix)) return line.slice(0, -suffix.length);
+  return line;
 }
 
 // The gate as the checkout root builds it plus the installed entry's init, one list from
@@ -93,7 +96,9 @@ for (const { label, advice } of ADVICE_ROWS) {
     // A checkout-root row re-roots the program by design (rf6-fix30): the sentence names
     // the checkout root, so the opener is the root spelling, not the column cwd spelling.
     const rooted = advice.at === "checkout-root";
-    const opener = rooted ? checkoutRootProgram(column.invocation.program) : column.invocation.program;
+    // An install row is spelled for the shell that pastes it, so its opener is the
+    // column program re-spelled portably — backslashes out (rf6-fix33's completion rows).
+    const opener = rooted ? column.rootProgram : advice.install === true ? column.invocation.program.split(String.fromCharCode(92)).join("/") : column.invocation.program;
     checkTrue(`${where}: opens with ${rooted ? "the checkout root program" : "the program as typed"}`, words[0] === opener);
     const flags = words.slice(1).filter((word) => word === APP_FLAG);
     checkTrue(`${where}: at most one ${APP_FLAG}`, flags.length <= 1);
@@ -371,6 +376,44 @@ for (const { label, advice } of ADVICE_ROWS) {
   checkTrue(`${label}: ${word} parses${problem === undefined ? "" : ` — ${problem}`}`, problem === undefined);
 }
 
+/** A row naming a deployment the cwd's selection does not, under a cwd-resolving program,
+ *  is refused as an app conflict when pasted where the run stands (rf6-fix33): from
+ *  apps/alpha with the global hand-over, new-app's next step used to print `clawforge --app
+ *  delta bootstrap --check`, and pasting it in apps/alpha refused it. The conflict refusal's
+ *  own remedy is the checkout root, so the row must be spelled from there, note included.
+ *  Pasted at the root, its argv runs the named deployment. */
+{
+  setInvocation({ program: "clawforge", mode: "installed", audience: "terminal", app: { name: "alpha", selectedBy: "cwd" } });
+  const line = renderAdvice(command(["bootstrap", "--check"], { app: "delta" }));
+  check("a row naming another deployment than the cwd's spells the checkout root's program", line.split(" ").slice(0, 5), ["clawforge", "--app", "delta", "bootstrap", "--check"]);
+  const note = line.slice(line.lastIndexOf("(") + 1, -1);
+  check("...and says where it pastes", note.split(" "), ["from", "the", "checkout", "root"]);
+  const atRoot = resolveCheckoutEntry({ root: TREE_ROOT, cwd: TREE_ROOT, argv: ["--app", "delta", "bootstrap", "--check"], ocApp: undefined, handedOver: false, fs: treeFs, gateCommands: [], deploymentCommands: ["bootstrap", "up"], variadicCommands: [] });
+  check("pasted at the root, the row's argv runs the deployment it names", atRoot.kind === "run" ? atRoot.appName : atRoot.kind, "delta");
+  const paste = handoverArgv("alpha", ["--app", "delta", "bootstrap", "--check"]);
+  check("pasted inside apps/alpha, the same argv is an app conflict — why the row re-roots", "refuse" in paste ? paste.refuse : "ok", "app-conflict");
+  setInvocation(CHECKOUT_ROOT);
+}
+
+/** The gate-command decision and the run decision render the same typed `--app` the same
+ *  way (rf6-fix33): `--app demo check --help` resolves as a gate command, `--app demo help
+ *  check` as a run — both must carry the app fact, so a prose hint spells it identically
+ *  under either spelling. */
+{
+  const gate = resolveCheckoutEntry({ root: TREE_ROOT, cwd: TREE_ROOT, argv: ["--app", "demo", "check", "--help"], ocApp: undefined, handedOver: false, fs: treeFs, gateCommands: ["check"], deploymentCommands: ["bootstrap", "up"], variadicCommands: [] });
+  const run = resolveCheckoutEntry({ root: TREE_ROOT, cwd: TREE_ROOT, argv: ["--app", "demo", "help", "check"], ocApp: undefined, handedOver: false, fs: treeFs, gateCommands: ["check"], deploymentCommands: ["bootstrap", "up"], variadicCommands: [] });
+  const appOf = (decision: ReturnType<typeof resolveCheckoutEntry>): { name: string; selectedBy: string } | undefined =>
+    decision.kind === "gate-command" || decision.kind === "run" ? (decision.app as { name: string; selectedBy: string } | undefined) : undefined;
+  check("the gate-command decision carries the app fact", appOf(gate), { name: "demo", selectedBy: "flag" });
+  check("the run decision carries the same app fact", appOf(run), { name: "demo", selectedBy: "flag" });
+  const checkHelp = checkoutGateCommands.find((gate) => gate.name === "check")?.details ?? "";
+  const gateFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", ...(appOf(gate) === undefined ? {} : { app: appOf(gate) as Invocation["app"] }) };
+  const runFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", ...(appOf(run) === undefined ? {} : { app: appOf(run) as Invocation["app"] }) };
+  const proseWords = renderProse(checkHelp, gateFrame).split(" ");
+  checkTrue("the check help's prose names the app under the gate-command frame", proseWords.includes("--app") && proseWords.includes("demo"));
+  check("both spellings of the same typed --app render the same prose", renderProse(checkHelp, gateFrame), renderProse(checkHelp, runFrame));
+}
+
 /** Key-order-independent JSON, so the law compares values, not declaration order. */
 function canon(value: Record<string, unknown>): string {
   return JSON.stringify(value, Object.keys(value).sort());
@@ -445,8 +488,12 @@ const checkPlaceRow = (label: string, advice: Advice): void => {
     return;
   }
   for (const column of PLACE_COLUMNS) {
-    const cell = renderAdvice(advice, column.invocation);
-    const root = renderProgram({ ...column.invocation, program: checkoutRootProgram(column.invocation.program) });
+    const rendered = renderAdvice(advice, column.invocation);
+    // A paste-conflict row carries the renderer's own note (rf6-fix33); the command words
+    // are read without it.
+    const noteSuffix = `  (${CWD_CONFLICT_NOTE})`;
+    const cell = rendered.endsWith(noteSuffix) ? rendered.slice(0, -noteSuffix.length) : rendered;
+    const root = renderProgram({ ...column.invocation, program: column.rootProgram });
     check(`${label}: spells the checkout root's program for its column`, cell.split(" ")[0], root);
     // After the program and its one optional `--app <name>` pair, what remains must be a
     // command the gate dispatches at the root — its own, a dispatcher's, or a deployment's.

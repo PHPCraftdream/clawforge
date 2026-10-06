@@ -120,6 +120,27 @@ export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot)
   return changes;
 }
 
+/** Enumerates the files under one collapsed "!! dir/" line (rf6-fix33): git collapses a wholly
+ *  ignored directory to a single line in both passes — --ignored=matching with -uall
+ *  included — so a leftover INSIDE an existing .claude/ or secrets/ never reached the diff.
+ *  Directories themselves are not listed; their files are. A symlink is recorded by target,
+ *  never followed, the same rule the apps/ walk above applies.
+ */
+async function listIgnoredFiles(absolute: string, display: string): Promise<readonly string[]> {
+  let entries;
+  try {
+    entries = await readdir(absolute, { withFileTypes: true });
+  } catch {
+    return []; // vanished between git and the walk: the next pass's diff tells that story
+  }
+  const lines: string[] = [];
+  for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    if (entry.isSymbolicLink() || entry.isFile()) lines.push(`!! ${display}${entry.name}`);
+    else if (entry.isDirectory()) lines.push(...(await listIgnoredFiles(join(absolute, entry.name), `${display}${entry.name}/`)));
+  }
+  return lines;
+}
+
 // Recursively lists everything below `root` (default: the real checkout's apps/), so a write
 // INSIDE an existing app — invisible to top-level names and to --porcelain — is still caught.
 export async function snapshotCheckout(root: string = resolve(monorepoRoot, "apps")): Promise<CheckoutSnapshot> {
@@ -156,13 +177,21 @@ export async function snapshotCheckout(root: string = resolve(monorepoRoot, "app
   );
   // Only the ignored entries: the tracked and untracked halves are gitStatus's story, and
   // a file changing mid-run must not be reported twice by one guard. The pathspec excludes
-  // prune the walk, but git still answers with one collapsed line for a wholly-ignored
-  // directory — dropped here too, so a pruned root can never read as a new leftover.
+  // prune the walk; git's own collapsed line for a wholly-ignored directory is walked to
+  // its files, so the guard is file-granular inside .claude/ and friends (rf6-fix33) — and
+  // a pruned root still can never read as a new leftover.
   const ignoredEntries = ignored.error === undefined
-    ? ignored.stdout
-      .split("\n")
-      .filter((line) => line.startsWith("!!") && !IGNORED_STATUS_EXCLUDES.some((root) => line.startsWith("!! " + root + "/")))
-      .join("\n")
+    ? [
+      ...(await (async (): Promise<readonly string[]> => {
+        const expanded: string[] = [];
+        for (const line of ignored.stdout.split("\n").filter((entry) => entry.startsWith("!!"))) {
+          const path = line.slice("!! ".length);
+          if (IGNORED_STATUS_EXCLUDES.some((root) => path === `${root}/` || path.startsWith(`${root}/`))) continue;
+          expanded.push(...(path.endsWith("/") ? await listIgnoredFiles(resolve(monorepoRoot, path), path) : [line]));
+        }
+        return expanded;
+      })()),
+    ].join("\n")
     : undefined;
   return { apps, gitStatus: git.error === undefined ? git.stdout : undefined, ignoredStatus: ignoredEntries };
 }

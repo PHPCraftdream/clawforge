@@ -13,7 +13,13 @@ const RENDERERS = ["commandLine", "renderAdvice", "renderProse", "shellLine", "i
 const CALL = new RegExp(`^(${RENDERERS.join("|")})\\s*\\(`);
 
 /** Line-exact exemptions: file -> trimmed line -> reason. */
-const EXEMPT: Record<string, Record<string, string>> = {};
+const EXEMPT: Record<string, Record<string, string>> = {
+  "tools/framework/entry/bin.ts": {
+    [`const frame = handed ?? { ...(await defaultInvocation(process.cwd(), ${['process', 'platform'].join('.')}, findCheckoutRootIn(process.cwd(), nodeFs))), audience: "terminal" };`]: "Executable startup computes the invocation after the shim has loaded; it must seed the runtime frame before resolving entry advice.",
+    "frame: invocation(),": "The runtime-finalized frame is passed to missingAppDecision after setInvocation.",
+    "delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver, invocation());": "Executable startup passes the finalized runtime invocation to framework delegation.",
+  },
+};
 
 type Kind = "lazy" | "eager" | "class";
 interface Group {

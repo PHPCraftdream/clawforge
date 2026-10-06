@@ -12,6 +12,7 @@
 import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { log, UserError } from "#src/core/io/log.ts";
+import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck } from "#src/commands/check-outcome.ts";
 import { createBackup } from "#src/commands/lifecycle/backup/index.ts";
@@ -32,7 +33,10 @@ async function reachVerdict<T>(doing: string, call: () => Promise<T>): Promise<T
   try {
     return await call();
   } catch (error) {
-    if (error instanceof UserError) throw error;
+    // The transport refusal is a UserError now (rf6-fix33); the wrap below still answers
+    // it, because could-not-check is exactly its verdict — about the connection, not the
+    // deployment. Only a deployment's own die() is rethrown as a verdict.
+    if (error instanceof UserError && !(error instanceof TransportUnreachableError)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     throw new CouldNotCheck(`could not ${doing}: ${message}`);
   }
@@ -77,8 +81,10 @@ export const ACCEPTS_SHARE_ENTRY: Check = {
       await pullSnapshot(ctx, "share", { purpose: "internal" });
     } catch (error) {
       // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
-      // unreachable instance. Anything else never got far enough to judge anything.
-      if (error instanceof UserError) throw error;
+      // unreachable instance. Anything else never got far enough to judge anything. The
+      // transport refusal is a UserError now (rf6-fix33) but stays not-a-verdict: the wrap
+      // below answers it.
+      if (error instanceof UserError && !(error instanceof TransportUnreachableError)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       throw new CouldNotCheck(`could not take a share snapshot: ${message}`);
     }
@@ -353,7 +359,9 @@ export async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>
         // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
         // unreachable instance. Anything else never got far enough to judge anything. Same
         // distinction the standalone check draws.
-        shareError = error instanceof UserError ? error : new CouldNotCheck(`could not take a share snapshot: ${describeError(error)}`);
+        shareError = error instanceof UserError && !(error instanceof TransportUnreachableError)
+          ? error
+          : new CouldNotCheck(`could not take a share snapshot: ${describeError(error)}`);
       }
     }
 

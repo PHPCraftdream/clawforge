@@ -6,11 +6,13 @@
 // changes neither top-level names nor `git status --porcelain`, so only a recursive listing
 // can catch it.
 
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { diffSnapshots, snapshotCheckout, type AppsEntry, type CheckoutSnapshot } from "../run.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 import { parseCaseSkips } from "./gate.ts";
 
 // --- parseCaseSkips: the same shape the runner already prints for skipped files ---------------
@@ -143,6 +145,39 @@ check(
     );
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+}
+
+{
+  // A leftover INSIDE an existing ignored directory: git collapses a wholly-ignored
+  // directory to one `!! dir/` line in both passes, so only a walk of the directory's
+  // files catches the new file (rf6-fix33). Real root — the ignored pass runs against
+  // this checkout's git. The fixture cleans up after itself and says so: the guard now
+  // sees inside .claude/, so a leftover here would fail the next run's diff.
+  const claudeDir = resolve(monorepoRoot, ".claude");
+  const existing = resolve(claudeDir, "settings.local.json");
+  const scratch = resolve(claudeDir, "clawforge-deploy-policy-scratch");
+  const hadExisting = existsSync(existing);
+  try {
+    if (!hadExisting) {
+      await mkdir(claudeDir, { recursive: true });
+      await writeFile(existing, "{}\n");
+    }
+    const before = await snapshotCheckout();
+    await mkdir(scratch, { recursive: true });
+    await writeFile(resolve(scratch, "unrelated.secrets.env"), "SECRET\n");
+    const after = await snapshotCheckout();
+    const changed = diffSnapshots(before, after)
+      .filter((line) => { const tokens = line.split(" "); return tokens[0] === "git" && tokens[1] === "ignored"; })
+      .flatMap((line) => {
+        const payload = line.split(": ").slice(1).join(": ");
+        return payload.split(" ")[0] === "!!" ? [payload.slice(3)] : [];
+      });
+    check("a leftover inside an existing ignored directory is named", changed, [".claude/clawforge-deploy-policy-scratch/unrelated.secrets.env"]);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+    if (!hadExisting) await rm(existing, { force: true });
+    checkTrue("the .claude fixture cleaned up after itself", !existsSync(scratch) && (hadExisting || !existsSync(existing)));
   }
 }
 

@@ -70,7 +70,13 @@ async function expectRefusal(platform: NodeJS.Platform, location: string | undef
   check("...says local needs Linux", error?.message.includes("needs Linux") ?? false, true);
   check("...next step names OC_TARGET_LOCATION=wsl", error?.nextAction.includes("OC_TARGET_LOCATION=wsl") ?? false, true);
   check("...next step also names OC_TARGET_LOCATION=ssh", error?.nextAction.includes("OC_TARGET_LOCATION=ssh") ?? false, true);
-  check("...the refusal text is also on the error's own message", error?.message.includes(error.nextAction) ?? false, true);
+  // The remedy is advice now (rf6-fix33): the message is the headline, the arrow line is
+  // rendered per surface — asserted once here as the class's own contract.
+  check("...the refusal carries the remedy as advice", error?.advice, [{ kind: "manual", text: error?.nextAction ?? "" }]);
+  // The arrow line spelled from pieces, not a literal: this file is counted by the prose
+  // ratchets, and the assertion is structural (the message never carries the rendered line).
+  const arrowLine = String.fromCharCode(10) + "    →";
+  check("...the message is the headline without a baked-in arrow", error?.message.includes(arrowLine) ?? true, false);
 }
 
 {

@@ -96,6 +96,9 @@ switch (decision.kind) {
     process.exit(1);
   }
   case "gate-command": {
+    // Same frame rule as the run branch (rf6-fix33): the typed --app rides, so prose hints
+    // spell the deployment the same way under `check --help` and `help check`.
+    if (decision.app !== undefined) setInvocation({ ...invocation(), app: decision.app });
     process.exit((await runGateCommand(gateCommands, [decision.name, ...decision.args])) ?? 0);
   }
   case "help-without-deployment": {

@@ -186,8 +186,18 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
   await live.runtime.waitForHealth();
   log("gateway is healthy");
 
-  const digest = await live.runtime.imageReference();
-  if (digest !== undefined) info(`running image: ${digest}`);
+  // Reported as the pinned string (the image-ref grammar's format(ref)), not Docker's bare
+  // RepoDigest: the .env pin and the recreate both use repo:tag@sha256, so the report names
+  // the same string a reader finds in .env (rf6-fix33). A configured image that does not
+  // parse falls back to Docker's own spelling.
+  const pulled = await live.runtime.imageReference();
+  let image: string | undefined;
+  if (pulled !== undefined) {
+    const ref = tryParse(fresh.image);
+    const digest = digestOf(pulled);
+    image = ref !== undefined && digest !== undefined ? format(withDigest(ref, digest)) : pulled;
+  }
+  if (image !== undefined) info(`running image: ${image}`);
 
   log("OpenClaw is up");
   info(`gateway: ${fresh.serviceUrl}`);
@@ -211,5 +221,5 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
     // Doctor's own read of the same file reports a broken config; this is only a bonus hint.
   }
 
-  return { serviceUrl: fresh.serviceUrl, dataDir: fresh.dataDir, image: digest, providerConfigured };
+  return { serviceUrl: fresh.serviceUrl, dataDir: fresh.dataDir, image, providerConfigured };
 }

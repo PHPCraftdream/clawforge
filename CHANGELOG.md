@@ -6,6 +6,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Unreachable-target failures retain structured remedies across console, JSON and MCP; operation history and rollback refuse unreachable targets rather than answering empty. Checkout-root advice uses a runnable shim, checkout refusals include shell-specific pasteable rows, and bootstrap reports the tag-preserving pinned image reference.
+* Gate help keeps effect notes, gate decisions preserve the selected deployment for advice, blank OC_APP is unset, and deploy spells the server-side bootstrap hint with the server shim.
+* Set artifact tar paths are normalized for Windows GNU tar; the check runner enumerates files inside ignored directories. The prose-ratchet widening measures const-held, regex, and array-held pins (162 measured, 162 recorded); this is a measurement widening, not product prose growth.
+
 * A recipe folder whose name is not a recipe name is refused where the set is read, not
   after it ships: `set validate` and `set build` answer the shared `SET_RECIPE_INVALID`
   finding the artifact path already reported, instead of packing a tree that `set validate

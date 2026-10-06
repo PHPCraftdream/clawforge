@@ -7,13 +7,14 @@
 // (every destructive one refines with readOnlyWhen too), so the golden snapshots do not
 // cover it — this synthetic declaration does.
 
-import type { AppCommand } from "#framework/core/app.ts";
+import type { AppCommand, AppDefinition } from "#framework/core/app.ts";
 import { destructiveMarker, destructiveSymbol, effectNote, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
-import { gateCommandHelp, gateHelpLines } from "#framework/integration/gate.ts";
+import { commandRegistry, gateCommandHelp, gateHelpLines, renderHelp } from "#framework/integration/gate.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { renderCommandTables } from "#tools/dev/docs-commands.ts";
 
 const command: AppCommand = {
@@ -64,5 +65,20 @@ for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
   }
 }
 checkTrue("the gates declare at least one destructive command to derive the cases from", gateEffects > 0);
+
+// `help <gate command>` shares renderHelp with MCP (rf6-fix33); both surfaces keep the effect note.
+{
+  const gate = checkoutGate();
+  const registry = commandRegistry({ deployment: openclawCommands, gate, appName: "clawforge" });
+  const app: AppDefinition = { name: "clawforge", description: "d", commands: openclawCommands };
+  for (const command of gate) {
+    const note = effectNote(command);
+    if (note === undefined) continue;
+    let help = "";
+    await withOutputSink((chunk) => { help += chunk; }, async () => { renderHelp(command.name, app, registry, []); });
+    checkTrue(`${command.name}: console help carries the effect note`, help.includes(note));
+  }
+}
+
 
 finish("effect markers and confirm schema for a partly-destructive command");

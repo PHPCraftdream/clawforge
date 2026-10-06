@@ -39,7 +39,9 @@ const EXAMPLE = "x";
 function claimedSpans(details: string): readonly string[] {
   return (details.match(/\{[^{}]*\}/g) ?? []).filter((span) => {
     const content = span.slice(1, -1);
-    return content.startsWith("clawforge") || content.startsWith("--");
+    // install too (rf6-fix33): an {install ...} span is a command line a user pastes, so it
+    // answers to the same registry check — a typo in it used to read as plain text.
+    return content.startsWith("clawforge") || content.startsWith("install") || content.startsWith("--");
   });
 }
 

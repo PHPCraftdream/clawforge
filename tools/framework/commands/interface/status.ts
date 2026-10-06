@@ -52,7 +52,9 @@ async function runStatus(ctx: Context, jsonOnly: boolean): Promise<void> {
   } catch (error) {
     if (error instanceof TransportUnreachableError) {
       const found = unreachableProblem(error);
-      die(`${found.code}  ${found.detail}\n    → ${found.nextAction}`);
+      // The remedy rides as advice (rf6-fix33): formatError renders the arrow line, so
+      // the headline alone is thrown — no hand-spelled second copy of nextAction here.
+      die(`${found.code}  ${found.detail}`, found.next);
     }
     if (!(error instanceof NotBootstrapped)) throw error;
     info(`nothing deployed yet — run ${commandLine("bootstrap")}`);
@@ -102,13 +104,15 @@ async function emitStatusReport(ctx: Context): Promise<void> {
           {
             target: ctx.transport.description,
             runtime: ctx.runtime.description,
-            problem: { code: found.code, detail: found.detail, nextAction: found.nextAction },
+            // The whole shared-builder problem, severity and advice included — the shape
+            // inspect/doctor serialize, not a hand-picked subset (rf6-fix33).
+            problem: found,
           },
           null,
           2,
         )}\n`,
       );
-      die(`${found.code}  ${found.detail}`);
+      die(`${found.code}  ${found.detail}`, found.next);
     }
     if (!(error instanceof NotBootstrapped)) throw error;
     emit(

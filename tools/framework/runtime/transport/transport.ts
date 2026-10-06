@@ -12,7 +12,8 @@
 // Rule for everything built on top: never touch target files with node:fs directly. The
 // target may not share a filesystem with us. Go through the transport.
 
-import { die } from "../../core/io/log.ts";
+import { die, UserError } from "../../core/io/log.ts";
+import { manual } from "../../core/io/invocation/advice.ts";
 import { DEFAULT_WSL_DISTRO } from "../../core/env.ts";
 import type { Transport } from "./exec.ts";
 import { LocalTransport } from "./local.ts";
@@ -21,7 +22,7 @@ import { SshTransport } from "./ssh.ts";
 
 export type { ExecOptions, ExecResult, CommandFailure, Transport } from "./exec.ts";
 export { spawnLocal, TransportUnreachableError, isWrapperFailureCode, toSignedExitCode } from "./exec.ts";
-export { tarLocalFlags, tarFlagRejected, TAR_REMOTE_HOST_NOISE } from "./exec.ts";
+export { tarLocalFlags, tarLocalPath, tarFlagRejected, TAR_REMOTE_HOST_NOISE } from "./exec.ts";
 export { PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER, withEnvPrefix, existsVia } from "./quoting.ts";
 export { LocalTransport } from "./local.ts";
 export { WslTransport, stripWslNuls } from "./wsl.ts";
@@ -43,11 +44,13 @@ export interface TransportConfig {
 export const hostPlatform: { current: string } = { current: process.platform };
 
 /** A `local` target runs GNU/Linux-specific commands (`find -printf`, `stat -c`, `readlink -f`,
- *  `tar --numeric-owner`, `/proc`, `/srv`), so only a Linux host can be one. */
-export class LocalTargetUnsupportedError extends Error {
+ *  `tar --numeric-owner`, `/proc`, `/srv`), so only a Linux host can be one. A UserError carrying
+ *  the remedy as advice: the message is the headline, the arrow line is rendered per surface
+ *  (formatError, the --json/MCP failure contract) — not baked into the message. */
+export class LocalTargetUnsupportedError extends UserError {
   readonly nextAction: string;
   constructor(message: string, nextAction: string) {
-    super(message);
+    super(message, { advice: [manual(nextAction)] });
     this.name = "LocalTargetUnsupportedError";
     this.nextAction = nextAction;
   }
@@ -61,7 +64,7 @@ function refuseLocalTarget(platform: string): never {
   throw new LocalTargetUnsupportedError(
     `LOCAL_TARGET_UNSUPPORTED  this host is ${platform}, and a local target needs Linux ` +
     "(target commands are GNU/Linux-specific: find -printf, stat -c, readlink -f, sha256sum, " +
-    `tar --numeric-owner, /proc, /srv)\n    → ${nextAction}`,
+    `tar --numeric-owner, /proc, /srv)`,
     nextAction,
   );
 }

@@ -7,7 +7,8 @@
 // async by design — no *Sync calls anywhere.
 
 import { spawn } from "node:child_process";
-import { maskSecrets } from "../../core/io/log.ts";
+import { maskSecrets, UserError } from "../../core/io/log.ts";
+import { manual } from "../../core/io/invocation/advice.ts";
 import { outputSink, recordStreamedStdout } from "../../core/io/output.ts";
 import { meaningfulLines, describeInvocation, noiseFilteredForwarder } from "./spawn-failure.ts";
 
@@ -51,11 +52,13 @@ export interface CommandFailure extends Error {
 }
 
 /** wsl.exe or ssh itself failing to reach the target (as opposed to a command that ran there and
- *  failed); `nextAction` names the specific thing to check. */
-export class TransportUnreachableError extends Error {
+ *  failed); `nextAction` names the specific thing to check. A UserError carrying that remedy as
+ *  advice, so every surface spells it the one way — the console arrow line (formatError), the
+ *  --json failure document and the MCP envelope (execute.ts/call.ts lift UserError advice). */
+export class TransportUnreachableError extends UserError {
   readonly nextAction?: string;
   constructor(message: string, nextAction?: string) {
-    super(message);
+    super(message, nextAction === undefined ? undefined : { advice: [manual(nextAction)] });
     this.name = "TransportUnreachableError";
     this.nextAction = nextAction;
   }
@@ -343,6 +346,15 @@ export const TAR_REMOTE_HOST_NOISE = "Cannot connect to D";
  */
 export function tarLocalFlags(): string[] {
   return process.platform === "win32" ? ["--force-local"] : [];
+}
+
+/** A local path spelled for tar's own argument handling (rf6-fix33): GNU tar decodes
+ *  backslash escapes in its -C value, so a staging directory under a TEMP whose component
+ *  begins with \t (\tom, \tmp) read as a tab and every valid artifact was refused as an
+ *  integrity error. Windows file APIs accept both spellings; a POSIX tar never sees a
+ *  backslash. Exported beside tarLocalFlags: the one spelling local tar calls hand out. */
+export function tarLocalPath(path: string): string {
+  return path.replaceAll("\\", "/");
 }
 
 /** Whether a failed local tar run rejected `--force-local` itself (bsdtar: "Option

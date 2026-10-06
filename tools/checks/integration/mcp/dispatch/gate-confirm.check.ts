@@ -15,9 +15,12 @@ import { join } from "node:path";
 import { runProcess } from "#checks/kit/spawn.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { CONFIRM_REQUIRED } from "#framework/core/command/index.ts";
-import { commandRegistry, dispatcherHelpLines, HELP_ENTRY_SUMMARY } from "#framework/integration/gate.ts";
+import { effectNote } from "#framework/core/io/help-render.ts";
+import { commandRegistry, dispatcherHelpLines, HELP_ENTRY_SUMMARY, gateCommandHelp } from "#framework/integration/gate.ts";
 import { HELP_TOOL_SUMMARY, helpTool } from "#framework/integration/mcp/server.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 
 // --- the two help summaries, each single-sourced ----------------------------------------------
 
@@ -38,10 +41,14 @@ try {
   const moduleUrl = (name: string) => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
+    const { checkoutGate, installedGate } = await import(${JSON.stringify(moduleUrl("entry/registry"))});
     const { writeFile } = await import("node:fs/promises");
+    const checkout = checkoutGate().filter((command) => command.effect !== "read").map((command) => ({ ...command, run: async () => 0 }));
+    const installed = installedGate(${JSON.stringify(root)}).filter((command) => command.effect !== "read").map((command) => ({ ...command, run: async () => 0 }));
+    const gates = [...new Map([...checkout, ...installed].map((command) => [command.name, command])).values()];
     await serveMcp(
       { name: "fixture", description: "fixture", commands: {} },
-      [{
+      [...gates, {
         name: "remove-fixture",
         effect: "destroy",
         summary: "Delete the fixture's marker",
@@ -73,6 +80,35 @@ try {
     .find((tool) => tool.name === "remove-fixture");
   checkTrue("tools/list declares confirm for the destructive gate command", listed?.inputSchema?.properties?.confirm !== undefined);
   checkTrue("and it is required, the command having no read form", listed?.inputSchema?.required?.includes("confirm") === true);
+
+  const gateCommands = [...new Map([...checkoutGate(), ...installedGate(root)].filter((command) => command.effect !== "read").map((command) => [command.name, command])).values()];
+  const gateNames = gateCommands.map((command) => command.name);
+  const consoleHelp = new Map<string, string>();
+  for (const command of gateCommands) {
+    let rendered = "";
+    await withOutputSink((chunk) => { rendered += chunk; }, async () => gateCommandHelp(command));
+    consoleHelp.set(command.name, rendered.trim());
+  }
+  const helpReplies = await run([
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "help", arguments: { command: "remove-fixture" } } },
+      ...gateNames.map((command, index) => ({ jsonrpc: "2.0", id: 20 + index, method: "tools/call", params: { name: "help", arguments: { command } } })),
+    ]);
+  const helpReply = helpReplies.find((item) => item.id === 4);
+  const helpResult = helpReply?.result as { content?: Array<{ text?: string }> } | undefined;
+  const mcpHelpWords = (helpResult?.content?.[0]?.text ?? "").split(" ");
+  checkTrue("the MCP help tool preserves the gate command effect note", mcpHelpWords.includes("This") && mcpHelpWords.includes("destroys") && mcpHelpWords.includes("state."));
+  for (const [index, command] of gateNames.entries()) {
+    const reply = helpReplies.find((item) => item.id === 20 + index);
+    const result = reply?.result as { content?: Array<{ text?: string }> } | undefined;
+    const text = result?.content?.[0]?.text ?? "";
+    checkTrue(`MCP help renders gate command ${command}`, text.includes(command));
+    const commandDeclaration = gateCommands[index];
+    if (commandDeclaration !== undefined) {
+      check(`MCP and console help agree for ${command}`, text, consoleHelp.get(command));
+      const note = effectNote(commandDeclaration);
+      if (note !== undefined) checkTrue(`MCP help preserves ${command} effect note`, text.includes(note));
+    }
+  }
 
   const [refusedReply] = await run([{ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "remove-fixture", arguments: { name: "fixture" } } }]);
   const refused = refusedReply?.result as { isError?: boolean; content?: Array<{ text?: string }> } | undefined;

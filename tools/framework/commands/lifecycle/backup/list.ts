@@ -51,7 +51,7 @@ export async function backupList(ctx: Context, values: BackupListValues): Promis
     if (error instanceof InventoryUnreadableError) die(error.message);
     if (!(error instanceof TransportUnreachableError)) throw error;
     const found = unreachableProblem(error);
-    die(`${found.code}  ${found.detail}\n    → ${found.nextAction}`);
+    die(`${found.code}  ${found.detail}`, found.next);
   }
   const picked = defaultRestoreArchive(archives);
 

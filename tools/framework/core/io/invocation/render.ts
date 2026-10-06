@@ -62,6 +62,15 @@ export function renderArguments(argv: readonly string[]): string {
   return argv.map((word) => renderArgument(word, SHIM_PROGRAM)).join(" ");
 }
 
+/** Programs that find their deployment from the cwd (entry/resolve.ts's same list, spelled
+ *  here because a row's pasteability depends on it): the system-wide command, a
+ *  deployment's own shim and npm's bin wrapper. A path spelling (the MCP launcher) never
+ *  reads the cwd. */
+export const CWD_RESOLVING_PROGRAMS: readonly string[] = ["clawforge", SHIM_PROGRAM, WINDOWS_BIN_PROGRAM];
+/** The note a paste-conflict row carries (rf6-fix33) — exported so the matrix check strips
+ *  exactly what the renderer adds. */
+export const CWD_CONFLICT_NOTE = "from the checkout root";
+
 /** SAFE_WORD plus backslash: the invocation's own program is spelled for the user's shell
  *  already (npm's bin wrapper carries `\`), so it renders bare like any safe word. */
 const SAFE_PROGRAM = /^[A-Za-z0-9_@%+=:,./\\-]+$/;
@@ -73,11 +82,14 @@ export function renderProgram(on: Invocation): string {
 
 /** The program spelled from the checkout root — the frame the place-naming refusals direct
  *  to, and the map entry/root.ts's defaultInvocation spells for the checkout as run root,
- *  stated on the program alone so the sync refusal builders share it: a path spelling (the
- *  shim from a subfolder, the MCP launcher from apps/<name>) collapses to the shim at the
- *  root; a bare command word and npm's bin wrapper resolve from the root as is. */
+ *  stated on the program alone so the sync refusal builders share it. Re-rooted by the KIND
+ *  of program, not by "contains /" (rf6-fix33): only the bare system-wide name runs at the
+ *  checkout root unchanged; every other spelling is the checkout's own entry there — the
+ *  committed shim. A local-package copy inside a checkout is that same entry: npm's bin
+ *  wrapper lives in a deployment's own node_modules, never at the root, so re-rooting it
+ *  spelled a line the named place cannot run. */
 export function checkoutRootProgram(program: string): string {
-  return program.includes("/") ? SHIM_PROGRAM : program;
+  return program === "clawforge" ? program : SHIM_PROGRAM;
 }
 
 export function renderAdvice(
@@ -93,8 +105,17 @@ export function renderAdvice(
     return advice.text;
   }
   // A checkout-root advice spells the program from the checkout root — the frame the
-  // place-naming sentences direct to — not from the directory this run refused in.
-  const reRooted = advice.at === "checkout-root" ? { ...on, program: checkoutRootProgram(on.program) } : on;
+  // place-naming sentences direct to — not from the directory this run refused in. The
+  // same frame for a row that names a deployment the cwd's own selection does not, under
+  // a cwd-resolving program: pasted where this run stands it is refused as an app
+  // conflict (rf6-fix33), and the conflict refusal's own remedy is the checkout root —
+  // so the row is spelled from there, with the note saying where it pastes.
+  const cwdConflict = advice.app !== undefined
+    && on.app !== undefined && on.app.selectedBy === "cwd" && on.app.name !== advice.app
+    && CWD_RESOLVING_PROGRAMS.includes(on.program);
+  const reRooted = advice.at === "checkout-root" || cwdConflict
+    ? { ...on, program: checkoutRootProgram(on.program) }
+    : on;
   // An install line spells its program for the shell that pastes it, not for wherever
   // this run stood: forward slashes survive bash, zsh and every PowerShell alike.
   const frame = advice.install === true ? { ...reRooted, program: reRooted.program.replaceAll("\\", "/") } : reRooted;
@@ -115,7 +136,8 @@ export function renderAdvice(
   }
   for (const argument of advice.argv) parts.push(renderArgument(argument, frame.program));
   const line = parts.join(" ");
-  return advice.note === undefined ? line : `${line}  (${advice.note})`;
+  const note = advice.note ?? (cwdConflict ? CWD_CONFLICT_NOTE : undefined);
+  return note === undefined ? line : `${line}  (${note})`;
 }
 
 export function commandLine(argv: string | readonly string[], options?: { readonly app?: string; readonly note?: string; readonly deploymentFree?: boolean; readonly at?: "checkout-root" }): string {

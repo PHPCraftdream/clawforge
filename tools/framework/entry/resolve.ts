@@ -8,11 +8,11 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { safeName } from "../core/values/names.ts";
-import { invocation, type InvocationApp } from "../core/io/invocation/index.ts";
+import type { Invocation, InvocationApp } from "../core/io/invocation/index.ts";
 import type { CommandArgument } from "../core/app.ts";
 import { manual } from "../core/io/invocation/advice.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { checkoutRootProgram, renderAdvice, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "../core/io/invocation/render.ts";
+import { checkoutRootProgram, CWD_RESOLVING_PROGRAMS, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
 import { tokenize } from "../core/command/parse.ts";
@@ -112,7 +112,7 @@ export type CheckoutEntryDecision =
   /** Rendered by the gate: "--app must come before the command". */
   | { readonly kind: "refuse-misplaced-app-flag" }
   | { readonly kind: "refuse-unknown-command"; readonly name: string; readonly candidates: readonly string[] }
-  | { readonly kind: "gate-command"; readonly name: string; readonly args: readonly string[] }
+  | { readonly kind: "gate-command"; readonly name: string; readonly args: readonly string[]; readonly app?: InvocationApp }
   | { readonly kind: "help-without-deployment"; readonly description: string; readonly argv: readonly string[] }
   | {
       readonly kind: "run";
@@ -145,10 +145,11 @@ function sameFile(fs: FsProbe, a: string, b: string): boolean {
   return fs.realpath(a) === fs.realpath(b);
 }
 
-/** Programs that find their deployment from the cwd: the system-wide command and the
- *  deployment's own shim / npm bin wrapper. A path out of the deployment (the MCP launcher's
- *  shim two levels up) is the checkout gate, which reads --app and OC_APP and never the cwd. */
-const CWD_PROGRAMS: readonly string[] = ["clawforge", SHIM_PROGRAM, WINDOWS_BIN_PROGRAM];
+// Programs that find their deployment from the cwd: the system-wide command and the
+// deployment's own shim / npm bin wrapper. A path out of the deployment (the MCP launcher's
+// shim two levels up) is the checkout gate, which reads --app and OC_APP and never the cwd.
+// One list with the renderer's, which needs it for the paste-conflict frame (rf6-fix33).
+const CWD_PROGRAMS = CWD_RESOLVING_PROGRAMS;
 
 /** The deployment fact hints need: recorded for every selected deployment as handed over; only
  *  a hand-over by a cwd-resolving program, run inside the deployment, re-selects it by the cwd
@@ -162,9 +163,12 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   const { root, cwd, argv, ocApp, handedOver, fs, gateCommands, deploymentCommands, variadicCommands, deploymentArguments } = input;
   const handedProgram = handedOver ? input.handedProgram : undefined;
 
-  // --app wins over the environment, the environment over the default.
-  let name = ocApp ?? "openclaw";
-  let selectedBy: InvocationApp["selectedBy"] = ocApp !== undefined ? "env" : "default";
+  // --app wins over the environment, the environment over the default. An exported-but-blank
+  // OC_APP is no selection (rf6-fix33): reading it as the name "" fails safeName with the
+  // Deployment name refusal instead of answering as unset.
+  const envApp = ocApp !== undefined && ocApp.trim() === "" ? undefined : ocApp;
+  let name = envApp ?? "openclaw";
+  let selectedBy: InvocationApp["selectedBy"] = envApp !== undefined ? "env" : "default";
   const appFlag = splitLeadingAppFlag([...argv]);
   if (appFlag.missingValue) return { kind: "refuse", refusals: [new UserError("--app needs a deployment name")] };
   if (appFlag.value !== undefined) {
@@ -180,8 +184,18 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     return { kind: "refuse-misplaced-app-flag" };
   }
 
-  // The gate's own commands run before any deployment is resolved.
-  if (gateCommands.includes(rest[0])) return { kind: "gate-command", name: rest[0], args: rest.slice(1) };
+  // The gate's own commands run before any deployment is resolved. The typed --app is
+  // still the frame's fact (rf6-fix33), so a prose hint under `check --help` spells the
+  // same deployment `help <command>` does; an invalid name is no fact — where a command
+  // actually runs, the safeName refusal below owns that case.
+  if (gateCommands.includes(rest[0])) {
+    return {
+      kind: "gate-command",
+      name: rest[0],
+      args: rest.slice(1),
+      app: isValidDeploymentName(name) ? appFact(name, selectedBy, handedProgram, resolve(root, "apps", name), cwd) : undefined,
+    };
+  }
 
   // Checked before it becomes a path: the name also becomes the compose project.
   try {
@@ -196,7 +210,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   if (!fs.exists(resolve(deploymentDir, "app.ts"))) {
     // Other deployments may exist under another name: name them instead of claiming none.
     const available = availableNames(root, fs);
-    const sole = soleDeploymentFallback(ocApp !== undefined || appFlag.value !== undefined, available);
+    const sole = soleDeploymentFallback(envApp !== undefined || appFlag.value !== undefined, available);
     if (sole !== undefined) {
       return { kind: "run", deploymentDir: resolve(root, "apps", sole), appName: sole, argv: rest, app: appFact(sole, "sole", handedProgram, resolve(root, "apps", sole), cwd), soleNote: sole };
     }
@@ -211,7 +225,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     }
     return {
       kind: "refuse",
-      refusals: [missingDeploymentReport(ocApp !== undefined || appFlag.value !== undefined, name, deploymentDir, available, fs.exists(deploymentDir))],
+      refusals: [missingDeploymentReport(envApp !== undefined || appFlag.value !== undefined, name, deploymentDir, available, fs.exists(deploymentDir))],
     };
   }
 
@@ -370,6 +384,10 @@ export interface InstalledEntryInput {
   readonly rawArgv: readonly string[];
   readonly platform: NodeJS.Platform;
   readonly fs: FsProbe;
+  /** The frame this run is (the handed invocation, or root.ts's default): the bash-shim
+   *  row's drop decision spells its advice for it, so the resolver stays pure (rf6-fix33)
+   *  instead of reading the process-global at decision time. */
+  readonly frame: Invocation;
 }
 
 export type InstalledEntryDecision =
@@ -412,7 +430,7 @@ function localFlagGiven(args: readonly string[]): boolean {
  *  decide inline): `--project-root <abs>`, where init may write, which directory is the
  *  app root, and the argv a re-exec needs. Pure: same fs-probe discipline as the gate. */
 export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntryDecision {
-  const { cwd, rawArgv, platform, fs } = input;
+  const { cwd, rawArgv, platform, fs, frame } = input;
 
   const scheduled = rawArgv[0] === "--project-root";
   if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
@@ -452,7 +470,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
     // the copy this run is (the at mark re-roots it in the renderer); row 2 is the bash
     // shim's own spelling, dropped when row 1 already is it.
     const advice: Advice[] = [command(["new-app", "<name>"], { at: "checkout-root" })];
-    if (checkoutRootProgram(invocation().program) !== SHIM_PROGRAM) {
+    if (checkoutRootProgram(frame.program) !== SHIM_PROGRAM) {
       advice.push(shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: IN_BASH_NOTE }));
     }
     if (reusable) {
@@ -498,6 +516,8 @@ export interface MissingAppInput {
   /** The installed gate's own commands (init, version, completion). */
   readonly gateCommandNames: readonly string[];
   readonly deploymentCommands: readonly string[];
+  /** The frame this run is — same purity rule as InstalledEntryInput's (rf6-fix33). */
+  readonly frame: Invocation;
 }
 
 interface NotInitialised {
@@ -512,7 +532,7 @@ export type MissingAppDecision =
   | ({ readonly kind: "not-initialised" } & NotInitialised);
 
 export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
-  const { appRoot, argv, checkout, gateCommandNames, deploymentCommands } = input;
+  const { appRoot, argv, checkout, gateCommandNames, deploymentCommands, frame } = input;
   const subfolder = checkout !== undefined ? checkoutSubfolderReport(argv[0] ?? "", checkout) : undefined;
   if (subfolder !== undefined) {
     return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, refusal: subfolder };
@@ -526,7 +546,7 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
         new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
             command([], { at: "checkout-root" }),
-            ...(checkoutRootProgram(invocation().program) === SHIM_PROGRAM
+            ...(checkoutRootProgram(frame.program) === SHIM_PROGRAM
               ? []
               : [shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: IN_BASH_NOTE })]),
           ],

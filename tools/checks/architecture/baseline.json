@@ -725,5 +725,9 @@
         }
       }
     }
+  },
+  "proseHeld": {
+    "comment": "MEASUREMENT WIDENING (rf6-fix33), not growth: prose pins HELD IN A CONST — the equality/matcher/pin ratchets above count a literal only at its use site, so a const-held pin, an assert.match(…, /… space…/), an includes(<spaced const>) or a check() array expectation naming one was invisible. Recorded at the newly measured total; the pins are not converted.",
+    "total": 162
   }
 }

@@ -14,13 +14,14 @@ import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
+import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
 import { versionGateCommand } from "#framework/integration/version.ts";
 import { entryRefusalAdvice, gateInlineNoteAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
 import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
 import { bootstrapRemoteLine } from "#framework/commands/management/deploy/sync.ts";
-import { cmdExeLine, displayCommandLine, schtasksCreateCommand } from "#framework/commands/operate/schedule.ts";
+import { cmdExeLine, schtasksCreateCommand } from "#framework/commands/operate/schedule.ts";
 import { toolSteps } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 
@@ -80,6 +81,9 @@ const REFINEMENT_ROWS: readonly AdviceRow[] = [
 const PROSE_ROWS: readonly AdviceRow[] = [
   ...Object.entries(openclawCommands).map(([name, declared]): [string, string | undefined] => [name, (declared as { details?: string }).details]),
   ...checkoutGateCommands.map((gate): [string, string | undefined] => [gate.name, gate.details]),
+  // completion is built by its factory (registry.ts closes it over the gate), so its
+  // Install: prose — the only {install ...} tokens — needs the factory here (rf6-fix33).
+  ["completion", makeCompletionGateCommand([], true).details],
   ["version", versionGateCommand.details],
 ].flatMap(([name, details]) => {
   if (details === undefined) return [];
@@ -124,7 +128,10 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   { label: "deploy: remote secrets --apply command", advice: command(["secrets", "--apply"], { app: "<name>" }) },
   // Group 4 (rf4-sweep-cmds2): the lines the schedulers get — cron's `cd <root> && <invocation>`
   // on a posix target, and the schtasks /create line pasted into cmd.exe.
-  { label: "cron: posix target line", advice: shellLine("posix", `cd <root> && ${displayCommandLine(SHIM_PROGRAM, ["--app", "<name>", "backup"])}`) },
+  // Pinned as a literal (rf6-fix33): the invocation part is spelled the way cronLine writes
+  // it — SshTransport.quote's '--app' — not assembled from the builders, so the row survives
+  // a builder mutation unchanged and the golden shows the real shape.
+  { label: "cron: posix target line", advice: shellLine("posix", "cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>") },
   { label: "schtasks: cmd.exe create line", advice: shellLine("cmd", cmdExeLine(SCHTASKS_CREATE.command, SCHTASKS_CREATE.args)!) },
   ...PROSE_ROWS,
   // Group 6 (rf6-fix30): the checkout-root notes the gate's sentences embed — the
@@ -132,10 +139,14 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   ...gateInlineNoteAdvice(),
 ];
 
-/** One matrix column: the invocation every row renders under. */
+/** One matrix column: the invocation every row renders under, and — pinned as a literal,
+ *  not computed with checkoutRootProgram — the program the checkout-root rows must open
+ *  with for this column (rf6-fix33): the bare system-wide name keeps running from the
+ *  root, every other spelling is the checkout's own committed shim there. */
 export interface InvocationColumn {
   readonly label: string;
   readonly invocation: Invocation;
+  readonly rootProgram: string;
 }
 
 /** The tool-form column: the MCP `ToolStep` view of a clawforge advice (design 1.4), which
@@ -162,22 +173,24 @@ export function toolFormCell(advice: Advice): string {
  *  the checkout root and every way a deployment is selected, the installed command and its
  *  two hand-overs, and the MCP launcher's two-levels-up spelling. */
 export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
-  { label: "checkout default (openclaw/default)", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "default" }, audience: "terminal" } },
-  { label: "--app openclaw", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "flag" }, audience: "terminal" } },
-  { label: "OC_APP=staging", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "staging", selectedBy: "env" }, audience: "terminal" } },
-  { label: "--app demo", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
-  { label: "OC_APP=demo", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "env" }, audience: "terminal" } },
-  { label: "sole demo", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" } },
-  { label: "cwd app1", invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "app1", selectedBy: "cwd" }, audience: "terminal" } },
-  { label: "gateway, no app yet", invocation: { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" } },
-  { label: "global (clawforge)", invocation: { program: "clawforge", mode: "installed", audience: "terminal" } },
-  { label: "global, handed to the checkout gate with --app demo", invocation: { program: "clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
-  { label: "shim init (./clawforge, installed)", invocation: { program: SHIM_PROGRAM, mode: "installed", audience: "terminal" } },
+  { label: "checkout default (openclaw/default)", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "default" }, audience: "terminal" } },
+  { label: "--app openclaw", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "flag" }, audience: "terminal" } },
+  { label: "OC_APP=staging", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "staging", selectedBy: "env" }, audience: "terminal" } },
+  { label: "--app demo", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
+  { label: "OC_APP=demo", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "env" }, audience: "terminal" } },
+  { label: "sole demo", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" } },
+  { label: "cwd app1", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "app1", selectedBy: "cwd" }, audience: "terminal" } },
+  { label: "gateway, no app yet", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" } },
+  { label: "global (clawforge)", rootProgram: "clawforge", invocation: { program: "clawforge", mode: "installed", audience: "terminal" } },
+  { label: "global, handed to the checkout gate with --app demo", rootProgram: "clawforge", invocation: { program: "clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
+  { label: "shim init (./clawforge, installed)", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "installed", audience: "terminal" } },
   // entry/root.ts is the only writer of local-package: the committed shim spelling on POSIX,
   // npm's bin wrapper on Windows, where the bash-only shim does not run (WINDOWS_BIN_PROGRAM).
-  { label: "local package", invocation: { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" } },
-  { label: "local package (win32)", invocation: { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" } },
-  { label: "checkout MCP launcher (../../clawforge, demo/flag)", invocation: { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" } },
+  { label: "local package", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" } },
+  // The wrapper does not exist at the checkout root (rf6-fix33): the root's own entry is
+  // the committed shim, so that is the pinned opener for this column too.
+  { label: "local package (win32)", rootProgram: SHIM_PROGRAM, invocation: { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" } },
+  { label: "checkout MCP launcher (../../clawforge, demo/flag)", rootProgram: SHIM_PROGRAM, invocation: { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" } },
   { label: TOOL_FORM_LABEL, cell: TOOL_FORM_CELL },
 ];
 

@@ -39,7 +39,7 @@
   --app demo: ./clawforge --app demo status
   OC_APP=demo: ./clawforge --app demo status
   sole demo: ./clawforge --app demo status
-  cwd app1: ./clawforge --app demo status
+  cwd app1: ./clawforge --app demo status  (from the checkout root)
   gateway, no app yet: ./clawforge --app demo status
   global (clawforge): clawforge --app demo status
   global, handed to the checkout gate with --app demo: clawforge --app demo status
@@ -1290,6 +1290,40 @@
   checkout MCP launcher (../../clawforge, demo/flag): cd '/clawforge-checkout'
   tool form: —
 
+=== refusal: checkout gate command from a subfolder (2) ===
+  checkout default (openclaw/default): cd /d "/clawforge-checkout"
+  --app openclaw: cd /d "/clawforge-checkout"
+  OC_APP=staging: cd /d "/clawforge-checkout"
+  --app demo: cd /d "/clawforge-checkout"
+  OC_APP=demo: cd /d "/clawforge-checkout"
+  sole demo: cd /d "/clawforge-checkout"
+  cwd app1: cd /d "/clawforge-checkout"
+  gateway, no app yet: cd /d "/clawforge-checkout"
+  global (clawforge): cd /d "/clawforge-checkout"
+  global, handed to the checkout gate with --app demo: cd /d "/clawforge-checkout"
+  shim init (./clawforge, installed): cd /d "/clawforge-checkout"
+  local package: cd /d "/clawforge-checkout"
+  local package (win32): cd /d "/clawforge-checkout"
+  checkout MCP launcher (../../clawforge, demo/flag): cd /d "/clawforge-checkout"
+  tool form: —
+
+=== refusal: checkout gate command from a subfolder (3) ===
+  checkout default (openclaw/default): cd '/clawforge-checkout'
+  --app openclaw: cd '/clawforge-checkout'
+  OC_APP=staging: cd '/clawforge-checkout'
+  --app demo: cd '/clawforge-checkout'
+  OC_APP=demo: cd '/clawforge-checkout'
+  sole demo: cd '/clawforge-checkout'
+  cwd app1: cd '/clawforge-checkout'
+  gateway, no app yet: cd '/clawforge-checkout'
+  global (clawforge): cd '/clawforge-checkout'
+  global, handed to the checkout gate with --app demo: cd '/clawforge-checkout'
+  shim init (./clawforge, installed): cd '/clawforge-checkout'
+  local package: cd '/clawforge-checkout'
+  local package (win32): cd '/clawforge-checkout'
+  checkout MCP launcher (../../clawforge, demo/flag): cd '/clawforge-checkout'
+  tool form: —
+
 === refusal: init inside a ClawForge checkout ===
   checkout default (openclaw/default): ./clawforge new-app <name>
   --app openclaw: ./clawforge new-app <name>
@@ -1303,7 +1337,7 @@
   global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
-  local package (win32): node_modules\.bin\clawforge new-app <name>
+  local package (win32): ./clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ./clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
@@ -1416,7 +1450,7 @@
   --app demo: ./clawforge --app <name> bootstrap
   OC_APP=demo: ./clawforge --app <name> bootstrap
   sole demo: ./clawforge --app <name> bootstrap
-  cwd app1: ./clawforge --app <name> bootstrap
+  cwd app1: ./clawforge --app <name> bootstrap  (from the checkout root)
   gateway, no app yet: ./clawforge --app <name> bootstrap
   global (clawforge): clawforge --app <name> bootstrap
   global, handed to the checkout gate with --app demo: clawforge --app <name> bootstrap
@@ -1433,7 +1467,7 @@
   --app demo: ./clawforge --app <name> secrets --apply
   OC_APP=demo: ./clawforge --app <name> secrets --apply
   sole demo: ./clawforge --app <name> secrets --apply
-  cwd app1: ./clawforge --app <name> secrets --apply
+  cwd app1: ./clawforge --app <name> secrets --apply  (from the checkout root)
   gateway, no app yet: ./clawforge --app <name> secrets --apply
   global (clawforge): clawforge --app <name> secrets --apply
   global, handed to the checkout gate with --app demo: clawforge --app <name> secrets --apply
@@ -1444,20 +1478,20 @@
   tool form: —
 
 === cron: posix target line ===
-  checkout default (openclaw/default): cd <root> && ./clawforge --app "<name>" backup
-  --app openclaw: cd <root> && ./clawforge --app "<name>" backup
-  OC_APP=staging: cd <root> && ./clawforge --app "<name>" backup
-  --app demo: cd <root> && ./clawforge --app "<name>" backup
-  OC_APP=demo: cd <root> && ./clawforge --app "<name>" backup
-  sole demo: cd <root> && ./clawforge --app "<name>" backup
-  cwd app1: cd <root> && ./clawforge --app "<name>" backup
-  gateway, no app yet: cd <root> && ./clawforge --app "<name>" backup
-  global (clawforge): cd <root> && ./clawforge --app "<name>" backup
-  global, handed to the checkout gate with --app demo: cd <root> && ./clawforge --app "<name>" backup
-  shim init (./clawforge, installed): cd <root> && ./clawforge --app "<name>" backup
-  local package: cd <root> && ./clawforge --app "<name>" backup
-  local package (win32): cd <root> && ./clawforge --app "<name>" backup
-  checkout MCP launcher (../../clawforge, demo/flag): cd <root> && ./clawforge --app "<name>" backup
+  checkout default (openclaw/default): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  --app openclaw: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  OC_APP=staging: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  --app demo: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  OC_APP=demo: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  sole demo: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  cwd app1: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  gateway, no app yet: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  global (clawforge): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  global, handed to the checkout gate with --app demo: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  shim init (./clawforge, installed): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  local package: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  local package (win32): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  checkout MCP launcher (../../clawforge, demo/flag): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
   tool form: —
 
 === schtasks: cmd.exe create line ===
@@ -2385,7 +2419,7 @@
   --app demo: ./clawforge --app <name> bootstrap
   OC_APP=demo: ./clawforge --app <name> bootstrap
   sole demo: ./clawforge --app <name> bootstrap
-  cwd app1: ./clawforge --app <name> bootstrap
+  cwd app1: ./clawforge --app <name> bootstrap  (from the checkout root)
   gateway, no app yet: ./clawforge --app <name> bootstrap
   global (clawforge): clawforge --app <name> bootstrap
   global, handed to the checkout gate with --app demo: clawforge --app <name> bootstrap
@@ -2419,7 +2453,7 @@
   --app demo: ./clawforge --app <name> destroy
   OC_APP=demo: ./clawforge --app <name> destroy
   sole demo: ./clawforge --app <name> destroy
-  cwd app1: ./clawforge --app <name> destroy
+  cwd app1: ./clawforge --app <name> destroy  (from the checkout root)
   gateway, no app yet: ./clawforge --app <name> destroy
   global (clawforge): clawforge --app <name> destroy
   global, handed to the checkout gate with --app demo: clawforge --app <name> destroy
@@ -2428,6 +2462,57 @@
   local package (win32): node_modules\.bin\clawforge --app <name> destroy
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> destroy
   tool form: —
+
+=== help prose: completion completion bash (install) ===
+  checkout default (openclaw/default): ./clawforge completion bash
+  --app openclaw: ./clawforge completion bash
+  OC_APP=staging: ./clawforge completion bash
+  --app demo: ./clawforge completion bash
+  OC_APP=demo: ./clawforge completion bash
+  sole demo: ./clawforge completion bash
+  cwd app1: ./clawforge completion bash
+  gateway, no app yet: ./clawforge completion bash
+  global (clawforge): clawforge completion bash
+  global, handed to the checkout gate with --app demo: clawforge completion bash
+  shim init (./clawforge, installed): ./clawforge completion bash
+  local package: ./clawforge completion bash
+  local package (win32): node_modules/.bin/clawforge completion bash
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge completion bash
+  tool form: {"tool":"completion","arguments":{"shell":"bash"}}
+
+=== help prose: completion completion zsh (install) ===
+  checkout default (openclaw/default): ./clawforge completion zsh
+  --app openclaw: ./clawforge completion zsh
+  OC_APP=staging: ./clawforge completion zsh
+  --app demo: ./clawforge completion zsh
+  OC_APP=demo: ./clawforge completion zsh
+  sole demo: ./clawforge completion zsh
+  cwd app1: ./clawforge completion zsh
+  gateway, no app yet: ./clawforge completion zsh
+  global (clawforge): clawforge completion zsh
+  global, handed to the checkout gate with --app demo: clawforge completion zsh
+  shim init (./clawforge, installed): ./clawforge completion zsh
+  local package: ./clawforge completion zsh
+  local package (win32): node_modules/.bin/clawforge completion zsh
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge completion zsh
+  tool form: {"tool":"completion","arguments":{"shell":"zsh"}}
+
+=== help prose: completion completion pwsh (install) ===
+  checkout default (openclaw/default): ./clawforge completion pwsh
+  --app openclaw: ./clawforge completion pwsh
+  OC_APP=staging: ./clawforge completion pwsh
+  --app demo: ./clawforge completion pwsh
+  OC_APP=demo: ./clawforge completion pwsh
+  sole demo: ./clawforge completion pwsh
+  cwd app1: ./clawforge completion pwsh
+  gateway, no app yet: ./clawforge completion pwsh
+  global (clawforge): clawforge completion pwsh
+  global, handed to the checkout gate with --app demo: clawforge completion pwsh
+  shim init (./clawforge, installed): ./clawforge completion pwsh
+  local package: ./clawforge completion pwsh
+  local package (win32): node_modules/.bin/clawforge completion pwsh
+  checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge completion pwsh
+  tool form: {"tool":"completion","arguments":{"shell":"pwsh"}}
 
 === gate inline note (1) ===
   checkout default (openclaw/default): ./clawforge help
@@ -2442,6 +2527,6 @@
   global, handed to the checkout gate with --app demo: clawforge --app demo help
   shim init (./clawforge, installed): ./clawforge help
   local package: ./clawforge help
-  local package (win32): node_modules\.bin\clawforge help
+  local package (win32): ./clawforge help
   checkout MCP launcher (../../clawforge, demo/flag): ./clawforge --app demo help
   tool form: —

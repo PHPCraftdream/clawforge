@@ -3,7 +3,7 @@
 // artifact already there.
 
 import { mkdir, readdir, writeFile, rm, rmdir, readFile } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { buildSet, withTarRunner } from "#framework/commands/sets/set.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -273,7 +273,10 @@ try {
     );
     check(
       "every attempt writes inside sets/, so publishing stays one rename",
-      targets.every((target) => target.startsWith(`${setsDir}${sep}`)),
+      targets.every((target) => {
+        const pathFromSets = relative(resolve(setsDir), resolve(target));
+        return pathFromSets !== ".." && !pathFromSets.startsWith(`..${sep}`) && !isAbsolute(pathFromSets);
+      }),
       true,
     );
     check(

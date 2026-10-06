@@ -11,6 +11,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Context } from "../core/context.ts";
+import { LocalTargetUnsupportedError, TransportUnreachableError } from "../runtime/transport/transport.ts";
 
 /** Four outcomes, not three-collapsed-into-one: "skipped" can mean "never this command's
  *  job" (advisory), "never got the chance" (an earlier step failed), or "nobody
@@ -175,11 +176,24 @@ export async function snapshotConfig(ctx: Context, operationId: string): Promise
   }
 }
 
+/** The journal's questions need the target: a transport that never reached it is rethrown,
+ *  never read as "nothing recorded" (rf6-fix33). */
+function rethrowUnreachable(error: unknown): unknown {
+  if (error instanceof TransportUnreachableError || error instanceof LocalTargetUnsupportedError) return error;
+  return undefined;
+}
+
 /** Every recorded operation, newest first. Ids begin with the command and carry a sortable
  *  timestamp, so the file names alone give the order — no need to read each one to sort. */
 export async function listOperations(ctx: Context): Promise<string[]> {
+  // A missing directory is the ordinary "nothing recorded yet" — both transports answer []
+  // for one, so it never reaches the handler; an unreachable target does, and is refused.
   const files = (await Promise.all([operationsDir(ctx), ...legacyOperationsDirs(ctx)].map((directory) =>
-    ctx.transport.listFiles(directory).catch(() => [] as string[]),
+    ctx.transport.listFiles(directory).catch((error: unknown) => {
+      const unreachable = rethrowUnreachable(error);
+      if (unreachable !== undefined) throw unreachable;
+      return [] as string[];
+    }),
   ))).flat();
   return [...new Set(files)]
     // The configuration snapshots live in the same directory and end in .json too; they are
@@ -193,7 +207,13 @@ export async function listOperations(ctx: Context): Promise<string[]> {
 export async function readOperation(ctx: Context, id: string): Promise<OperationRecord | undefined> {
   for (const path of [operationFile(ctx, id), ...legacyOperationsDirs(ctx).map((directory) => `${directory}/${id}.json`)]) {
     try { return JSON.parse(await ctx.transport.readFile(path)) as OperationRecord; }
-    catch { /* try the legacy location before giving up */ }
+    catch (error) {
+      // A file that is not there is the ordinary "not recorded here"; a target that was
+      // never reached is not an answer at all.
+      const unreachable = rethrowUnreachable(error);
+      if (unreachable !== undefined) throw unreachable;
+      /* try the legacy location before giving up */
+    }
   }
   return undefined;
 }

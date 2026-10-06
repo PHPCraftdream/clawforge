@@ -565,7 +565,10 @@ async function gatewayPortOf(root: string): Promise<number> {
     readFile: (path) => files[normalize(path)],
     realpath: (path) => path,
   };
-  const decision = resolveInstalledEntry({ cwd: nested, rawArgv: ["init"], platform: "linux", fs });
+  // The frame bin.ts sets for this refusal, decided from the same roots (rf6-fix33: the
+  // frame is the resolver's input now).
+  const up = relative(resolve(nested), fakeRoot).split(sep).join("/");
+  const decision = resolveInstalledEntry({ cwd: nested, rawArgv: ["init"], platform: "linux", fs, frame: { program: `${up}/clawforge`, mode: "checkout", audience: "terminal" } });
   if (decision.kind !== "refuse") {
     check("init from a nested checkout folder is refused", decision.kind, "refuse");
   } else {

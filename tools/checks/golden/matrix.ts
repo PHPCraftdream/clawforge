@@ -137,6 +137,8 @@ const ENVS: readonly (readonly [string, string | undefined])[] = [
   ["none", undefined],
   ["OC_APP=x", "x"],
   ["OC_APP=staging", "staging"],
+  // An exported-but-blank variable decides like an unset one (rf6-fix33), not like a name.
+  ["OC_APP=<blank>", ""],
 ];
 
 const PLATFORMS: readonly NodeJS.Platform[] = ["linux", "win32", "darwin"];
@@ -177,12 +179,9 @@ function fakePath(text: string): string {
 /** Group 3 of the advice matrix (design 4.2): the refusals the pure entry decisions build,
  *  on the same fake layouts the matrix itself uses, as advice values — never rendered
  *  strings frozen at build time. A clawforge advice with an empty argv (the bare "run the
- *  gate" pointer) is left out: the matrix's P4 has no command word to check it against. */
+ *  gate" pointer) is left out: the matrix's P4 has no command word to check it against.
+ *  The builders take the frame as an input (rf6-fix33), so no process-global pinning. */
 export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
-  // Pinned like the entries' own build (bin.ts sets the frame first): the bash shim
-  // row's drop decision must not depend on who calls this.
-  const previousFrame = invocation();
-  setInvocation(INSTALLED_FRAME);
   const rows: { label: string; advice: Advice }[] = [];
   const push = (label: string, error: UserError | undefined): void => {
     if (error === undefined) return;
@@ -198,9 +197,9 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
   push("refusal: checkout gate command from a subfolder", checkoutSubfolderReport("check", ROOT));
   const fs = fakeFs(BASE_FILES, BASE_DIRS);
   // The installed entry: init inside the checkout, and the not-initialised refusal.
-  const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs });
+  const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs, frame: INSTALLED_FRAME });
   if (inCheckout.kind === "refuse") inCheckout.refusals.forEach((refusal) => push("refusal: init inside a ClawForge checkout", refusal));
-  const outside = resolveInstalledEntry({ cwd: EMPTY, rawArgv: ["status"], platform: "linux", fs });
+  const outside = resolveInstalledEntry({ cwd: EMPTY, rawArgv: ["status"], platform: "linux", fs, frame: INSTALLED_FRAME });
   if (outside.kind === "run") {
     const missing = missingAppDecision({
       appRoot: outside.appRoot,
@@ -208,10 +207,11 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
       checkout: outside.checkout,
       gateCommandNames: INSTALLED_GATE_COMMANDS,
       deploymentCommands: DEPLOYMENT_COMMANDS,
+      frame: INSTALLED_FRAME,
     });
     if (missing.kind === "not-initialised") missing.refusals.forEach((refusal) => push("refusal: not initialised (installed)", refusal));
   }
-  const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs });
+  const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs, frame: INSTALLED_FRAME });
   if (inSubfolder.kind === "run") {
     const missing = missingAppDecision({
       appRoot: inSubfolder.appRoot,
@@ -219,13 +219,13 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
       checkout: inSubfolder.checkout,
       gateCommandNames: INSTALLED_GATE_COMMANDS,
       deploymentCommands: DEPLOYMENT_COMMANDS,
+      frame: INSTALLED_FRAME,
     });
     if (missing.kind === "not-initialised") missing.refusals.forEach((refusal) => push("refusal: not initialised (in a checkout)", refusal));
   }
   // The pointers the two unknown-X reporters print (their info line renders this advice).
   rows.push({ label: "pointer: unknown command", advice: command(["help"]) });
   rows.push({ label: "pointer: unknown argument", advice: command(["status", "--help"]) });
-  setInvocation(previousFrame);
   return rows;
 }
 
@@ -239,7 +239,7 @@ function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0], pro
     case "refuse-unknown-command":
       return `refuse-unknown-command ${decision.name}`;
     case "gate-command":
-      return `gate-command ${decision.name} ${JSON.stringify(decision.args)}`;
+      return `gate-command ${decision.name}${decision.app === undefined ? "" : ` app=${decision.app.name}/${decision.app.selectedBy}`} ${JSON.stringify(decision.args)}`;
     case "help-without-deployment":
       return `help-without-deployment: ${decision.description}`;
     case "run": {
@@ -314,10 +314,6 @@ function handoverDecisionLine(input: Parameters<typeof frameworkOwner>[0]): stri
 
 /** The whole matrix as deterministic text; golden.check.ts compares it with expected/entry-matrix.txt. */
 export function renderEntryMatrix(): string {
-  // The refusal builders read the invocation (the bash shim row's drop decision); the
-  // traversal is pinned to the installed frame so the text does not depend on the caller's.
-  const previousFrame = invocation();
-  setInvocation(INSTALLED_FRAME);
   const lines: string[] = [
     "// Entry decisions (plan stage 2, invariant I3): resolveCheckoutEntry (gate) where the gate",
     "// is the process, frameworkOwner (installed command hand-over) everywhere, the installed",
@@ -372,7 +368,7 @@ export function renderEntryMatrix(): string {
       for (const installedArgv of INSTALLED_ARGVS) {
         const label = `platform=${platform} layout=${layout.id} argv=${installedArgv.length === 0 ? "<none>" : JSON.stringify(installedArgv)}`;
         lines.push(`== installed ${label}`);
-        const decision = resolveInstalledEntry({ cwd: layout.installed.cwd, rawArgv: installedArgv, platform, fs });
+        const decision = resolveInstalledEntry({ cwd: layout.installed.cwd, rawArgv: installedArgv, platform, fs, frame: INSTALLED_FRAME });
         lines.push(`installed: ${installedDecisionLine(decision)}`);
         if (decision.kind !== "run") continue;
         if (fs.exists(`${decision.appRoot}/app.ts`)) continue;
@@ -383,24 +379,20 @@ export function renderEntryMatrix(): string {
           checkout: decision.checkout,
           gateCommandNames: INSTALLED_GATE_COMMANDS,
           deploymentCommands: DEPLOYMENT_COMMANDS,
+          frame: INSTALLED_FRAME,
         });
         lines.push(`missing: ${missingDecisionLine(missing)}`);
       }
     }
   }
-  setInvocation(previousFrame);
   return `${lines.join("\n")}\n`;
 }
 
 /** Every refusal the matrices above yield (gate, installed, missing-app, hand-over), deduped
  *  by structure. surfaces/advice-matrix.check.ts selects the ones whose sentence names a
  *  place and asserts every advice row is spelled from that place, not from wherever the
- *  refusing process stood. */
+ *  refusing process stood. The builders take the frame as an input (rf6-fix33). */
 export function entryDecisionRefusals(): { label: string; error: UserError }[] {
-  // Pinned to the installed frame, like the entries' own build (bin.ts sets it first):
-  // the bash shim row's drop decision must not depend on who calls this.
-  const previousFrame = invocation();
-  setInvocation(INSTALLED_FRAME);
   const rows: { label: string; error: UserError }[] = [];
   const seen = new Set<string>();
   const push = (label: string, error: UserError | undefined): void => {
@@ -433,7 +425,7 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
             handedOver: false, platform, fs, localEntry: layout.handover.localEntry,
           });
           if (handover.kind === "refuse-app-value" && handover.reason === "app-conflict") {
-            push(`handover ${label}`, appConflictRefusal(handover));
+            push(`handover ${label}`, appConflictRefusal(handover, INSTALLED_FRAME));
           }
         }
       }
@@ -442,7 +434,7 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
       if (layout.installed === undefined) continue;
       for (const installedArgv of INSTALLED_ARGVS) {
         const label = `installed ${platform} ${layout.id} argv=${installedArgv.length === 0 ? "<none>" : JSON.stringify(installedArgv)}`;
-        const decision = resolveInstalledEntry({ cwd: layout.installed.cwd, rawArgv: installedArgv, platform, fs });
+        const decision = resolveInstalledEntry({ cwd: layout.installed.cwd, rawArgv: installedArgv, platform, fs, frame: INSTALLED_FRAME });
         if (decision.kind === "refuse") {
           decision.refusals.forEach((refusal) => push(label, refusal));
           continue;
@@ -456,6 +448,7 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
           checkout: decision.checkout,
           gateCommandNames: INSTALLED_GATE_COMMANDS,
           deploymentCommands: DEPLOYMENT_COMMANDS,
+          frame: INSTALLED_FRAME,
         });
         if (missing.kind === "subfolder-report") push(label, missing.refusal);
         if (missing.kind === "help") missing.fallback.refusals.forEach((refusal) => push(label, refusal));
@@ -463,7 +456,6 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
       }
     }
   }
-  setInvocation(previousFrame);
   return rows;
 }
 
@@ -482,15 +474,13 @@ export function gateInlineNoteAdvice(): { label: string; advice: Advice }[] {
  *  set it — the installed copy keeps the row, the shim copy already is the root spelling
  *  and drops it. */
 export function placeNamingRefusals(frame: Invocation): { label: string; error: UserError }[] {
-  const previousFrame = invocation();
-  setInvocation(frame);
   const fs = fakeFs(BASE_FILES, BASE_DIRS);
   const rows: { label: string; error: UserError }[] = [];
-  const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs });
+  const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs, frame });
   if (inCheckout.kind === "refuse") {
     inCheckout.refusals.forEach((refusal) => rows.push({ label: "init inside a ClawForge checkout", error: refusal }));
   }
-  const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs });
+  const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs, frame });
   if (inSubfolder.kind === "run") {
     const missing = missingAppDecision({
       appRoot: inSubfolder.appRoot,
@@ -498,13 +488,13 @@ export function placeNamingRefusals(frame: Invocation): { label: string; error: 
       checkout: inSubfolder.checkout,
       gateCommandNames: INSTALLED_GATE_COMMANDS,
       deploymentCommands: DEPLOYMENT_COMMANDS,
+      frame,
     });
     if (missing.kind === "not-initialised") {
       missing.refusals.forEach((refusal) => rows.push({ label: "not initialised (in a checkout)", error: refusal }));
     }
   }
-  rows.push({ label: "--app conflict", error: appConflictRefusal({ typed: "other", app: "demo" }) });
-  setInvocation(previousFrame);
+  rows.push({ label: "--app conflict", error: appConflictRefusal({ typed: "other", app: "demo" }, frame) });
   return rows;
 }
 

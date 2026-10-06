@@ -40,15 +40,13 @@ const handedOver = takeDelegationFlag();
 const handed = takeInvocationFromEnv();
 const rawArgv = process.argv.slice(2);
 
-// The placement decision builds its checkout refusal's advice (resolve.ts), so this run's
-// frame must already stand there — walked from the cwd, the same walk the decision makes.
-if (handed === undefined) {
-  setInvocation({ ...(await defaultInvocation(process.cwd(), process.platform, findCheckoutRootIn(process.cwd(), nodeFs))), audience: "terminal" });
-} else {
-  setInvocation(handed);
-}
+// The placement decision builds its checkout refusal's advice (resolve.ts), so the frame is
+// decided once here and passed in (rf6-fix33) — walked from the cwd, the same walk the
+// decision makes — instead of the resolver reading the process-global.
+const frame = handed ?? { ...(await defaultInvocation(process.cwd(), process.platform, findCheckoutRootIn(process.cwd(), nodeFs))), audience: "terminal" };
+setInvocation(frame);
 
-const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs });
+const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs, frame });
 // Refine with the decision's own roots: a run names the deployment it runs, a refusal the
 // root it decided about (the nesting refusal its deployment, the checkout refusal the
 // checkout it walked up to); a decision with neither stands in the cwd.
@@ -73,7 +71,7 @@ const argv = [...entry.argv];
 const launchArgv = [...entry.launchArgv];
 
 // Installed system-wide, this may not be the framework this deployment runs on.
-delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver);
+delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver, invocation());
 resolveFrameworkFromSelf();
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
@@ -99,6 +97,7 @@ try {
     checkout,
     gateCommandNames: gateCommands.map((command) => command.name),
     deploymentCommands: Object.keys(openclawCommands),
+    frame: invocation(),
   });
   if (missing.kind === "subfolder-report") {
     reportError(missing.headline);

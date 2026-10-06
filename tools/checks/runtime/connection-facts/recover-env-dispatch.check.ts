@@ -29,6 +29,7 @@ import { validate } from "#framework/integration/mcp/call.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { DATA_DIR_UNSET } from "#framework/core/env.ts";
+import { UserError } from "#framework/core/io/log.ts";
 import { unknownArgumentMessage } from "#framework/core/command/errors.ts";
 import { NOT_RUNNING_CAUSE, RECOVERABLE_ONLY_FROM_RUNNING } from "#framework/commands/operate/recover-env/index.ts";
 import { unreachableProblem } from "#framework/service/inspection.ts";
@@ -215,8 +216,8 @@ try {
     const execution = await executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport: unreachable });
     const error = execution.error instanceof Error ? execution.error.message : String(execution.error ?? "");
     const problem = unreachableProblem(stubRefusal);
-    check("an unreachable target is refused as unreachable", error.includes("TARGET_UNREACHABLE"), true);
-    check("the unreachable refusal carries the transport's next step", error.includes(problem.nextAction), true);
+    check("an unreachable target is refused as unreachable", execution.error instanceof UserError && execution.error.message.includes("TARGET_UNREACHABLE"), true);
+    check("the unreachable refusal carries the transport's next step as advice", execution.error instanceof UserError ? execution.error.advice : [], [problem.next]);
     check("the unreachable target never reads as docker-not-running", error.includes(NOT_RUNNING_CAUSE), false);
     check("a refused recovery leaves .env byte-identical", await readFile(envFile(), "utf8"), seedWithoutDataDir);
   }

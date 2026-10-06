@@ -11,7 +11,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/io/log.ts";
-import { spawnLocal, tarFlagRejected, tarLocalFlags } from "#src/runtime/transport/transport.ts";
+import { spawnLocal, tarFlagRejected, tarLocalFlags, tarLocalPath } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf } from "#src/service/checksums.ts";
@@ -145,11 +145,13 @@ async function writeArtifact(
       // bsdtar doesn't know the flag — retry without it only for that refusal, so any
       // other failure keeps its own cause instead of a remote-host error.
       const forceLocal = tarLocalFlags();
-      let result = await tarRunner("tar", [...forceLocal, "-czf", temporary, "-C", staging, "."], { allowFailure: true });
+      // tarLocalPath: the create side's own -C staging decodes escapes the same way the
+      // load side's does (rf6-fix33).
+      let result = await tarRunner("tar", [...forceLocal, "-czf", tarLocalPath(temporary), "-C", tarLocalPath(staging), "."], { allowFailure: true });
       if (result.code !== 0 && forceLocal.length > 0 && tarFlagRejected(result)) {
         // Drop whatever the failed attempt left so the retry starts clean.
         await rm(temporary, { force: true });
-        await tarRunner("tar", ["-czf", temporary, "-C", staging, "."]);
+        await tarRunner("tar", ["-czf", tarLocalPath(temporary), "-C", tarLocalPath(staging), "."]);
       } else if (result.code !== 0) {
         // The first attempt's cause is the report: a retry under a tar that accepted the flag
         // would answer a corrupt archive with remote-host noise instead of the truth.

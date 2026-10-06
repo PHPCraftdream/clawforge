@@ -271,10 +271,19 @@ export function checkoutListNote(checkout: string): string {
  *  another shell, so it is shell advice: nothing rewrites it. */
 export function checkoutSubfolderReport(first: string, checkout: string): UserError | undefined {
   if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
-  // Single-quoted by the shared quoting rule: a path with spaces breaks unquoted in any
-  // shell, and inside double quotes bash still expands $ and runs backticks.
+  // One row per shell the command's host types (rf6-fix33): the installed clawforge runs
+  // in cmd.exe and PowerShell too, where a POSIX single-quoted line does not paste. Each
+  // row quotes by its own shell's rule — bash by the shared quoting rule (a path with
+  // spaces breaks unquoted, and inside double quotes bash still expands $ and runs
+  // backticks); cmd by its own `cd /d "<path>"` (a Windows path carries no ", and cmd
+  // expands nothing inside double quotes); pwsh with literal single quotes (a ' doubled,
+  // because $ and backticks are live inside pwsh's double quotes).
   return new UserError(`${first} ${CHECKOUT_ROOT_NOTE}`, {
-    advice: [shellLine("posix", `cd ${shellQuote(checkout)}`)],
+    advice: [
+      shellLine("posix", `cd ${shellQuote(checkout)}`),
+      ...(checkout.includes('"') ? [] : [shellLine("cmd", `cd /d "${checkout}"`)]),
+      shellLine("pwsh", `cd '${checkout.replaceAll("'", "''")}'`),
+    ],
   });
 }
 
@@ -504,6 +513,10 @@ export function renderHelp(
   const entry = registry.find(target);
   if (entry !== undefined) {
     if (entry.command !== undefined) renderFullCommandHelp(target, entry.command);
+    // A gate entry answers through its own help, which appends the effect note the
+    // `--help` screen carries — `help remove-app` used to lose it (rf6-fix33). The MCP
+    // help tool shares this renderer, so both surfaces read the same body.
+    else if (entry.gate !== undefined) gateCommandHelp(entry.gate);
     else renderCommandHelp(target, entry);
     return true;
   }

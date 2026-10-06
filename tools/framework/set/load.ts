@@ -18,7 +18,7 @@ import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { safeName } from "#src/core/values/names.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
-import { spawnLocal, tarFlagRejected, tarLocalFlags } from "#src/runtime/transport/transport.ts";
+import { spawnLocal, tarFlagRejected, tarLocalFlags, tarLocalPath } from "#src/runtime/transport/transport.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { recipeNames } from "#src/service/recipe.ts";
 import { desiredStateShapeError, validateSet } from "#src/set/ownership/validate.ts";
@@ -378,9 +378,11 @@ async function validateManifest(value: unknown): Promise<SetManifest> {
   return value as unknown as SetManifest;
 }
 
+// Every argument tar itself decodes goes forward-slash (tarLocalPath): a backslashed -C
+// staging reads its escapes and every artifact is refused (rf6-fix33).
 async function tar(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const forceLocal = tarLocalFlags();
-  let result = await spawnLocal("tar", [...forceLocal, ...args], { allowFailure: true });
+  let result = await spawnLocal("tar", [...forceLocal, ...args.map(tarLocalPath)], { allowFailure: true });
   // Retry without the flag only when the flag itself was the refusal (bsdtar); any other
   // failure keeps its first error — a retry under GNU tar reports the drive letter as a
   // remote host instead of the real cause.

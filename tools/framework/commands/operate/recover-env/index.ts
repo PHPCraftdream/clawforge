@@ -275,9 +275,10 @@ export const RECOVER_ENV = commandBody({
     } catch (error) {
       if (!(error instanceof TransportUnreachableError)) throw error;
       // The standard unreachable refusal, in status's words: the target was never
-      // reached, which is not a docker-not-running answer (rf6-fix30).
+      // reached, which is not a docker-not-running answer (rf6-fix30). The remedy
+      // rides as advice, so formatError and the failure documents render it (rf6-fix33).
       const problem = unreachableProblem(error);
-      die(`${problem.code}  ${problem.detail}\n    → ${problem.nextAction}`);
+      die(`${problem.code}  ${problem.detail}`, problem.next);
     }
     if (facts === undefined) {
       die(

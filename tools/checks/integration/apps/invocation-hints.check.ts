@@ -134,9 +134,17 @@ try {
   for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
     setInvocation(value);
     const at = `under "${commandLine([])}"`;
+    const name = deploymentName();
     for (const { label, run, job, jobArgs, minutes } of jobs) {
+      const quotedArgs = jobArgs.map((arg) => `'${arg}'`).join(" ");
       const crontab = cronLine(minutes, await posixTargetInvocation(sshCtx, jobArgs), job, await schedulerIdentity(sshCtx));
       check(`${label} prints the crontab line it would install ${at}`, (await capture(() => run(sshCtx, []))).includes(crontab), true);
+      // Pinned literal (rf6-fix33): the invocation part of the line is spelled here, so a
+      // posixTargetInvocation that started rendering for this terminal (the invocation's
+      // own program) fails THIS instead of silently moving what the crontab would run. The
+      // tail after the marker's colon is the ownership hash, not part of the invocation.
+      const pinned = `${job === "backup" ? "0 0 * * *" : "*/5 * * * *"} cd '/opt/openclaw' && ./clawforge '--app' '${name}' ${quotedArgs} >/dev/null 2>&1 # clawforge-${job}:`;
+      check(`${label} installs the pinned crontab invocation ${at}`, crontab.startsWith(pinned), true);
 
       // Windows, unsupported transport: the printed lines are the transport's and schtasks' own.
       const applied: string[][] = [];
@@ -148,9 +156,10 @@ try {
       check(`${label} prints the transport's own command line ${at}`, rows.includes(displayCommandLine(manual.command, manual.args)), true);
       const schtasks = rows.find((row) => row.startsWith("schtasks "));
       check(`${label}: the printed schtasks line, parsed by cmd.exe, is what --apply passes ${at}`, cmdExeArgv(schtasks ?? ""), ["schtasks", ...(applied[0] ?? [])]);
+      // The /tr embeds the same manual line the row above pins, by its display spelling.
+      check(`${label}: the schtasks line spells the shim invocation ${at}`, (schtasks ?? "").includes(displayCommandLine(manual.command, manual.args)), true);
     }
 
-    const name = deploymentName();
     const bootstrap = `cd '/opt/openclaw' && ./clawforge --app ${name} bootstrap`;
     const dry = await capture(() => deploy(deployCtx, ["user@host", "--dry-run"]));
     check(`deploy --dry-run prints the remote bootstrap line verbatim ${at}`, dry.includes(`would bootstrap remotely afterwards: ${bootstrap}`), true);

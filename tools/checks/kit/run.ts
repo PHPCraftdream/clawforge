@@ -64,6 +64,25 @@ export interface CheckoutSnapshot {
   readonly apps: readonly AppsEntry[];
   /** `git status --porcelain`, empty when git is unavailable (then it is not compared). */
   readonly gitStatus: string | undefined;
+  /** The ignored (`!!`) entries of `git status --porcelain --ignored=matching`, generated
+   *  roots pruned; undefined when git is unavailable (not compared either). --porcelain
+   *  cannot see ignored space — .claude/, secrets/, data/, *.token — exactly where a check
+   *  that dies mid-write would leave its fixture behind, unnoticed. */
+  readonly ignoredStatus: string | undefined;
+}
+
+// Ignored space the guard does not chase: node_modules and tools/framework/dist are build
+// output a check may regenerate mid-run, apps/ is the deployment tree the walk above already
+// covers, and worktrees/ holds whole sibling checkouts on hosts that have one. The excludes
+// prune before git walks, so the ignored pass stays as cheap as the tracked one.
+const IGNORED_STATUS_EXCLUDES = ["node_modules", "apps", "worktrees", "tools/framework/dist"];
+
+function diffStatusLines(before: string, after: string, prefix: string): readonly string[] {
+  const beforeLines = new Set(before.split("\n"));
+  const afterLines = new Set(after.split("\n"));
+  const gained = [...afterLines].filter((line) => line !== "" && !beforeLines.has(line)).sort();
+  const lost = [...beforeLines].filter((line) => line !== "" && !afterLines.has(line)).sort();
+  return [...gained.map((line) => `${prefix}gained: ${line}`), ...lost.map((line) => `${prefix}lost: ${line}`)];
 }
 
 function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[]): readonly string[] {
@@ -93,12 +112,10 @@ function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[]):
 export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot): readonly string[] {
   const changes = [...diffEntries(before.apps, after.apps)];
   if (before.gitStatus !== undefined && after.gitStatus !== undefined && before.gitStatus !== after.gitStatus) {
-    const beforeLines = new Set(before.gitStatus.split("\n"));
-    const afterLines = new Set(after.gitStatus.split("\n"));
-    const gained = [...afterLines].filter((line) => line !== "" && !beforeLines.has(line)).sort();
-    const lost = [...beforeLines].filter((line) => line !== "" && !afterLines.has(line)).sort();
-    for (const line of gained) changes.push(`git status gained: ${line}`);
-    for (const line of lost) changes.push(`git status lost: ${line}`);
+    changes.push(...diffStatusLines(before.gitStatus, after.gitStatus, "git status "));
+  }
+  if (before.ignoredStatus !== undefined && after.ignoredStatus !== undefined && before.ignoredStatus !== after.ignoredStatus) {
+    changes.push(...diffStatusLines(before.ignoredStatus, after.ignoredStatus, "git ignored "));
   }
   return changes;
 }
@@ -132,7 +149,22 @@ export async function snapshotCheckout(root: string = resolve(monorepoRoot, "app
   // Ignored output (dist/ rebuilds, scratch prefixes) never shows in --porcelain; an absent
   // git only means the comparison is skipped, with a visible note below.
   const git = await runProcess("git", ["status", "--porcelain"], { cwd: monorepoRoot, timeoutMs: 30_000 });
-  return { apps, gitStatus: git.error === undefined ? git.stdout : undefined };
+  const ignored = await runProcess(
+    "git",
+    ["status", "--porcelain", "--ignored=matching", "--", ...IGNORED_STATUS_EXCLUDES.map((entry) => `:(exclude)${entry}`)],
+    { cwd: monorepoRoot, timeoutMs: 30_000 },
+  );
+  // Only the ignored entries: the tracked and untracked halves are gitStatus's story, and
+  // a file changing mid-run must not be reported twice by one guard. The pathspec excludes
+  // prune the walk, but git still answers with one collapsed line for a wholly-ignored
+  // directory — dropped here too, so a pruned root can never read as a new leftover.
+  const ignoredEntries = ignored.error === undefined
+    ? ignored.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("!!") && !IGNORED_STATUS_EXCLUDES.some((root) => line.startsWith("!! " + root + "/")))
+      .join("\n")
+    : undefined;
+  return { apps, gitStatus: git.error === undefined ? git.stdout : undefined, ignoredStatus: ignoredEntries };
 }
 
 /** The outcome of deciding + (maybe) running one entry: `skipped` names why when the file was

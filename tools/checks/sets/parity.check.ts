@@ -10,7 +10,7 @@
 // packed by the shared test-only assembler (#checks/sets/pack.ts), which writes the same
 // set.json/tar layout the packer writes; production code exports no unchecked packer.
 
-import { access, rm, writeFile, readFile } from "node:fs/promises";
+import { access, rename, rm, writeFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadSet, validateLoadedSet, collectManifest, ArtifactIntegrityError } from "#framework/set/load.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";
@@ -24,6 +24,8 @@ import type { Problem } from "#framework/service/inspection.ts";
 import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 import { invalidImageReference } from "#framework/runtime/docker/image-ref.ts";
+import { TAR_REMOTE_HOST_NOISE } from "#framework/runtime/transport/transport.ts";
+import { invalidNameMessage } from "#framework/core/values/names.ts";
 import { acceptanceLabel } from "#framework/set/recipe-files.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -266,6 +268,34 @@ for (const privateFile of ["acceptance.json", "recipe.json"] as const) {
   }
 }
 
+// A recipe folder whose NAME the grammar rejects: the tree answers SET_RECIPE_INVALID and
+// the artifact carrying the same folder answers with the same finding — the name is
+// content, never an integrity claim about the archive. build refuses the tree instead of
+// packing a set every consumer reports (its own refusal is checked below).
+await runVariant({
+  label: "a recipe folder whose name is not a recipe name",
+  mutate: async (deployment) => {
+    await rename(resolve(deployment, "recipes", "plain"), resolve(deployment, "recipes", "PlainNotes"));
+  },
+  assembled: true,
+  expectCodes: ["SET_RECIPE_INVALID"],
+});
+
+// An acceptance check that is valid JSON but fails the acceptance rules, and a manifest
+// that carries the same checks (as any manifest matching its file would): the archive
+// agrees with itself about the very bytes that are wrong, so both paths answer the tree's
+// content finding — the spec is never judged in the integrity phase.
+await runVariant({
+  label: "an acceptance check that fails the acceptance rules",
+  mutate: (deployment) => writeFile(recipeFile(deployment, "acceptance.json"), JSON.stringify({ checks: [{ kind: "mcp_tool" }] })),
+  crafted: async (healthy) => {
+    const text = JSON.stringify({ checks: [{ kind: "mcp_tool" }] });
+    return { ...withMalformedFile(healthy, "acceptance", text), acceptance: { ...healthy.acceptance, demo: [{ kind: "mcp_tool" }] } };
+  },
+  assembled: true,
+  expectCodes: ["SET_RECIPE_INVALID"],
+});
+
 // The same on a plain service: with recipe.json private the walk carries neither server.ts
 // nor recipe.json, so completeness reports it on both paths alike.
 await runVariant({
@@ -368,6 +398,24 @@ await runVariant({
   }),
 });
 
+// build's refusal of an invalid recipe folder name: the same sentence the validator
+// reports, never a packed set that every consumer would refuse.
+{
+  const deployment = await createBuildDeployment();
+  try {
+    await rename(resolve(deployment, "recipes", "plain"), resolve(deployment, "recipes", "PlainNotes"));
+    let refusal = "";
+    try {
+      await buildSet(buildCtx, "demo-set");
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check("build refuses a tree with an invalid recipe folder name", refusal, invalidNameMessage("recipe", "PlainNotes"));
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
 // --- the typed boundary (R33-03, kept and extended) ----------------------------------------
 //
 // A corrupt archive is an ArtifactIntegrityError carrying the artifact's path; a body error
@@ -382,12 +430,21 @@ try {
   await writeFile(broken, "this is not a gzip stream");
 
   let integrity = false;
+  let brokenMessage = "";
   try {
     await loadSet({ kind: "artifact", path: broken });
   } catch (error) {
     integrity = error instanceof ArtifactIntegrityError;
+    brokenMessage = error instanceof Error ? error.message : String(error);
   }
   check("a corrupt archive throws ArtifactIntegrityError", integrity, true);
+  // The FIRST attempt's cause is the report: a Windows retry without --force-local must
+  // never replace a real failure with tar's remote-host reading of the drive letter.
+  check(
+    "a corrupt archive keeps its real cause, not a remote-host error",
+    brokenMessage.includes(TAR_REMOTE_HOST_NOISE),
+    false,
+  );
 
   // An incoherent (but well-formed) artifact: the set it declares has blocking findings —
   // the install-time gate refuses it naming the finding, never as an integrity claim about

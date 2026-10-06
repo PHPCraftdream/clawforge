@@ -16,11 +16,12 @@ import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { readLock } from "#src/commands/management/lock.ts";
 import { readAcceptanceFile, readAgentFile } from "#src/set/recipe-files.ts";
-import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#src/set/advice.ts";
+import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition, recipeInvalidName } from "#src/set/advice.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
+import { safeName } from "#src/core/values/names.ts";
 
 async function exists(path: string): Promise<boolean> {
   return access(path).then(
@@ -128,6 +129,19 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
   return (parsed as { path: string; value?: unknown }[]).map((entry) => entry.value);
 }
 
+/** The ONE grammar rule for recipe folder names, run by both load paths (validateSet runs
+ *  for the tree and the artifact alike): a folder name must be a valid recipe name
+ *  (names.ts's safeName), and the rejection is a SET_RECIPE_INVALID content finding — the
+ *  same sentence build refuses the tree with. Exported for that refusal. */
+export function recipeNameProblem(name: string): Problem | undefined {
+  try {
+    safeName("recipe", name);
+    return undefined;
+  } catch (error) {
+    return recipeInvalidName(name, (error as Error).message);
+  }
+}
+
 async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Promise<void> {
   // Grammar before pinning: only the image module's own parser decides what a reference is.
   if (tryParse(manifest.requires.image) === undefined) {
@@ -150,6 +164,12 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
     const declaresAgent = recipe.agent !== undefined;
     // The remedies are the advice owners in set/advice.ts — one wording per gap, shared
     // with set build and the checks.
+
+    // The folder name itself, before anything reads through it: grammar first, on both
+    // paths (build refuses the tree with the same sentence instead of packing a set every
+    // consumer would report).
+    const invalidName = recipeNameProblem(name);
+    if (invalidName !== undefined) problems.push(invalidName);
 
     if (checkFiles) {
       const dir = resolve(recipesDir(), name);

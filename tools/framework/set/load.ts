@@ -18,7 +18,7 @@ import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { safeName } from "#src/core/values/names.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
-import { spawnLocal } from "#src/runtime/transport/transport.ts";
+import { spawnLocal, tarFlagRejected, tarLocalFlags } from "#src/runtime/transport/transport.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { recipeNames } from "#src/service/recipe.ts";
 import { desiredStateShapeError, validateSet } from "#src/set/ownership/validate.ts";
@@ -333,8 +333,9 @@ function checksumMap(value: unknown, where: string): Record<string, string> {
 }
 
 /** Checks the manifest shape and its internal inventory before any artifact file is used.
- *  The acceptance-check grammar is loaded lazily: accept.ts sits downstream of install.ts,
- *  and load.ts must never reach install.ts — not even transitively (module-load check). */
+ *  Content findings — a recipe name or acceptance check the recipe rules reject — are the
+ *  validator's (validateSet), the same answer the tree gives; nothing here reaches
+ *  accept.ts, which sits downstream of install.ts (module-load check). */
 async function validateManifest(value: unknown): Promise<SetManifest> {
   if (!isRecord(value) || value.version !== SET_MANIFEST_VERSION || typeof value.name !== "string" || !isRecord(value.requires)) {
     throw new Error("artifact set.json has an invalid manifest shape");
@@ -351,7 +352,8 @@ async function validateManifest(value: unknown): Promise<SetManifest> {
 
   const expected: Record<string, string> = { [DESIRED_STATE_PATH]: files[DESIRED_STATE_PATH] };
   for (const [name, rawRecipe] of Object.entries(value.recipes)) {
-    safeName("recipe", name);
+    // A name the grammar rejects is content, not integrity: the validator reports it
+    // (recipeNameProblem), the same finding the tree answers with.
     if (!isRecord(rawRecipe)) throw new Error(`recipe ${name} is not an object`);
     const recipeFiles = checksumMap(rawRecipe.files, `recipe ${name} files`);
     if (rawRecipe.checksum !== checksumOfFileMap(recipeFiles)) throw new Error(`recipe ${name} has an incorrect content checksum`);
@@ -362,16 +364,12 @@ async function validateManifest(value: unknown): Promise<SetManifest> {
       for (const [path, checksum] of Object.entries(agentFiles)) expected[`recipes/${name}/agent/${path}`] = checksum;
     }
   }
-  let acceptanceSpecError: ((value: unknown, index?: number) => string | undefined) | undefined;
-  if (Object.keys(value.acceptance).length > 0) {
-    ({ acceptanceSpecError } = await import("#src/commands/orchestration/accept.ts"));
-  }
+  // The acceptance RULES are content, not integrity: a check that fails the spec is the
+  // validator's SET_RECIPE_INVALID, read from the acceptance.json the archive carries —
+  // the same answer the tree gives for the same bytes. Here only the shape is judged;
+  // whether these entries agree with that file is verifyArtifact's comparison below.
   for (const [name, checks] of Object.entries(value.acceptance)) {
     if (!Array.isArray(checks)) throw new Error(`recipe ${name} acceptance must be an array`);
-    for (let index = 0; index < checks.length; index += 1) {
-      const invalid = acceptanceSpecError?.(checks[index], index);
-      if (invalid !== undefined) throw new Error(`recipe ${name}: ${invalid}`);
-    }
   }
   const actualKeys = Object.keys(files).sort();
   const expectedKeys = Object.keys(expected).sort();
@@ -381,9 +379,14 @@ async function validateManifest(value: unknown): Promise<SetManifest> {
 }
 
 async function tar(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
+  const forceLocal = tarLocalFlags();
   let result = await spawnLocal("tar", [...forceLocal, ...args], { allowFailure: true });
-  if (result.code !== 0 && forceLocal.length > 0) result = await spawnLocal("tar", args, { allowFailure: true });
+  // Retry without the flag only when the flag itself was the refusal (bsdtar); any other
+  // failure keeps its first error — a retry under GNU tar reports the drive letter as a
+  // remote host instead of the real cause.
+  if (result.code !== 0 && forceLocal.length > 0 && tarFlagRejected(result)) {
+    result = await spawnLocal("tar", args, { allowFailure: true });
+  }
   return result;
 }
 

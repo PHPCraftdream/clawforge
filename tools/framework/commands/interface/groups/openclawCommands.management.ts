@@ -192,8 +192,8 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // One envelope for every action's answer, declared once as the tool's outputSchema:
     // verify, onboard and diagnose contribute their JSON, and the text actions carry
     // their text in `result` — no action's response falls outside the declared shape. A
-    // new action needs nothing here but the right readOnlyWhen below, which is what the
-    // envelope's changed field is built from.
+    // new action needs nothing here but its declared effect: an effect of read answers
+    // changed: false, any other effect from the answer's own document (or true).
     structured: true,
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +

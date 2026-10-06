@@ -22,6 +22,7 @@ import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { toSettings, parseEnv } from "#framework/core/env.ts";
 import type { Transport, ExecOptions } from "#framework/runtime/transport/transport.ts";
 import { DATA_DIR, SHARED_TAG, TARGET_DIGEST, PREVIOUS_DIGEST, PINNED_WITH_TAG, PINNED_NO_TAG, makeUpgradeCtx } from "./stub.ts";
+import { pinAdviceLine } from "#framework/commands/lifecycle/instance/upgrade.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // pinImageReference (instance/upgrade.ts) writes the deployment's OWN .env on success — a real
@@ -532,7 +533,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
     release();
   }
   await a;
-  const report = JSON.parse(outcome) as { ok: boolean; changed: boolean; current?: string; target?: string; upToDate?: boolean };
+  const report = JSON.parse(outcome) as { ok: boolean; changed: boolean; current?: string; target?: string; pinnedImage?: string; upToDate?: boolean };
   const pin = parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE;
   if (scenario === "race" || scenario === "race-noop") {
     check(`${scenario}: stale A refuses before its backup`, failure instanceof Error, true);
@@ -548,6 +549,14 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
     check(`${scenario}: actual state and pin stay D0`, [running, pin, data], [d0, d0, d0]);
     check(`${scenario}: only execute no-op takes a lock`, lockClaims, scenario === "same" ? 1 : 0);
     check(`${scenario}: reported observation is truthful`, [report.ok, report.changed, report.current, report.target, report.upToDate], [true, false, d0, target, scenario === "same"]);
+    if (scenario === "dry") {
+      check("dry: the JSON carries the pin the run would recreate on", report.pinnedImage, target);
+      // The text plan names the pin it would recreate on; the JSON document carries the same
+      // string, so neither mode can quietly drop the pin the other reports.
+      let text = "";
+      await withOutputSink((chunk) => { text += chunk; }, () => openclawCommands.upgrade.run(ctx, ["--image", target, "--dry-run"]));
+      check("dry: the text plan names the pin the JSON reports", [text.includes(pinAdviceLine(target)), report.pinnedImage], [true, target]);
+    }
   } else if (scenario === "migration") {
     check("migration: original exit-78 failure is reported", failure instanceof Error && failure.message.includes("78"), true);
     check("migration: data compensation completes before image compensation", failure instanceof Error && !(failure instanceof AggregateError) && failure.message.includes("was rolled back"), true);

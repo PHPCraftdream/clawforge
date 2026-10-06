@@ -300,7 +300,7 @@ export const UPGRADE = commandBody({
     if (options.jsonOnly) {
       emit(
         `${JSON.stringify(
-          { ok: true, changed: false, current: previousDigest, channel: target.channel ?? null, target: target.targetDigest, upToDate },
+          { ok: true, changed: false, current: previousDigest, channel: target.channel ?? null, target: target.targetDigest, pinnedImage: pinnedReference, upToDate },
           null,
           2,
         )}\n`,

@@ -210,6 +210,7 @@ try {
     const existing = await buildSet(ctx, "demo-set");
     const before = await readFile(existing.artifact);
     const targets: string[] = [];
+    const MID_WRITE = "simulated failure mid-write";
     let attempts = 0;
     const partialThenFail = async (_command: string, args: string[], options?: ExecOptions): Promise<ExecResult> => {
       attempts += 1;
@@ -220,8 +221,8 @@ try {
       }
       targets.push(target);
       await writeFile(target, "a truncated archive, not a real one\n");
-      if (options?.allowFailure === true) return { code: 1, stdout: "", stderr: "tar: simulated failure mid-write\n" };
-      throw new Error("tar: simulated failure mid-write");
+      if (options?.allowFailure === true) return { code: 1, stdout: "", stderr: `tar: ${MID_WRITE}\n` };
+      throw new Error(`tar: ${MID_WRITE}`);
     };
     let refusal = "";
     try {
@@ -230,17 +231,10 @@ try {
       refusal = error instanceof Error ? error.message : String(error);
     }
     check("a failed rebuild refuses instead of reporting success", refusal !== "", true);
-    check("both tar attempts were made, flagged then plain", attempts, 2);
-    check(
-      "neither tar attempt writes the final artifact name",
-      targets.every((target) => target !== existing.artifact),
-      true,
-    );
-    check(
-      "every attempt writes inside sets/, so publishing stays one rename",
-      targets.every((target) => target.startsWith(`${setsDir}${sep}`)),
-      true,
-    );
+    // The retry without --force-local exists only for the tar that rejects the flag; a
+    // failure with any other cause is reported as the first attempt saw it.
+    check("a failure that is not the flag makes one tar attempt", attempts, 1);
+    check("that failure names the first attempt's cause", refusal.includes(MID_WRITE), true);
     check("the failed rebuild leaves the previous artifact byte-for-byte unchanged", (await readFile(existing.artifact)).equals(before), true);
     let stillListable = false;
     try {
@@ -251,6 +245,37 @@ try {
       stillListable = false;
     }
     check("the surviving artifact still lists as a real archive", stillListable, true);
+
+    // The one failure the retry exists for: bsdtar refusing the flag itself gets the
+    // unflagged second attempt.
+    let flagged = 0;
+    const flagRejectedThenWrite = async (_command: string, args: string[], _options?: ExecOptions): Promise<ExecResult> => {
+      flagged += 1;
+      if (flagged === 1) {
+        return { code: 1, stdout: "", stderr: "tar: Option --force-local is not supported\n" };
+      }
+      const target = args[args.indexOf("-czf") + 1]!;
+      await writeFile(target, "a complete archive written by the retry\n");
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    let retryRefusal = "";
+    try {
+      await withTarRunner(flagRejectedThenWrite, () => buildSet(ctx, "demo-set"));
+    } catch (error) {
+      retryRefusal = error instanceof Error ? error.message : String(error);
+    }
+    check("a flag rejection retries without the flag", [flagged, retryRefusal], [2, ""]);
+    check("the retry publishes its archive", (await readdir(setsDir)).some((entry) => entry.startsWith("demo-set-")), true);
+    check(
+      "neither tar attempt writes the final artifact name",
+      targets.every((target) => target !== existing.artifact),
+      true,
+    );
+    check(
+      "every attempt writes inside sets/, so publishing stays one rename",
+      targets.every((target) => target.startsWith(`${setsDir}${sep}`)),
+      true,
+    );
     check(
       "the failed rebuild leaves no temporary file behind",
       (await readdir(setsDir)).filter((entry) => !entry.endsWith(".tar.gz")),

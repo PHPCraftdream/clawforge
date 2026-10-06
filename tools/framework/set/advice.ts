@@ -63,6 +63,12 @@ export function recipeInvalidDefinition(recipe: string, message: string, file = 
   return problem("SET_RECIPE_INVALID", message, command("set validate", { note: `after fixing recipes/${recipe}/${file}` }));
 }
 
+/** A recipe directory whose NAME the path-name grammar rejects (names.ts owns the rule, the
+ *  message is its own): the folder is renamed, not its files. */
+export function recipeInvalidName(recipe: string, message: string): Problem {
+  return problem("SET_RECIPE_INVALID", message, command("set validate", { note: `after renaming recipes/${recipe}` }));
+}
+
 /** The remedy the instance-side recipe findings carry: re-provisioning one recipe. */
 export function provisionRemedy(recipe: string): CommandAdvice {
   return command(["provision-agent", recipe]);

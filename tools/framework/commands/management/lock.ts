@@ -25,6 +25,7 @@ import { nextActions, nextAdvice, problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
+import { sameContent } from "#src/runtime/docker/image-ref.ts";
 import {
   PLUGINS_LIST_ARGS,
   SKILLS_LIST_ARGS,
@@ -211,7 +212,9 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
     problems.push(problem("LOCK_DRIFT", `framework is ${current.framework}, locked at ${lock.framework}`));
   }
   // The digest, not the tag: a tag stays the same string even after it moves to a different image.
-  if (lock.image.digest !== undefined && current.image.digest !== undefined && lock.image.digest !== current.image.digest) {
+  // Compared as content (image-ref.ts), like set requirement matching: the same digest under a
+  // mirror registry's spelling is the same image, not drift.
+  if (lock.image.digest !== undefined && current.image.digest !== undefined && !sameContent(lock.image.digest, current.image.digest)) {
     problems.push(problem("LOCK_DRIFT", `image digest is ${current.image.digest}, locked at ${lock.image.digest}`));
   }
   if (lock.desiredState !== undefined && current.desiredState !== undefined && lock.desiredState !== current.desiredState) {

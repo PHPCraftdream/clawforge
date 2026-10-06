@@ -6,6 +6,26 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* A recipe folder whose name is not a recipe name is refused where the set is read, not
+  after it ships: `set validate` and `set build` answer the shared `SET_RECIPE_INVALID`
+  finding the artifact path already reported, instead of packing a tree that `set validate
+  --set`, `set diff`, `apply --set` and `set try` then refuse as an integrity error. The
+  grammar is the recipe-name rule itself, so `recipe list`'s broken mark and the refusal
+  agree.
+* An acceptance file that is valid JSON but fails the acceptance-check rules is a content
+  finding (`SET_RECIPE_INVALID`) on both the tree and the artifact path. It used to be judged
+  in the integrity phase for artifacts — an integrity error about bytes the archive agrees
+  with itself about — while the same bytes on the tree got the content finding.
+* `set build` and artifact loading keep tar's real error: the second, unflagged tar attempt
+  runs only when the first failed because the tar rejected `--force-local` (bsdtar). Any
+  other first-attempt failure is reported as the first attempt saw it — under Git Bash's GNU
+  tar a corrupt archive no longer surfaces as `Cannot connect to D: resolve failed`.
+* `lock --check` and `inspect` compare the pinned digest as content, like set requirement
+  matching already did: the same digest under a mirror registry spelling (`ghcr.io/…` locked,
+  `mirror.example.com/…` running) is no longer `LOCK_DRIFT`; a different digest still is.
+* `upgrade --dry-run --json` carries `pinnedImage` — the pin string the text plan names and
+  the run would recreate on and write to `OPENCLAW_IMAGE` — instead of only the tagless
+  `target` digest.
 * Refusals whose sentence names a place now spell every advice row from that place: the
   not-initialised refusal inside a checkout and the `--app` conflict refusal a checkout's
   `apps/<name>` deployment answers both carry rows that paste from the checkout root

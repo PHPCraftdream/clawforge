@@ -38,6 +38,7 @@ const file = (path: string, size: number, hash?: string): AppsEntry => ({ path, 
 const snapshot = (over: Partial<CheckoutSnapshot> = {}): CheckoutSnapshot => ({
   apps: [file("a", 1, "h1"), file("b", 2, "h2")],
   gitStatus: "",
+  ignoredStatus: "",
   ...over,
 });
 
@@ -99,6 +100,26 @@ check(
   diffSnapshots(snapshot({ gitStatus: undefined }), snapshot({ gitStatus: undefined })),
   [],
 );
+check(
+  "a leftover in ignored space is named, though --porcelain hides it",
+  diffSnapshots(snapshot(), snapshot({ ignoredStatus: "!! .claude/clawforge-deploy-policy-scratch/unrelated.secrets.env\n" })),
+  ["git ignored gained: !! .claude/clawforge-deploy-policy-scratch/unrelated.secrets.env"],
+);
+check(
+  "an ignored file that vanished during the run is named too",
+  diffSnapshots(snapshot({ ignoredStatus: "!! secrets/leaked.txt\n" }), snapshot()),
+  ["git ignored lost: !! secrets/leaked.txt"],
+);
+check(
+  "ignored content present in both passes is no change",
+  diffSnapshots(snapshot({ ignoredStatus: "!! data/state\n" }), snapshot({ ignoredStatus: "!! data/state\n" })),
+  [],
+);
+check(
+  "ignored space is not compared when git saw it in only one pass",
+  diffSnapshots(snapshot(), snapshot({ ignoredStatus: undefined })),
+  [],
+);
 
 // --- snapshotCheckout on a real temp dir: a write inside an existing app must be caught ---------
 
@@ -123,6 +144,23 @@ check(
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+{
+  // The real guard pass: the ignored status is recorded for THIS checkout, every line is an
+  // ignored entry, and the pruned generated roots never appear in it.
+  const live = await snapshotCheckout();
+  checkTrue("the live snapshot records the checkout's ignored space", live.ignoredStatus !== undefined);
+  check(
+    "every ignored line is an ignored entry",
+    (live.ignoredStatus ?? "").split("\n").every((line) => line === "" || line.startsWith("!!")),
+    true,
+  );
+  check(
+    "and the pruned roots are absent from it",
+    ["node_modules/", "apps/", "tools/framework/dist/"].some((root) => (live.ignoredStatus ?? "").includes(root)),
+    false,
+  );
 }
 
 await requires("symlink", "the walk records a symlink under apps/ without following it", async () => {

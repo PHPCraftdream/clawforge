@@ -11,11 +11,12 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/io/log.ts";
-import { spawnLocal } from "#src/runtime/transport/transport.ts";
+import { spawnLocal, tarFlagRejected, tarLocalFlags } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf } from "#src/service/checksums.ts";
 import { loadSet } from "#src/set/load.ts";
+import { recipeNameProblem } from "#src/set/ownership/validate.ts";
 import { setManifestId, DESIRED_STATE_PATH } from "#src/set/artifacts/model.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { localSecretValues, MIN_VALUE_LENGTH } from "./set-secrets-guard.ts";
@@ -58,6 +59,13 @@ export function defaultSetName(deployment: string): string {
  *  they are reported (R31-04); the install-time gate refuses the artifact instead. */
 export async function buildSet(ctx: Context, setName: string): Promise<SetBuild> {
   const loaded = await loadSet({ kind: "tree" }, { name: setName, declaredImage: ctx.settings.image });
+  // The one content gap build refuses for: a recipe folder the name grammar rejects would
+  // pack a set every consumer reports (validateSet runs the same rule on the artifact), so
+  // the tree is refused here with the same sentence instead.
+  for (const name of Object.keys(loaded.manifest.recipes)) {
+    const invalid = recipeNameProblem(name);
+    if (invalid !== undefined) die(invalid.detail);
+  }
   const tree = loaded.tree;
   if (tree === undefined) die("internal: loading a set from the tree carries no tree sources");
   return writeArtifact(tree.root, tree.recipeRoot, tree.desiredStateSource, setName, loaded.manifest);
@@ -134,13 +142,18 @@ async function writeArtifact(
       // spawnLocal, not the transport: a set is assembled from files on THIS machine, and
       // must not depend on a reachable target. Windows: GNU tar reads a drive letter in an
       // absolute `-f` path as a remote host spec; `--force-local` stops that, but stock
-      // bsdtar doesn't know the flag, so retry without it.
-      const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
+      // bsdtar doesn't know the flag — retry without it only for that refusal, so any
+      // other failure keeps its own cause instead of a remote-host error.
+      const forceLocal = tarLocalFlags();
       let result = await tarRunner("tar", [...forceLocal, "-czf", temporary, "-C", staging, "."], { allowFailure: true });
-      if (result.code !== 0) {
+      if (result.code !== 0 && forceLocal.length > 0 && tarFlagRejected(result)) {
         // Drop whatever the failed attempt left so the retry starts clean.
         await rm(temporary, { force: true });
         await tarRunner("tar", ["-czf", temporary, "-C", staging, "."]);
+      } else if (result.code !== 0) {
+        // The first attempt's cause is the report: a retry under a tar that accepted the flag
+        // would answer a corrupt archive with remote-host noise instead of the truth.
+        die(`tar could not write the set archive: ${(result.stderr || result.stdout).trim()}`);
       }
       await renameOverPrivateFile(temporary, artifact);
     } finally {

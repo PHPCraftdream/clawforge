@@ -59,6 +59,15 @@ check("when the lock was written is not part of what it pins", compareLock(compo
   check("and both digests are named", found[0].includes("sha256:bbb") && found[0].includes("sha256:aaa"), true);
 }
 
+// The same digest under a mirror registry spelling: the digest names the content, the
+// registry it was pulled from does not — set requirement matching (image-ref.ts
+// sameContent) treats the two as one image, so lock drift must not disagree with it.
+{
+  const mirror = details({ image: { reference: "ghcr.io/openclaw/openclaw:extended-stable", digest: "mirror.example.com/openclaw/openclaw@sha256:aaa" } });
+  check("the same digest under a mirror spelling is not drift", mirror, []);
+  check("a different digest still is, whatever registry it names", details({ image: { reference: "ghcr.io/openclaw/openclaw:extended-stable", digest: "mirror.example.com/openclaw/openclaw@sha256:ccc" } }).length, 1);
+}
+
 check("a framework version bump is drift", details({ framework: "0.2.0" }), ["framework is 0.2.0, locked at 0.1.0"]);
 check("a changed declaration is drift", details({ desiredState: "d".repeat(64) }), ["config/desired-state.json has changed since the lock was written"]);
 

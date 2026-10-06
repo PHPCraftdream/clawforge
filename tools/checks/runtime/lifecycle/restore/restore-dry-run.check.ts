@@ -4,7 +4,7 @@
 // never touch runtime.stop/start, whether the archive validates or not.
 
 import { restoreDryRun, restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
-import { NATIVE_MANIFEST_DEFERRED, identityLine, restorePlanHeader, restorePlanSteps, restoreStepsHeader } from "#framework/commands/lifecycle/restore/plan.ts";
+import { NATIVE_MANIFEST_DEFERRED, identityLine, restorePlanHeader, restoreStepsHeader } from "#framework/commands/lifecycle/restore/plan.ts";
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -22,6 +22,12 @@ const DATA_DIR = "/srv/openclaw/data";
 const ARCHIVE = "/srv/openclaw/backups/openclaw-x.tar.gz";
 const FULL_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json", "data/config/identity/", "data/config/identity/device-auth.json"];
 const NO_IDENTITY_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json"];
+// The steps are asserted by their declared text and the plan's literal step count, not by
+// position in the product's own list: a plan that stops describing an option, or starts
+// counting differently, must fail here instead of quietly reshaping the expectation.
+const STEP_START = "start the gateway, after checking its secrets are available";
+const STEP_NO_START = "leave the gateway stopped (--no-start)";
+const STEP_FRESH_IDENTITY = "drop identity and paired devices (--fresh-identity)";
 
 const MUTATING = new Set(["mv", "rm", "mkdir", "chmod", "chown"]);
 
@@ -115,8 +121,8 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   check("the plan names the archive", output.includes("openclaw-x.tar.gz"), true);
   check("the plan says identity is included", output.includes(identityLine(true)), true);
   check("the plan names the moved-aside pattern", output.includes(`${DATA_DIR}.replaced-<timestamp>`), true);
-  check("the plan lists the ordered steps", output.includes(restoreStepsHeader(restorePlanSteps({}).length)), true);
-  check("the plan says the gateway would start", output.includes(restorePlanSteps({}).at(-1) ?? ""), true);
+  check("the plan lists the ordered steps", output.includes(restoreStepsHeader(6)), true);
+  check("the plan says the gateway would start", output.includes(STEP_START), true);
 }
 
 // --- an archive missing identity: reported as such ------------------------------------------
@@ -136,9 +142,10 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   await withOutputSink((line) => { output += line; }, () =>
     restoreDryRun(ctx, ARCHIVE, { force: true, noStart: true, freshIdentity: true }),
   );
-  const plannedSteps = restorePlanSteps({ noStart: true, freshIdentity: true });
-  check("--no-start is reflected in the plan", output.includes(plannedSteps.at(-2) ?? ""), true);
-  check("--fresh-identity is reflected in the plan", output.includes(plannedSteps.at(-3) ?? ""), true);
+  check("--no-start is reflected in the plan", output.includes(STEP_NO_START), true);
+  check("--fresh-identity is reflected in the plan", output.includes(STEP_FRESH_IDENTITY), true);
+  check("the --no-start plan counts its extra step", output.includes(restoreStepsHeader(7)), true);
+  check("and never starts the gateway", output.includes(STEP_START), false);
 }
 
 // --- a validation failure gives the same refusal a real restore gives, and still nothing

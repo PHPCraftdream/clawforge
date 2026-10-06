@@ -332,3 +332,25 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     }
   });
 }
+
+/** The misleading cause a Windows retry without the flag produces under GNU tar: the drive
+ *  letter read as a remote host. Exported so checks assert the real cause is kept instead. */
+export const TAR_REMOTE_HOST_NOISE = "Cannot connect to D";
+
+/** The flag arguments a local tar invocation needs on this platform: GNU tar (Git Bash) reads
+ *  the drive letter in an absolute `-f` path as a remote host spec; `--force-local` stops that.
+ *  Stock bsdtar does not know the flag — see tarFlagRejected for the one failure that may retry.
+ */
+export function tarLocalFlags(): string[] {
+  return process.platform === "win32" ? ["--force-local"] : [];
+}
+
+/** Whether a failed local tar run rejected `--force-local` itself (bsdtar: "Option
+ *  --force-local is not supported") — the only failure a retry without the flag answers. Any
+ *  other first-attempt failure keeps its own error: retrying under GNU tar replaces the real
+ *  cause ("gzip: invalid header") with "Cannot connect to D: resolve failed".
+ */
+export function tarFlagRejected(result: ExecResult): boolean {
+  const noise = `${result.stderr}\n${result.stdout}`;
+  return noise.includes("--force-local") && /not supported|unrecognized option|unknown option/i.test(noise);
+}

@@ -29,7 +29,6 @@ import { runWatchCycle } from "#framework/commands/operate/watch/index.ts";
 import {
   WATCH_TELEGRAM_CHAT_ID_ENV,
   WATCH_WEBHOOK_FORMAT_ENV,
-  codesChangeLine,
   describeTransition,
   postTestAlert,
   postWebhookAlert,
@@ -232,13 +231,17 @@ try {
     );
     check("a detail-only change adds and clears nothing", [sameDetailPayload.codesAdded, sameDetailPayload.codesCleared], [[], []]);
 
+    // The change line is asserted by its literal text: an expectation derived from the same
+    // product call would quietly become "" if the line stopped being emitted, and pass.
+    const NEW_CODES_LINE = "new: DISK_LOW";
+    const CLEARED_CODES_LINE = "cleared: DISK_LOW";
     const slackTarget: WatchWebhookTarget = { url: new URL("https://hooks.slack.com/services/x"), format: "slack" };
     stubFetch();
     await postWebhookAlert(slackTarget, addedPayload);
     const slackAdded = calls[0]?.body as { text?: string };
     check(
       "slack's text is readable for a same-level codes-only change: from → to, plus the new code",
-      typeof slackAdded?.text === "string" && slackAdded.text.includes(describeTransition("degraded", "degraded", [], [])) && slackAdded.text.includes(codesChangeLine(["DISK_LOW"], []) ?? ""),
+      typeof slackAdded?.text === "string" && slackAdded.text.includes(describeTransition("degraded", "degraded", [], [])) && slackAdded.text.includes(NEW_CODES_LINE),
       true,
     );
 
@@ -248,7 +251,7 @@ try {
     const discordCleared = calls[0]?.body as { content?: string };
     check(
       "discord's text names a cleared code too",
-      typeof discordCleared?.content === "string" && discordCleared.content.includes(codesChangeLine([], ["DISK_LOW"]) ?? ""),
+      typeof discordCleared?.content === "string" && discordCleared.content.includes(CLEARED_CODES_LINE),
       true,
     );
 

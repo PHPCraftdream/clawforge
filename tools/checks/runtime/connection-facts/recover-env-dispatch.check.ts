@@ -337,11 +337,11 @@ try {
     interface RpcResult { result?: { isError?: boolean; content?: Array<{ text?: string }>; structuredContent?: unknown } }
     const badChoice = responses.find((response) => response.id === 4) as (RpcResponse & RpcResult) | undefined;
     const badChoiceText = badChoice?.result?.content?.[0]?.text ?? "";
-    check("a spec command's bad choice is refused in the parser's own words", badChoiceText, "pick: <action> takes one of a, b, not \"zzz\"");
+    check("a spec command's bad choice is refused in the parser's own words", badChoiceText, "<action> takes one of a, b, not \"zzz\"");
     checkTrue("the parser refusal is a tool error", badChoice?.result?.isError === true);
     check("the parser refusal carries no envelope", badChoice?.result?.structuredContent, undefined);
     const missing = responses.find((response) => response.id === 5) as (RpcResponse & RpcResult) | undefined;
-    check("a spec command's missing required argument is refused by the parser", missing?.result?.content?.[0]?.text, "pick: pick needs <action>");
+    check("a spec command's missing required argument is refused by the parser", missing?.result?.content?.[0]?.text, "pick needs <action>");
   }
 
   // --- (3) a throw past the pipeline is still an ordinary masked tool error ---------------

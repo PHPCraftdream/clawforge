@@ -10,7 +10,7 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { countValue } from "#src/core/values/value.ts";
+import { countValue, nameValue } from "#src/core/values/value.ts";
 import {
   defineAction,
   multiActionBody,
@@ -125,8 +125,20 @@ export { importHookModule } from "./hook-runtime.ts";
 const RECIPE_DEFAULT_ACTION = "list";
 
 const NAME_ARGUMENT = {
+  summary: "recipe name",
   name: "name",
-  description: "Recipe name; with import, the source directory to copy",
+  description: "Recipe name",
+  kind: "positional",
+  required: true,
+  parse: nameValue("recipe"),
+} as const satisfies ArgumentSpec;
+
+/** import copies a source directory, not a recipe name: any path is the source, and only the
+ * name it lands under (new-name, else the last segment of the source) is held to the grammar. */
+const SOURCE_ARGUMENT = {
+  summary: "directory to copy the recipe from",
+  name: "name",
+  description: "Directory to copy the recipe from",
   kind: "positional",
   required: true,
 } as const satisfies ArgumentSpec;
@@ -170,11 +182,12 @@ export const RECIPE = multiActionBody({
     }),
     import: defineAction({
       summary: "Copy a recipe directory into recipes/",
-      arguments: [NAME_ARGUMENT, {
+      arguments: [SOURCE_ARGUMENT, {
         name: "new-name",
-        summary: "import under this name instead of the source directory's own name",
+        summary: "import under this name, not the source directory's own",
         description: "With import: import under this name instead of the source directory's own name",
         kind: "positional",
+        parse: nameValue("recipe"),
       }],
       // Repository-side only: no target, no lock — either works before bootstrap has
       // prepared the lock home.

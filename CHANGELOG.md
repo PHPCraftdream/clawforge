@@ -26,6 +26,48 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `upgrade --dry-run --json` carries `pinnedImage` — the pin string the text plan names and
   the run would recreate on and write to `OPENCLAW_IMAGE` — instead of only the tagless
   `target` digest.
+
+* Arguments are grammar-checked before anything is contacted: `deploy --path` is held to the remote-root
+  boundary in the prepare stage, `set receipts --set-id` and `--receipt` and the `set`/`recipe`/app
+  names are held to the id grammar at parse (`recipe install <name>`, `recipe import`'s source and
+  `new-name` included), and `apply`/`plan`/`accept` refuse a `--set` artifact the local filesystem does not have
+  in the prepare stage — an unreachable target can no longer report instead of the argument refusal.
+
+* `set try` unpacks and verifies the artifact before it reads the target's live secrets: a typo'd
+  `--set` path or a corrupt artifact is refused before the target is contacted, a failed secrets read
+  still removes its staging and reports masked, and `--keep` retains only a try that took on target
+  resources — a failure before the instance exists leaves nothing behind. The retention note prints the
+  real `docker compose down` command instead of pointing at a framework CLI no gate invocation can run
+  there.
+
+* An MCP call that passes a positional of another action of a multi-action command (`recipe`'s
+  `<name>` for `recipe new`) is refused with the console's applies-to sentence, a call that leaves the
+  chosen action's first required positional unbound is refused like a missing argument, and the argv MCP
+  runs is built from the chosen action's own declaration slice — a foreign positional can no longer land
+  in the run.
+
+* The missing-required-argument refusal is one text on every surface: the console parser, MCP validate
+  and the gate's argument enforcement share one builder, and MCP validate now names the command it
+  validates, so its sentences match the console's byte for byte.
+
+* The gate's commands carry their effect markers on every surface: the help list marks destructive
+  commands, a command's `--help` notes when and why it writes (the same `effectNote` the framework's
+  own help renders), and the `docs/guide/commands.md` rows carry the same marker.
+
+* `apply-config --dump --force` is declared destructive and confirms over MCP like other destructive
+  calls, and `--force` conflicts with `--dry-run` — a dry run writes nothing. `secrets --store` and
+  `secrets --force` are refused at parse outside the actions that use them (the report reads no store;
+  only an action that creates or overwrites a store can replace one) instead of being silently ignored.
+
+* Names Windows refuses on any directory — `con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9` — are refused
+  wherever the framework checks a name (recipe, set, store, app names) instead of creating directories
+  the host cannot open or remove (previously valid names, now refused).
+
+* Argument summaries are bounded to 60 characters for the MCP schema line, the full text staying in the
+  description: `recipe import`'s `new-name`, `upgrade --image`, `rollback --previous-set`,
+  `apply-config --dump` and `expose tailscale --apply` carried their whole help text as the summary and are
+  shortened, with the bound enforced by a spec check.
+
 * Refusals whose sentence names a place now spell every advice row from that place: the
   not-initialised refusal inside a checkout and the `--app` conflict refusal a checkout's
   `apps/<name>` deployment answers both carry rows that paste from the checkout root

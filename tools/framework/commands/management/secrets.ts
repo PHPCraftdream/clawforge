@@ -9,6 +9,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
+import { nameValue } from "#src/core/values/value.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
@@ -30,7 +31,7 @@ export const SECRETS_ARGUMENTS = [
   { name: "init-store", description: "Create an empty store to fill in", kind: "flag", effect: "destroy" },
   { name: "apply", description: "Fill the target from a local store", kind: "flag", effect: "destroy" },
   { name: "dump", description: "Recover a local store from the running instance", kind: "flag", effect: "destroy" },
-  { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name" },
+  { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name", parse: nameValue("store") },
   {
     name: "force",
     summary: "Replace an existing store",
@@ -444,6 +445,10 @@ export const SECRETS = commandBody({
   arguments: SECRETS_ARGUMENTS,
   rules: [
     { rule: "requires", name: "break-foreign-lock", with: ["apply"], reason: "no other action takes the instance lock" },
+    // --store and --force used to be silently ignored by the actions they do not serve;
+    // the any-of requires rule (R18) refuses them at parse instead.
+    { rule: "requires", name: "store", any: true, with: ["init-store", "apply", "dump"], reason: "the report and the template actions use no store" },
+    { rule: "requires", name: "force", any: true, with: ["init-store", "dump"], reason: "only an action that creates or overwrites a store can replace one" },
     { rule: "conflicts", name: "print-template", with: ["template", "init-store", "apply", "dump"], reason: "printing is read-only: it cannot be combined with an action that writes" },
     { rule: "conflicts", name: "json", with: ["template", "print-template", "init-store", "apply", "dump"], reason: "only the default report is structured" },
   ],

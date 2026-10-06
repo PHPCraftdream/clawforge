@@ -62,8 +62,8 @@ export type ArgumentSpec = FlagSpec | ValueSpec<"option"> | ValueSpec<"positiona
 /** Rules check only presence: a flag is present if true; option/positional if a value was given;
  *  variadic if it has > 0 values. */
 export type ArgumentRule<N extends string = string> =
-  // name given => every one of `with` given
-  | { rule: "requires"; name: N; with: readonly N[]; reason?: string }
+  // name given => every one of `with` given, or — with `any` — at least one of them
+  | { rule: "requires"; name: N; with: readonly N[]; any?: true; reason?: string }
   // name given => none of `with` given
   | { rule: "conflicts"; name: N; with: readonly N[]; reason?: string }
   // each group is given whole or not at all; at most one group; with `required`: exactly one

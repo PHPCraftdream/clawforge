@@ -13,6 +13,7 @@
 
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { nameValue } from "#src/core/values/value.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
@@ -21,7 +22,7 @@ import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts
 import { recipeServerContainerPath, mcpServerMatches } from "#src/commands/management/provision-agent/index.ts";
 import type { CheckOutcome } from "#src/commands/check-outcome.ts";
 import type { Context } from "#src/core/context.ts";
-import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import { withUnpackedArtifact, refuseMissingArtifact } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import { readAcceptanceFile } from "#src/set/recipe-files.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
@@ -41,6 +42,7 @@ export const ACCEPT_ARGUMENTS = [
     summary: "Recipe to check",
     description: "Recipe to check (default: every recipe that declares checks)",
     kind: "positional",
+    parse: nameValue("recipe"),
   },
   { name: "set", description: "Check the verified artifact and save an acceptance receipt", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
@@ -365,12 +367,15 @@ interface AcceptPlan {
 export const ACCEPT = commandBody({
   effect: "change",
   arguments: ACCEPT_ARGUMENTS,
-  prepare: ({ values }) => ({
-    recipe: values.recipe,
-    set: values.set,
-    withModel: values["with-model"],
-    json: values.json,
-  }) satisfies AcceptPlan,
+  prepare: async ({ values }, local) => {
+    if (values.set !== undefined) await refuseMissingArtifact(values.set, local.exists);
+    return {
+      recipe: values.recipe,
+      set: values.set,
+      withModel: values["with-model"],
+      json: values.json,
+    } satisfies AcceptPlan;
+  },
   run: (ctx, plan) => acceptPlan(ctx, plan),
 });
 

@@ -25,7 +25,7 @@ import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/gro
 export const EXPOSE_TAILSCALE_ARGUMENTS = [
   {
     name: "apply",
-    summary: "run the printed `tailscale serve` command on the target instead of only printing it",
+    summary: "run the printed `tailscale serve` command on the target",
     description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it",
     kind: "flag",
     effect: "destroy",

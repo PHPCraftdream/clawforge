@@ -26,7 +26,7 @@ import type { StepStatus } from "#src/service/operations.ts";
 import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
-import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
+import { refuseMissingArtifact, withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
@@ -174,13 +174,16 @@ interface ApplyPlan {
 export const APPLY = commandBody({
   effect: "destroy",
   arguments: APPLY_ARGUMENTS,
-  prepare: ({ values }) => ({
-    set: values.set,
-    expect: values.expect,
-    dryRun: values["dry-run"],
-    json: values.json,
-    takeover: takeoverOf(values),
-  }) satisfies ApplyPlan,
+  prepare: async ({ values }, local) => {
+    if (values.set !== undefined) await refuseMissingArtifact(values.set, local.exists);
+    return {
+      set: values.set,
+      expect: values.expect,
+      dryRun: values["dry-run"],
+      json: values.json,
+      takeover: takeoverOf(values),
+    } satisfies ApplyPlan;
+  },
   run: (ctx, plan) => applyPlan(ctx, plan),
 });
 

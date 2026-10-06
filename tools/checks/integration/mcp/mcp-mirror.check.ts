@@ -181,15 +181,17 @@ try {
     (consoleRecipeHelp.stdout + consoleRecipeHelp.stderr).trim(),
   );
 
-  // `recipe`'s `new-name` now declares its summary (stage 3): the schema carries the full
-  // phrase instead of a heuristic cut, same sentence help shows.
-  // (Help no longer repeats the "With import:" lead-in next to the action scope, R32-04.)
+  // `recipe`'s `new-name` declares a summary bounded to 60 (stage 3 kept the full phrase in
+  // the description): the schema carries that summary, plus the action scope the merged view
+  // scopes the positional to (R18: the tool no longer offers it for every action); help
+  // carries the description minus its declared "With import:" lead-in (R32-04).
   const recipeTool = fullTools.find((tool) => tool.name === "recipe");
   const newNameSchemaDescription = recipeTool?.inputSchema?.properties?.["new-name"]?.description ?? "";
   const declaredNewName = (openclawCommands.recipe.arguments ?? []).find((argument) => argument.name === "new-name");
   check("the declaration carries a summary for new-name", typeof declaredNewName?.summary, "string");
-  check("the schema description is the declaration's summary", newNameSchemaDescription, declaredNewName?.summary);
-  check("the full argument description is still reachable through help", helpTextFor("recipe").includes(declaredNewName?.summary ?? ""), true);
+  const newScope = declaredNewName?.actions === undefined ? "" : ` (${declaredNewName.actions.join(", ")})`;
+  check("the schema description is the declaration's summary, scoped to its action", newNameSchemaDescription, `${declaredNewName?.summary ?? ""}${newScope}`);
+  check("the argument's help sentence is still reachable through help, minus the declared With lead-in", helpTextFor("recipe").includes((declaredNewName?.description ?? "").replace(/^With [\w/-]+: /, "")), true);
 
   const helpBareRun = await run(
     ["--app", deployment, "control-mcp"],

@@ -20,8 +20,8 @@ import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shar
 
 export const APPLY_CONFIG_ARGUMENTS = [
   { name: "dry-run", summary: "Validate the apply without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag", effect: "read" },
-  { name: "dump", summary: "Reconstruct desired-state.json from the live instance's config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
-  { name: "force", summary: "Overwrite an existing desired-state.json; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
+  { name: "dump", summary: "Reconstruct desired-state.json from the live config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
+  { name: "force", summary: "Overwrite an existing desired-state.json; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag", effect: "destroy" },
   { name: "break-lock", summary: "Take over a held instance lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
@@ -99,6 +99,7 @@ export const APPLY_CONFIG = commandBody({
   arguments: APPLY_CONFIG_ARGUMENTS,
   rules: [
     { rule: "conflicts", name: "dry-run", with: ["dump"], reason: "a dump has no dry-run form: it writes the recovered declaration or it does nothing" },
+    { rule: "conflicts", name: "dry-run", with: ["force"], reason: "--force only matters with --dump, which overwrites the recovered declaration; a dry run writes nothing" },
     { rule: "conflicts", name: "break-lock", with: ["dump"], reason: DUMP_LOCK_REASON },
     { rule: "conflicts", name: "break-foreign-lock", with: ["dump"], reason: DUMP_LOCK_REASON },
     { rule: "conflicts", name: "break-lock", with: ["dry-run"], reason: DRY_RUN_LOCK_REASON },

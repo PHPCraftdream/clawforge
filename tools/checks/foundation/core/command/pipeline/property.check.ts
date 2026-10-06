@@ -15,10 +15,10 @@
 // has no MCP case by construction — that is the surface's rule, not an exclusion of a command.
 
 import { executeCommand } from "#framework/core/command/execute.ts";
-import { ArgumentError, UnknownActionError, bind, specData, tokenize } from "#framework/core/command/index.ts";
+import { ArgumentError, UnknownActionError, appliesToMessage, bind, requiredArgumentRefusal, specData, tokenize } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf } from "#framework/core/command/spec.ts";
-import { gateConfirmationRefusal, positionalDashMessage, requiredArgumentMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
+import { gateConfirmationRefusal, positionalDashMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
 import { inputSchema } from "#framework/integration/mcp/server.ts";
 import { CONFIRM_REQUIRED, effectProfile } from "#framework/core/command/index.ts";
 import { commandRegistry } from "#framework/integration/gate.ts";
@@ -141,6 +141,51 @@ for (const unit of units) {
   }
 }
 
+// The structural guard of the class: argument facts are settled at the parse or prepare
+// stage, never after the context is built — by then a real host has already read the target
+// (WSL: /etc/wsl.conf) or refused it (LOCAL_TARGET_UNSUPPORTED), either of which masks the
+// refusal of the argument itself. Derived from the declarations alone: every value-taking
+// argument carries a value a grammar of this framework refuses — a declared grammar
+// invalidExample, else the shape every safeName grammar refuses — and a failure that happens
+// at the context or run stage must not be an argument refusal. (A grammar-less argument
+// whose run-stage refusal has fresh wording is not derivable from the declaration; declaring
+// its parser is the fix, and the value section above then pins it to the parse stage. On a
+// host where the context cannot be built at all (no deployment, an unsupported location) the
+// run stage is unreachable — the context refusal then masks any later grammar refusal, which
+// is exactly the masking this finding describes — so there the value section above carries the
+// assertion, with its zero-contact and both-surface checks.)
+const ARGUMENT_REFUSAL_SHAPE = /^invalid .+ (name|id) "/;
+function isArgumentShaped(error: unknown, label: string): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error instanceof ArgumentError) return true;
+  return error.message.startsWith(label) || ARGUMENT_REFUSAL_SHAPE.test(error.message);
+}
+for (const unit of units) {
+  const lead = unit.action === undefined ? [] : [unit.action];
+  const positionals = unit.args.filter((argument) => argument.kind === "positional");
+  const options = unit.args.filter((argument) => argument.kind === "option");
+  const declaresJson = unit.args.some((argument) => argument.name === "json" && argument.kind === "flag");
+  for (const argument of [...positionals, ...options]) {
+    const declared = invalidOf(argument);
+    // An empty string is the no-parser convention (the empty value refusal), not a grammar:
+    // the sweep needs a value the grammar-less argument itself cannot survive.
+    const invalid = declared === undefined || declared === "" ? "Bad_Name" : declared;
+    const label = argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`;
+    const name = `${unit.label}: ${label} ${JSON.stringify(invalid)} refused no later than prepare`;
+    const argv = [
+      ...lead,
+      ...positionals.map((other) => (other === argument ? invalid : exampleOf(other))),
+      ...options.flatMap((other) => [`--${other.name}`, other === argument ? invalid : exampleOf(other)]),
+      ...(declaresJson ? ["--json"] : []),
+    ];
+    const terminal = await runCase(unit.command, argv, "terminal");
+    cases += 1;
+    if (terminal.execution.stage === "context" || terminal.execution.stage === "run") {
+      checkTrue(`${name}: not an argument refusal after the context`, !isArgumentShaped(terminal.execution.error, label));
+    }
+  }
+}
+
 // Missing required arguments, derived from the declaration (requiredness is declared once,
 // so the parser refuses at parse on every surface — a hand-written prepare-stage usage line
 // where the declaration says required slips past the value cases above).
@@ -199,7 +244,9 @@ for (const unit of units) {
       ...Object.fromEntries(positionals.filter((other) => other.name !== omitted.name).map((other) => [other.name, exampleOf(other)])),
       [variadic.name]: values,
     };
-    checkTrue(`${name}: MCP validate refuses`, validate(declaration, mcpArgs).includes(requiredArgumentMessage(omitted.name)));
+    const omittedArgument = positionals.find((argument) => argument.name === omitted.name);
+    checkTrue(`${name}: MCP validate refuses in the binder voice`, omittedArgument === undefined
+      || validate(declaration, mcpArgs, { name: unit.command }).includes(requiredArgumentRefusal(omittedArgument, `${unit.command} ${unit.action ?? ""}`.trim())));
     if (omitted.name !== "action" && omitted.choices === undefined) continue;
     const argv = [
       ...(unit.action === undefined || omitted.name === "action" ? [] : [unit.action]),
@@ -420,7 +467,13 @@ for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
     }
     for (const argument of command.arguments ?? []) {
       if (argument.required !== true) continue;
-      checkTrue(`${entry.name}: a missing required ${argument.name} is refused by validate`, validate(command, {}).includes(requiredArgumentMessage(argument.name)));
+      let consoleRefusal: string | undefined;
+      try {
+        bind(command.arguments as readonly ArgumentSpec[], tokenize(command.arguments as readonly ArgumentSpec[], []), { command: entry.name });
+      } catch (error) {
+        consoleRefusal = (error as Error).message;
+      }
+      check(`${entry.name}: a missing required ${argument.name} reads as the console refusal`, validate(command, {}, { name: entry.name })[0], consoleRefusal);
     }
   }
 }
@@ -445,6 +498,49 @@ for (const gate of [checkoutGate(), installedGate("<app-root>")]) {
     }
   }
 }
+
+// One scope for positionals: the MCP view offers the positionals of a spec command per
+// action, like the console does. Derived from the declarations for every multi-action
+// command: a positional another action declares is refused with an applies-to refusal, a
+// positional given past an absent earlier slot is refused in the binder required voice,
+// and toArgv emits the positionals of the chosen action, in its own order (review R18).
+let scoped = 0;
+const positionalsByCommand = new Map<string, Map<string, ArgumentSpec[]>>();
+for (const unit of units) {
+  if (unit.action === undefined) continue;
+  const byAction = positionalsByCommand.get(unit.command) ?? new Map<string, ArgumentSpec[]>();
+  byAction.set(unit.action, unit.args.filter((argument) => argument.kind === "positional"));
+  positionalsByCommand.set(unit.command, byAction);
+}
+for (const [command, byAction] of positionalsByCommand) {
+  const declaration = openclawCommands[command];
+  for (const [action, own] of byAction) {
+    const foreign = (declaration.arguments ?? []).filter((argument) => argument.kind === "positional" && argument.name !== "action")
+      .find((argument) => !own.some((entry) => entry.name === argument.name));
+    if (foreign !== undefined) {
+      scoped += 1;
+      check(`${command} ${action}: a positional of another action is refused`, validate(declaration, { action, [foreign.name]: exampleOf(foreign) }, { name: command }), [appliesToMessage(foreign.name, (foreign as { actions?: readonly string[] }).actions ?? [], action)]);
+    }
+    const first = own[0];
+    const last = own[own.length - 1];
+    if (own.length >= 2 && first !== undefined && (first as { required?: boolean }).required === true && last !== undefined) {
+      scoped += 1;
+      let consoleRefusal: string | undefined;
+      try {
+        bind(own, tokenize(own, []), { command, action });
+      } catch (error) {
+        consoleRefusal = (error as Error).message;
+      }
+      check(`${command} ${action}: a positional past an absent earlier slot reads as the console refusal`, validate(declaration, { action, [last.name]: exampleOf(last) }, { name: command })[0], consoleRefusal);
+    }
+    if (own.length > 0) {
+      scoped += 1;
+      const scopedArgs: Record<string, unknown> = { action, ...Object.fromEntries(own.map((argument) => [argument.name, exampleOf(argument)])) };
+      check(`${command} ${action}: toArgv emits the action's own positionals in its own order`, toArgv(declaration, scopedArgs).slice(1), own.map(exampleOf));
+    }
+  }
+}
+checkTrue("the property check derived positional-scope cases from the declarations", scoped > 0);
 
 checkTrue("the property check derived cases from the declarations", cases > 0);
 

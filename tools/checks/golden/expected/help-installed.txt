@@ -25,7 +25,7 @@
       plan                 The ordered actions the declaration implies, without performing them
       apply                Run the plan, then confirm what the instance actually is *
       rollback             Put back the configuration an operation replaced *
-      apply-config         Apply the deployment's desired-state.json
+      apply-config         Apply the deployment's desired-state.json *
       configure-provider   Configure model providers from target-side environment variables
       secrets              Show required secrets and whether they are in place *
       recipe               Deploy services next to the instance: install, verify, list, and more *

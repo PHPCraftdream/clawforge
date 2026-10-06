@@ -12,12 +12,34 @@ import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf } from "#src/service/checksums.ts";
 import { canonicalJson } from "./model.ts";
 import { safeName } from "#src/core/values/names.ts";
+import { ValueError, type ValueParser } from "#src/core/values/value.ts";
 import type { AcceptanceStatus, AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 
 export const RECEIPT_VERSION = 1;
 const SET_ID = /^[0-9a-f]{64}$/;
 const RECEIPT_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const HASH = /^[0-9a-f]{64}$/;
+/** The argument grammars over the same ids the file layout enforces, declared so a bad
+ * --set-id or --receipt is refused at the parse stage, before the context is built. */
+export function setIdValue(): ValueParser<string> {
+  return {
+    expected: "a set id (64 hexadecimal characters)", example: "ab".repeat(32), invalidExample: "zz",
+    parse(raw) {
+      if (!SET_ID.test(raw)) throw new ValueError(`: invalid set id "${raw}"`);
+      return raw;
+    },
+  };
+}
+
+export function receiptIdValue(): ValueParser<string> {
+  return {
+    expected: "a receipt id", example: "fresh-1", invalidExample: "Bad_Id",
+    parse(raw) {
+      if (!RECEIPT_ID.test(raw) || raw === "." || raw === "..") throw new ValueError(`: invalid receipt id "${raw}"`);
+      return raw;
+    },
+  };
+}
 export type ReceiptSource = "set-try" | "accept";
 export type ReceiptCoverage = "complete" | "partial" | "none";
 export type ReceiptVerdict = "verified" | "failed" | "not-verified";

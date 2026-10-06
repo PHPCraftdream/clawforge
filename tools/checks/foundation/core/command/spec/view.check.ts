@@ -6,7 +6,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { argumentsView, specData, specOf, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription, validate } from "#framework/integration/mcp/server.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
 //
@@ -122,7 +122,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     (inputSchema(openclawCommands[commandName]) as { properties: Record<string, { description?: string }> }).properties[argumentName].description ?? "";
   check("break-lock's schema line is the declared summary", schemaOf("bootstrap", "break-lock"), "Take over a held instance lock");
   check("recover-env.adopt-runtime is a complete clause", schemaOf("recover-env", "adopt-runtime"), "Take the running container as authoritative");
-  check("expose.apply's summary is the full phrase, not the cut", schemaOf("expose", "apply"), "run the printed `tailscale serve` command on the target instead of only printing it (tailscale)");
+  check("expose.apply's summary is the declared phrase, bounded to 60", schemaOf("expose", "apply"), "run the printed `tailscale serve` command on the target (tailscale)");
   check("incident.keep-exposure is a complete phrase", schemaOf("incident", "keep-exposure"), "Proceed with the gateway published on every interface");
   check("backup.apply keeps the contrast", schemaOf("backup", "apply").startsWith("Apply the action instead of only previewing it"), true);
   check("set.keep is a complete phrase", schemaOf("set", "keep").startsWith("keep the throwaway instance running instead of removing it"), true);
@@ -174,6 +174,47 @@ import { check, finish } from "#checks/kit/harness.ts";
     (watchSchema.properties.interval.description ?? "").includes(intervalBareMinutes),
     true,
   );
+}
+
+// --- argument summaries are bounded to 60 characters -----------------------------------------
+//
+// ArgumentBase documents the contract: a summary is at most 60 characters (the MCP schema
+// line) and is required once the description runs longer. The bound is enforced here rather
+// than in the loader: the loader variant empirically broke tsgo inference downstream
+// (recipe/index.ts Values), and the shortened summaries keep their full text in the
+// description.
+
+{
+  const offenders: string[] = [];
+  let cases = 0;
+  for (const [name, command] of Object.entries(openclawCommands)) {
+    const entry = specOf(command);
+    if (entry === undefined) continue;
+    const data = specData(entry);
+    const parts = data.kind === "single" ? [data] : Object.values(data.actions);
+    for (const part of parts) {
+      for (const argument of part.arguments) {
+        cases += 1;
+        if (argument.summary !== undefined && argument.summary.length > 60) {
+          offenders.push(name + "." + argument.name + ": summary is " + argument.summary.length + " characters (max 60)");
+        }
+        if (argument.summary === undefined && argument.description.length > 60) {
+          offenders.push(name + "." + argument.name + ": needs a summary, its description is longer than 60");
+        }
+      }
+    }
+  }
+  checkTrue("every argument summary is bounded to 60 (" + offenders.length + " offenders: " + offenders.join("; ") + ")", offenders.length === 0);
+  // The merged view composes per-action descriptions: a composition past 60 characters
+  // needs its own summary, or the schema is back to carrying the whole text (the bound
+  // applies to the declared summary; the composed one embeds the action lists).
+  for (const [name, command] of Object.entries(openclawCommands)) {
+    for (const argument of command.arguments ?? []) {
+      if (argument.description.length <= 60 || argument.summary !== undefined) continue;
+      offenders.push(name + "." + argument.name + ": composed description is longer than 60 without a summary");
+    }
+  }
+  checkTrue("the summary sweep reaches arguments (" + cases + " cases)", cases > 0);
 }
 
 // --- R31-03: one name, several actions, several accurate descriptions ------------------------

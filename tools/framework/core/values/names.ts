@@ -8,6 +8,15 @@
 const PATTERN = /^[a-z][a-z0-9-]*$/;
 const MAX_LENGTH = 64;
 
+// Windows reserves these on every path segment whatever the directory: a match for the
+// pattern that cmd and Git Bash still cannot open or remove (R18). The pattern above
+// already forces lowercase, so the lowercase spellings are the whole domain.
+const DEVICE_NAMES = new Set([
+  "con", "prn", "aux", "nul",
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
+
 /** Returns the name if it is safe to use as a path segment, throws otherwise. */
 export function invalidNameMessage(kind: string, value: string): string {
   return `invalid ${kind} name "${value}" — use lowercase letters, digits and dashes, starting with a letter`;
@@ -17,7 +26,7 @@ export function safeName(kind: string, value: string): string {
   if (value.length > MAX_LENGTH) {
     throw new Error(`${kind} name is too long (max ${MAX_LENGTH} characters)`);
   }
-  if (!PATTERN.test(value)) {
+  if (!PATTERN.test(value) || DEVICE_NAMES.has(value.toLowerCase())) {
     throw new Error(invalidNameMessage(kind, value));
   }
   return value;

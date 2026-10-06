@@ -80,7 +80,7 @@ is unchanged.
 | `plan` | `[--set <artifact>] [--json]` | The ordered actions the declaration implies, without performing them |
 | `apply` | `[--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Run the plan, then confirm what the instance actually is (destructive for some actions) |
 | `rollback` | `[--operation <id>] [--no-restart] [--previous-set] [--break-lock] [--break-foreign-lock <hostId>] [--json] [--dry-run]` | Put back the configuration an operation replaced (destructive for some actions) |
-| `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Apply the deployment's desired-state.json |
+| `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Apply the deployment's desired-state.json (destructive for some actions) |
 | `configure-provider` | `[--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Configure model providers from target-side environment variables |
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]` | Show required secrets and whether they are in place (destructive for some actions) |
 | `recipe` | `[<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes]` | Deploy services next to the instance: install, verify, list, and more (destructive for some actions) |
@@ -131,7 +131,7 @@ is unchanged.
 | --- | --- | --- |
 | `check` | `[<filter…>] [--list] [--jobs <n>] [--require <cap,...>]` | Run the framework's own checks (no instance needed) (checkout only) |
 | `new-app` | `<name>` | Create a deployment under apps/ (checkout only) |
-| `remove-app` | `<name> [--yes]` | Delete apps/<name> (checkout only) |
+| `remove-app` | `<name> [--yes]` | Delete apps/<name> (destructive) (checkout only) |
 | `list` | `[--json] [--no-status]` | Overview of every deployment under apps/ (checkout only) |
 | `version` | `[--json] [--verbose]` | Print clawforge's own version (also: --version, -v) |
 | `completion` | `<shell>` | Print a shell completion script (bash, zsh or pwsh) to stdout |

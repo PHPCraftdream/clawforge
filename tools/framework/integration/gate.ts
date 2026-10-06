@@ -19,7 +19,7 @@ import { bind, tokenize, tokenizeLenient } from "../core/command/parse.ts";
 import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
 import { specData, specOf } from "../core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
-import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
+import { destructiveSymbol, effectNote, helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import { DISPATCHER_COMMANDS } from "../core/app.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 import { VERSION_ALIASES } from "./version.ts";
@@ -48,7 +48,8 @@ export interface GateCommand {
    *  completion offers them at the top level. */
   readonly aliases?: readonly string[];
   /** What a call does to state, declared once like an AppCommand's: the MCP tool's confirm
-   *  field, its requirement and help's marker derive from it (core/command/effect.ts). */
+   *  field, its requirement, the help list marker, the --help note and the docs marker all
+   *  derive from it (core/command/effect.ts). */
   readonly effect: Effect;
   /** No Context — there is no deployment yet. Returns the exit code. */
   readonly run: (args: string[]) => Promise<number>;
@@ -59,12 +60,20 @@ export interface GateCommand {
  *  up here too instead of only on the deployment's own commands. */
 export function gateCommandHelp(command: GateCommand): void {
   renderCommandHelp(command.name, command);
+  // The same effect note a deployment command's --help carries, from the same declared
+  // effect (R18: remove-app's destroy used to show only over MCP).
+  const note = effectNote(command);
+  if (note !== undefined) {
+    info("");
+    info(note);
+  }
 }
 
-/** Lines for the command list in the gate's `help`, so a gate command appears beside the rest. */
+/** Lines for the command list in the gate's `help`, so a gate command appears beside the
+ *  rest, marked with the same effect marker the deployment's list carries (R18). */
 export function gateHelpLines(commands: GateCommand[]): string[] {
   if (commands.length === 0) return [];
-  return commands.map((command) => helpEntryLine(command.name, command.summary));
+  return commands.map((command) => helpEntryLine(command.name, `${command.summary}${destructiveSymbol(command)}`));
 }
 
 /** Dispatches argv against the gate's own commands. Returns the exit code when one of them

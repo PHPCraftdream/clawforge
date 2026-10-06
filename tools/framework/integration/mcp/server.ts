@@ -236,11 +236,11 @@ async function handleGateToolCall(
     replyError(id, -32602, `unknown tool: ${name}`);
     return;
   }
-  const problems = validate(gateCommand, args);
+  const problems = validate(gateCommand, args, { name });
   if (problems.length > 0) {
     reply(id, {
       isError: true,
-      content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
+      content: [{ type: "text", text: maskSecrets(problems.join("; ")) }],
     });
     return;
   }
@@ -273,11 +273,11 @@ async function handleAppToolCall(
   args: Record<string, unknown>,
   lookup: (name: string) => Declared | undefined,
 ): Promise<void> {
-  const problems = validate(command, args);
+  const problems = validate(command, args, { name });
   if (problems.length > 0) {
     reply(id, {
       isError: true,
-      content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
+      content: [{ type: "text", text: maskSecrets(problems.join("; ")) }],
     });
     return;
   }
@@ -292,7 +292,7 @@ async function handleAppToolCall(
     if (execution.error !== undefined && (execution.stage === "parse" || execution.stage === "confirm")) {
       const message = execution.error instanceof ConfirmationRequiredError
         ? execution.error.message
-        : `${name}: ${(execution.error as Error).message}`;
+        : (execution.error as Error).message;
       reply(id, { isError: true, content: [{ type: "text", text: maskSecrets(message) }] });
       return;
     }

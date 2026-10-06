@@ -10,6 +10,7 @@ import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { die, log } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { safeName } from "#src/core/values/names.ts";
 import { problem } from "#src/service/inspection.ts";
@@ -241,6 +242,14 @@ export async function unpackArtifactVerified(artifact: string): Promise<{ stagin
 
 export async function unpackArtifact(artifact: string): Promise<string> {
   return (await unpackArtifactVerified(artifact)).staging;
+}
+
+/** The prepare-stage refusal for a --set artifact path the local filesystem does not have:
+ * the command dies before the context is built, so an unreachable target cannot mask it. */
+export async function refuseMissingArtifact(path: string, exists: (path: string) => Promise<boolean>): Promise<void> {
+  if (!(await exists(path))) {
+    die(`${path} not found — build one with ${commandLine("set build")}, or pass the path to an existing set artifact`);
+  }
 }
 
 /** Read-only unpack for inspection — validate --set and set diff. Integrity still refuses

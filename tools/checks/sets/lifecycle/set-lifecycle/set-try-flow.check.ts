@@ -92,6 +92,20 @@ try {
   );
 
   const originalReadFile = ctx.transport.readFile.bind(ctx.transport);
+  // A missing artifact is unpacked and verified before the target is contacted: a typo
+  // path costs no round trip of secret values, and its refusal is the artifact refusal.
+  const typo = join(root, "no-such-set.tar.gz");
+  let contacts = 0;
+  const probeReadFile = ctx.transport.readFile.bind(ctx.transport);
+  const probeExists = ctx.transport.exists.bind(ctx.transport);
+  (ctx.transport as { readFile: typeof probeReadFile }).readFile = async (path) => { contacts += 1; return probeReadFile(path); };
+  (ctx.transport as { exists: typeof probeExists }).exists = async (path) => { contacts += 1; return probeExists(path); };
+  const typoRefusal = await fixture.captured(() => runSetTry(ctx, { artifact: typo, withModel: false, keep: false, jsonOnly: true }, dependencies));
+  (ctx.transport as { readFile: typeof probeReadFile }).readFile = probeReadFile;
+  (ctx.transport as { exists: typeof probeExists }).exists = probeExists;
+  assert.match(typoRefusal.error?.message ?? "", /is not a valid set artifact/);
+  assert.equal(contacts, 0, "a missing artifact is refused before the target is contacted");
+
   const liveSecretsPath = `${sourceData}/config/.env`;
   for (const code of ["EACCES", "EIO", "ETIMEDOUT", "ENOENT"]) {
     const protectedBefore: number = privateDirectories.length;
@@ -183,6 +197,22 @@ try {
     }));
     assert.equal(early.error?.message, "synthetic target problem", `keep=${keep}: the real problem, not a TypeError`);
     assert.equal((await readdir(triesDir)).length, triesBefore, `keep=${keep}: a try that never got an instance leaves no deployment directory`);
+    assert.equal(deploymentDir(), root);
+    assert.equal(setSourceDir(), undefined);
+  }
+  // And a try that dies before it owns any target resource (a port conflict) retains
+  // nothing under --keep either: there is no instance to keep.
+  for (const keep of [false, true]) {
+    const conflicted = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep, jsonOnly: true }, {
+      ...dependencies,
+      createContext: async () => {
+        const target = fixture.context(parseEnv(await readFile(envFile(), "utf8")));
+        (target.runtime as { portConflict: (port: string) => Promise<string | undefined> }).portConflict = async () => "10.0.0.9:24567";
+        return target;
+      },
+    }));
+    assert.match(conflicted.error?.message ?? "", /24567 is already used on the target/);
+    assert.equal((await readdir(triesDir)).length, triesBefore, `keep=${keep}: a try that never owned the target leaves no deployment directory`);
     assert.equal(deploymentDir(), root);
     assert.equal(setSourceDir(), undefined);
   }

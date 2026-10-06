@@ -161,8 +161,8 @@ check(
   check("a required argument is required in the schema too", schema.required, ["name"]);
   // Every problem at once, not the first one — the same contract the deployment's commands
   // are validated under.
-  check("an unknown argument is refused", validate(command, { bogus: "x" }), ["unknown argument: bogus", "name is required"]);
-  check("a missing required argument is reported", validate(command, {}), ["name is required"]);
+  check("an unknown argument is refused", validate(command, { bogus: "x" }), ["unknown argument: bogus", "<name> is required"]);
+  check("a missing required argument is reported", validate(command, {}), ["<name> is required"]);
 }
 
 {

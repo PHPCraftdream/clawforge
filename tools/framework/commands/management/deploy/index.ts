@@ -20,6 +20,7 @@ import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { Values } from "#src/core/command/index.ts";
 import type { DeployPlan } from "./arguments.ts";
 import { frameworkSourceRoot, resolveDeployArguments, DEPLOY_ARGUMENTS } from "./arguments.ts";
+import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
 import { assertDeployable } from "./refusals.ts";
 import { checkServerReady, prepareRemoteRoot } from "./server.ts";
 import { syncTrees, bootstrapAndReport, bootstrapRemoteLine } from "./sync.ts";
@@ -78,6 +79,12 @@ async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan):
 export const DEPLOY = commandBody({
   effect: "destroy",
   arguments: DEPLOY_ARGUMENTS,
+  // An explicitly given --path is refused here, in the prepare stage: the refusal is an
+  // argument fact, and at run an unreachable target would report instead of it.
+  prepare: ({ values }) => {
+    if (values.path !== undefined) validatedRemoteRoot(values.path);
+    return values;
+  },
   async run(ctx, values) {
     await runDeployCommand(ctx, values as Values<typeof DEPLOY_ARGUMENTS>);
   },

@@ -53,7 +53,7 @@ export const ROLLBACK_ARGUMENTS = [
   // whichever one `apply --set` installed before the current one.
   {
     name: "previous-set",
-    summary: "Reinstall the previously installed set instead of restoring one config file",
+    summary: "Reinstall the previously installed set, not one config file",
     description: "Reinstall the previously installed set instead of restoring one config file",
     kind: "flag",
   },

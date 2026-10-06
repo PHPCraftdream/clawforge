@@ -25,7 +25,7 @@
       plan                 The ordered actions the declaration implies, without performing them
       apply                Run the plan, then confirm what the instance actually is *
       rollback             Put back the configuration an operation replaced *
-      apply-config         Apply the deployment's desired-state.json
+      apply-config         Apply the deployment's desired-state.json *
       configure-provider   Configure model providers from target-side environment variables
       secrets              Show required secrets and whether they are in place *
       recipe               Deploy services next to the instance: install, verify, list, and more *
@@ -61,7 +61,7 @@
     Framework:
       check                Run the framework's own checks (no instance needed)
       new-app              Create a deployment under apps/
-      remove-app           Delete apps/<name>
+      remove-app           Delete apps/<name> !
       list                 Overview of every deployment under apps/
       version              Print clawforge's own version (also: --version, -v)
       completion           Print a shell completion script (bash, zsh or pwsh) to stdout
@@ -104,6 +104,8 @@
     Default is a dry run: lists the top-level entries and total size, and warns when the directory carries its own `.git` history (apps/<name> is not tracked by this repository's own git — see new-app's gitInitAdvice), then exits 0 without removing anything. --yes performs the removal.
     Refuses while the deployment still has a bootstrapped instance (running or stopped-but-bootstrapped, read the same way ./clawforge list reads it) — ./clawforge --app <name> destroy first (and --data if the data should go too).
     Refuses a name that is not a plain deployment name (the same rule new-app enforces), and refuses when the directory is itself a symlink.
+    
+    This command replaces or destroys state.
 
 === ./clawforge list --help ===
 ==> list — Overview of every deployment under apps/
@@ -494,6 +496,7 @@
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
       --json                 Emit the outcome as JSON
       --dry-run cannot be combined with --dump
+      --dry-run cannot be combined with --force
       --break-lock cannot be combined with --dump
       --break-foreign-lock cannot be combined with --dump
       --break-lock cannot be combined with --dry-run
@@ -509,6 +512,8 @@
     Refuses to overwrite an existing declaration unless --force is given.
     The flags are validated against the mode before anything is read or written: --dry-run cannot be combined with --dump — a dump has no dry-run form, it either writes the recovered declaration or does nothing — --break-lock and --break-foreign-lock apply only where an instance lock is taken (the real apply), and --force only applies to --dump.
     Kept separate from `apply`: its --dry-run really validates against the target (lockless, even before the instance is healthy), and --dump --force deliberately overwrites an existing declaration — `apply` does neither.
+    
+    This command can replace or destroy state, depending on the flags given.
 
 === expose --help ===
 ==> expose — Reach a loopback-bound gateway from outside: SSH tunnel or tailscale
@@ -728,6 +733,8 @@
       --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
       --json                 Emit the default read-only report as JSON (names/state/where-found only, never values) — refused with --template/--print-template/--init-store/--apply/--dump
       --break-foreign-lock requires --apply
+      --store requires --init-store, --apply or --dump
+      --force requires --init-store or --dump
       --print-template cannot be combined with --template and --init-store and --apply and --dump
       --json cannot be combined with --template and --print-template and --init-store and --apply and --dump
     
@@ -751,8 +758,8 @@
 ==> recipe — Deploy services next to the instance: install, verify, list, and more
     Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes]
       <action>               What to do with the recipe [list|import|new|verify|onboard|diagnose|install|remove|status|logs]
-      <name>                 Recipe name; with import, the source directory to copy
-      <new-name>             import under this name instead of the source directory's own name
+      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, remove, status, logs)
+      <new-name>             import under this name instead of the source directory's own name (import)
       --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
       --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, remove)

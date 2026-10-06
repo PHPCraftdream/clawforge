@@ -99,8 +99,9 @@ function argumentParts(slices: Readonly<Record<string, readonly ArgumentSpec[]>>
 
 /** What `arguments` shows for a body. A single action: its arguments as declared. A multi-action
  *  command: the positional `action` (choices in declaration order, required without a default
- *  action), the actions' positionals merged by name (first declaration, unscoped, required only
- *  when every action requires it), then the actions' variadics merged the same way but scoped
+ *  action), the actions' positionals merged by name (first declaration, scoped to the actions that
+ *  declare them, described per action when they differ, required only when every action requires
+ *  it), then the actions' variadics merged the same way but scoped
  *  like flags (`actions` when only some actions declare them), then flags and options through
  *  scopeByAction in "default action first, then declaration order" — `required` only when every
  *  action requires it.
@@ -133,7 +134,14 @@ export function argumentsView(body: CommandBody): readonly CommandArgument[] {
   }
   const merged = [...positionals.values()].map((argument): CommandArgument => {
     const { required: _required, ...rest } = argument as ArgumentSpec & { required?: boolean };
-    return { ...rest, ...(everyAction((other) => (other as { required?: boolean }).required === true, argument.name) ? { required: true } : {}) };
+    const declaring = order.filter((action) => slices[action].some((other) => other.kind === "positional" && other.name === argument.name));
+    const parts = argumentParts(slices, argument.name);
+    return {
+      ...rest,
+      ...(parts === undefined ? {} : { description: parts.map((part) => `${part.description} (${part.actions.join(", ")})`).join("; ") }),
+      ...(everyAction((other) => (other as { required?: boolean }).required === true, argument.name) ? { required: true } : {}),
+      ...(declaring.length === order.length ? {} : { actions: declaring }),
+    };
   });
 
   const variadics = new Map<string, { argument: ArgumentSpec; actions: string[] }>();

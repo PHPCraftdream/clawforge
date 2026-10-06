@@ -3,7 +3,7 @@
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
 import { maskSecrets } from "../../core/io/log.ts";
-import { bindsAsFlag, choicesRefusal, effectProfile, specOf, specShape, tokenize, type ArgumentSpec } from "../../core/command/index.ts";
+import { appliesToMessage, bindsAsFlag, choicesRefusal, effectProfile, requiredArgumentRefusal, specOf, specShape, tokenize, type ArgumentSpec } from "../../core/command/index.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
@@ -176,11 +176,6 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
   return maskSecrets(output.split(machineOutput).join(safePayload));
 }
 
-/** The one voice for a missing required argument, validate's and its checks'. */
-export function requiredArgumentMessage(name: string): string {
-  return `${name} is required`;
-}
-
 /** The refusal of a positional value the tokenizer would read as a flag. */
 export function positionalDashMessage(name: string): string {
   return `${name} cannot begin with -`;
@@ -197,10 +192,12 @@ export function gateConfirmationRefusal(commandName: string, command: Declared, 
 /** Checks tool arguments against the declaration. The client's schema is a courtesy, not a
  *  guarantee: anything may arrive on this stream, and a command's own parser sees argv, not
  *  types. For a spec command only the SHAPE is checked here — unknown property and value
- *  types; choices, required and value grammars are the parser's, one stage later, so they
- *  are refused in one voice with the console. Returns the problems, empty when the call is
- *  acceptable. */
-export function validate(command: Declared, args: Record<string, unknown>): string[] {
+ *  types, and which positionals the chosen action declares (a JSON caller names them, the
+ *  console positions them); choices, required and value grammars are the parser's, one
+ *  stage later, so they are refused in one voice with the console. Returns the problems,
+ *  empty when the call is acceptable. `context.name` is the tool's command word, for the
+ *  refusals that name it (required arguments). */
+export function validate(command: Declared, args: Record<string, unknown>, context: { name?: string } = {}): string[] {
   const declared = new Map((command.arguments ?? []).map((argument) => [argument.name, argument]));
   // specOf keys on the console run function: a gate command's argv-run is never in it.
   const spec = specOf(command as { readonly run?: unknown });
@@ -237,6 +234,31 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
   }
 
   if (spec !== undefined) {
+    const shape = specShape(spec);
+    const chosen = typeof args.action === "string" && shape.actions?.[args.action] !== undefined
+      ? args.action
+      : shape.defaultAction;
+    const slice = shape.actions === undefined
+      ? shape.arguments
+      : chosen === undefined ? [] : shape.actions[chosen]?.arguments;
+    const own = (slice ?? []).filter((argument) => argument.kind === "positional");
+    const given = (argument: ArgumentSpec): boolean => {
+      const value = args[argument.name];
+      return value !== undefined && value !== "";
+    };
+    // A JSON caller addresses positionals BY NAME where the console addresses them by
+    // POSITION inside the chosen action's own slice: one another action declares is
+    // refused (the parser's applies-to voice), and one given past an absent earlier
+    // slot is refused in the binder's required voice — toArgv emits by position, so
+    // either would land in a slot the caller never named.
+    const prefix = [context.name, chosen].filter((part) => part !== undefined && part !== "").join(" ");
+    for (const argument of declared.values()) {
+      if (argument.kind !== "positional" || argument.name === "action") continue;
+      if (!given(argument) || own.some((entry) => entry.name === argument.name)) continue;
+      problems.push(appliesToMessage(argument.name, argument.actions ?? [], chosen ?? ""));
+    }
+    const firstGiven = own.findIndex(given);
+    if (firstGiven > 0) problems.push(requiredArgumentRefusal(own[0], prefix));
     // toArgv puts a variadic after a bare `--`, where the tokenizer would fill a missing
     // positional from its first word: with a variadic given, a required positional must be too.
     const variadicGiven = [...declared.values()].some((argument) => {
@@ -247,7 +269,7 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
       for (const argument of declared.values()) {
         if (argument.kind !== "positional" || argument.required !== true) continue;
         const value = args[argument.name];
-        if (value === undefined || value === "") problems.push(requiredArgumentMessage(argument.name));
+        if (value === undefined || value === "") problems.push(requiredArgumentRefusal(argument, prefix));
       }
     }
     return problems;
@@ -256,17 +278,33 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
   for (const argument of declared.values()) {
     if (argument.required !== true) continue;
     const value = args[argument.name];
-    if (value === undefined || value === "") problems.push(requiredArgumentMessage(argument.name));
+    if (value === undefined || value === "") problems.push(requiredArgumentRefusal(argument, context.name));
   }
 
   return problems;
 }
 
 /** Turns tool arguments back into the argv the command already knows how to parse.
- *  Positionals come first, in declaration order, matching how the parsers read them;
- *  options use inline binding so even a value naming another option stays literal. */
+ *  Positionals come first, in the chosen action's own order (the order its
+ *  parsers read them in); options use inline binding so even a value naming another
+ *  option stays literal. */
 export function toArgv(command: Declared, args: Record<string, unknown>): string[] {
   const declared = command.arguments ?? [];
+  const spec = specOf(command as { readonly run?: unknown });
+  const shape = spec === undefined ? undefined : specShape(spec);
+  const chosen = shape !== undefined && typeof args.action === "string" && shape.actions?.[args.action] !== undefined
+    ? args.action
+    : shape?.defaultAction;
+  const slice = shape === undefined
+    ? declared
+    : shape.actions === undefined
+      ? shape.arguments
+      : chosen === undefined ? [] : shape.actions[chosen]?.arguments;
+  // Positionals are emitted from the chosen action's own slice, in its own order —
+  // never from the merged view, where another action's positional would land in
+  // a slot this call never named.
+  const actionRides = shape?.actions !== undefined;
+  const positionalOrder = (slice ?? []).filter((argument) => argument.kind === "positional");
   const positional: string[] = [];
   const named: string[] = [];
   // Appended after everything else: these are the arguments of another program, and
@@ -274,6 +312,9 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
   const trailing: string[] = [];
 
   for (const argument of declared) {
+    // The action word rides the merged view's own `action` positional; every other
+    // positional is emitted below, in the chosen action's own order.
+    if (argument.kind === "positional" && !(actionRides && argument.name === "action")) continue;
     const value = args[argument.name];
     if (value === undefined || value === false || value === "") continue;
 
@@ -283,21 +324,18 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
     else if (argument.kind === "flag") named.push(`--${argument.name}`);
     else named.push(`--${argument.name}=${String(value)}`);
   }
+  for (const argument of positionalOrder) {
+    const value = args[argument.name];
+    if (value === undefined || value === "" || value === false) continue;
+    positional.push(String(value));
+  }
 
   // A spec command's confirmation-set flags ride the confirmation instead of the caller,
   // read back from the action the call selects (the action word, or the body's default) —
   // never another action's flags.
-  const entry = args.confirm === true ? specOf(command as { readonly run?: unknown }) : undefined;
-  if (entry !== undefined) {
-    const shape = specShape(entry);
-    const action = typeof args.action === "string" && shape.actions?.[args.action] !== undefined
-      ? args.action
-      : shape.defaultAction;
-    const slice = shape.actions === undefined
-      ? shape.arguments
-      : action === undefined ? [] : shape.actions[action]?.arguments;
+  if (spec !== undefined && args.confirm === true) {
     for (const argument of slice ?? []) {
-      if (argument.kind === "flag" && argument.setByConfirm === true && !named.includes(`--${argument.name}`)) named.push(`--${argument.name}`);
+      if (argument.kind === "flag" && (argument as { setByConfirm?: boolean }).setByConfirm === true && !named.includes(`--${argument.name}`)) named.push(`--${argument.name}`);
     }
   }
 

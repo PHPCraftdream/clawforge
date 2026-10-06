@@ -14,7 +14,12 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { ConfirmationRequiredError, callFactsFor } from "#framework/core/command/index.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import { inputSchema } from "#framework/integration/mcp/schema.ts";
+import type { AppDefinition, AppCommand } from "#framework/core/app.ts";
+import type { Transport } from "#framework/runtime/transport/transport.ts";
 
 check("a real run stages under the shared name the container reads", stagedFileName(false), "clawforge-desired.json");
 check("a dry run does not", stagedFileName(true) === stagedFileName(false), false);
@@ -353,6 +358,28 @@ check("...but the headline still confirms the write happened", appliedHeadline(f
   check("bootstrap suppresses the restart advice only for a gateway it is about to start", bootstrapSource.includes("await applyConfig(live, [], { restartAdvice: wasRunning })"), true);
   check("set try suppresses it too (same reason, a throwaway instance)", setTrySource.includes("applyConfig(tryCtx, [], { restartAdvice: false })"), true);
   check("apply's own plan runner suppresses it (always paired with up/restart in the same plan)", applySource.includes("applyConfig(ctx, [], { restartAdvice: false })"), true);
+}
+
+
+// --- --dump --force replaces the recovered declaration with no backup: it confirms over MCP
+
+{
+  const command = orchestrationCommands["apply-config"] as AppCommand;
+  const app: AppDefinition = { name: "apply-config-fixture", description: "fixture", commands: { "apply-config": command } };
+  const transport = new Proxy({}, { get: () => () => { throw new Error("CONTACT"); } }) as unknown as Transport;
+  check(`--dump --force reads as destroy, --dump alone as change`, callFactsFor(command, ["--dump", "--force"]).effect, "destroy");
+  check(`--dump alone stays change`, callFactsFor(command, ["--dump"]).effect, "change");
+  check(`--dry-run stays read`, callFactsFor(command, ["--dry-run"]).effect, "read");
+  const schema = inputSchema(command) as { properties: Record<string, unknown>; required: string[] };
+  checkTrue(`the MCP schema offers confirm`, schema.properties.confirm !== undefined);
+  checkTrue(`confirm is offered, not required (a dump without --force is a change)`, !schema.required.includes("confirm"));
+  const refused = await executeCommand(app, "apply-config", ["--dump", "--force"], { surface: "mcp", transport });
+  check(`an MCP call without confirm stops at the confirm stage`, refused.stage, "confirm");
+  checkTrue(`the refusal is the confirmation one`, refused.error instanceof ConfirmationRequiredError);
+  const confirmed = await executeCommand(app, "apply-config", ["--dump", "--force"], { surface: "mcp", transport, confirmed: true });
+  checkTrue(`confirm: true gets past the confirm stage`, confirmed.stage !== "confirm");
+  const terminal = await executeCommand(app, "apply-config", ["--dump", "--force"], { surface: "terminal", transport });
+  checkTrue(`the console still asks no confirmation flag`, terminal.stage !== "confirm");
 }
 
 finish("apply-config");

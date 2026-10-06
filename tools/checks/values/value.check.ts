@@ -6,9 +6,11 @@
 import { bind, tokenize, ArgumentError } from "#framework/core/command/index.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
 import { countValue, nameValue, nonEmptyValue, portValue, regexValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
+import { invalidNameMessage, safeName } from "#framework/core/values/names.ts";
 import { sinceValue } from "#framework/core/values/durations.ts";
 import { scheduleIntervalValue } from "#framework/commands/operate/schedule.ts";
 import { imageRefValue } from "#framework/runtime/docker/image-ref.ts";
+import { setIdValue, receiptIdValue } from "#framework/set/artifacts/receipt.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
@@ -62,6 +64,8 @@ check("since: a timestamp", sinceValue.parse("2026-10-01T10:00:00Z"), "2026-10-0
 check("interval: 6h in minutes", scheduleIntervalValue({ bareMinutes: false }).parse("6h"), 360);
 check("interval: a bare number is minutes when allowed", scheduleIntervalValue({ bareMinutes: true }).parse("10"), 10);
 check("image: a reference", imageRefValue.parse("ghcr.io/openclaw/openclaw:2026.6.1").repository, "openclaw/openclaw");
+check("set id: 64 hex characters", setIdValue().parse("ab".repeat(32)), "ab".repeat(32));
+check("receipt id: a plain id", receiptIdValue().parse("fresh-1"), "fresh-1");
 
 // --- invalid values ------------------------------------------------------------------------
 
@@ -79,12 +83,17 @@ check("since refuses a sentence", refusalOf(sinceValue, "yesterday"), "--x takes
 check("interval refuses garbage", refusalOf(scheduleIntervalValue({ bareMinutes: true }), "abc")?.startsWith("--x must be a number of minutes or look like 30m, 6h or 1d"), true);
 check("image refuses a space", refusalOf(imageRefValue, "not an image")?.startsWith("--x: \"not an image\" is not a valid image reference"), true);
 
+check("set id refuses a short blob", refusalOf(setIdValue(), "zz"), "--x: invalid set id \"zz\"");
+check("receipt id refuses an upper case id", refusalOf(receiptIdValue(), "Bad_Id"), "--x: invalid receipt id \"Bad_Id\"");
+check("receipt id refuses a path step", refusalOf(receiptIdValue(), ".."), "--x: invalid receipt id \"..\"");
+
 // --- the parsers describe themselves truthfully ----------------------------------------------
 
 const PARSERS: ReadonlyArray<readonly [string, ValueParser<unknown>]> = [
   ["count", countValue()], ["port", portValue()], ["regex", regexValue()], ["name", nameValue("recipe")],
   ["non-empty", nonEmptyValue()], ["since", sinceValue], ["interval", scheduleIntervalValue({ bareMinutes: true })],
   ["backup interval", scheduleIntervalValue({ bareMinutes: false })], ["image", imageRefValue],
+  ["set id", setIdValue()], ["receipt id", receiptIdValue()],
 ];
 for (const [name, parser] of PARSERS) {
   let accepted = true;
@@ -126,5 +135,19 @@ for (const raw of ["abc", "", "7x"]) {
 for (const raw of ["6", "abc", "7m"]) {
   check(`backup install --interval ${JSON.stringify(raw)}`, refusalOf(scheduleIntervalValue({ bareMinutes: false }), raw, "interval"), await printedBy(backupInstall, ["--interval", raw]));
 }
+
+// Windows reserves device names on every path segment whatever the directory: a name the
+// name pattern accepts but cmd and Git Bash cannot open or remove (R18).
+for (const raw of ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"]) {
+  let refused: string | undefined;
+  try {
+    safeName("recipe", raw);
+  } catch (error) {
+    refused = (error as Error).message;
+  }
+  check(`name: the reserved device name "${raw}" is refused`, refused, invalidNameMessage("recipe", raw));
+  check(`name: the reserved device name "${raw}" is refused through the parser`, refusalOf(nameValue("recipe"), raw, "name")?.includes(`invalid recipe name "${raw}"`), true);
+}
+checkTrue('name: a lookalike with a suffix is still fine', safeName("recipe", "con-course") === "con-course");
 
 finish("value parser");

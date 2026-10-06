@@ -9,6 +9,7 @@
 import { die, log, info } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
+import { nameValue } from "#src/core/values/value.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateLoadedSet, loadSet } from "#src/set/load.ts";
@@ -23,7 +24,7 @@ import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/gro
 import { SET_TRY } from "./set-try.ts";
 import { SET_DIFF_ARGUMENTS, runSetDiff } from "./set-diff.ts";
 import { SET_RECEIPTS } from "./set-receipts.ts";
-import { withArtifactInspected } from "#src/set/artifacts/install.ts";
+import { withArtifactInspected, refuseMissingArtifact } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, defaultSetName } from "./set-manifest.ts";
 import { defineAction, multiActionBody, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
@@ -31,12 +32,12 @@ import { defineAction, multiActionBody, type ArgumentSpec, type Values } from "#
 const SET_NAME_SUMMARY = "Set name";
 
 export const SET_BUILD_ARGUMENTS = [
-  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", parse: nameValue("set") },
   { name: "json", summary: "Emit the manifest and its id as JSON", description: "Emit the manifest and its id as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const SET_VALIDATE_ARGUMENTS = [
-  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", parse: nameValue("set") },
   { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
   { name: "json", summary: "Emit the findings as JSON", description: "Emit the findings as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
@@ -203,6 +204,12 @@ export const SET = multiActionBody({
       summary: "Check a set without a running instance",
       effect: "read",
       arguments: SET_VALIDATE_ARGUMENTS,
+      // A typo in --set dies here, in the prepare stage, before the context (and so before
+      // any target contact) is built.
+      prepare: async ({ values: v }, local) => {
+        if (v.set !== undefined) await refuseMissingArtifact(v.set, local.exists);
+        return v;
+      },
       run: (ctx, { name, set: artifact, json: jsonOnly }) => validateAction(ctx, { name, artifact, jsonOnly }),
     }),
     diff: defineAction({

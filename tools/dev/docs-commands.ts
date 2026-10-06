@@ -34,13 +34,15 @@ interface GateNames {
 const APP_IN_SUMMARY = /^expose (\S+)'s commands as MCP tools/;
 
 function summary(entry: RegistryEntry, gates: GateNames): string {
+  // The gate command's own declared effect, marked like a deployment command's row (R18).
+  const marker = entry.gate === undefined ? "" : destructiveMarker(entry.gate);
   if (entry.origin === "deployment" && entry.command !== undefined) return `${entry.summary}${destructiveMarker(entry.command)}`;
   if (entry.origin === "gate") {
-    if (!gates.installed.has(entry.name)) return `${entry.summary} (checkout only)`;
-    if (!gates.checkout.has(entry.name)) return `${entry.summary} (installed only)`;
+    if (!gates.installed.has(entry.name)) return `${entry.summary}${marker} (checkout only)`;
+    if (!gates.checkout.has(entry.name)) return `${entry.summary}${marker} (installed only)`;
   }
   const app = APP_IN_SUMMARY.exec(entry.summary)?.[1];
-  return app === undefined ? entry.summary : entry.summary.replace(app, "`<app>`");
+  return app === undefined ? `${entry.summary}${marker}` : entry.summary.replace(app, "`<app>`");
 }
 
 function row(entry: RegistryEntry, gates: GateNames): string {

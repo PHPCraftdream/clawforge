@@ -35,6 +35,17 @@ export function missingArgumentMessage(prefix: string, label: string): string {
   return `${prefix} needs ${label}`;
 }
 
+/** The one voice for a missing required argument: bind's refusal, word for word — the
+ *  parser throws it and the MCP validate routes through it, so a tool call reads the
+ *  console's own text instead of a second wording of the same refusal. */
+export function requiredArgumentRefusal(argument: ArgumentSpec, command?: string): string {
+  const label = argument.kind === "option" ? `--${argument.name} <${argument.valueName ?? "value"}>`
+    : argument.kind === "variadic" ? `<${argument.name}…>`
+    : argument.kind === "flag" ? `--${argument.name}`
+    : `<${argument.name}>`;
+  return command === undefined || command === "" ? `${label} is required` : missingArgumentMessage(command, label);
+}
+
 /** One argument's label in a rule's text: `--name`, `<name>`, `<name…>`. */
 function ruleLabel(declared: ReadonlyMap<string, ArgumentSpec>, name: string): string {
   const argument = declared.get(name);
@@ -63,7 +74,14 @@ export function ruleText(
   const lead = prefix === "" ? "" : `${prefix} `;
   const withReason = (text: string): string =>
     options.mode !== "help" && rule.reason !== undefined ? `${text} — ${rule.reason}` : text;
-  if (rule.rule === "requires") return withReason(`${ruleLabel(byName, rule.name)} requires ${groupClause(byName, rule.with)}`);
+  if (rule.rule === "requires") {
+    const list = rule.with.map((name) => ruleLabel(byName, name));
+    // any-of reads as a choice ("A, B or C"); the default stays the conjunction ("A and B").
+    const clause = rule.any === true
+      ? (list.length <= 2 ? list.join(" or ") : `${list.slice(0, -1).join(", ")} or ${list[list.length - 1]}`)
+      : groupClause(byName, rule.with);
+    return withReason(`${ruleLabel(byName, rule.name)} requires ${clause}`);
+  }
   if (rule.rule === "conflicts") return withReason(`${ruleLabel(byName, rule.name)} cannot be combined with ${groupClause(byName, options.incomplete ?? rule.with)}`);
   if (options.mode === "help") return groupsClause(byName, rule.groups);
   if (options.case === "mix") return withReason(`${lead}takes ${groupsClause(byName, rule.groups)}, not both`);
@@ -96,8 +114,9 @@ export function enforceRules(
   for (const rule of rules) {
     if (rule.rule === "requires") {
       if (!isGiven(byName.get(rule.name), values)) continue;
-      const missing = rule.with.find((name) => !isGiven(byName.get(name), values));
-      if (missing !== undefined) {
+      const given = rule.with.map((name) => isGiven(byName.get(name), values));
+      const satisfied = rule.any === true ? given.some((entry) => entry) : given.every((entry) => entry);
+      if (!satisfied) {
         throw new ArgumentError(ruleText(rule, declared, context), rule.name);
       }
       continue;
@@ -127,6 +146,12 @@ export function enforceRules(
   }
 }
 
+/** The one voice for an argument another action owns: the parser refuses the dashed token
+ *  it saw, the MCP validate the JSON property — the same sentence, each surface's own
+ *  spelling of the argument. */
+export function appliesToMessage(name: string, actions: readonly string[], action: string): string {
+  return `${name} ${APPLIES_TO} ${formatActions(actions)}, not \`${action}\``;
+}
 function formatActions(actions: readonly string[]): string {
   return actions.map((name) => `\`${name}\``).join(", ");
 }
@@ -273,7 +298,7 @@ function scan(
         if (key !== undefined && scope !== undefined) {
           const sibling = scope.siblings.find((candidate) => candidate.name === key);
           if (sibling?.actions !== undefined && !sibling.actions.includes(scope.action)) {
-            throw new UnknownArgumentError(`--${key} ${APPLIES_TO} ${formatActions(sibling.actions)}, not \`${scope.action}\``, key);
+            throw new UnknownArgumentError(appliesToMessage(`--${key}`, sibling.actions, scope.action), key);
           }
         }
         const suggestion = key === undefined ? undefined : closestCommand(key, [...named.keys()]);
@@ -416,9 +441,7 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
     if (argument.kind === "flag" || argument.required !== true) continue;
     const absent = argument.kind === "variadic" ? (values[argument.name] as string[]).length === 0 : values[argument.name] === undefined;
     if (!absent) continue;
-    const label = argument.kind === "option" ? `--${argument.name} <${argument.valueName ?? "value"}>`
-      : argument.kind === "variadic" ? `<${argument.name}…>` : `<${argument.name}>`;
-    throw new ArgumentError(prefix === "" ? `${label} is required` : missingArgumentMessage(prefix, label), argument.name);
+    throw new ArgumentError(requiredArgumentRefusal(argument, prefix), argument.name);
   }
   return values;
 }

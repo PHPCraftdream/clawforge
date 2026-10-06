@@ -43,9 +43,9 @@ export function argumentsSignature(args: readonly CommandArgument[] | undefined)
 }
 
 /** Full `--help` body for one command: summary line, usage line, one line per argument
- *  (label, description, choices, required-ness), then details split on `\n`. Callers append
- *  whatever is specific to their own command shape afterwards — entry/cli.ts's
- *  destructive-state note, for one, which GateCommand has no equivalent of. */
+ *  (label, description, choices, required-ness), then one line of details per newline. Callers append
+ *  whatever is specific to their own command shape afterwards — the destructive-state note
+ *  (effectNote, shared with the gate's commands) and AppCommand's structured-envelope note. */
 export function renderCommandHelp(name: string, command: HelpDeclaration): void {
   log(`${name} — ${command.summary}`);
   const signature = argumentsSignature(command.arguments);
@@ -105,6 +105,16 @@ export function destructiveSymbol(command: EffectDeclaration): string {
   const { destructive, alwaysDestroys } = effectProfile(command);
   if (!destructive) return "";
   return alwaysDestroys ? " !" : " *";
+}
+
+/** The destructive-state note under a full `--help`, from the effect profile: one wording
+ *  per profile, shared by the deployment's commands and the gate's (R18). */
+export function effectNote(command: EffectDeclaration): string | undefined {
+  const { destructive, alwaysDestroys, byAction } = effectProfile(command);
+  if (!destructive) return undefined;
+  return alwaysDestroys ? "This command replaces or destroys state."
+    : byAction ? "This command can replace or destroy state, depending on the action given."
+    : "This command can replace or destroy state, depending on the flags given.";
 }
 
 /** Name column of every entry in the command list (commands, gate and built-in lines alike). */
@@ -182,14 +192,10 @@ export const STRUCTURED_ENVELOPE_HELP =
  *  path appends after it. */
 export function renderFullCommandHelp(name: string, command: AppCommand): void {
   renderCommandHelp(name, command);
-  const { destructive, alwaysDestroys, byAction } = effectProfile(command);
-  if (destructive) {
+  const note = effectNote(command);
+  if (note !== undefined) {
     info("");
-    info(alwaysDestroys
-      ? "This command replaces or destroys state."
-      : byAction
-        ? "This command can replace or destroy state, depending on the action given."
-        : "This command can replace or destroy state, depending on the flags given.");
+    info(note);
   }
   if (command.structured === true) {
     info("");

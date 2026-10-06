@@ -19,7 +19,7 @@ import { currentComposition, declarationChecksum } from "#src/commands/managemen
 import { isHealthy } from "#src/service/inspection.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
-import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import { withUnpackedArtifact, refuseMissingArtifact } from "#src/set/artifacts/install.ts";
 import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
@@ -362,6 +362,11 @@ export async function computePlan(ctx: Context): Promise<Plan> {
 export const PLAN = commandBody({
   effect: "read",
   arguments: PLAN_ARGUMENTS,
+  // A typo in --set dies here, in the prepare stage, before the context is built.
+  prepare: async ({ values }, local) => {
+    if (values.set !== undefined) await refuseMissingArtifact(values.set, local.exists);
+    return values;
+  },
   async run(ctx, plan) {
     const jsonOnly = plan.json;
     const artifact = plan.set;

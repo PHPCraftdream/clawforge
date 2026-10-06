@@ -2,7 +2,7 @@
 
 import { info, log } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
+import { listReceipts, readReceipt, setIdValue, receiptIdValue, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
 import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
@@ -13,6 +13,7 @@ export const SET_RECEIPTS_ARGUMENTS = [
     description: "With receipts: filter by immutable set id",
     kind: "option",
     valueName: "id",
+    parse: setIdValue(),
   },
   {
     name: "receipt",
@@ -20,6 +21,7 @@ export const SET_RECEIPTS_ARGUMENTS = [
     description: "With receipts: show this receipt; requires --set-id",
     kind: "option",
     valueName: "id",
+    parse: receiptIdValue(),
   },
   { name: "json", summary: "Emit the receipts as JSON", description: "Emit the receipts as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];

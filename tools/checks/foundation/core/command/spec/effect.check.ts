@@ -40,7 +40,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   accept: [[[], "change"]],
   rollback: [[[], "destroy"], [["--dry-run"], "read"]],
   operations: [[[], "read"]],
-  "apply-config": [[[], "change"], [["--dry-run"], "read"], [["--dump"], "change"]],
+  "apply-config": [[[], "change"], [["--dry-run"], "read"], [["--dump"], "change"], [["--dump", "--force"], "destroy"]],
   expose: [
     [["ssh"], "read", false], [["status"], "read", false], [["tailscale"], "read", false], [["tailscale", "--apply"], "destroy", true],
   ],
@@ -139,7 +139,7 @@ for (const [name, rows] of Object.entries(TABLE)) {
 
 const DESTRUCTIVE = [
   "destroy", "backup", "restore", "push", "upgrade", "apply", "rollback", "expose", "watch", "incident",
-  "cli", "exec", "host", "secrets", "recipe", "deploy", "set",
+  "cli", "exec", "host", "secrets", "recipe", "deploy", "set", "apply-config",
 ];
 const ALWAYS_DESTROYS = ["cli", "exec", "host"];
 const BY_ACTION = ["backup", "expose", "watch", "recipe", "set"];

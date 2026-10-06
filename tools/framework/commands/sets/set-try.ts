@@ -10,11 +10,11 @@ import { mkdir, writeFile, rm, readFile, cp } from "node:fs/promises";
 import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
-import { log, info, warn, die } from "#src/core/io/log.ts";
+import { log, info, warn, die, maskSecrets, registerSecret } from "#src/core/io/log.ts";
 import { format, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
-import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "#src/runtime/deployment.ts";
+import { parseEnv, serializeEnvLine, frameworkRoot, composeFile } from "#src/core/env.ts";
+import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride, composeProjectName } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
 import type { Context } from "#src/core/context.ts";
 import { mountPoints } from "#src/runtime/mounts.ts";
@@ -180,24 +180,34 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   const secretValues: Record<string, string> = Object.fromEntries(
     (await localSecretValues()).map(({ name, value }) => [name.replace(/ \([^)]*\)$/, ""), value]),
   );
+  // Refused before the target is contacted: a typo'd --set path must not cost a read of
+  // the live secrets file, and an unreachable target must not mask the local refusal.
+  const unpacked = await unpackArtifactVerified(artifact);
+  const staging = unpacked.staging;
   const liveSecretsPath = secretsFileOnTarget(ctx);
   let liveSecrets: string | undefined;
   try {
     liveSecrets = await ctx.transport.readFile(liveSecretsPath);
-  } catch {
+  } catch (readFailure) {
     // exists() distinguishes a missing path from an unreadable one on every transport.
     const absent = await ctx.transport.exists(liveSecretsPath).then((present) => !present, () => false);
     if (!absent) {
-      die("cannot read live secrets from the target; set try was not started");
+      // The die below leaves before the outer finally runs: staging goes by hand first.
+      await rm(staging, { recursive: true, force: true }).catch(() => {});
+      die(`cannot read live secrets from the target; set try was not started (${maskSecrets(readFailure instanceof Error ? readFailure.message : String(readFailure))})`);
     }
   }
-  if (liveSecrets !== undefined) Object.assign(secretValues, parseEnv(liveSecrets));
+  // Registered so a transport error that echoes one of these values is masked when the
+  // failure is reported — including the read failure right below.
+  for (const value of Object.values(secretValues)) registerSecret(value);
+  if (liveSecrets !== undefined) {
+    Object.assign(secretValues, parseEnv(liveSecrets));
+    for (const value of Object.values(secretValues)) registerSecret(value);
+  }
 
   // deploymentName() derives the compose project name from the directory basename, so
   // tryName must already be lowercase-and-hyphens (unlike mkdtemp's random suffix, which
   // can contain uppercase and compose rejects).
-  const unpacked = await unpackArtifactVerified(artifact);
-  const staging = unpacked.staging;
   const tryName = tryDeploymentName();
   // Under the checkout: a WSL/SSH path bridge can express this location on the target,
   // a random host temp directory cannot be mapped by SSH.
@@ -389,19 +399,24 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
         ? await teardownTry(tryCtx, dataRoot, keep)
         : { torndown: true, running: false };
       teardownError ??= teardown.error;
-      if (keep) {
+      if (keep && ownsTarget) {
         info(teardown.running
           ? `--keep: instance "${tryName}" left running at ${tryCtx.settings.serviceUrl}, data at ${dataRoot}`
           : `--keep: instance "${tryName}" was not confirmed running; inspect it before cleanup, data at ${dataRoot}`);
-        info(`deployment retained at ${tempDir}; run the framework CLI there to inspect or stop it`);
+        // --app selects apps/<name> only, so no gate invocation can address a throwaway
+        // directory: the note names the compose teardown (the argv stop() runs) instead.
+        info(`deployment retained at ${tempDir}; the gate cannot address a throwaway directory — stop it by hand when done:`);
+        info(`  docker compose --env-file ${join(tempDir, ".env")} --project-name ${composeProjectName()} --file ${composeFile} --project-directory ${tempDir} --profile cli down`);
+        info(`  then remove the data root ${dataRoot} and the directory ${tempDir}`);
       }
     }
   } finally {
     clearSetSource();
     useDeployment(realDir);
     await rm(staging, { recursive: true, force: true }).catch(() => {});
-    // --keep retains an instance; with no report there never was one.
-    if ((!keep || report === undefined) && teardownError === undefined && tempDirCreated) {
+    // --keep retains only a try that owned target resources; a failure before one exists
+    // (path bridge, port conflict) leaves nothing behind to keep.
+    if ((!keep || !ownsTarget) && teardownError === undefined && tempDirCreated) {
       try {
         await rm(tempDir, { recursive: true, force: true });
       } catch (error) {
@@ -417,7 +432,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   // createContext's, rethrows out of the catch itself) — kept as the narrowing the reads
   // below need.
   if (report === undefined) die("set try did not produce a report");
-  if (!keep) report = { ...report, torndown: teardownError === undefined };
+  if (!keep || !ownsTarget) report = { ...report, torndown: teardownError === undefined };
 
   const observed = observedAfter ?? observedBefore ?? { observations: { frameworkVersion: "unknown" }, digests: [] };
   const receipt = await saveEvidence({

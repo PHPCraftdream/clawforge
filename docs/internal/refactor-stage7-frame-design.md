@@ -8,6 +8,9 @@
 Пути — от `tools/framework/`, если не сказано иное. Это проект: кода он не меняет; реализация — S1.2–S1.6
 после согласования.
 
+Решения владельца по §10 (O1–O7, N2, N3) — [refactor-stage7-decisions.md](refactor-stage7-decisions.md). Заменённые
+рекомендации помечены на месте «заменено решением <ID>», решённый текст стоит рядом; обоснование проекта сохранено.
+
 ## 0. Решения коротко
 
 * **Frame** — одно значение «как и где будет исполнена строка»: способ запуска (`Launch`, а не строка
@@ -168,12 +171,17 @@ shell исключается). Поэтому строка в текущем fra
    * **случай 4**: `advice.app ≠` выбранному, `launch` ищет развёртывание по cwd (`system`,
      `deployment-shim`, `npm-bin`), `cwd` внутри другого развёртывания и известен `places.checkoutRoot` →
      `--project-root <checkoutRoot>/apps/<app>` (bin.ts читает его первым токеном и передаёт шлюзу с
-     `--app <app>`, `resolve.ts:resolveInstalledEntry`, `frameworkOwner`). Одна строка во всех shell;
+     `--app <app>`, `resolve.ts:resolveInstalledEntry`, `frameworkOwner`). Одна строка во всех shell.
+     Принято решением O2 с двумя условиями: (1) путь `<checkoutRoot>/apps/<app>` квотируется по `f.shells`
+     (правило аргумента §2.2, не по программе), закон S1.6 включает checkout с пробелом в пути; (2) `--project-root`
+     фиксируется одной строкой в `docs/guide` как поддерживаемый вход (раз мы его печатаем; сейчас в `docs/guide`
+     его нет). Если закон покажет непригодный отказ ветки `missingAppDecision` для несуществующего `apps/X/app.ts`,
+     для этого подслучая печатается совет с `at: "checkout-root"` (оговорка O2);
    * иначе `--app <app>` (как сейчас).
 3. **Fallback при отсутствии написания** (после перехода): (a) все `f.shells` пишутся одинаково → одна
    строка; (b) пишутся по-разному → основной shell (`shells[0]`); (c) ни один не пишется (bash-шим в
    `[cmd, pwsh]`) → posix-написание с примечанием `IN_BASH_NOTE` — Git Bash документированный путь
-   checkout на Windows (README). Для `at: "checkout-root"` в слоте, если основная строка — не
+   checkout на Windows (README; принято решением O1: `node tools\clawforge.ts` не печатается). Для `at: "checkout-root"` в слоте, если основная строка — не
    `checkout-shim`, `renderAdviceRows` добавляет строку bash-шима с `IN_BASH_NOTE` — это нынешняя
    «вторая строка» из `resolve.ts`/`delegate.ts`, перенесённая в рендерер (вывод не меняется).
 4. **Правило P (место на цели).** `f.cwd = unknown` или (`host = target` и `cwd ≠` корню запуска) → строка
@@ -259,6 +267,7 @@ Set-Location -LiteralPath '<p с '' >'`, а `cmd` не задаётся (fallbac
 фреймворк в `node_modules` чужого репозитория читает новый шим. `INVOCATION_VERSION` остаётся 1; новых
 полей v1 не получает (строгий парс старых версий отверг бы их). Тексты G0–G3/L1–L2 закрепляются fixture'ами
 в законе (§7). Отказ от legacy-writer'а — решение владельца к 1.0 (backlog, строка 13 остаётся).
+Принято решением O7; fixture-строки — литералы из истории, не вывод текущих writers (§7.1).
 
 ## 5. Вход: resolver frame-in/decision-out
 
@@ -266,7 +275,15 @@ Set-Location -LiteralPath '<p с '' >'`, а `cmd` не задаётся (fallbac
 
 * `CheckoutEntryInput`: `handedOver`/`handedProgram` → `launch: Launch | undefined` (из адаптера; `undefined` —
   нет передачи). `appFact` использует `resolvesByCwd(launch)` вместо строкового `CWD_PROGRAMS`.
-* `ocApp` нормализуется конструктором `appFromEnv(value)`: пустое/пробельное → не задано (D8).
+* ~~`ocApp` нормализуется конструктором `appFromEnv(value)`: пустое/пробельное → не задано (D8).~~ — заменено
+  решением O3. `appFromEnv(value)` возвращает три состояния: `{ state: "unset" }` (переменной нет) |
+  `{ state: "empty" }` (пустое или пробельное) | `{ state: "named"; name }`. Решение входа: для команды, которой
+  нужно развёртывание, `empty` — единый отказ по имени переменной «OC_APP is set but empty — unset it or name a
+  deployment» (текст `invalid deployment name ""` уходит); команды без развёртывания (шлюз, `help`, `version`,
+  `list`, диспетчер) `empty` игнорируют, проза рендерится как без выбора (закрывает R19-14). Довод: `OC_APP`
+  выбирает цель мутаций, а пустое значение обычно — интерполяция неустановленной переменной; «не задано» молча
+  выбрало бы default `openclaw` (например, для `destroy`). Writers пустого `OC_APP` в `tools/framework` нет.
+  MCP launcher проходит тот же вход и даёт тот же отказ (N3).
 * Каждое решение несёт `frame: { places, app: AppFact }`: `run` — выбранное; `gate-command` — ведущий `--app`
   (`by: flag`) или `none` (D7: консоль `clawforge --app demo list` и MCP-вызов `list` из процесса,
   обслуживающего `demo`, рендерят прозу одинаково — с `--app demo`); отказы — `none` и `checkoutRoot`.
@@ -309,7 +326,15 @@ Set-Location -LiteralPath '<p с '' >'`, а `cmd` не задаётся (fallbac
    разбором текста, как `invocation-hints.check.ts`), шим `init` (env из `SHIM`), `defaultLaunch` (global,
    checkout-копия, локальный пакет posix/win32/Git Bash), legacy-значения G1/L1 и v1 G2/G3/L2 как fixture-строки,
    ручной `verbatim` с пробелом (`/opt/claw forge/clawforge`). Выбор развёртывания: default, `--app`, `OC_APP`,
-   sole, cwd, пустой `OC_APP`.
+   sole, cwd, пустой `OC_APP` (ожидание по O3: отказ по имени для команд с развёртыванием, игнорирование для
+   шлюза/`help`/`version`/`list`).
+   Fixture поколений (решение O7) — литералы из истории, записанные в `golden/frames.ts` руками, а не вывод
+   текущих writers (I11, независимое ожидание): G0 — шим `710cf66^` без переменных (→ `defaultLaunch`);
+   G1 (`710cf66`) — `export CLAWFORGE_INVOKED_AS=./clawforge`; G2 (`a7d027e`) — `CLAWFORGE_INVOCATION=
+   '{"version":1,"program":"./clawforge","mode":"installed","audience":"terminal"}'` + G1-строка; G3 (`a841c16`) —
+   то же с `"mode":"checkout"`; L1 (`f620c8a`) — `CLAWFORGE_INVOKED_AS = "../../clawforge --app " + <name>`;
+   L2 (`a7d027e`) — `{"version":1,"program":"../../clawforge","mode":"checkout","app":{"name":<name>,
+   "selectedBy":"flag"},"audience":"mcp"}` + L1-строка. (`${INVOCATION_VERSION}` исторического текста = `1`.)
 2. **Строки** — `ADVICE_ROWS` (`golden/advice.ts`), отказы входа, токены прозы, долговечные строки §6.
 3. Для каждой пары и каждого `s ∈ frame.shells` (и `s` из `advice.shell`): `renderAdviceRows` → **модель
    токенизации shell** (`tools/checks/kit/shells.ts`: posix — кавычки/`\`/`&&`; cmd — `"`-переключение, `%`,
@@ -346,7 +371,8 @@ installed)» исчезает: его не производит ни один wr
 | `arguments.ts` рендерит текущим frame | закон: строка цели под `node_modules\.bin` (D5) |
 | `forShell` оставляет программу текущего frame | закон: `{install completion pwsh}` под checkout win32 (D6) |
 | `gate-command` без `app` | закон: консоль и MCP рендерят прозу по-разному (D7) |
-| `appFromEnv` принимает `""` | закон: пустой `OC_APP` → отказ вместо default (D8) |
+| ~~`appFromEnv` принимает `""`~~ | ~~закон: пустой `OC_APP` → отказ вместо default (D8)~~ — заменено решением O3 |
+| `appFromEnv("")` выбирает default (`empty` → `unset`) | закон: строка `destroy` с пустым `OC_APP` исполняется над default вместо отказа по имени (D8, O3) |
 | адаптер: `./clawforge` → `system` | `frame.check.ts` round-trip и закон (G1/G3) |
 | `posixTargetInvocation` берёт launch оператора | закон: cron-строка (`cd` + программа на цели) |
 | квотирование по `program.includes("/")` | закон: `verbatim` с пробелом под `[cmd, pwsh]` |
@@ -371,7 +397,7 @@ installed)» исчезает: его не производит ни один wr
 
 Порядок последовательный; каждый — один коммит с зелёным `npm run gate`. Изменение вывода — diff golden и пункт CHANGELOG.
 
-**S1.2. Тип и конструкторы.** Файлы: `core/io/invocation/{frame.ts (новый), index.ts, render.ts, prose.ts}`,
+**S1.2. Тип и конструкторы** (исходный шаг; заменено решениями O4 и O6 — делится на S1.2a и S1.2b ниже). Файлы: `core/io/invocation/{frame.ts (новый), index.ts, render.ts, prose.ts}`,
 `entry/root.ts`, `integration/deployment/init.ts`, `integration/mcp/project.ts`, `tools/clawforge.ts`, `entry/bin.ts`
 (только построение через конструкторы; frame ставится в обёртку над `setInvocation`), `tools/checks/foundation/invocation/frame.check.ts`,
 `golden/advice.ts` (столбцы из producer'ов). `checkoutRootProgram` удаляется: `at` → `toCheckoutRoot`; квотирование
@@ -381,10 +407,29 @@ new-app <name>` → `./clawforge new-app <name>  (in bash)` одной стро�
 Windows bin wrapper no longer name `node_modules\.bin\clawforge` at the checkout root, where it does not exist»;
 «Hints printed from a subfolder spell the entry relative to that folder».
 
+**S1.2a. Frame, конструкторы, закон с базой** (O4, O6). Файлы S1.2 выше, кроме относительного написания (`rel`
+даёт корень запуска, как сейчас), плюс из S1.6 переезжают `tools/checks/kit/shells.ts` (модель токенизации),
+`golden/frames.ts` (producer'ы и fixture-литералы O7) и `frame-law.check.ts` с базой известных нарушений
+`baseline.json:frameLawViolations` (ratchet: только убывает). Diff golden: только D1 (строка `(in bash)` для
+`local package (win32)`) и исчезновение столбца G2 «shim init … installed». CHANGELOG: пункт про
+`node_modules\.bin\clawforge` в корне checkout (O1).
+
+**S1.2b. Относительное написание из подкаталогов** (O4), отдельный коммит. Файлы: `frame.ts` (`rel(cwd, root)`),
+`docs/guide` (фраза «hints are spelled relative to the deployment root» правится). Diff golden — только строки
+подкаталогов (`../clawforge …`), собственный diff-ревью шага. Строка backlog P3 «A local-package hint pasted from a
+subdirectory…» (строка 15) удаляется в этом коммите. CHANGELOG: «Hints printed from a subfolder spell the entry
+relative to that folder». Если pwsh не запускает `..\node_modules\.bin\clawforge` без `.\`, написание для pwsh
+префиксуется `.\`/`..\` (проверит `requires("pwsh")` в S1.6).
+
 **S1.3. Resolver без глобалей.** Файлы: `entry/{resolve,delegate,bin}.ts`, `tools/clawforge.ts`,
 `integration/deployment/scaffold.ts`, `golden/matrix.ts`, ratchet'ы `frameReads`/`frameInstalls`/`modeDeciders`.
-Diff: пустой `OC_APP` выбирает как незаданный (было `invalid deployment name ""`); `clawforge --app demo list`
-рендерит прозу команд развёртывания с `--app demo`, как MCP. CHANGELOG: оба пункта.
+Diff: ~~пустой `OC_APP` выбирает как незаданный (было `invalid deployment name ""`)~~ — заменено решением O3:
+пустой `OC_APP` у команды с развёртыванием — отказ «OC_APP is set but empty — unset it or name a deployment»
+(было `invalid deployment name ""`), у шлюза/`help`/`version`/`list` — игнорируется (`OC_APP= clawforge help`
+больше не отказывает, R19-14); `clawforge --app demo list`
+рендерит прозу команд развёртывания с `--app demo`, как MCP. CHANGELOG: оба пункта; для `OC_APP` — «An empty OC_APP
+no longer breaks commands that need no deployment; commands that need one refuse it by name instead of reporting an
+invalid deployment name».
 
 **S1.4. Подсказка с местом и shell.** Файлы: `core/io/invocation/{advice,render,prose}.ts`, `core/io/log.ts`
 (`renderAdviceRows`), `integration/mcp/call.ts`, `core/command/execute.ts` (`nextActions`), `integration/gate.ts`
@@ -393,6 +438,10 @@ Diff: пустой `OC_APP` выбирает как незаданный (был
 `clawforge` — `clawforge --project-root <co>/apps/X destroy`. CHANGELOG: «The checkout-subfolder refusal prints
 a `cd` line each shell accepts»; «Advice naming another deployment, printed inside a deployment by the
 system-wide command, runs there instead of being refused as an `--app` conflict».
+Условия O2: квотирование пути `--project-root` по `frame.shells`; golden `advice-matrix.txt` — строки
+`remove-app`/`destroy` под `clawforge` из `apps/Y`; строка о `--project-root` в `docs/guide`. Решение N2: README:53
+(«Works both from WSL and from Windows (Git Bash, PowerShell)» в разделе о checkout) уточняется — вход checkout
+работает в Git Bash, PowerShell — для установленного пакета (O1).
 
 **S1.5. Долговечный вывод.** Файлы: `commands/operate/schedule.ts`, `commands/operate/watch/install.ts`,
 `commands/lifecycle/backup/install.ts`, `commands/management/deploy/{sync,arguments}.ts`,
@@ -402,14 +451,17 @@ schtasks, `remoteLine` — нет (байтовое совпадение — у�
 
 **S1.6. Закон.** Файлы: `tools/checks/surfaces/frame-law.check.ts`, `tools/checks/kit/shells.ts`,
 `tools/checks/kit/capabilities/capabilities.ts` (`cmd`), `golden/frames.ts`, записи в реестре контролей
-(§7.4), удаление заменённых ассертов `advice-matrix.check.ts`. Diff вывода продукта — нет. CHANGELOG: нет
+(§7.4), удаление заменённых ассертов `advice-matrix.check.ts`. Заменено решением O6: закон, модель shell и
+`golden/frames.ts` появляются в S1.2a; S1.6 обнуляет `frameLawViolations`, добавляет реальные shell (`requires`,
+способность `cmd`, строка «(in bash)» под `requires("bash")` — O1; checkout с пробелом в пути — O2) и удаляет
+ассерты `advice-matrix.check.ts:433–480`. Diff вывода продукта — нет. CHANGELOG: нет
 (внутреннее), запись в реестр находок.
 
 ## 10. Риски, отвергнутые альтернативы, вопросы
 
 **Риски.** (1) Байтовая неизменность cron/`remoteLine`/шимов — иначе повторная установка пишет «изменение» и
 sha256 launcher'а перестаёт совпадать: условие шага S1.5 и golden. (2) Относительное написание из подкаталога
-(О4) меняет много строк golden за раз — отдельный коммит-diff в S1.2. (3) `MSYSTEM` как признак Git Bash
+(О4) меняет много строк golden за раз — отдельный коммит-diff в S1.2 (решение O4: это коммит S1.2b). (3) `MSYSTEM` как признак Git Bash
 наследуется не всегда (Windows `node.exe` из WSL-bash его не видит) — тогда frame `[cmd, pwsh]` и строка с `\`,
 как сейчас; не хуже текущего. (4) Закон медленный при полном произведении: модель — в памяти, реальные shell —
 ≈ 40 строк; бюджет — как у `advice-matrix.check.ts` плюс запуск shell.
@@ -422,18 +474,26 @@ sha256 launcher'а перестаёт совпадать: условие шаг�
 
 **Вопросы владельцу.**
 * О1. Написание checkout для cmd/pwsh на Windows: нет (fallback «in bash», рекомендую) или `node tools\clawforge.ts`
-  (новый публичный вход).
+  (новый публичный вход). → Решение O1: fallback «in bash», как рекомендовано.
 * О2. Случай 4 через `--project-root <абсолютный путь>` в подсказке (рекомендую: одна строка во всех shell) или
-  две строки `cd` + команда.
+  две строки `cd` + команда. → Решение O2: `--project-root`, с условиями (квотирование по `shells`, строка закона
+  с пробелом в пути, строка в `docs/guide`; §2.3 п.2, S1.4).
 * О3. Пустой `OC_APP`: «не задано» (рекомендую, как пустой `CLAWFORGE_INVOCATION`) или единый явный отказ.
+  → Рекомендация заменена решением O3: три состояния `appFromEnv`, отказ по имени для команд с развёртыванием,
+  игнорирование для шлюза/`help`/`version`/`list` (§5, §7.4, S1.3).
 * О4. Относительное написание из подкаталогов (`../clawforge`) — закрывает строку backlog P3; принять ли diff.
+  → Решение O4: принять отдельным коммитом S1.2b.
 * О5. Лишняя строка bash-шима под `clawforge` в корне checkout — оставить (нет diff, рекомендую) или убрать.
+  → Решение O5: оставить.
 * О6. Порядок: закон с базой нарушений (ratchet) уже в S1.2, а S1.6 только обнуляет базу и добавляет
-  реальные shell — рекомендую, иначе S1.2–S1.5 идут без проверки I12.
-* О7. Окно совместимости: читать G0–G3/L1–L2 весь 0.x, legacy-writer до решения о 1.0.
+  реальные shell — рекомендую, иначе S1.2–S1.5 идут без проверки I12. → Решение O6: принять (закон в S1.2a).
+* О7. Окно совместимости: читать G0–G3/L1–L2 весь 0.x, legacy-writer до решения о 1.0. → Решение O7: принять;
+  fixture поколений — литералы из истории (§7.1).
 
 **Не проверено.** Ничего не запускалось (только `git show`/`grep`). Не подтверждены: `pushd "<p>"` и
 `Set-Location -LiteralPath` в cmd/pwsh 5.1/7; запуск `node_modules\.bin\clawforge` в pwsh без `.\`; наследование
 `MSYSTEM` до `node.exe`; что `--project-root` из ручной строки проходит все ветки `bin.ts` для несуществующего
 `app.ts`; что `install` никогда не попадал в JSON `next`; точное число мест `commandLine` (135 вызовов), которым
 понадобится `renderAdviceRows`, — оценено только по слотам `formatError`/`nextActions`.
+Итоги проверки после решений — [refactor-stage7-decisions.md](refactor-stage7-decisions.md) §3 (`install` в `next`
+и 135 вызовов `commandLine` подтверждены статически; shell-поведение — по-прежнему только запуском в S1.6).

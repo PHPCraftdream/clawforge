@@ -6,6 +6,9 @@
 Срез кода: `main` = `0cdea4d` (прочитан рабочий каталог основного checkout; worktree проектировщика стоит на
 `d36e76c`, на 47 коммитов позади, и для анализа не использовался). Статус: проект, реализация — после согласования.
 
+Решения владельца по §12 (Q1–Q9) и новым вопросам N1–N3 — [refactor-stage7-decisions.md](refactor-stage7-decisions.md).
+Заменённые рекомендации помечены на месте «заменено решением <ID>», решённый текст стоит рядом; обоснование сохранено.
+
 ## 0. Решения коротко
 
 | № | Решение |
@@ -130,7 +133,8 @@ Legacy `AppCommand` (публичный `run(ctx, args)`): `validate` legacy-в�
 ```ts
 // core/values/kind.ts
 export type KindName = "choice" | "count" | "port" | "pattern" | "duration" | "since"
-  | "name" | "id" | "checksum" | "absolutePath" | "localFile" | "localDirectory" | "recipeRef" | "image" | "text";
+  | "name" | "id" | "checksum" | "absolutePath" | "localFile" | "localDirectory" | "recipeRef" | "image" | "text"
+  | "hostId" | "sshDestination" | "commandName";   // решения: §3 «Вид для host id», Q4, N1
 
 export interface InvalidSample { readonly raw: string; readonly stage: "parse" | "prepare"; readonly why: string }
 
@@ -158,8 +162,12 @@ export interface ValueKind<T, R = T> extends ValueParser<T> {     // ValueParser
 | `choice(values)` | член списка, текст `choicesRefusal` | — | `outside-the-list`, `""` |
 | `count`, `positive`, `port`, `pattern`, `interval`, `since` | нынешние парсеры | — | нынешний `invalidExample`, `""` |
 | `name(kind, "create" \| "read")` | `safeName(kind)`; режимы в S2.4 ведут себя одинаково, S3.1 разводит политику | — | `Bad_Name`, `../x`, `-x`, `""` (+`CON` только для create после S3.1) |
-| `id(kind)` | не пусто, без ведущего `-`, без `/` `\`, не `.`/`..`, без управляющих; `provider` — нынешний regex `provider.ts:56` | — | `../x`, `-x`, `a/b`, `""` |
-| `checksum(form)` | `hex64` (set-id) или `declaration` (формат печати `plan`, см. вопрос Q6) | — | `zz`, `""` |
+| `id(kind)` | не пусто, без ведущего `-`, без `/` `\`, не `.`/`..`, без управляющих; `provider` — нынешний regex `provider.ts:56`. Для host id не применяется (вид `hostId` ниже) | — | `../x`, `-x`, `a/b`, `""` |
+| ~~`checksum(form)`~~ | ~~`hex64` (set-id) или `declaration` (формат печати `plan`, см. вопрос Q6)~~ — заменено решением Q6 | — | `zz`, `""` |
+| `checksum("hex64")` | `/^[0-9a-f]{64}$/` для `apply --expect` и `set receipts --set-id`: `declarationChecksum` — `sha256(...).digest("hex")` (`service/checksums.ts:15`, `management/lock.ts:173`), `apply` сравнивает строго (`apply.ts:431`). Пример `9f86d081` (`apply.ts:43`) — префикс, который никогда не совпадёт; заменяется полной строкой `9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08` | — | `zz`, `9f86d081`, `""` |
+| `hostId` | не пусто, без управляющих символов, остальное разрешено (`:` и пользовательский `HOSTNAME` допустимы). **Не** `id("host")`: записанный формат — `<COMPUTERNAME \| HOSTNAME \| hostname()>:<platform \| linux-<pid ns>>` (`runtime/lock/process-identity.ts:20–32`; пример `DESKTOP-1:win32`, `srv:linux-4026531836`), у записей до `7e6e0fd` суффикса может не быть; сравнение строгое (`security/instance-mutation-guard.ts:175`). Отказ записанному id сделал бы чужую блокировку неснимаемой (I14) | — | `""`, `a\u0007b` |
+| `sshDestination` | не пусто, без ведущего `-`, без пробелов и управляющих (Q4): `deploy` передаёт `<target>` в `ssh`/`rsync` позиционно без `--` (`deploy/server.ts:43–60`, `deploy/sync.ts:105–133`) | — | `-oProxyCommand=x`, `a b`, `""` |
+| `commandName` | имя есть в реестре команд (parse, did-you-mean); в схему MCP **не** проецируется как `enum` (N1) | — | `no-such-command`, `""` |
 | `absolutePath("posix-remote")` | нынешний `validatedRemoteRoot` | — | `relative/x`, `""` |
 | `localFile("artifact")` | не пусто | существует, обычный файл → `LocalArtifact` | `""` (parse); путь к отсутствующему, каталог (prepare) |
 | `localDirectory("recipe-source")` | не пусто | каталог с `recipe.json` → `LocalRecipeSource` | отсутствующий, без `recipe.json` (prepare) |
@@ -179,23 +187,31 @@ export interface ValueKind<T, R = T> extends ValueParser<T> {     // ValueParser
 
 | Вид | Мест | Где | Сейчас |
 | --- | --- | --- | --- |
-| `id("host")` (`--break-foreign-lock`) | 28 | одно объявление `BREAK_FOREIGN_LOCK_ARGUMENT` | свободно |
+| ~~`id("host")`~~ (`--break-foreign-lock`) — заменено решением §3 «Вид для host id» | 28 | одно объявление `BREAK_FOREIGN_LOCK_ARGUMENT` | свободно |
+| `hostId` (`--break-foreign-lock`) | 28 | то же объявление | свободно |
 | `choice` | 6 | backup create/pull/verify `--profile`, host `<context>`, mcp-setup `--client`, set forget `--kind` | choices |
 | `count`/`positive` | 6 | logs/incident/recipe diagnose/recipe logs `--tail`, backup `--keep`, operations `--limit` | parse |
 | `interval`/`since`/`pattern`/`port` | 5 | backup/watch install `--interval`, logs `--since`/`--grep`, expose ssh `--local-port` | parse |
 | `image` | 1 | upgrade `--image` | parse (без отказа `-`) |
 | `checksum` | 2 | apply `--expect`, set receipts `--set-id` | parse |
 | `id` (operation, receipt, provider) | 4 | rollback `--operation`, operations `<id>`, set receipts `--receipt`, configure-provider `--provider` | parse ×2; `operations <id>` и `--provider` свободны (provider — regex в prepare) |
-| `name(...)` | 8 | create: recipe import `<new-name>`, recipe new `<name>`, set build `--name`; read: set validate `--name`, secrets `--store`, destroy `--confirm-name`, set forget `--name`, configure-provider `--env` (`name("env-var")`) | parse ×5; 3 свободны |
+| `name(...)` | 8 | create: recipe import `<new-name>`, recipe new `<name>`, set build `--name`; read: set validate `--name`, secrets `--store`, destroy `--confirm-name`, set forget `--name` (`name("owned-object","read")`, Q7: имена в ledger записаны после `safeName`, `provision-agent/declaration.ts:43–45`), configure-provider `--env` (`name("env-var")`) | parse ×5; 3 свободны |
 | `recipeRef` | 9 | accept `<recipe>`, recipe verify/onboard/diagnose/install/remove/status/logs `<name>`, provision-agent `<recipe>` | `nameValue("recipe")`, существование — в `run` |
 | `localFile("artifact")` | 8 | plan/apply/accept/set validate/set try `--set`, set diff `--from`/`--to`/`<artifacts…>` | свободно; 4 из 8 проверяют существование в prepare вручную |
 | `localDirectory` | 1 | recipe import `<name>` (источник) | свободно |
 | `absolutePath` | 1 | deploy `--path` | свободно, проверка в prepare и повторно в run |
-| `text` | 7 | restore/push/verify `<archive>` (путь на цели), deploy `<target>`, cli/exec/host `<args…>` (`allow`, verbatim) | свободно |
+| `text` | 7 | restore/push/verify `<archive>` (путь на цели), ~~deploy `<target>`~~ (заменено решением Q4 → `sshDestination`), cli/exec/host `<args…>` (`allow`, verbatim) | свободно |
+| `sshDestination` | 1 | deploy `<target>` (вычитается из `text`: `text` — 6) | свободно; доходит до `ssh`/`rsync` как опция при ведущем `-` |
 
 Шлюз (§7): `check <filter…>` → `text(allow)`, `--jobs` → `count`, `--require` → `text` (список возможностей —
 вопрос Q7), `new-app <name>` → `name("deployment","create")`, `remove-app <name>` → `name("deployment","read")`,
-`completion <shell>` → `choice`; 6 мест, 2 с видом сейчас. Диспетчерский `help <command>` — `choice` из реестра.
+`completion <shell>` → `choice`; 6 мест, 2 с видом сейчас. ~~Диспетчерский `help <command>` — `choice` из реестра.~~
+Заменено решением N1: диспетчерский `help <command>` — вид `commandName` (проверка по реестру в parse с
+did-you-mean), без `enum` в схеме MCP: проекция `choice` добавила бы `enum` всех команд в инструмент `help`
+(`mcp-tools-list.json`, запись `help`, сейчас `command: { type: "string" }`) — рост бюджета `tools/list`, который
+ratchet не поднимает, и enum, зависящий от развёртывания. `check --require` — `text` (решение Q7): список
+возможностей живёт в `tools/checks/kit/capabilities/`, неизвестная отказывает до запуска проверок
+(`kit/capabilities/gate.ts:33`), без контакта с целью.
 
 ## 5. Подготовленный план
 
@@ -237,11 +253,11 @@ interface Phases<V, P, N extends Needs> {
 | recipe new | `name("recipe","create")`; отказ «уже существует» | `{ name: RecipeName, withHooks }` |
 | recipe verify/onboard/diagnose/install/remove/status/logs | `recipeRef` (замена `loadRecipe` из `runLocked`) | `RecipeRef` (+ прочие значения) |
 | provision-agent | `recipeRef` + `loadRecipeAgentBundle` (локально) | `{ recipe: RecipeRef, bundle }` |
-| accept | `localFile` для `--set`; `recipeRef` для `<recipe>` без `--set`; с `--set` — членство в манифесте остаётся в run как содержательный отказ (Q5) | `AcceptPlan` с брендами |
+| accept | `localFile` для `--set`; `recipeRef` для `<recipe>` без `--set`; с `--set` — членство в манифесте остаётся в run как содержательный отказ (Q5). Решение Q5: в run, но все отказы по выбранным рецептам (членство, наличие `acceptance.json`) — сразу после распаковки, **до первого обращения к `ctx`**: `acceptFromSource` получает предварительный проход `loadChecks` по всем рецептам до `observeRuntime`/`gatherInspection` (сейчас они идут первыми, `accept.ts:545–548`, а отказ `loadChecks` — позже, `:412–413`) | `AcceptPlan` с брендами |
 | set try / set diff / set validate / plan / apply `--set` | `localFile("artifact")` (заменяет `refuseMissingArtifact` в 4 prepare и добавляет его try/diff); распаковка и integrity — в run (`ArtifactIntegrityError` — факт содержимого) | `LocalArtifact` |
-| apply `--expect` | `checksum` (S2.4) | строка-бренд `Checksum` |
+| apply `--expect` | `checksum("hex64")` (S2.4, Q6) | строка-бренд `Checksum` |
 | operations `<id>`, rollback `--operation` | `id("operation")`; существование записи — факт цели, остаётся в run | `OperationId` |
-| set forget | `choice` + `name(...,"read")`; существование объекта — факт цели | `{ kind, name }` |
+| set forget | `choice` + `name("owned-object","read")` (Q7); существование объекта — факт цели | `{ kind, name }` |
 | deploy | `absolutePath`; `remoteRecipesPath`, `frameworkSourceRoot`, `deploymentName` — локальные, переезжают из `resolveDeployArguments` | `DeployPlan` без повторного `validatedRemoteRoot` |
 | configure-provider, destroy | виды `id("provider")`, `name("env-var")`; совпадение `--confirm-name` — `call.refuse` | как сейчас |
 
@@ -267,12 +283,18 @@ interface Phases<V, P, N extends Needs> {
 
 Объявления: `recipe import`, `recipe new` → `local`; `mcp-setup` → `local` — кандидат (backlog: падает на
 `LOCAL_TARGET_UNSUPPORTED`, хотя пишет только локальные файлы; требует проверки тела, Q8); `recover-env` остаётся
-`deployment`. Возражение backlog'а «неверное `needs` молча запустит команду цели локально» снимается типом: у
+`deployment`. Решение Q8: `mcp-setup` → `local` (`runMcpSetup` не читает `ctx` — только `deploymentDir()` и
+`setupProjectMcp`, `commands/management/credentials/mcp.ts:113–121`); `lock --check` остаётся `target`: он читает
+цель — `ctx.runtime.imageReference()` и инвентарь плагинов/навыков через `openclawCliBatch`
+(`commands/management/lock.ts:143–161`, `runLock` → `currentComposition(ctx, { includeExtensions: true })`, `:335`).
+Строка 28 backlog P3 ошибочно относит `lock --check` к локальным командам; она переписывается в S2.6a. Возражение backlog'а «неверное `needs` молча запустит команду цели локально» снимается типом: у
 `LocalScope` нет `transport`/`runtime`, тело с `needs: "local"`, трогающее цель, не компилируется.
 
 I5 сохраняется: аргументные отказы — `parse`/`prepare`, до любой стадии с контактом; для `local` контакта нет вовсе.
-I4/I6: needs объявлен один раз и читается одним конвейером. Эффекты `recipe import/new` (`destroy` от тела) не
-меняются этим шагом (Q1).
+I4/I6: needs объявлен один раз и читается одним конвейером. ~~Эффекты `recipe import/new` (`destroy` от тела) не
+меняются этим шагом (Q1).~~ — заменено решением Q1: `recipe import`/`recipe new` объявляют `change` в S2.6a вместе с
+`needs: "local"` (оба отказывают, если рецепт уже есть, `recipe/actions.ts:205`, `:287`, — только добавляют файлы);
+`mcp-tools-list.json` не меняется, исчезает только требование `confirm` этих двух действий.
 
 ## 7. Команды шлюза
 
@@ -300,6 +322,7 @@ completion и реестр не меняют вызовов (`entry/*` реда�
 `renderFullCommandHelp` для любого тела). Отказ аргумента шлюза — стадия `parse` с `--json`-документом у `list --json`/
 `version --json` (сейчас документа нет; Q3). Удаляются: `refuseAgainstDeclaration`, `gateConfirmationRefusal`,
 `captureGateRun`, ветка `command.effect` в `effectProfile`, `GateCommand.effect` как поле ввода (остаётся в фасаде).
+Следствия приняты решением Q3 (документ ошибки `--json`, удаление по одному `confirm: true`), шаг S2.6b.
 
 ## 8. Факты результата по стадиям
 
@@ -364,6 +387,7 @@ completion и реестр не меняют вызовов (`entry/*` реда�
 | NC-S2-late-error | тело бросает `ArgumentError` из `run` через `runOnContext` | `property.check.ts` (`LateArgumentError` = 0) |
 | NC-S2-lenient | мягкий режим снова отдаёт объявленный флаг опции | `completion-behaviour.check.ts` |
 | NC-S2-gate-note | `renderHelp` для записи шлюза без `effectNote` | help-паритет |
+| NC-S2-accept-order | в `acceptFromSource` вернуть `observeRuntime`/`gatherInspection` перед предварительным проходом `loadChecks` (Q5) | sweep: локальный отказ (`accept --set X <recipe>` без рецепта или без `acceptance.json`) обязан предшествовать любому контакту с целью — sweep видит контакт до отказа |
 
 **Ratchet'ы.** Новые: `actionSelectionOutsideCore` (чтения `defaultAction`/`actions[...]`-выбора вне
 `core/command/call.ts`) 3 → 0 к S2.8; `untypedValueArguments` 50 (+4 шлюза) → 0 к S2.4 (структурно, через
@@ -396,6 +420,12 @@ such, a positional never lands in another action's slot, and the first refusal i
 на `parse`; `upgrade --image -x` — отказ вида; `restore/push/verify -- -x`, `deploy -- -x` — отказ на консоли тоже
 (было только MCP); `configure-provider --provider/--env` — текст в голосе вида (`--provider …`), стадия `parse`
 вместо `prepare`; `set forget --name Bad/x` — отказ `name(read)` (Q7). CHANGELOG: перечень по командам.
+По решениям: `--break-foreign-lock` — `hostId` (любой записанный id принимается, отказ только пустому и с
+управляющими); `deploy <target>` — `sshDestination`, отдельная строка CHANGELOG «`deploy` refuses a target that starts
+with `-` (it reached ssh as an option)» (Q4); `apply --expect`/`set receipts --set-id` — `checksum("hex64")`, пример
+`apply.ts:43` — полная 64-символьная строка, golden `help-*.txt`, если пример печатается (Q6); `set forget --name` —
+`name("owned-object","read")`, `check --require` — `text` (Q7); `help <command>` — `commandName` без `enum`,
+`mcp-tools-list.json` не меняется (N1).
 
 **S2.5 Подготовленный план.** Файлы: `core/command/{spec,errors,execute}.ts` (`Prepared`, `PrepareCall`, токен
 `ArgumentError`, resolve, `LateArgumentError`, `runOnContext`); команды §5.2 и `lifecycle/backup/index.ts`
@@ -403,17 +433,26 @@ such, a positional never lands in another action's slot, and the first refusal i
 нет рецепта у `recipe <action>`/`provision-agent`/`accept` — `ArgumentError` на `prepare` (текст прежний, теперь с
 `--json`-документом и без контакта при недоступной цели); `recipe import Bad_Name/` — отказ до `Context`.
 CHANGELOG: «Local facts of arguments — a missing artifact or recipe, an import source's derived name — are refused
-before the deployment's target is read».
+before the deployment's target is read». По решению Q5: `accept.ts` — предварительный проход `loadChecks` по всем
+выбранным рецептам до `observeRuntime`/`gatherInspection`; контроль NC-S2-accept-order (§10). После S3.2
+пересмотреть: модель portable content может дать манифест как локальный факт prepare.
 
 **S2.6a Needs по действию.** Файлы: `spec.ts`, `execute.ts`, `recipe/index.ts`, (`mcp-setup` — по Q8),
 `needs.check.ts`. Diff: `recipe import/new` работают при недоступной/неподдерживаемой цели и битом `.env`.
-CHANGELOG: да.
+CHANGELOG: да. По решениям: `mcp-setup` → `needs: "local"` (`commands/management/credentials/mcp.ts`), `lock --check`
+остаётся `target` (Q8); `recipe import`/`recipe new` → эффект `change` (Q1). Строка 28 backlog P3 переписывается:
+закрыта для `mcp-setup`, `lock --check` из неё убирается как целевая команда. CHANGELOG: «`mcp-setup` works when the
+target location is unsupported or unreachable»; «MCP no longer asks for confirm on `recipe import`/`recipe new`,
+which only add files».
 
 **S2.6b Шлюз на теле спецификации.** Файлы: `entry/checkout-gate.ts`, `integration/{gate,version}.ts`,
 `integration/completion/index.ts`, `integration/deployment/init.ts`, `core/command/{spec,effect,execute}.ts`
 (`executeBody`, `ExitCode`, `nothing`), `core/io/help-render.ts`, `integration/mcp/server.ts`; проверки
 `gate-commands`, `gate-dispatch`, `property.check.ts` (раздел шлюза — общие случаи). Diff §7 (`remove-app`, пометки,
 `help X`, `--json`-документ). CHANGELOG: да. (Добавляет девятый коммит S2 к оценке плана — Q9.)
+По решению Q3: golden `mcp-tools-list.json` (`remove-app.required`), `help-checkout.txt` (`!` → `*`, строка
+эффекта), `refusals.txt` (документ `--json`). В этом коммите из backlog P3 удаляются строки 19 (gate `remove-app` с
+одним `confirm: true` только dry-run'ит) и 22 (`GateCommand` без `rules`).
 
 **S2.7 Факты по стадиям.** Файлы: `execute.ts`, `integration/provision.ts`, `integration/mcp/{call,server}.ts`,
 `mcp-changed.check.ts`. Diff: MCP `changed:false` у отказа до `run`. CHANGELOG: да.
@@ -430,7 +469,8 @@ Diff: кандидаты после `cmd --opt --flag ` — флаги кома�
 
 **Риски.** (1) Ужесточение чтения: `id`/`name(read)` на уже записанных значениях (host id, объекты владения) —
 I14 запрещает; грамматики `read` минимальны (без `/`, `..`, ведущего `-`), совместимость проверяется в S2.4 на
-значениях, которые пишет сам фреймворк (`newOperationId`, ledger). (2) MCP отдаёт ошибки по одной. (3) `observe` —
+значениях, которые пишет сам фреймворк (`newOperationId`, ledger); для host id риск снят видом `hostId` (решение
+§3 «Вид для host id»). (2) MCP отдаёт ошибки по одной. (3) `observe` —
 тестовый шов конвейера, как `CommandIo.transport`. (4) Схема `remove-app` теряет обязательный `confirm`, удаление
 по-прежнему требует `yes` или `confirm`. (5) S2.4 широк (≈25 файлов), механичен; S2.5 может пересечься с S3.3–S3.4
 по `set/artifacts/*`.
@@ -444,20 +484,35 @@ SSH-моста `set try`; оставлено вопросом Q5); вариан�
 **Вопросы владельцу.**
 Q1. `recipe import`/`new` наследуют `destroy` от тела и требуют `confirm` в MCP; объявить им `change`? Схема не
 меняется (у тела остаются destroy-действия), меняется требование `confirm` для двух действий.
-Q2. Принять «один первый отказ» в MCP вместо списка?
+→ Решение Q1: `change`, в S2.6a.
+Q2. Принять «один первый отказ» в MCP вместо списка? → Решение Q2: принять (S2.3, «MCP reports the first refusal only»).
 Q3. Принять следствия D6: `{"error":…}`-документ у `list --json`/`version --json` при отказе и удаление по
-`remove-app` с одним `confirm: true` в MCP (закрывает пункт backlog)?
+`remove-app` с одним `confirm: true` в MCP (закрывает пункт backlog)? → Решение Q3: принять оба; S2.6b, строки 19 и
+22 backlog удаляются там же.
 Q4. Принять отказ ведущему `-` у `restore/push/verify <archive>` и `deploy <target>` на консоли (`-- -x`)?
+→ Решение Q4: принять; `<archive>` — `text("path on the target", { leadingDash: "refuse" })`, `deploy <target>` —
+вид `sshDestination` (исправление безопасности: внедрение опции ssh).
 Q5. `accept --set X <recipe>`: членство рецепта в артефакте — в run как содержательный отказ (проект) или
-распаковка в prepare с освобождаемым планом?
+распаковка в prepare с освобождаемым планом? → Решение Q5: в run, но до первого обращения к `ctx`; NC-S2-accept-order.
 Q6. Формат чексуммы `plan` для `--expect` (сейчас любая непустая строка) — какой регекс считать каноническим?
+→ Решение Q6: `/^[0-9a-f]{64}$/`, вид `checksum("hex64")`; формат `declaration` не нужен; пример `apply.ts:43` полный.
 Q7. Вид `set forget --name` (`name(read)` или `id`) и `check --require` (`text` или список `choice` из возможностей)?
-Q8. `mcp-setup` (и `lock --check`) — `needs: "local"` в S2.6a?
-Q9. S2.6 в два коммита (needs и шлюз) — девять коммитов среза вместо восьми.
+→ Решение Q7: `name("owned-object","read")`; `check --require` — `text`.
+Q8. `mcp-setup` (и `lock --check`) — `needs: "local"` в S2.6a? → Решение Q8: `mcp-setup` → `local`; `lock --check`
+остаётся `target` (строка 28 backlog была неверна).
+Q9. S2.6 в два коммита (needs и шлюз) — девять коммитов среза вместо восьми. → Решение Q9: принять (S2.6a + S2.6b).
+
+**Решения по новым вопросам** ([decisions](refactor-stage7-decisions.md) §5).
+N1. Диспетчерский `help <command>` — вид `commandName`: проверка по реестру в parse с did-you-mean, без проекции в
+`enum` схемы MCP (§4.2). N2. README:53 уточняется в S1.4 проекта frame: вход checkout — Git Bash, PowerShell — для
+установленного пакета. N3. Пустой `OC_APP` в окружении MCP-клиента даёт в launcher'е тот же отказ, что на консоли
+(launcher проходит тот же вход; проект frame §5, S1.3).
 
 **Не проверено.** Ни одна проверка, gate или CLI/MCP-сценарий не запускались; прочитан рабочий каталог основного
 checkout (без `git status` — незакоммиченные правки там не исключены). Подсчёт аргументов — read-only импорт
 `openclawCommands`. Отсутствие строки эффекта у `help remove-app` внутри развёртывания и в MCP `help` — вывод из кода
 `renderHelp`, не воспроизведён. Не проверены: формат host id в `--break-foreign-lock`, где лежит `<archive>`
 у `push` (цель или локально), поведение `mcp-setup` без транспорта, точный список эталонов, затрагиваемых S2.3/S2.6b,
-и совпадение эталона скриптов автодополнения после S2.8.
+и совпадение эталона скриптов автодополнения после S2.8. После решений проверены статически (decisions §3):
+формат host id (`runtime/lock/process-identity.ts:20–32` → вид `hostId`), `push <archive>` лежит на цели
+(`lifecycle/state.ts:565–581`), `mcp-setup` не читает `ctx` (Q8).

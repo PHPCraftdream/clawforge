@@ -1,20 +1,20 @@
 {
   "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it. Retired: localizeOptOuts (infoRaw/reportErrorVerbatim/localizeHints) counted three symbols that no longer exist, so it could never move; the property it stood for, that the output layers print the text they are given, is pinned by advice-matrix.check.ts (info() and reportError write rendered advice un-rewritten).",
   "rawArgvScans": {
-    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone",
+    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone. 37 -> 36 (stage 7 S2.2): parseCall and execute.ts's --json probe read the action pick from selectAction (core/command/parse.ts); their own first-word scans are gone",
     "files": {},
-    "total": 37,
+    "total": 36,
     "exempt": {
       "tools/framework/core/command/parse.ts": {
-        "reason": "the tokenizer and parseCall's action pick: the one reading every other site defers to",
+        "reason": "the tokenizer and selectAction (parseCall's action pick): the one reading every other site defers to",
         "lines": {
+          "if (first !== undefined && !first.startsWith(\"-\")) {": 1,
           "if (!token.startsWith(\"--\")) return false;": 1,
           "if (token.startsWith(\"--\")) {": 1,
           "const argument = flagToken.startsWith(\"--\") ? named.get(flagToken.slice(2)) : undefined;": 1,
           "const key = flagToken.startsWith(\"--\") ? flagToken.slice(2) : undefined;": 1,
           "const name = token.startsWith(\"--\") && eq !== -1 ? token.slice(0, eq) : token;": 1,
-          "return token.startsWith(\"-\");": 1,
-          "if (first !== undefined && !first.startsWith(\"-\")) {": 1
+          "return token.startsWith(\"-\");": 1
         }
       },
       "tools/framework/integration/gate.ts": {
@@ -87,12 +87,6 @@
         "reason": "a ValueError message prefix, not argv",
         "lines": {
           "throw new ValueError(message.startsWith(\"--interval \") ? message.slice(\"--interval \".length) : `: ${message}`);": 1
-        }
-      },
-      "tools/framework/core/command/execute.ts": {
-        "reason": "mirrors parseCall's action pick (first word, not a dash, naming an action; else the default action) for the pre-parse --json decision; the rest is tokenize's reading",
-        "lines": {
-          "if (first !== undefined && !first.startsWith(\"-\") && names.includes(first)) {": 1
         }
       },
       "tools/framework/commands/orchestration/apply.ts": {

@@ -8,7 +8,8 @@
 
 import type { CommandArgument } from "#src/core/app.ts";
 import {
-  ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument, UnknownActionError, UnknownArgumentError,
+  ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument, UnknownActionError,
+  UnknownArgumentError,
 } from "#src/core/command/errors.ts";
 import type { ArgumentRule, ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
 import { scopeByAction } from "#src/core/command/view.ts";
@@ -164,6 +165,15 @@ function formatActions(actions: readonly string[]): string {
   return actions.map((name) => `\`${name}\``).join(", ");
 }
 
+/** The one decision of which action owns a declared argument, and the one refusal when
+ *  none does: the derived `actions` list on the argument (absent: every action of the
+ *  shape owns it). The tokenizer refuses the dashed token it saw with it, the MCP validate
+ *  the JSON property - the same sentence, each surface wording of the argument. */
+export function argumentScopeRefusal(argument: ArgumentSpec | CommandArgument, action: string, label?: string): string | undefined {
+  const actions = (argument as { actions?: readonly string[] }).actions;
+  return actions !== undefined && !actions.includes(action) ? appliesToMessage(label ?? argument.name, actions, action) : undefined;
+}
+
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):
  *   flag        true once seen, otherwise absent
  *   option      the value once seen (from `--opt value` or `--opt=value`); otherwise absent
@@ -305,9 +315,8 @@ function scan(
         const key = flagToken.startsWith("--") ? flagToken.slice(2) : undefined;
         if (key !== undefined && scope !== undefined) {
           const sibling = scope.siblings.find((candidate) => candidate.name === key);
-          if (sibling?.actions !== undefined && !sibling.actions.includes(scope.action)) {
-            throw new UnknownArgumentError(appliesToMessage(`--${key}`, sibling.actions, scope.action), key);
-          }
+          const refusal = sibling === undefined ? undefined : argumentScopeRefusal(sibling, scope.action, `--${key}`);
+          if (refusal !== undefined) throw new UnknownArgumentError(refusal, key);
         }
         const suggestion = key === undefined ? undefined : closestCommand(key, [...named.keys()]);
         dieUnknownArgument(token, suggestion === undefined ? undefined : `--${suggestion}`);
@@ -478,37 +487,119 @@ function refuseToken(refuse: Readonly<Record<string, string>> | undefined, token
   if (Object.hasOwn(refuse, name)) throw new ArgumentError(refuse[name], name.replace(/^-+/, ""));
 }
 
-/** argv → ParsedCall. With `actions`, `argv[0]` naming an action picks it; no word (or one
- *  starting with `-`) takes `defaultAction` with the whole argv, and without one is refused;
- *  any other word is an unknown action. A flag that another action declares is refused as
- *  belonging to it. */
-export function parseCall(shape: CallShape, argv: readonly string[], command = ""): ParsedCall<Record<string, unknown>> {
+// The normalized call form (stage 7 S2.2): ONE selection of the action — or of the single
+// unit — behind a call, from either surface's input shape: the console's positional tokens or
+// an MCP tool call's named input. The chosen unit's own arguments slice, its rules and refuse
+// tokens, and the cross-action scope (the applies-to diagnostics' source) come only from here,
+// so parse, MCP validate/toArgv, the --json probe and the checks cannot grow a second
+// default-action fallback or a second wording of the unknown-action refusal.
+//
+// Binding (values, provenance, named-form binding) is later S2.3 work; this module only
+// selects.
+
+/** How a call reaches the parser: the console's argv, or an MCP tool call's named input. */
+export type CallInput =
+  | { readonly kind: "argv"; readonly argv: readonly string[] }
+  | { readonly kind: "named"; readonly args: Readonly<Record<string, unknown>> };
+
+/** `name` is undefined only for a single-unit shape; `how` says which rule picked it. */
+export interface SelectedAction {
+  readonly name: string | undefined;
+  readonly how: "single" | "typed" | "named" | "default";
+}
+
+/** The declaration unit a call selects — never a merged view. */
+export interface SelectedUnit {
+  readonly selected: SelectedAction;
+  /** The unit's own declared arguments, in declaration order. */
+  readonly slice: readonly ArgumentSpec[];
+  readonly rules?: readonly ArgumentRule[];
+  /** Exact argv tokens the unit refuses ahead of tokenizing. */
+  readonly refuse?: Readonly<Record<string, string>>;
+  /** The actions' flags and options, scoped per action — the applies-to diagnostics' source. */
+  readonly siblings: readonly CommandArgument[];
+  /** argv input: the tokens after the action word; named input: []. */
+  readonly rest: readonly string[];
+}
+
+/** The one wording of an unknown action, shared by every surface. */
+export function unknownActionMessage(action: string, names: readonly string[]): string {
+  return `unknown action: ${action} (expected ${names.join(", ")})`;
+}
+
+/** The one wording of a call that names no action a shape without a default accepts. */
+export function needsActionMessage(command: string, names: readonly string[]): string {
+  return `${command === "" ? "" : `${command} `}needs an action: ${names.join(", ")}`;
+}
+
+/** The one action selection. argv: the first word, when it is a bare word — known → `typed`,
+ *  unknown → the console's unknown-action refusal (even when a default exists); no word, or
+ *  one starting with `-` → the default action with the whole argv, else the needs-an-action
+ *  refusal. Named: a non-empty string `action` is read like that word (`named` when known);
+ *  absent, empty or not a string → the default, else the refusal — an MCP caller never
+ *  silently lands in the default action's slice by misspelling the action. */
+export function selectAction(shape: CallShape, input: CallInput, command = ""): SelectedUnit {
   if (shape.actions === undefined) {
-    const declared = shape.arguments ?? [];
-    const tokens = tokenize(declared, argv, undefined, isVerbatim(declared), shape.refuse);
-    const values = bind(declared, tokens, { command });
-    enforceRules(declared, shape.rules, values, { command });
-    return { values, given: tokens.given };
+    return {
+      selected: { name: undefined, how: "single" },
+      slice: shape.arguments ?? [],
+      ...(shape.rules === undefined ? {} : { rules: shape.rules }),
+      ...(shape.refuse === undefined ? {} : { refuse: shape.refuse }),
+      siblings: [],
+      rest: input.kind === "argv" ? input.argv : [],
+    };
   }
   const actions = shape.actions;
   const names = Object.keys(actions);
-  const first = argv[0];
-  let action: string;
-  let rest: readonly string[];
-  if (first !== undefined && !first.startsWith("-")) {
-    if (!names.includes(first)) dieUnknownAction(first, `unknown action: ${first} (expected ${names.join(", ")})`, names, "action");
-    action = first;
-    rest = argv.slice(1);
-  } else if (shape.defaultAction !== undefined) {
-    action = shape.defaultAction;
-    rest = argv;
-  } else {
-    throw new UnknownActionError(`${command === "" ? "" : `${command} `}needs an action: ${names.join(", ")}`, "action");
-  }
-  const declared = actions[action].arguments ?? [];
+  // Own properties only: the map is Object.fromEntries, so a plain read would accept
+  // Object.prototype members (constructor, toString, __proto__) as declared actions.
+  const known = new Set(names);
   const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, actions[name].arguments ?? []])));
-  const tokens = tokenize(declared, rest, { action, siblings }, isVerbatim(declared), actions[action].refuse);
-  const values = bind(declared, tokens, { command, action });
-  enforceRules(declared, actions[action].rules, values, { command, action });
-  return { values, action, given: tokens.given };
+  const chosen = (name: string, how: SelectedAction["how"], rest: readonly string[]): SelectedUnit => {
+    const own = actions[name];
+    return {
+      selected: { name, how },
+      slice: own.arguments ?? [],
+      ...(own.rules === undefined ? {} : { rules: own.rules }),
+      ...(own.refuse === undefined ? {} : { refuse: own.refuse }),
+      siblings,
+      rest,
+    };
+  };
+  const fallback = (): SelectedUnit | undefined =>
+    shape.defaultAction === undefined
+      ? undefined
+      : chosen(shape.defaultAction, "default", input.kind === "argv" ? input.argv : []);
+  const refuseNoAction = (): never => {
+    throw new UnknownActionError(needsActionMessage(command, names), "action");
+  };
+  if (input.kind === "named") {
+    const word = input.args.action;
+    if (typeof word === "string" && word !== "") {
+      if (!known.has(word)) dieUnknownAction(word, unknownActionMessage(word, names), names, "action");
+      return chosen(word, "named", []);
+    }
+    return fallback() ?? refuseNoAction();
+  }
+  const [first, ...rest] = input.argv;
+  if (first !== undefined && !first.startsWith("-")) {
+    if (!known.has(first)) dieUnknownAction(first, unknownActionMessage(first, names), names, "action");
+    return chosen(first, "typed", rest);
+  }
+  return fallback() ?? refuseNoAction();
+}
+
+/** argv → ParsedCall. With `actions`, `argv[0]` naming an action picks it; no word (or one
+ *  starting with `-`) takes `defaultAction` with the whole argv, and without one is refused;
+ *  any other word is an unknown action. A flag that another action declares is refused as
+ *  belonging to it. The action selection itself is selectAction's (this file, above). */
+export function parseCall(shape: CallShape, argv: readonly string[], command = ""): ParsedCall<Record<string, unknown>> {
+  const chosen = selectAction(shape, { kind: "argv", argv }, command);
+  const declared = chosen.slice;
+  const action = chosen.selected.name;
+  const context: BindContext = action === undefined ? { command } : { command, action };
+  const tokens = tokenize(declared, chosen.rest, action === undefined ? undefined : { action, siblings: chosen.siblings }, isVerbatim(declared), chosen.refuse);
+  const values = bind(declared, tokens, context);
+  enforceRules(declared, chosen.rules, values, context);
+  return { values, ...(action === undefined ? {} : { action }), given: tokens.given };
 }

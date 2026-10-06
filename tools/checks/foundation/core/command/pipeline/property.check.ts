@@ -432,7 +432,7 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   checkTrue(`${command} ${word}: is an UnknownActionError`, terminal.execution.error instanceof UnknownActionError);
   check(`${command} ${word}: never contacts the target`, terminal.contacts, []);
   check(`${command} ${word}: prints no --json document`, terminal.output, "");
-  const mcp = await runCase(command, toArgv(declaration, { action: word }), "mcp");
+  const mcp = await runCase(command, [word, "--json"], "mcp");
   stages.case(`${command} ${word}`, mcp.execution.stage, mcp.execution.error);
   check(`${command} ${word}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
   checkTrue(`${command} ${word}: MCP error is an UnknownActionError`, mcp.execution.error instanceof UnknownActionError);
@@ -486,16 +486,22 @@ checkTrue("the property check derived positional-scope cases from the declaratio
 for (const [command, declaration] of Object.entries(openclawCommands)) {
   const data = specData(specOf(declaration)!);
   if (data.kind !== "multi") continue;
-  const args = { action: "unknown-action", ...Object.fromEntries((declaration.arguments ?? []).filter((argument) => argument.kind === "positional" && argument.name !== "action").map((argument) => [argument.name, exampleOf(argument as ArgumentSpec)])) };
-  check(`${command}: unknown action does not trigger positional-scope validation`, validate(declaration, args, { name: command }), []);
-  const mcp = await runCase(command, toArgv(declaration, args), "mcp");
-  stages.case(command, mcp.execution.stage, mcp.execution.error);
+  // The one action selection (stage 7 S2.2): an unknown `action` property is validate's
+  // only refusal, in the console's own words, whatever else the call carries — never a
+  // silent fall into the default action's slice with the positionals re-read around it.
   const terminal = await runCase(command, ["unknown-action"], "terminal");
+  cases += 1;
   stages.case(command, terminal.execution.stage, terminal.execution.error);
   check(`${command}: console unknown action is a parse error`, terminal.execution.stage, "parse");
-  const echoed = await runCase(command, toArgv(declaration, { action: "unknown-action" }), "mcp");
-  stages.case(command, echoed.execution.stage, echoed.execution.error);
-  checkTrue(`${command}: MCP unknown action matches console text byte-for-byte`, echoed.execution.error instanceof UnknownActionError && (mcp.execution.error as Error).message === (terminal.execution.error as Error).message);
+  checkTrue(`${command}: console unknown action is an UnknownActionError`, terminal.execution.error instanceof UnknownActionError);
+  const message = (terminal.execution.error as Error).message;
+  const args = { action: "unknown-action", ...Object.fromEntries((declaration.arguments ?? []).filter((argument) => argument.kind === "positional" && argument.name !== "action").map((argument) => [argument.name, exampleOf(argument as ArgumentSpec)])) };
+  check(`${command}: unknown action is validate's only refusal, in the console's words`, validate(declaration, args, { name: command }), [message]);
+  const mcp = await runCase(command, ["unknown-action"], "mcp");
+  cases += 1;
+  stages.case(command, mcp.execution.stage, mcp.execution.error);
+  check(`${command}: MCP unknown action matches the console text byte-for-byte`, (mcp.execution.error as Error | undefined)?.message, message);
+  check(`${command}: MCP unknown action never contacts the target`, mcp.contacts, []);
 }
 {
   const badSource = join(fixture.root, "Bad_Source");

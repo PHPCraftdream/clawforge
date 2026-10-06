@@ -63,8 +63,10 @@ export const CONTROLS: readonly ControlDecl[] = [
     finding: "R18-13",
     note: "toArgv emits positionals from the chosen action's own slice, never the merged declaration",
     product: "tools/framework/integration/mcp/call.ts",
-    search: `const positionalOrder = (slice ?? []).filter((argument) => argument.kind === "positional");`,
-    replace: `const positionalOrder = declared.filter((argument) => argument.kind === "positional");`,
+    search: `  for (const argument of slice) {
+    if (argument.kind !== "positional") continue;`,
+    replace: `  for (const argument of declared) {
+    if (argument.kind !== "positional") continue;`,
     check: "tools/checks/foundation/core/command/pipeline/property.check.ts",
     fragment: "emits the action's own positionals in its own order",
   },
@@ -191,5 +193,25 @@ export const CONTROLS: readonly ControlDecl[] = [
     replace: `const first = await localTarRunner("tar", [...forceLocal, ...args], { allowFailure: true, timeoutMs });`,
     check: "tools/checks/sets/tar/local-tar-owner.check.ts",
     fragment: "backslash:",
+  },
+  {
+    id: "C17",
+    finding: "R19-17",
+    note: "an unknown MCP action is refused in the console's words, never silently bound to the default action",
+    product: "tools/framework/core/command/parse.ts",
+    search: `if (!known.has(word)) dieUnknownAction(word, unknownActionMessage(word, names), names, "action");`,
+    replace: `return fallback() ?? dieUnknownAction(word, unknownActionMessage(word, names), names, "action");`,
+    check: "tools/checks/foundation/core/command/spec/call.check.ts",
+    fragment: "unknown action refuses with the console's words",
+  },
+  {
+    id: "C18",
+    finding: "R19-17",
+    note: "an Object.prototype member (constructor, toString, __proto__) is never a declared action",
+    product: "tools/framework/core/command/parse.ts",
+    search: `if (!known.has(word)) dieUnknownAction(word, unknownActionMessage(word, names), names, "action");`,
+    replace: `if (false) dieUnknownAction(word, unknownActionMessage(word, names), names, "action");`,
+    check: "tools/checks/foundation/core/command/spec/call.check.ts",
+    fragment: "prototype name refused with the console's words",
   },
 ];

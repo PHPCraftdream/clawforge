@@ -4,7 +4,7 @@
 // table is built from the one command registry help, the MCP tool list and the docs table
 // read, so a command completes because it is declared, not because a case arm named it.
 
-import { tokenizeLenient } from "../../core/command/parse.ts";
+import { selectAction, tokenizeLenient, type CallShape } from "../../core/command/parse.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import type { CommandRegistry } from "../gate.ts";
 
@@ -31,6 +31,10 @@ export interface CompletionData {
   /** `"<command> <action>"` and `"<command> *"` → candidates; `*` is the fallback for an
    *  action word that is absent or unknown, where the shell cannot tell which was meant. */
   readonly after: ReadonlyMap<string, readonly string[]>;
+  /** Each action-command's selection input as the core selector reads it: the declared
+   *  action words and the default action, nothing else — a completion asks, it does not
+   *  refuse, so the candidate code treats a selector refusal as "no action meant". */
+  readonly shapes: ReadonlyMap<string, CallShape>;
   /** Pass-through commands (`verbatim: true` variadic) → their declared positional count. Once
    *  more non-flag words than that are typed, the tail is the child's literal text. */
   readonly verbatim: ReadonlyMap<string, number>;
@@ -65,6 +69,7 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
   const verbatim = new Map<string, number>();
   const verbatimFlags = new Map<string, readonly string[]>();
   const declared = new Map<string, readonly CommandArgument[]>();
+  const shapes = new Map<string, CallShape>();
   const valueOptions = new Map<string, readonly string[]>();
 
   for (const entry of registry.entries) {
@@ -115,6 +120,12 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
       continue;
     }
     const actionWords = [...actionArgument.choices].map(String).sort();
+    shapes.set(name, {
+      actions: Object.fromEntries(actionWords.map((word) => [word, { arguments: [] }])),
+      ...(entry.defaultAction !== undefined && actionWords.includes(entry.defaultAction)
+        ? { defaultAction: entry.defaultAction }
+        : {}),
+    });
     const perAction = new Map<string, readonly string[]>();
     for (const value of actionArgument.choices) {
       const scoped = flagArgs.filter((argument) => argument.actions?.includes(value) === true).map(flagName);
@@ -132,7 +143,7 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
     after.set(`${name} *`, fallback);
   }
 
-  return { appFlag, top, first, after, verbatim, verbatimFlags, declared, valueOptions, values };
+  return { appFlag, top, first, after, verbatim, verbatimFlags, declared, valueOptions, values, shapes };
 }
 
 /** The candidates for one completion request — the one decision both emitted scripts
@@ -178,8 +189,18 @@ export function completionCandidates(
   const scanned = tokenizeLenient(declared, between, data.verbatim.has(cmd));
   if (scanned.optionsEnded) return [];
   if (data.verbatim.has(cmd) && scanned.entries.some((entry) => entry.argument.kind === "variadic")) return [];
-  // The first word names the action, as the parser reads it; any other word scopes nothing.
-  const action = data.after.has(`${cmd} ${between[0]}`) ? between[0] : "";
+  // The first word names the action — the core selector's own answer, taken leniently:
+  // a completion asks rather than refuses, so an unknown word (with no default action to
+  // fall back to) scopes nothing, exactly as a table miss used to.
+  let action = "";
+  const shape = data.shapes.get(cmd);
+  if (shape !== undefined) {
+    try {
+      action = selectAction(shape, { kind: "argv", argv: between }, cmd).selected.name ?? "";
+    } catch {
+      action = "";
+    }
+  }
   if (scanned.pending !== undefined) {
     const option = `--${scanned.pending.name}`;
     return data.values.find((row) => row.command === cmd && row.scope === action && row.option === option)?.values ?? [];

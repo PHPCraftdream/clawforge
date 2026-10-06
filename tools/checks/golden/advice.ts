@@ -15,7 +15,7 @@ import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { versionGateCommand } from "#framework/integration/version.ts";
-import { entryRefusalAdvice } from "./matrix.ts";
+import { entryRefusalAdvice, gateInlineNoteAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
 import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
@@ -84,6 +84,9 @@ const PROSE_ROWS: readonly AdviceRow[] = [
 ].flatMap(([name, details]) => {
   if (details === undefined) return [];
   return parseProse(details).flatMap((token) => {
+    if (token.kind === "install") {
+      return [{ label: `help prose: ${name} ${token.argv.join(" ")} (install)`, advice: command(token.argv, { install: true }) }];
+    }
     if (token.kind !== "command") return [];
     return [{ label: `help prose: ${name} ${token.argv.join(" ")}`, advice: command(token.argv, token.app === undefined ? undefined : { app: token.app }) }];
   });
@@ -124,6 +127,9 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   { label: "cron: posix target line", advice: shellLine("posix", `cd <root> && ${displayCommandLine(SHIM_PROGRAM, ["--app", "<name>", "backup"])}`) },
   { label: "schtasks: cmd.exe create line", advice: shellLine("cmd", cmdExeLine(SCHTASKS_CREATE.command, SCHTASKS_CREATE.args)!) },
   ...PROSE_ROWS,
+  // Group 6 (rf6-fix30): the checkout-root notes the gate's sentences embed — the
+  // same rows under the place-naming law, per column.
+  ...gateInlineNoteAdvice(),
 ];
 
 /** One matrix column: the invocation every row renders under. */

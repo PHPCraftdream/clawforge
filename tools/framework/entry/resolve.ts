@@ -8,11 +8,11 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { safeName } from "../core/values/names.ts";
-import type { InvocationApp } from "../core/io/invocation/index.ts";
+import { invocation, type InvocationApp } from "../core/io/invocation/index.ts";
 import type { CommandArgument } from "../core/app.ts";
 import { manual } from "../core/io/invocation/advice.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { renderAdvice, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "../core/io/invocation/render.ts";
+import { checkoutRootProgram, renderAdvice, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "../core/io/invocation/render.ts";
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
 import { tokenize } from "../core/command/parse.ts";
@@ -268,12 +268,23 @@ export function findAppRootIn(start: string, fs: FsProbe): string | undefined {
 
 /** `--app <name>` for the gate, once: a leading one in `argv` is kept when it names the same
  *  deployment and refused when it names another (the cwd already selects this one). */
-export type HandoverArgv = { readonly argv: readonly string[] } | { readonly refuse: "missing-app-value" } | { readonly refuse: "app-conflict"; readonly typed: string; readonly app: string };
+export type HandoverArgv =
+  | { readonly argv: readonly string[] }
+  | { readonly refuse: "missing-app-value" }
+  | { readonly refuse: "invalid-app-value"; readonly typed: string; readonly message: string }
+  | { readonly refuse: "app-conflict"; readonly typed: string; readonly app: string };
 
 export function handoverArgv(name: string, argv: readonly string[]): HandoverArgv {
   const { value, missingValue, rest } = splitLeadingAppFlag([...argv]);
   if (missingValue) return { refuse: "missing-app-value" };
   if (value === undefined) return { argv: ["--app", name, ...rest] };
+  // The gate's own name check runs before the conflict decision: an invalid typed name
+  // is refused with the gate's own error, not echoed back as advice the root refuses.
+  try {
+    safeName("deployment", value);
+  } catch (error) {
+    return { refuse: "invalid-app-value", typed: value, message: (error as Error).message };
+  }
   if (value !== name) return { refuse: "app-conflict", typed: value, app: name };
   return { argv: ["--app", name, ...rest] };
 }
@@ -297,6 +308,7 @@ export type HandoverDecision =
   | { readonly kind: "run-here" }
   | { readonly kind: "spawn"; readonly entry: string; readonly args: readonly string[]; readonly delegated: boolean }
   | { readonly kind: "refuse-app-value"; readonly reason: "missing-app-value" }
+  | { readonly kind: "refuse-app-value"; readonly reason: "invalid-app-value"; readonly typed: string; readonly message: string }
   | { readonly kind: "refuse-app-value"; readonly reason: "app-conflict"; readonly typed: string; readonly app: string };
 
 /** Whose framework runs `appRoot` when `clawforge` is the system-wide command: the local
@@ -323,7 +335,9 @@ export function frameworkOwner(input: HandoverInput): HandoverDecision {
     if (appGate !== undefined) {
       const withApp = handoverArgv(basename(appRoot), argv);
       if ("refuse" in withApp) {
-        return withApp.refuse === "missing-app-value" ? { kind: "refuse-app-value", reason: "missing-app-value" } : { kind: "refuse-app-value", reason: "app-conflict", typed: withApp.typed, app: withApp.app };
+        if (withApp.refuse === "missing-app-value") return { kind: "refuse-app-value", reason: "missing-app-value" };
+        if (withApp.refuse === "invalid-app-value") return { kind: "refuse-app-value", reason: "invalid-app-value", typed: withApp.typed, message: withApp.message };
+        return { kind: "refuse-app-value", reason: "app-conflict", typed: withApp.typed, app: withApp.app };
       }
       return { kind: "spawn", entry: appGate, args: withApp.argv, delegated: false };
     }
@@ -360,7 +374,7 @@ export interface InstalledEntryInput {
 
 export type InstalledEntryDecision =
   /** reportError refusals: the --project-root refusal, init nesting inside a deployment,
-   *  and init inside a ClawForge checkout (its rows spell the checkout root, as shell advice). */
+   *  and init inside a ClawForge checkout (its rows spell the checkout root). */
   | { readonly kind: "refuse"; readonly refusals: readonly UserError[]; readonly ancestor?: string; readonly checkout?: string }
   /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
   | { readonly kind: "checkout-types-note"; readonly line: string }
@@ -434,14 +448,13 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
       // Both sides resolved, so the comparison does not depend on how the caller spelled cwd.
       sameDirectory(platform, dirname(here), resolve(checkout, "apps")) &&
       isValidDeploymentName(basename(here));
-    // The sentence directs to the checkout root, so both rows spell the gate from there —
-    // the shim at its root, whatever copy runs and wherever the run stood; shell advice
-    // keeps the output layer from re-spelling the program for the refusing frame.
-    const atRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
-    const advice: Advice[] = [
-      shellLine("posix", atRoot),
-      shellLine("posix", atRoot, { note: IN_BASH_NOTE }),
-    ];
+    // The sentence directs to the checkout root: row 1 spells the program from there for
+    // the copy this run is (the at mark re-roots it in the renderer); row 2 is the bash
+    // shim's own spelling, dropped when row 1 already is it.
+    const advice: Advice[] = [command(["new-app", "<name>"], { at: "checkout-root" })];
+    if (checkoutRootProgram(invocation().program) !== SHIM_PROGRAM) {
+      advice.push(shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: IN_BASH_NOTE }));
+    }
     if (reusable) {
       advice.push(manual(takeoverNote(basename(cwd))));
     }
@@ -504,17 +517,18 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
   if (subfolder !== undefined) {
     return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, refusal: subfolder };
   }
-  // The sentence directs to the checkout root, so both rows spell the gate from there —
-  // whatever copy runs and wherever the run stood; shell advice keeps the output layer
-  // from re-spelling the program for the refusing frame.
-  const atRoot = renderAdvice(command([]), shimInvocation());
+  // The sentence directs to the checkout root: row 1 spells the gate from there for the
+  // copy this run is; row 2 is the bash shim's own spelling, dropped when it duplicates
+  // row 1.
   const refusals: readonly UserError[] = checkout === undefined
     ? [new UserError(`this directory ${NOT_INITIALISED_NOTE}`, { advice: [command(["init"])] })]
     : [
         new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
-            shellLine("posix", atRoot),
-            shellLine("posix", atRoot, { note: IN_BASH_NOTE }),
+            command([], { at: "checkout-root" }),
+            ...(checkoutRootProgram(invocation().program) === SHIM_PROGRAM
+              ? []
+              : [shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: IN_BASH_NOTE })]),
           ],
         }),
       ];
@@ -524,12 +538,12 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
   };
   const first = argv[0];
   const offered = checkout === undefined ? gateCommandNames : gateCommandNames.filter((name) => name !== "init");
-  const candidates = [...deploymentCommands, ...offered, "help"];
+  const candidates = [...deploymentCommands, ...offered, ...DISPATCHER_COMMANDS];
   // helpWithoutDeployment declines only an option, control-mcp or a name something declares;
   // every other word is a typo it reports itself, and help requests it answers.
   const isHelpRequest =
     first === undefined || first === "help" || first === "--help" || first === "-h" || isDeploymentHelpRequest(argv, deploymentCommands);
-  const declined = !isHelpRequest && (first.startsWith("-") || first === "control-mcp" || candidates.includes(first));
+  const declined = !isHelpRequest && (first.startsWith("-") || candidates.includes(first));
   const handledByHelp = !declined;
   if (handledByHelp) return { kind: "help", fallback: refusal };
   return { kind: "not-initialised", ...refusal };

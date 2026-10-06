@@ -14,7 +14,7 @@ import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStep
 import { commandLine, renderAdvice, shimInvocation } from "#framework/core/io/invocation/render.ts";
 import type { Invocation } from "#framework/core/io/invocation/index.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { IN_BASH_NOTE, resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -497,10 +497,12 @@ async function gatewayPortOf(root: string): Promise<number> {
 
 // --- a refused init names the checkout root's gate, wherever the run stood ------------------
 //
-// R6-5: the entry applies its invocation default only after the placement decision, so a
-// local-package (npx, node_modules/.bin) init that refuses must not be advised the bare
-// global command. The refusal's sentence directs to the checkout root, so both advice rows
-// spell its own shim from there — the same text under every entry default (review R17).
+// R6-5: the entry applies its invocation default before the placement decision, walked
+// from the cwd, so a local-package (npx, node_modules/.bin) init that refuses is advised
+// its own copy's spelling, never the bare global command. The refusal's sentence directs
+// to the checkout root, so the advice row spells the gate from there for the copy this
+// run is (rf6-fix30 re-roots it in the renderer), and the bash shim row follows only
+// when it adds a spelling row 1 lacks.
 // Spawned end to end: the running framework is the checkout's own copy, and the cwd sits in
 // a SECOND checkout-shaped tree, so neither the running copy's spelling nor a cwd-relative
 // path can sneak in (review R16-1).
@@ -525,15 +527,15 @@ async function gatewayPortOf(root: string): Promise<number> {
       child.once("close", () => resolvePromise(output));
       child.once("error", () => resolvePromise(output));
     });
-    // The sentence directs to the checkout root, so both rows spell the gate from there —
+    // The sentence directs to the checkout root, so the row spells the gate from there —
     // the shim at its root — whatever the cwd, compared whole so neither the bare global
     // command nor a cwd-relative path can sneak in.
     const lines = plain(refused).split(String.fromCharCode(10)).map((line) => line.trim()).filter((line) => line.startsWith("→"));
     const fromRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
-    const bashLine = `${fromRoot}  (${IN_BASH_NOTE})`;
-    // The empty apps/<name> directory also earns the takeover note as the third line.
-    check("init inside a checkout refuses with the checkout advice", lines.length, 3);
-    check("...the refusal names the checkout root's gate, not the running copy's", lines.slice(0, 2), [`→ ${fromRoot}`, `→ ${bashLine}`]);
+    // The checkout's own copy already spells the shim at the root, so the bash row is
+    // dropped and the takeover note is the second line.
+    check("init inside a checkout refuses with the checkout advice", lines.length, 2);
+    check("...the refusal names the checkout root's gate, not the running copy's", lines[0]?.split("→ ")[1], fromRoot);
     check("the refusal names the checkout it walked up to", plain(refused).includes(fake), true);
   } finally {
     await rm(base, { recursive: true, force: true });
@@ -571,10 +573,11 @@ async function gatewayPortOf(root: string): Promise<number> {
     // standing in the nested cwd.
     const up = relative(resolve(nested), decision.checkout!).split(sep).join("/");
     const refusing: Invocation = { program: `${up}/clawforge`, mode: "checkout", audience: "terminal" };
-    const [row, bashRow] = decision.refusals[0]!.advice;
+    const [row] = decision.refusals[0]!.advice;
     const atRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
-    check("both rows spell the gate from the checkout root the sentence names", [renderAdvice(row, refusing), renderAdvice(bashRow, refusing)], [atRoot, `${atRoot}  (${IN_BASH_NOTE})`]);
-    checkTrue("no row spells a path out of the checkout root", !renderAdvice(row, refusing).includes("..") && !renderAdvice(bashRow, refusing).includes(".."));
+    check("the row spells the gate from the checkout root the sentence names", renderAdvice(row, refusing), atRoot);
+    checkTrue("the bash row is dropped when the re-rooted row 1 already is the shim", decision.refusals[0]!.advice.length === 1);
+    checkTrue("no row spells a path out of the checkout root", !renderAdvice(row, refusing).includes(".."));
   }
 }
 

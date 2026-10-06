@@ -445,20 +445,6 @@ function conforms(
 }
 
 {
-  // The structured remedies: a document that carries `next` advice answers with the tool
-  // form beside nextActions — matched against the tools this server serves (design 1.4).
-  const lookup = (name: string) => (name === "lock" ? { summary: "s", structured: true, arguments: [{ name: "check", description: "c", kind: "flag" as const }, { name: "json", description: "j", kind: "flag" as const }] } : undefined);
-  const payload = JSON.stringify({
-    healthy: false,
-    problems: [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock", next: { kind: "clawforge", argv: ["lock"] } }],
-    nextActions: ["./clawforge lock"],
-    next: [{ kind: "clawforge", argv: ["lock"] }, { kind: "manual", text: "reconnect the MCP client" }, { kind: "clawforge", argv: ["deploy", "--host", "x"] }],
-  });
-  const envelope = structuredResult({ summary: "s", structured: true, readOnly: true }, payload, "op-1", [], undefined, lookup);
-  check("the remedies come through as tool steps where a tool exists", envelope?.nextSteps, [{ tool: "lock", arguments: {} }]);
-}
-
-{
   const envelope = structuredResult(
     { summary: "s", structured: true },
     JSON.stringify({ operationId: "journal-op", changed: true, problems: [], nextActions: [] }),

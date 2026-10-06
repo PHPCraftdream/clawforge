@@ -71,6 +71,15 @@ export function renderProgram(on: Invocation): string {
   return SAFE_PROGRAM.test(on.program) ? on.program : renderArgument(on.program, on.program);
 }
 
+/** The program spelled from the checkout root — the frame the place-naming refusals direct
+ *  to, and the map entry/root.ts's defaultInvocation spells for the checkout as run root,
+ *  stated on the program alone so the sync refusal builders share it: a path spelling (the
+ *  shim from a subfolder, the MCP launcher from apps/<name>) collapses to the shim at the
+ *  root; a bare command word and npm's bin wrapper resolve from the root as is. */
+export function checkoutRootProgram(program: string): string {
+  return program.includes("/") ? SHIM_PROGRAM : program;
+}
+
 export function renderAdvice(
   advice: Advice,
   on: Invocation = invocation(),
@@ -83,11 +92,17 @@ export function renderAdvice(
   if (advice.kind === "manual") {
     return advice.text;
   }
+  // A checkout-root advice spells the program from the checkout root — the frame the
+  // place-naming sentences direct to — not from the directory this run refused in.
+  const reRooted = advice.at === "checkout-root" ? { ...on, program: checkoutRootProgram(on.program) } : on;
+  // An install line spells its program for the shell that pastes it, not for wherever
+  // this run stood: forward slashes survive bash, zsh and every PowerShell alike.
+  const frame = advice.install === true ? { ...reRooted, program: reRooted.program.replaceAll("\\", "/") } : reRooted;
   // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
   // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
-  const parts = [renderProgram(on)];
+  const parts = [renderProgram(frame)];
   if (advice.app !== undefined) {
-    parts.push("--app", renderArgument(advice.app, on.program));
+    parts.push("--app", renderArgument(advice.app, frame.program));
   } else if (
     !isGateCommand(advice.argv[0]) &&
     options?.deploymentFree !== true &&
@@ -96,13 +111,20 @@ export function renderAdvice(
   ) {
     // A flagged `openclaw` is named too: it is the default only while OC_APP is unset,
     // and the pasting shell may export it.
-    parts.push("--app", renderArgument(on.app.name, on.program));
+    parts.push("--app", renderArgument(on.app.name, frame.program));
   }
-  for (const argument of advice.argv) parts.push(renderArgument(argument, on.program));
+  for (const argument of advice.argv) parts.push(renderArgument(argument, frame.program));
   const line = parts.join(" ");
   return advice.note === undefined ? line : `${line}  (${advice.note})`;
 }
 
-export function commandLine(argv: string | readonly string[], options?: { readonly app?: string; readonly deploymentFree?: boolean }): string {
+export function commandLine(argv: string | readonly string[], options?: { readonly app?: string; readonly note?: string; readonly deploymentFree?: boolean; readonly at?: "checkout-root" }): string {
   return renderAdvice(command(argv, options), invocation(), { deploymentFree: options?.deploymentFree });
+}
+
+/** The install line a generated completion script spells in its header, and the --help
+ *  prose sentences echo: this invocation's program and argv, the program re-spelled for
+ *  the shell that pastes the line (CommandAdvice.install), not for wherever the run stood. */
+export function installLine(argv: readonly string[]): string {
+  return renderAdvice(command(argv, { install: true }), invocation());
 }

@@ -5,14 +5,14 @@
 // builders the entries render, and the file is a golden diff like the other surfaces.
 
 import { basename, dirname } from "node:path";
-import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { commandLine, renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { command, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 import { appConflictRefusal } from "#framework/entry/delegate.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { checkoutSubfolderReport, missingDeploymentReport } from "#framework/integration/gate.ts";
+import { checkoutInlineNotes, checkoutSubfolderReport, missingDeploymentReport } from "#framework/integration/gate.ts";
 import {
   resolveCheckoutEntry,
   resolveInstalledEntry,
@@ -33,6 +33,11 @@ const EMPTY = "/home/u/empty";
 const STRAY = `${ROOT}/stray-sub`;
 const SELF = "/usr/local/lib/node_modules/@clawforge/framework/dist/entry/bin.js";
 const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@clawforge/framework/entry/bin.js`;
+
+/** The frame the installed command builds its refusals as ("clawforge"): the golden's
+ *  builders pin it, because the bash shim row's drop decision reads the invocation at
+ *  build time — the entries themselves build after bin.ts has set the real one. */
+const INSTALLED_FRAME: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
 
 /** A tiny in-memory file system: exact paths plus a canonical-spelling map (Windows case).
  *  Lookups are normalised, because node's resolve spells fake paths with this host's drive
@@ -174,6 +179,10 @@ function fakePath(text: string): string {
  *  strings frozen at build time. A clawforge advice with an empty argv (the bare "run the
  *  gate" pointer) is left out: the matrix's P4 has no command word to check it against. */
 export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
+  // Pinned like the entries' own build (bin.ts sets the frame first): the bash shim
+  // row's drop decision must not depend on who calls this.
+  const previousFrame = invocation();
+  setInvocation(INSTALLED_FRAME);
   const rows: { label: string; advice: Advice }[] = [];
   const push = (label: string, error: UserError | undefined): void => {
     if (error === undefined) return;
@@ -216,6 +225,7 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
   // The pointers the two unknown-X reporters print (their info line renders this advice).
   rows.push({ label: "pointer: unknown command", advice: command(["help"]) });
   rows.push({ label: "pointer: unknown argument", advice: command(["status", "--help"]) });
+  setInvocation(previousFrame);
   return rows;
 }
 
@@ -233,10 +243,14 @@ function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0], pro
     case "help-without-deployment":
       return `help-without-deployment: ${decision.description}`;
     case "run": {
-      // The prefix through the real renderer, not a restatement of the rule.
-      const invocation: Invocation = { program, mode: "checkout", audience: "terminal", ...(decision.app === undefined ? {} : { app: decision.app }) };
-      setInvocation(invocation);
-      return `run app=${decision.appName} fact=${decision.app === undefined ? "-" : decision.app.name}/${decision.app?.selectedBy} argv=${JSON.stringify(decision.argv)} prefix=${commandLine([])}${decision.soleNote === undefined ? "" : ` sole=${decision.soleNote}`}`;
+      // The prefix through the real renderer, not a restatement of the rule; the column's
+      // frame is set only for its own line, so the traversal's pin survives it.
+      const previous = invocation();
+      const frame: Invocation = { program, mode: "checkout", audience: "terminal", ...(decision.app === undefined ? {} : { app: decision.app }) };
+      setInvocation(frame);
+      const prefix = commandLine([]);
+      setInvocation(previous);
+      return `run app=${decision.appName} fact=${decision.app === undefined ? "-" : decision.app.name}/${decision.app?.selectedBy} argv=${JSON.stringify(decision.argv)} prefix=${prefix}${decision.soleNote === undefined ? "" : ` sole=${decision.soleNote}`}`;
     }
   }
 }
@@ -290,12 +304,20 @@ function handoverDecisionLine(input: Parameters<typeof frameworkOwner>[0]): stri
     case "spawn":
       return `spawn ${decision.entry === LOCAL_ENTRY ? "local-package" : "checkout-gate"} delegated=${decision.delegated} argv=${JSON.stringify(decision.args).replace(ROOT, "<root>")}`;
     case "refuse-app-value":
-      return decision.reason === "missing-app-value" ? "refuse-app-value: missing" : `refuse-app-value: conflict --app ${decision.typed}`;
+      return decision.reason === "missing-app-value"
+        ? "refuse-app-value: missing"
+        : decision.reason === "invalid-app-value"
+          ? `refuse-app-value: invalid --app ${decision.typed}`
+          : `refuse-app-value: conflict --app ${decision.typed}`;
   }
 }
 
 /** The whole matrix as deterministic text; golden.check.ts compares it with expected/entry-matrix.txt. */
 export function renderEntryMatrix(): string {
+  // The refusal builders read the invocation (the bash shim row's drop decision); the
+  // traversal is pinned to the installed frame so the text does not depend on the caller's.
+  const previousFrame = invocation();
+  setInvocation(INSTALLED_FRAME);
   const lines: string[] = [
     "// Entry decisions (plan stage 2, invariant I3): resolveCheckoutEntry (gate) where the gate",
     "// is the process, frameworkOwner (installed command hand-over) everywhere, the installed",
@@ -366,6 +388,7 @@ export function renderEntryMatrix(): string {
       }
     }
   }
+  setInvocation(previousFrame);
   return `${lines.join("\n")}\n`;
 }
 
@@ -374,6 +397,10 @@ export function renderEntryMatrix(): string {
  *  place and asserts every advice row is spelled from that place, not from wherever the
  *  refusing process stood. */
 export function entryDecisionRefusals(): { label: string; error: UserError }[] {
+  // Pinned to the installed frame, like the entries' own build (bin.ts sets it first):
+  // the bash shim row's drop decision must not depend on who calls this.
+  const previousFrame = invocation();
+  setInvocation(INSTALLED_FRAME);
   const rows: { label: string; error: UserError }[] = [];
   const seen = new Set<string>();
   const push = (label: string, error: UserError | undefined): void => {
@@ -436,5 +463,53 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
       }
     }
   }
+  setInvocation(previousFrame);
   return rows;
+}
+
+/** The gate's inline checkout-root notes (rf6-fix30): the very advice rows the sentences
+ *  embed, so the place-naming check asserts them under the same per-column law. The bare
+ *  gate pointer carries no command word, so it stays out of the advice-matrix rows (the
+ *  same rule entryRefusalAdvice applies). */
+export function gateInlineNoteAdvice(): { label: string; advice: Advice }[] {
+  return checkoutInlineNotes()
+    .filter((advice) => advice.kind !== "clawforge" || advice.argv.length > 0)
+    .map((advice, index) => ({ label: `gate inline note (${index + 1})`, advice }));
+}
+
+/** The three place-naming refusals as a run of `frame` builds them: the bash shim row's
+ *  drop decision reads the invocation at build time, as the entries do after bin.ts has
+ *  set it — the installed copy keeps the row, the shim copy already is the root spelling
+ *  and drops it. */
+export function placeNamingRefusals(frame: Invocation): { label: string; error: UserError }[] {
+  const previousFrame = invocation();
+  setInvocation(frame);
+  const fs = fakeFs(BASE_FILES, BASE_DIRS);
+  const rows: { label: string; error: UserError }[] = [];
+  const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs });
+  if (inCheckout.kind === "refuse") {
+    inCheckout.refusals.forEach((refusal) => rows.push({ label: "init inside a ClawForge checkout", error: refusal }));
+  }
+  const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs });
+  if (inSubfolder.kind === "run") {
+    const missing = missingAppDecision({
+      appRoot: inSubfolder.appRoot,
+      argv: inSubfolder.argv,
+      checkout: inSubfolder.checkout,
+      gateCommandNames: INSTALLED_GATE_COMMANDS,
+      deploymentCommands: DEPLOYMENT_COMMANDS,
+    });
+    if (missing.kind === "not-initialised") {
+      missing.refusals.forEach((refusal) => rows.push({ label: "not initialised (in a checkout)", error: refusal }));
+    }
+  }
+  rows.push({ label: "--app conflict", error: appConflictRefusal({ typed: "other", app: "demo" }) });
+  setInvocation(previousFrame);
+  return rows;
+}
+
+/** placeNamingRefusals as the installed command builds them: the root-spelled row and the
+ *  bash shim's own, side by side. */
+export function installedFrameRefusals(): { label: string; error: UserError }[] {
+  return placeNamingRefusals(INSTALLED_FRAME);
 }

@@ -5,7 +5,7 @@
 // answers and the pwsh script renders, so a script and the table it was rendered from cannot
 // quietly diverge.
 
-import { commandLine } from "../../core/io/invocation/render.ts";
+import { installLine } from "../../core/io/invocation/render.ts";
 import type { CompletionData } from "./table.ts";
 
 // Hidden directories (.r28) are not deployments.
@@ -142,7 +142,7 @@ export const bashCompletionLines: string =
 export function renderBash(data: CompletionData): string {
   return (
     "# clawforge bash completion — generated from the command declarations.\n" +
-    `# Install: source <(${commandLine(["completion", "bash"])})\n` +
+    `# Install: source <(${installLine(["completion", "bash"])})\n` +
     BASH_COMPLETER.replaceAll("__CLAWFORGE_CASE_ARMS__", caseArms(data))
       .replaceAll("__CLAWFORGE_APP_SKIP__", data.appFlag ? APP_SKIP_PAIR : "")
       .replaceAll("__CLAWFORGE_APP_VALUES__", data.appFlag ? APP_VALUES_BLOCK : "") +

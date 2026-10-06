@@ -5,8 +5,9 @@
 // unlock it.
 
 import { log, info, die } from "#src/core/io/log.ts";
-import { renderAdvice, shimInvocation } from "#src/core/io/invocation/render.ts";
+import { renderAdvice, renderArguments, shimInvocation } from "#src/core/io/invocation/render.ts";
 import { command } from "#src/core/io/invocation/advice.ts";
+import { sshTunnelCommand } from "#src/commands/operate/expose/ssh.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
 import {
   EXCLUDES, FRAMEWORK_EXCLUDES, MARKER_FILE, directoryGuardScript, directoryPrepareScript,
@@ -16,10 +17,17 @@ import type { Context } from "#src/core/context.ts";
 import { runRemote } from "./server.ts";
 import type { RemoteRoot } from "./server.ts";
 
+/** The pasted hints and the executed remote line share one construction: cd into the
+ *  remote path, then the shim's own command for the named deployment — a fresh ssh
+ *  session lands in $HOME, where the checkout's entrypoint does not resolve. */
+export function remoteLine(remotePath: string, argv: readonly string[], name: string): string {
+  return `cd ${quoted(remotePath)} && ${renderAdvice(command([...argv], { app: name }), shimInvocation(name))}`;
+}
+
 /** The pasted hint and the executed remote line share one construction: cd into the remote
  *  path, then the shim's own bootstrap for the named deployment. */
 export function bootstrapRemoteLine(remotePath: string, name: string): string {
-  return `cd ${quoted(remotePath)} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`;
+  return remoteLine(remotePath, ["bootstrap"], name);
 }
 
 const RSYNC_ENV = { RSYNC_PROTECT_ARGS: "0", RSYNC_OLD_ARGS: "0" };
@@ -161,7 +169,7 @@ export async function bootstrapAndReport(
 
   log("deployed");
   info("the gateway listens on the remote loopback only. Open a tunnel from here:");
-  info(`  ssh -N -L ${ctx.settings.gatewayPort}:127.0.0.1:${ctx.settings.gatewayPort} ${target}`);
-  info(`provider keys are not copied — install them there: ${renderAdvice(command(["secrets", "--apply"], { app: name }), shimInvocation(name))}`);
+  info(`  ${renderArguments(sshTunnelCommand(target, ctx.settings.gatewayPort, ctx.settings.gatewayPort))}`);
+  info(`provider keys are not copied — install them there: ${remoteLine(remotePath, ["secrets", "--apply"], name)}`);
   if (remotePathNote !== undefined) info(remotePathNote);
 }

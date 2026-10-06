@@ -30,7 +30,7 @@ import { renderFullCommandHelp } from "../core/io/help-render.ts";
 import { installedGate } from "./registry.ts";
 import { delegateToOwnFramework, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
 import { defaultInvocation } from "./root.ts";
-import { missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
+import { findCheckoutRootIn, missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
 import type { AppDefinition } from "../core/app.ts";
 import { CANNOT_LOAD } from "./resolve.ts";
 
@@ -38,14 +38,20 @@ import { CANNOT_LOAD } from "./resolve.ts";
 const handedOver = takeDelegationFlag();
 // The shim names itself; unnamed, the copy decides (see defaultInvocation).
 const handed = takeInvocationFromEnv();
-setInvocation(handed ?? { program: "clawforge", mode: "installed", audience: "terminal" });
 const rawArgv = process.argv.slice(2);
 
+// The placement decision builds its checkout refusal's advice (resolve.ts), so this run's
+// frame must already stand there — walked from the cwd, the same walk the decision makes.
+if (handed === undefined) {
+  setInvocation({ ...(await defaultInvocation(process.cwd(), process.platform, findCheckoutRootIn(process.cwd(), nodeFs))), audience: "terminal" });
+} else {
+  setInvocation(handed);
+}
+
 const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs });
-// Before any refusal can render: a refusal's advice is this invocation's spelling (the
-// checkout-refusal's "new-app" line included), so the default must be applied first. The
-// refusals carry the root they decided about (the nesting refusal its deployment, the
-// checkout refusal the checkout it walked up to); a refusal with neither stands in the cwd.
+// Refine with the decision's own roots: a run names the deployment it runs, a refusal the
+// root it decided about (the nesting refusal its deployment, the checkout refusal the
+// checkout it walked up to); a decision with neither stands in the cwd.
 if (handed === undefined) {
   const root = entry.kind === "run" ? entry.appRoot : entry.kind === "refuse" ? (entry.ancestor ?? process.cwd()) : process.cwd();
   const checkout = entry.kind === "run" || entry.kind === "refuse" ? entry.checkout : undefined;

@@ -21,7 +21,8 @@ import { join } from "node:path";
 import { main, runApp } from "#framework/entry/cli.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { commandBody, defineAction, materializeCommands, multiActionBody, unknownArgumentMessage } from "#framework/core/command/index.ts";
-import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { commandLine, renderAdvice } from "#framework/core/io/invocation/render.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
 import { PORT_RANGE } from "#framework/core/values/value.ts";
 import { toArgv } from "#framework/integration/mcp/call.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
@@ -32,7 +33,7 @@ import { provisionAgent } from "#framework/commands/management/provision-agent/i
 import { secrets } from "#framework/commands/management/secrets.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { spawnLocal } from "#framework/runtime/transport/exec.ts";
-import { dieWithExitCode, UserError } from "#framework/core/io/log.ts";
+import { die, dieWithExitCode, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import { ArgumentError, ConfirmationRequiredError, UnknownArgumentError } from "#framework/core/command/index.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -247,6 +248,7 @@ try {
 
   // --- the --json failure contract, through the real entry point --------------------------------
 
+  const remedy = command(["bootstrap"], { note: "then start it" });
   const contractApp: AppDefinition = {
     name: "json-contract-fixture",
     description: "fixture",
@@ -266,6 +268,15 @@ try {
         run: async () => {
           emit(`${JSON.stringify({ ok: false, problems: ["the check did not pass"] }, null, 2)}\n`);
           throw new Error("the check did not pass");
+        },
+      },
+      // rf6-fix30: refuses the way requireBootstrapped does — a UserError carrying structured
+      // advice — and the --json failure contract must carry that remedy, not only the message.
+      advised: {
+        summary: "refuses with structured advice",
+        arguments: [{ name: "json", kind: "flag", description: "Emit the outcome as JSON" }],
+        run: async () => {
+          die("this deployment has never been bootstrapped", remedy);
         },
       },
       // cli/exec's shape: the whole tail is a child command line, the child streams its own
@@ -306,6 +317,17 @@ try {
     checkTrue("a failing --json command prints an error document", parsed?.error?.message !== undefined);
     checkTrue("the error document carries the failure's message", (parsed?.error?.message ?? "").includes("unreachable"));
     check("--json failure exits non-zero", process.exitCode === 1, true);
+  }
+
+  {
+    // rf6-fix30: the refusal's remedy travels with the document — nextActions the rendered
+    // form, next the structured advice — instead of stopping at the message.
+    const { output } = await capture(() => main(contractApp, ["advised", "--json"]));
+    const document = /\{[\s\S]*\}/.exec(output)?.[0] ?? "";
+    const parsed = JSON.parse(document) as { error?: { message?: string }; nextActions?: string[]; next?: Array<{ kind?: string; argv?: string[]; note?: string }> };
+    checkTrue("a refusal with advice names the failure in its --json document", (parsed.error?.message ?? "").includes("bootstrapped"));
+    checkTrue("the --json document renders the refusal's remedy", Array.isArray(parsed.nextActions) && parsed.nextActions[0] === renderAdvice(remedy));
+    check("the --json document carries the refusal's structured remedy", parsed.next, [{ kind: "clawforge", argv: ["bootstrap"], note: "then start it" }]);
   }
 
   {

@@ -2,11 +2,12 @@
 // construction, the structured-output envelope and its masking. Split out of schema.ts, which
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
-import { maskSecrets } from "../../core/io/log.ts";
+import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { appliesToMessage, bindsAsFlag, choicesRefusal, effectProfile, requiredArgumentRefusal, specOf, specShape, tokenize, type ArgumentSpec } from "../../core/command/index.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
+import { renderAdvice } from "../../core/io/invocation/render.ts";
 import type { Declared, StructuredResult, ToolStep } from "./schema.ts";
 
 function isWarning(problem: unknown): boolean {
@@ -74,7 +75,7 @@ export function toolSteps(next: readonly Advice[], lookup: (name: string) => Dec
     if (command === undefined) continue;
     const args = toolArguments(command, local.argv);
     if (args === undefined) continue;
-    steps.push({ tool, arguments: args });
+    steps.push({ tool, arguments: args, ...(local.note === undefined ? {} : { note: local.note }) });
   }
   return steps;
 }
@@ -130,14 +131,20 @@ export function structuredResult(command: Declared, output: string, operationId:
  *  returned bare, since the tool declares one outputSchema for all its actions. A text
  *  action's envelope stays silent where a structured one speaks — no healthy, no problems,
  *  no nextActions — a gap can be seen, a guess cannot be trusted. */
-export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined): StructuredResult {
-  return structuredResult(command, machineOutput ?? output, operationId, args, facts, lookup) ?? {
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined, error?: unknown): StructuredResult {
+  const structured = structuredResult(command, machineOutput ?? output, operationId, args, facts, lookup);
+  if (structured !== undefined) return structured;
+  // A refusal that never emitted a document still carries its remedy (rf6-fix30): the thrown
+  // UserError's advice becomes nextActions/nextSteps, so an MCP client sees the same next
+  // step the console's arrow line spells.
+  const advice = error instanceof UserError ? error.advice : [];
+  return {
     operationId,
     changed: changedFact(command, {}, args, facts),
     problems: [],
     warnings: [],
-    nextActions: [],
-    nextSteps: [],
+    nextActions: [...new Set(advice.map((entry) => maskSecrets(renderAdvice(entry))))],
+    nextSteps: toolSteps(advice, lookup ?? (() => undefined)),
     result: machineOutput ?? output,
   };
 }

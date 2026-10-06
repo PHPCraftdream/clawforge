@@ -81,7 +81,7 @@
   local package: ./clawforge up  (after the change)
   local package (win32): node_modules\.bin\clawforge up  (after the change)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo up  (after the change)
-  tool form: {"tool":"up","arguments":{}}
+  tool form: {"tool":"up","arguments":{},"note":"after the change"}
 
 === shell posix ===
   checkout default (openclaw/default): cd /srv/openclaw && ./clawforge backup  (in the crontab)
@@ -540,7 +540,7 @@
   local package: ./clawforge inspect  (then edit .env: fix the line named)
   local package (win32): node_modules\.bin\clawforge inspect  (then edit .env: fix the line named)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo inspect  (then edit .env: fix the line named)
-  tool form: {"tool":"inspect","arguments":{}}
+  tool form: {"tool":"inspect","arguments":{},"note":"then edit .env: fix the line named"}
 
 === problem code: DECLARATION_MISSING ===
   checkout default (openclaw/default): ./clawforge apply-config --dump
@@ -625,7 +625,7 @@
   local package: ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   local package (win32): node_modules\.bin\clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
-  tool form: {"tool":"set","arguments":{"action":"validate"}}
+  tool form: {"tool":"set","arguments":{"action":"validate"},"note":"after adding recipe.json or server.ts to the recipe's directory, or removing the directory"}
 
 === problem code: SET_RECIPE_INVALID ===
   checkout default (openclaw/default): ./clawforge set validate  (after fixing the recipe's recipe.json)
@@ -642,7 +642,7 @@
   local package: ./clawforge set validate  (after fixing the recipe's recipe.json)
   local package (win32): node_modules\.bin\clawforge set validate  (after fixing the recipe's recipe.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after fixing the recipe's recipe.json)
-  tool form: {"tool":"set","arguments":{"action":"validate"}}
+  tool form: {"tool":"set","arguments":{"action":"validate"},"note":"after fixing the recipe's recipe.json"}
 
 === problem code: SET_REFERENCE_BROKEN ===
   checkout default (openclaw/default): ./clawforge set validate
@@ -829,7 +829,7 @@
   local package: ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   local package (win32): node_modules\.bin\clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
-  tool form: {"tool":"expose","arguments":{"action":"status"}}
+  tool form: {"tool":"expose","arguments":{"action":"status"},"note":"then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json"}
 
 === problem code: GATEWAY_EXPOSURE_ACKNOWLEDGED ===
   checkout default (openclaw/default): ./clawforge expose status
@@ -863,7 +863,7 @@
   local package: ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   local package (win32): node_modules\.bin\clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
-  tool form: {"tool":"expose","arguments":{"action":"status"}}
+  tool form: {"tool":"expose","arguments":{"action":"status"},"note":"then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`"}
 
 === problem code: PRIVATE_FILE_INSECURE ===
   checkout default (openclaw/default): ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
@@ -880,7 +880,7 @@
   local package: ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   local package (win32): node_modules\.bin\clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
-  tool form: {"tool":"secrets","arguments":{"apply":true}}
+  tool form: {"tool":"secrets","arguments":{"apply":true},"note":"re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows"}
 
 === problem code: PRIVATE_FILE_UNREADABLE ===
   checkout default (openclaw/default): ./clawforge doctor  (check local filesystem access, then retry)
@@ -897,7 +897,7 @@
   local package: ./clawforge doctor  (check local filesystem access, then retry)
   local package (win32): node_modules\.bin\clawforge doctor  (check local filesystem access, then retry)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo doctor  (check local filesystem access, then retry)
-  tool form: {"tool":"doctor","arguments":{}}
+  tool form: {"tool":"doctor","arguments":{},"note":"check local filesystem access, then retry"}
 
 === problem code: BACKUP_MISSING ===
   checkout default (openclaw/default): ./clawforge backup
@@ -965,7 +965,7 @@
   local package: ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   local package (win32): node_modules\.bin\clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
-  tool form: {"tool":"backup","arguments":{"action":"list"}}
+  tool form: {"tool":"backup","arguments":{"action":"list"},"note":"then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space"}
 
 === image pin: no lock recorded ===
   checkout default (openclaw/default): ./clawforge bootstrap
@@ -999,7 +999,7 @@
   local package: ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   local package (win32): node_modules\.bin\clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
-  tool form: {"tool":"upgrade","arguments":{"image":"<image>"}}
+  tool form: {"tool":"upgrade","arguments":{"image":"<image>"},"note":"before the first deployment, `bootstrap` instead; `lock` after to pin"}
 
 === image pin: lock for another image ===
   checkout default (openclaw/default): ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
@@ -1016,7 +1016,7 @@
   local package: ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   local package (win32): node_modules\.bin\clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
-  tool form: {"tool":"upgrade","arguments":{"image":"<image>"}}
+  tool form: {"tool":"upgrade","arguments":{"image":"<image>"},"note":"moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's)"}
 
 === recipe incomplete (set validate) ===
   checkout default (openclaw/default): ./clawforge set validate  (after adding the missing file)
@@ -1033,7 +1033,7 @@
   local package: ./clawforge set validate  (after adding the missing file)
   local package (win32): node_modules\.bin\clawforge set validate  (after adding the missing file)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after adding the missing file)
-  tool form: {"tool":"set","arguments":{"action":"validate"}}
+  tool form: {"tool":"set","arguments":{"action":"validate"},"note":"after adding the missing file"}
 
 === recipe incomplete (set build) ===
   checkout default (openclaw/default): ./clawforge set build  (after rebuilding)
@@ -1050,7 +1050,7 @@
   local package: ./clawforge set build  (after rebuilding)
   local package (win32): node_modules\.bin\clawforge set build  (after rebuilding)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set build  (after rebuilding)
-  tool form: {"tool":"set","arguments":{"action":"build"}}
+  tool form: {"tool":"set","arguments":{"action":"build"},"note":"after rebuilding"}
 
 === recipe missing directory ===
   checkout default (openclaw/default): ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
@@ -1067,7 +1067,7 @@
   local package: ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   local package (win32): node_modules\.bin\clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
-  tool form: {"tool":"set","arguments":{"action":"build"}}
+  tool form: {"tool":"set","arguments":{"action":"build"},"note":"after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory"}
 
 === recipe invalid definition ===
   checkout default (openclaw/default): ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
@@ -1084,7 +1084,7 @@
   local package: ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   local package (win32): node_modules\.bin\clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app demo set validate  (after fixing recipes/<recipe>/recipe.json)
-  tool form: {"tool":"set","arguments":{"action":"validate"}}
+  tool form: {"tool":"set","arguments":{"action":"validate"},"note":"after fixing recipes/<recipe>/recipe.json"}
 
 === provision remedy ===
   checkout default (openclaw/default): ./clawforge provision-agent <recipe>
@@ -1274,20 +1274,20 @@
   tool form: —
 
 === refusal: checkout gate command from a subfolder ===
-  checkout default (openclaw/default): cd "/clawforge-checkout"
-  --app openclaw: cd "/clawforge-checkout"
-  OC_APP=staging: cd "/clawforge-checkout"
-  --app demo: cd "/clawforge-checkout"
-  OC_APP=demo: cd "/clawforge-checkout"
-  sole demo: cd "/clawforge-checkout"
-  cwd app1: cd "/clawforge-checkout"
-  gateway, no app yet: cd "/clawforge-checkout"
-  global (clawforge): cd "/clawforge-checkout"
-  global, handed to the checkout gate with --app demo: cd "/clawforge-checkout"
-  shim init (./clawforge, installed): cd "/clawforge-checkout"
-  local package: cd "/clawforge-checkout"
-  local package (win32): cd "/clawforge-checkout"
-  checkout MCP launcher (../../clawforge, demo/flag): cd "/clawforge-checkout"
+  checkout default (openclaw/default): cd '/clawforge-checkout'
+  --app openclaw: cd '/clawforge-checkout'
+  OC_APP=staging: cd '/clawforge-checkout'
+  --app demo: cd '/clawforge-checkout'
+  OC_APP=demo: cd '/clawforge-checkout'
+  sole demo: cd '/clawforge-checkout'
+  cwd app1: cd '/clawforge-checkout'
+  gateway, no app yet: cd '/clawforge-checkout'
+  global (clawforge): cd '/clawforge-checkout'
+  global, handed to the checkout gate with --app demo: cd '/clawforge-checkout'
+  shim init (./clawforge, installed): cd '/clawforge-checkout'
+  local package: cd '/clawforge-checkout'
+  local package (win32): cd '/clawforge-checkout'
+  checkout MCP launcher (../../clawforge, demo/flag): cd '/clawforge-checkout'
   tool form: —
 
 === refusal: init inside a ClawForge checkout ===
@@ -1299,13 +1299,13 @@
   sole demo: ./clawforge new-app <name>
   cwd app1: ./clawforge new-app <name>
   gateway, no app yet: ./clawforge new-app <name>
-  global (clawforge): ./clawforge new-app <name>
-  global, handed to the checkout gate with --app demo: ./clawforge new-app <name>
+  global (clawforge): clawforge new-app <name>
+  global, handed to the checkout gate with --app demo: clawforge new-app <name>
   shim init (./clawforge, installed): ./clawforge new-app <name>
   local package: ./clawforge new-app <name>
-  local package (win32): ./clawforge new-app <name>
+  local package (win32): node_modules\.bin\clawforge new-app <name>
   checkout MCP launcher (../../clawforge, demo/flag): ./clawforge new-app <name>
-  tool form: —
+  tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
 === refusal: init inside a ClawForge checkout (2) ===
   checkout default (openclaw/default): ./clawforge new-app <name>  (in bash)
@@ -1340,23 +1340,6 @@
   local package (win32): node_modules\.bin\clawforge init
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge init
   tool form: {"tool":"init","arguments":{}}
-
-=== refusal: not initialised (in a checkout) ===
-  checkout default (openclaw/default): ./clawforge
-  --app openclaw: ./clawforge
-  OC_APP=staging: ./clawforge
-  --app demo: ./clawforge
-  OC_APP=demo: ./clawforge
-  sole demo: ./clawforge
-  cwd app1: ./clawforge
-  gateway, no app yet: ./clawforge
-  global (clawforge): ./clawforge
-  global, handed to the checkout gate with --app demo: ./clawforge
-  shim init (./clawforge, installed): ./clawforge
-  local package: ./clawforge
-  local package (win32): ./clawforge
-  checkout MCP launcher (../../clawforge, demo/flag): ./clawforge
-  tool form: —
 
 === refusal: not initialised (in a checkout) (2) ===
   checkout default (openclaw/default): ./clawforge  (in bash)
@@ -2444,4 +2427,21 @@
   local package: ./clawforge --app <name> destroy
   local package (win32): node_modules\.bin\clawforge --app <name> destroy
   checkout MCP launcher (../../clawforge, demo/flag): ../../clawforge --app <name> destroy
+  tool form: —
+
+=== gate inline note (1) ===
+  checkout default (openclaw/default): ./clawforge help
+  --app openclaw: ./clawforge --app openclaw help
+  OC_APP=staging: ./clawforge --app staging help
+  --app demo: ./clawforge --app demo help
+  OC_APP=demo: ./clawforge --app demo help
+  sole demo: ./clawforge --app demo help
+  cwd app1: ./clawforge help
+  gateway, no app yet: ./clawforge help
+  global (clawforge): clawforge help
+  global, handed to the checkout gate with --app demo: clawforge --app demo help
+  shim init (./clawforge, installed): ./clawforge help
+  local package: ./clawforge help
+  local package (win32): node_modules\.bin\clawforge help
+  checkout MCP launcher (../../clawforge, demo/flag): ./clawforge --app demo help
   tool form: —

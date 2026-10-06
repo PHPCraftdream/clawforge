@@ -51,10 +51,10 @@
         }
       },
       "tools/framework/entry/resolve.ts": {
-        "reason": "the installed entry's --project-root consumption, before any command exists; the first-word test (argv[0] is the command position: an option there is not a command, as in helpWithoutDeployment)",
+        "reason": "the installed entry's --project-root consumption, before any command exists; the first-word test (argv[0] is the command position: an option there is not a command, as in helpWithoutDeployment); candidates now reads DISPATCHER_COMMANDS (rf6-fix30 item 10) instead of re-listing control-mcp by hand",
         "lines": {
           "const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : [...rawArgv]);": 1,
-          "const declined = !isHelpRequest && (first.startsWith(\"-\") || first === \"control-mcp\" || candidates.includes(first));": 1
+          "const declined = !isHelpRequest && (first.startsWith(\"-\") || candidates.includes(first));": 1
         }
       },
       "tools/clawforge.ts": {

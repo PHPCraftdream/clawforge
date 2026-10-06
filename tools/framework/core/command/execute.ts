@@ -14,6 +14,7 @@ import { localScope, specData, specOf, specShape, type DeploymentScope, type Par
 import { scopeByAction } from "#src/core/command/view.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError } from "#src/core/io/log.ts";
+import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { emit, machineWritesCount, stdoutBytesWritten } from "#src/core/io/output.ts";
 import { useApplicationRecipesDir, envFile } from "#src/runtime/deployment.ts";
 import { createTransport, type Transport } from "#src/runtime/transport/transport.ts";
@@ -109,6 +110,19 @@ function jsonTokenGiven(shape: CallShape & EffectShape, argv: readonly string[])
   }
 }
 
+/** Deep-masks a JSON-ready value — strings and keys — the way the MCP envelope masks its
+ *  own, so a secret that reached an advice argv cannot ride the failure document out. */
+function maskedJson(value: unknown): unknown {
+  if (typeof value === "string") return maskSecrets(value);
+  if (Array.isArray(value)) return value.map(maskedJson);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) out[maskSecrets(key)] = maskedJson(entry);
+    return out;
+  }
+  return value;
+}
+
 /** The context both spec and legacy target commands run on: built here, not by the command —
  *  an application never constructs a transport itself. */
 function contextOptions(app: AppDefinition, io: CommandIo): ContextOptions {
@@ -141,7 +155,16 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
       && (jsonGiven ?? false)
       && machineWritesCount() === writesAtStart && stdoutBytesWritten() === stdoutAtStart) {
       const message = maskSecrets(error instanceof Error ? error.message : String(error));
-      emit(`${JSON.stringify({ error: { message } }, null, 2)}\n`);
+      // The refusal's remedy travels as data (rf6-fix30): the advice a UserError carries is
+      // the success documents' `next`, nextActions its rendered form. Masked like the message.
+      const advice = error instanceof UserError ? error.advice : [];
+      emit(`${JSON.stringify({
+        error: { message },
+        ...(advice.length === 0 ? {} : {
+          nextActions: [...new Set(advice.map((entry) => maskSecrets(renderAdvice(entry))))],
+          next: advice.map(maskedJson),
+        }),
+      }, null, 2)}\n`);
     }
     return { stage, error, ...(facts === undefined ? {} : { facts }) };
   };

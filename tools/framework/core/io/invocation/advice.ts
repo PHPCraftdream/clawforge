@@ -10,6 +10,14 @@ export interface CommandAdvice {
   readonly argv: readonly string[];
   readonly app?: string;
   readonly note?: string;
+  /** The checkout root: the program is spelled from there — the frame a place-naming
+   *  sentence directs to — not from the directory the run refused in. */
+  readonly at?: "checkout-root";
+  /** An install line for another shell (a completion script's Install: header, the
+   *  --help prose that spells one): the program is re-spelled portably — npm's Windows
+   *  bin wrapper carries \, which bash strips and every PowerShell accepts as
+   *  forward slashes. */
+  readonly install?: boolean;
 }
 
 export interface ShellAdvice {
@@ -31,7 +39,7 @@ export type Advice = CommandAdvice | ShellAdvice | ManualAdvice;
  *  `argv[0]` may not be `--app`, whose deployment is the `app` option. */
 export function command(
   argv: string | readonly string[],
-  options?: { readonly app?: string; readonly note?: string },
+  options?: { readonly app?: string; readonly note?: string; readonly at?: "checkout-root"; readonly install?: boolean },
 ): CommandAdvice {
   if (typeof argv === "string" && /["']/.test(argv)) {
     throw new Error("command(): a quote character needs an array element, not a string");
@@ -48,6 +56,8 @@ export function command(
     argv: parts,
     ...(options?.app === undefined ? {} : { app: options.app }),
     ...(options?.note === undefined ? {} : { note: options.note }),
+    ...(options?.at === undefined ? {} : { at: options.at }),
+    ...(options?.install === undefined ? {} : { install: options.install }),
   };
 }
 

@@ -19,7 +19,7 @@ import {
 } from "#framework/core/io/invocation/index.ts";
 import { command, manual, shellLine } from "#framework/core/io/invocation/advice.ts";
 import { commandLine, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
-import { renderAdvice, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderArguments, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { die, formatError, registerSecret, UserError, reportError, info } from "#framework/core/io/log.ts";
 import { defaultInvocation } from "#framework/entry/root.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
@@ -30,6 +30,7 @@ import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity,
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
 import { deploy } from "#framework/commands/management/deploy/index.ts";
 import { bootstrapAndReport } from "#framework/commands/management/deploy/sync.ts";
+import { sshTunnelCommand } from "#framework/commands/operate/expose/ssh.ts";
 import { deploymentName } from "#framework/runtime/deployment.ts";
 import { cmdExeArgv } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -91,7 +92,7 @@ try {
   const remote = [
     `would bootstrap remotely afterwards: cd '/opt/oc' && ./clawforge --app staging bootstrap`,
     `bring it up there with: cd '/opt/oc' && ./clawforge --app staging bootstrap`,
-    `provider keys are not copied — install them there: ./clawforge --app staging secrets --apply`,
+    `provider keys are not copied — install them there: cd '/srv/openclaw' && ./clawforge --app staging secrets --apply`,
     `  bash -lc "cd /srv/app1 && ./clawforge backup"`,
   ];
   for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
@@ -162,7 +163,12 @@ try {
     const spacedSkip = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/srv/my app", name, false, undefined));
     check(`deploy's manual bootstrap hint quotes a spaced remote path ${at}`, spacedSkip.includes("bring it up there with: cd '/srv/my app' &&"), true);
     const done = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, true, undefined));
-    check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`), true);
+    check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: cd '/opt/openclaw' && ./clawforge --app ${name} secrets --apply`), true);
+    // The tunnel line is the shared sshTunnelCommand + renderArguments construction, so a
+    // host carrying shell-active characters survives the paste (rf6-fix30).
+    check(`deploy's tunnel line is verbatim ${at}`, done.includes(renderArguments(sshTunnelCommand("user@host", "18789", "18789"))), true);
+    const dollarDone = await capture(() => bootstrapAndReport(deployCtx, "user@ho$st", "/opt/openclaw", name, true, undefined));
+    check(`deploy's tunnel line quotes a $-host ${at}`, dollarDone.includes(renderArguments(sshTunnelCommand("user@ho$st", "18789", "18789"))), true);
   }
 
   setInvocation(MONO);

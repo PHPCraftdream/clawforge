@@ -1,6 +1,8 @@
 // Help-prose tokens: {clawforge} — the program; {clawforge <argv…>} — a whole command,
 // `--app <name>` as its first words moving into the advice's `app` field; {--name} — this
-// command's own flag. "{" without clawforge/-- is plain text (JSON in prose).
+// command's own flag; {install <argv…>} — an install line for the shell the sentence
+// pastes into, its program spelled portably (the completion prose). "{" without
+// clawforge/install/-- is plain text (JSON in prose).
 
 import { command } from "./advice.ts";
 import { renderAdvice, renderProgram } from "./render.ts";
@@ -9,6 +11,7 @@ import { invocation, type Invocation } from "./index.ts";
 export type ProseToken =
   | { kind: "program" }
   | { kind: "command"; argv: readonly string[]; app?: string }
+  | { kind: "install"; argv: readonly string[] }
   | { kind: "flag"; name: string };
 
 /** The token a `{…}` span means, or undefined when the brace is plain text. */
@@ -20,6 +23,9 @@ function recognize(content: string): ProseToken | undefined {
       return { kind: "command", argv: words.slice(2), app: words[1] };
     }
     return { kind: "command", argv: words };
+  }
+  if (content.startsWith("install ")) {
+    return { kind: "install", argv: content.slice("install ".length).split(" ") };
   }
   const flag = /^--([A-Za-z0-9][\w-]*)$/.exec(content);
   if (flag !== null) {
@@ -61,6 +67,7 @@ export function renderProse(text: string, on: Invocation = invocation()): string
     rendered += text.slice(cursor, start);
     if (token.kind === "program") rendered += renderProgram(on);
     else if (token.kind === "flag") rendered += `--${token.name}`;
+    else if (token.kind === "install") rendered += renderAdvice(command(token.argv, { install: true }), on);
     else rendered += renderAdvice(command(token.argv, token.app === undefined ? undefined : { app: token.app }), on);
     cursor = end;
   }

@@ -8,12 +8,14 @@
 // cannot (R33-10).
 
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { completionCandidates, completionData } from "#framework/integration/completion/table.ts";
 import { makeCompletionGateCommand, renderCompletion } from "#framework/integration/completion/index.ts";
 import { APP_SKIP_PAIR, APP_VALUES_BLOCK } from "#framework/integration/completion/bash.ts";
+import { invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { installLine } from "#framework/core/io/invocation/render.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { completionScenarios, type CompletionScenario } from "./scenarios.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
@@ -338,6 +340,91 @@ function pwshDriver(scriptPath: string): string {
     "",
   ].join("\n");
 }
+
+// --- 3b. the Install: line pasted in ITS shell ----------------------------------------------
+//
+// The Install: header is spelled for the script's OWN shell through installLine, independent of
+// the invocation's host (rf6-fix30): under the win32 bin-wrapper program the bash line carries
+// forward slashes (bash strips a backslash), the pwsh line names a path PowerShell resolves.
+// Each paste below runs the spelled line for real, a stub standing in for the bin wrapper.
+
+const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mode: "local-package", audience: "terminal" };
+
+await requires("bash", "the bash Install: line, pasted in a real bash", async () => {
+  const previous = invocation();
+  setInvocation(WRAPPER_FRAME);
+  try {
+    const rendered = renderCompletion("bash", data);
+    const install = rendered.split("\n")[1]!.slice("# Install: ".length);
+    const expectedInstall = `source <(${installLine(["completion", "bash"])})`;
+    check("bash: the Install: line spells the wrapper with forward slashes", install, expectedInstall);
+    const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
+    try {
+      await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
+      const scriptPath = join(dir, "completion.sh");
+      await writeFile(scriptPath, rendered, "utf8");
+      const wrapper = join(dir, "node_modules", ".bin", "clawforge");
+      await writeFile(wrapper, `#!/bin/sh\ncat '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
+      await chmod(wrapper, 0o755);
+      const driverPath = join(dir, "driver.sh");
+      await writeFile(driverPath, [
+        `install=${quote(install)}`,
+        'eval "$install"',
+        "complete -p clawforge",
+        "complete -p ./clawforge",
+        "",
+      ].join("\n"), "utf8");
+      const proc = spawnSync("bash", [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir });
+      check("bash: the pasted Install: line exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
+      const registered = (proc.stdout ?? "").split("\n").map((row) => row.trim()).filter((row) => row !== "").map((row) => row.split(" ").slice(-2)).sort();
+      check("bash: the paste registered both completer names", registered, [["_clawforge_complete", "./clawforge"], ["_clawforge_complete", "clawforge"]]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  } finally {
+    setInvocation(previous);
+  }
+});
+
+await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", async () => {
+  const pwsh = await pwshCommand();
+  if (pwsh === undefined) return;
+  const previous = invocation();
+  setInvocation(WRAPPER_FRAME);
+  try {
+    const rendered = renderCompletion("pwsh", data);
+    const install = rendered.split("\n")[1]!.slice("# Install: ".length);
+    const expectedInstallPwsh = `${installLine(["completion", "pwsh"])} | Out-String | Invoke-Expression`;
+    check("pwsh: the Install: line spells the wrapper portably", install, expectedInstallPwsh);
+    const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
+    try {
+      await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
+      // The stub serves a SHORT script: Out-String truncates redirected output at the host's
+      // 120-column default, so the full script's long table lines would not survive the paste —
+      // a pre-existing trait of the pipeline, not of the spelling this pins. Under test is the
+      // spelled path resolving to the wrapper and the pipeline registering the completer.
+      const scriptPath = join(dir, "completion.ps1");
+      await writeFile(scriptPath, `$clawforgeTop = @('completion', 'help')\n`, "utf8");
+      await writeFile(join(dir, "node_modules", ".bin", "clawforge.ps1"), `Get-Content '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
+      const wrapper = join(dir, "node_modules", ".bin", "clawforge");
+      await writeFile(wrapper, `#!/bin/sh\ncat '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
+      await chmod(wrapper, 0o755);
+      const driverPath = join(dir, "driver.ps1");
+      await writeFile(driverPath, [
+        install,
+        "if ($clawforgeTop.Count -gt 0) { 'registered' }",
+        "",
+      ].join("\n"), "utf8");
+      const proc = spawnSync(pwsh, ["-NoProfile", "-NonInteractive", "-File", driverPath], { timeout: 420_000, encoding: "utf8", cwd: dir });
+      check("pwsh: the pasted Install: line exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
+      check("pwsh: the paste registered the completer", (proc.stdout ?? "").includes("registered"), true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  } finally {
+    setInvocation(previous);
+  }
+});
 
 // Whether a usable bash exists is a host fact, not a string to sniff: the `bash` capability
 // probe decides (and OC_CHECK_REQUIRE=bash turns the skip into a failure, which is what CI does).

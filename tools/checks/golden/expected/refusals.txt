@@ -253,20 +253,20 @@ error: several deployments (demo, staging) — pick one with --app <name> or OC_
 === checkout gate command from a checkout subfolder: check — checkout root (./clawforge) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-    → cd "<checkout>"
+    → cd '<checkout>'
 
 === checkout gate command from a checkout subfolder: check — named deployment (./clawforge --app demo) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-    → cd "<checkout>"
+    → cd '<checkout>'
 
 === checkout gate command from a checkout subfolder: check — installed command (clawforge) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-    → cd "<checkout>"
+    → cd '<checkout>'
 
 === checkout gate command from a checkout subfolder: check — sole deployment (./clawforge --app demo) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-    → cd "<checkout>"
+    → cd '<checkout>'
 

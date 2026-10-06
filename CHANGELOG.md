@@ -315,6 +315,37 @@ All notable changes to `@clawforge/framework` will be documented here.
   dispatch, so the command would be unreachable while still listed by help, completion and MCP.
   `check` runs no longer leave `apps/cli-help-check-*` fixtures behind: the check is declared
   exclusive and its cleanup retries and fails loudly instead of leaking into the checkout.
+* A refusal whose sentence names the checkout root answers with a row that runs in the reader's
+  own shell: the command is spelled from the checkout root for the invocation that got the
+  refusal (the system-wide `clawforge` for an installed run, the checkout's `./clawforge` for a
+  checkout copy), with the bash-shim row beside it only where it says something different — a
+  cmd or PowerShell user of the installed command gets a row they can run again. The gate's
+  sibling sentences about the checkout root (`help` at the root, the not-initialised and
+  `--app`-conflict rows, the inline notes beside them) spell it the same way, and the
+  `cd '<checkout>'` they hand over is quoted with the shared shell quoter, so a path carrying
+  `$` or a backtick pastes as a path. An invalid `--app` value is refused with the gate's own
+  deployment-name error before the conflict decision, instead of being echoed back as advice
+  that the root would refuse itself.
+
+* new-app's git-init note spells the lock line for the deployment it just created
+  (`--app <name>`), one frame for the whole sentence: pasted, it locks the new deployment
+  instead of the default one.
+
+* The completion scripts' `Install:` headers and `completion --help`'s prose spell each install
+  line for its own shell through the shared renderer, independent of the invocation's host: a
+  bin-wrapper spelling carries forward slashes bash does not strip, so the bash and zsh lines
+  source and the PowerShell line resolves.
+
+* A `--json` failure document and an MCP failure envelope carry the refusal's structured
+  advice — `next` and `nextActions` beside the message, `nextSteps` as the tool calls, each
+  with the advice's note — so the remedy no longer lives only in the failure text.
+
+* recover-env answers an unreachable target with the standard TARGET_UNREACHABLE refusal and
+  the transport's own next step, not "docker is not running".
+
+* deploy-to-remote's printed remote lines paste from a fresh ssh session: the provider-keys
+  hint carries the `cd '<remote>' &&` its sibling lines have, and the ssh tunnel line is the
+  shared construction that quotes its arguments, so a host carrying `$` survives the paste.
 
 ### Fixed
 

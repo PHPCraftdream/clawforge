@@ -11,7 +11,7 @@
 
 import type { Env } from "#src/core/env.ts";
 import { composeProjectName, useComposeProjectOverride } from "#src/runtime/deployment.ts";
-import { type Transport } from "#src/runtime/transport/transport.ts";
+import { TransportUnreachableError, type Transport } from "#src/runtime/transport/transport.ts";
 import { connectionFactsFromInspect, type ConnectionFacts } from "./facts.ts";
 
 // The two labels compose writes on every container it creates. `compose ps` filters by
@@ -49,7 +49,10 @@ export async function runningConnectionFactsWithoutContext(options: {
       "--filter",
       `label=${SERVICE_LABEL}=${options.service}`,
     ]);
-  } catch {
+  } catch (error) {
+    // An unreachable target is not a docker-not-running answer: the transport's typed
+    // refusal carries the real next step (rf6-fix30) and reaches the caller as itself.
+    if (error instanceof TransportUnreachableError) throw error;
     return undefined;
   }
   if (listed.code !== 0) return undefined;

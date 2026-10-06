@@ -10,7 +10,7 @@
 // whichever of the system-wide command or the checkout shim was typed. Output never carries a machine path.
 
 import { parseDeclaredArgs } from "../../core/command/index.ts";
-import { commandLine } from "../../core/io/invocation/render.ts";
+import { installLine } from "../../core/io/invocation/render.ts";
 import { emitRaw } from "../../core/io/output.ts";
 import { openclawCommands } from "../../commands/interface/index.ts";
 import { bashCompletionLines, renderBash } from "./bash.ts";
@@ -40,8 +40,8 @@ function renderZsh(data: CompletionData): string {
     "#compdef clawforge ./clawforge\n" +
     "# clawforge zsh completion — generated from the live command declarations, via bash's\n" +
     "# completion protocol (bashcompinit), so this cannot drift from the bash script's own\n" +
-    `# grammar. Install: ${commandLine(["completion", "zsh"])} > "\${fpath[1]}/_clawforge" (new shell), or\n` +
-    `# source <(${commandLine(["completion", "zsh"])}) in the current one.\n` +
+    `# grammar. Install: ${installLine(["completion", "zsh"])} > "\${fpath[1]}/_clawforge" (new shell), or\n` +
+    `# source <(${installLine(["completion", "zsh"])}) in the current one.\n` +
     "autoload -Uz bashcompinit\n" +
     "bashcompinit\n" +
     body +
@@ -68,9 +68,9 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
     details:
       "Generated from the live command declarations — names, flags, and a multi-action " +
       "command's own flags under the right action — so it cannot drift from --help.\n" +
-      "Install: source <({clawforge completion bash}); " +
-      '{clawforge completion zsh} > "${fpath[1]}/_clawforge"; or ' +
-      "{clawforge completion pwsh} | Out-String | Invoke-Expression.\n" +
+      "Install: source <({install completion bash}); " +
+      '{install completion zsh} > "${fpath[1]}/_clawforge"; or ' +
+      "{install completion pwsh} | Out-String | Invoke-Expression.\n" +
       (appFlag ? "--app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +
       "Completes the built-in commands only: a command a deployment declares itself is not offered, " +
       "since the script is generated without loading any deployment.\n" +

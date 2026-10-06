@@ -31,7 +31,8 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { DATA_DIR_UNSET } from "#framework/core/env.ts";
 import { unknownArgumentMessage } from "#framework/core/command/errors.ts";
 import { NOT_RUNNING_CAUSE, RECOVERABLE_ONLY_FROM_RUNNING } from "#framework/commands/operate/recover-env/index.ts";
-import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
+import { unreachableProblem } from "#framework/service/inspection.ts";
+import { spawnLocal, TransportUnreachableError, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -193,6 +194,31 @@ try {
       dockerCalls[1],
       ["inspect", "--format", "{{json .}}", "c0ffee"],
     );
+  }
+
+  // --- an unreachable target: the transport's own refusal, not docker-not-running --------
+  {
+    await writeFile(envFile(), seedWithoutDataDir, "utf8");
+    const stubRefusal = new TransportUnreachableError("ssh: connect to host nonexistent.invalid port 22: no route", "check OC_SSH_HOST");
+    const unreachable = {
+      description: "stub",
+      exec(): never {
+        throw stubRefusal;
+      },
+      exists(): never {
+        throw stubRefusal;
+      },
+      readFile(): never {
+        throw stubRefusal;
+      },
+    } as unknown as Transport;
+    const execution = await executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport: unreachable });
+    const error = execution.error instanceof Error ? execution.error.message : String(execution.error ?? "");
+    const problem = unreachableProblem(stubRefusal);
+    check("an unreachable target is refused as unreachable", error.includes("TARGET_UNREACHABLE"), true);
+    check("the unreachable refusal carries the transport's next step", error.includes(problem.nextAction), true);
+    check("the unreachable target never reads as docker-not-running", error.includes(NOT_RUNNING_CAUSE), false);
+    check("a refused recovery leaves .env byte-identical", await readFile(envFile(), "utf8"), seedWithoutDataDir);
   }
 
   // --- (1b) --adopt-runtime through the bootstrap merges the diverged values too ---------

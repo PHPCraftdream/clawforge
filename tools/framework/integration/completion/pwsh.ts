@@ -4,7 +4,7 @@
 // two different command sets, so a check can diff renders and drive the two scripts against
 // completionCandidates() differentially.
 
-import { commandLine } from "../../core/io/invocation/render.ts";
+import { installLine } from "../../core/io/invocation/render.ts";
 import type { CompletionData } from "./table.ts";
 
 /** The `$clawforgeCompleter = { … }` body — the decision completionCandidates() makes, branch
@@ -114,7 +114,7 @@ export function renderPwsh(data: CompletionData): string {
   const values = data.values.map((entry) => `  "${entry.command}${entry.scope}${entry.option}" = @(${quoted(entry.values)})`);
   return (
     "# clawforge PowerShell completion — generated from the command declarations.\n" +
-    `# Install: ${commandLine(["completion", "pwsh"])} | Out-String | Invoke-Expression\n` +
+    `# Install: ${installLine(["completion", "pwsh"])} | Out-String | Invoke-Expression\n` +
     (data.appFlag ? "$clawforgeApp = $true\n" : "$clawforgeApp = $false\n") +
     `$clawforgeTop = @(${quoted(data.top)})\n` +
     block("clawforgeFirst", entries(data.first)) +

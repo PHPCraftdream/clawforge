@@ -12,9 +12,9 @@
 // repository's own test suite, which the npm package doesn't ship. Each gate builds its own list.
 
 import { info, log, reportError, UserError } from "../core/io/log.ts";
-import { command, manual } from "../core/io/invocation/advice.ts";
-import { commandLine } from "../core/io/invocation/render.ts";
-import { shellLine } from "../core/io/invocation/advice.ts";
+import { command, manual, shellLine, type Advice } from "../core/io/invocation/advice.ts";
+import { commandLine, renderAdvice } from "../core/io/invocation/render.ts";
+import { shellQuote } from "../core/io/shell.ts";
 import { bind, tokenize, tokenizeLenient } from "../core/command/parse.ts";
 import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
 import { specData, specOf } from "../core/command/spec.ts";
@@ -148,15 +148,14 @@ export interface HelpContext {
   /** The ClawForge checkout the directory is in, if any: `init` is refused there. */
   readonly checkout?: string;
   /** Renders a deployment command's --help body from its declaration, without a
-   *  deployment (built from openclawCommands, as the checkout root does). Absent — as in
-   *  older callers — a deployment command stays refused with the "needs an app folder"
-   *  advice. */
-  readonly deploymentHelp?: (name: string) => void;
+   *  deployment (built from openclawCommands, as the checkout root does). Required:
+   *  both entries build it, so a deployment command always answers. */
+  readonly deploymentHelp: (name: string) => void;
 }
 
 /** `help`/`--help`/`-h` (or no argument at all) where no deployment exists: the gate's own
  *  commands only. Returns the exit code, or undefined when argv is not a help request. */
-export function helpWithoutDeployment(commands: GateCommand[], argv: string[], context: HelpContext = { deploymentCommands: [] }): number | undefined {
+export function helpWithoutDeployment(commands: GateCommand[], argv: string[], context: HelpContext): number | undefined {
   const first = argv[0];
   const { checkout } = context;
   // `init` is refused in a checkout, so it is no suggestion there either.
@@ -165,7 +164,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   if (first !== undefined && first !== "help" && first !== "--help" && first !== "-h") {
     // `<deployment command> --help` answers without a deployment, from the built-in
     // declaration — same as the checkout root (R32-09). A bare command stays a refusal.
-    if (context.deploymentCommands.includes(first) && context.deploymentHelp !== undefined && isDeploymentHelpRequest(argv, context.deploymentCommands)) {
+    if (context.deploymentCommands.includes(first) && isDeploymentHelpRequest(argv, context.deploymentCommands)) {
       context.deploymentHelp(first);
       deploymentHelpNote(first, checkout);
       return 0;
@@ -204,14 +203,10 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   // A deployment command's declaration is built in — the checkout root answers
   // `help <cmd>` from it, so a subfolder and an installed command outside an app answer
   // the same way instead of refusing (R32-09).
-  if (context.deploymentCommands.includes(target) && context.deploymentHelp !== undefined) {
+  if (context.deploymentCommands.includes(target)) {
     context.deploymentHelp(target);
     deploymentHelpNote(target, checkout);
     return 0;
-  }
-  if (context.deploymentCommands.includes(target)) {
-    reportError(outsideAppRefusal(target, checkout));
-    return 1;
   }
   reportUnknownCommand(target, candidates);
   return 1;
@@ -233,22 +228,22 @@ export function didYouMeanMessage(suggestion: string): string {
   return `did you mean: ${suggestion}`;
 }
 
-/** The refusal for a deployment command typed where no deployment lives: the shared body the
- *  two checkout variants extend. */
-export const OUTSIDE_APP = `is a deployment command: it needs an app folder, and ${NO_APP_TS_HERE}`;
+/** The pointers the checkout's place-naming sentences embed, spelled from the checkout root
+ *  (the at mark) whatever copy runs and wherever it stood. Exported so the entry matrix
+ *  renders the very rows the notes carry, not a restatement. */
+const CHECKOUT_ROOT_GATE = command([], { at: "checkout-root" });
+const CHECKOUT_ROOT_HELP = command(["help"], { at: "checkout-root" });
 
-export function outsideAppRefusal(target: string, checkout: string | undefined): string {
-  return checkout === undefined
-    ? `"${target}" ${OUTSIDE_APP} — run: ${commandLine(["init"])}`
-    : `"${target}" ${OUTSIDE_APP} — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`;
+export function checkoutInlineNotes(): Advice[] {
+  return [CHECKOUT_ROOT_GATE, CHECKOUT_ROOT_HELP];
 }
 
 /** The one line after a deployment command's help, rendered without a deployment: where
- *  the command actually runs — the refusal's advice, one level deeper. */
+ *  the command actually runs. */
 export function outsideAppNote(name: string, checkout: string | undefined): string {
   return checkout === undefined
     ? `"${name}" ${RUNS_INSIDE_NOTE} — ${NO_APP_TS_HERE}; run: ${commandLine(["init"])}`
-    : `"${name}" ${RUNS_INSIDE_NOTE} — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`;
+    : `"${name}" ${RUNS_INSIDE_NOTE} — this is a ClawForge checkout; run it from apps/<name> or with ${renderAdvice(CHECKOUT_ROOT_GATE)} at the checkout root`;
 }
 
 function deploymentHelpNote(name: string, checkout: string | undefined): void {
@@ -268,7 +263,7 @@ export const CHECKOUT_ROOT_NOTE = "is a checkout command — run it from the che
 
 /** The checkout-root line of the bare help screen: where the full list lives instead. */
 export function checkoutListNote(checkout: string): string {
-  return `${CHECKOUT_NOTE} (${checkout}): ${commandLine(["help"])} at its root lists every command, apps/<name> holds the deployments.`;
+  return `${CHECKOUT_NOTE} (${checkout}): ${renderAdvice(CHECKOUT_ROOT_HELP)} at its root lists every command, apps/<name> holds the deployments.`;
 }
 
 /** The refusal for a checkout gate command typed from a checkout subfolder: the command is
@@ -276,10 +271,10 @@ export function checkoutListNote(checkout: string): string {
  *  another shell, so it is shell advice: nothing rewrites it. */
 export function checkoutSubfolderReport(first: string, checkout: string): UserError | undefined {
   if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
-  // Quoted: a path with spaces breaks unquoted in any shell, and Windows backslashes read
-  // as escapes in the Git Bash this hint is most likely pasted into.
+  // Single-quoted by the shared quoting rule: a path with spaces breaks unquoted in any
+  // shell, and inside double quotes bash still expands $ and runs backticks.
   return new UserError(`${first} ${CHECKOUT_ROOT_NOTE}`, {
-    advice: [shellLine("posix", `cd "${checkout}"`)],
+    advice: [shellLine("posix", `cd ${shellQuote(checkout)}`)],
   });
 }
 

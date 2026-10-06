@@ -14,9 +14,9 @@ import { pathToFileURL } from "node:url";
 import { INVOCATION_ENV, invocation, serializeInvocation } from "../core/io/invocation/index.ts";
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
-import { command, shellLine } from "../core/io/invocation/advice.ts";
-import { renderArgument, renderAdvice, shimInvocation } from "../core/io/invocation/render.ts";
-import { nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
+import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
+import { checkoutRootProgram, renderArgument, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
+import { IN_BASH_NOTE, nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -57,14 +57,18 @@ function runInstead(entry: string, args: string[], flag: boolean): never {
   process.exit(result.status ?? 1);
 }
 
-/** The hand-over's --app conflict as data: the sentence names the checkout root, so the row
- *  spells the gate from there (the shim at its root), never from the frame this run stood
- *  in — the same frame rule as entry/resolve.ts's checkout refusals. */
+/** The hand-over's --app conflict as data: the sentence names the checkout root, so row 1
+ *  spells the gate from there for the copy this run is (the at mark re-roots it), and row
+ *  2 is the bash shim's own spelling, dropped when it duplicates row 1 — the same frame
+ *  rule as entry/resolve.ts's checkout refusals. */
 export function appConflictRefusal(decision: { readonly typed: string; readonly app: string }): UserError {
-  const atRoot = renderAdvice(command([], { app: decision.typed }), shimInvocation());
+  const advice: Advice[] = [command([], { app: decision.typed, at: "checkout-root" })];
+  if (checkoutRootProgram(invocation().program) !== SHIM_PROGRAM) {
+    advice.push(shellLine("posix", renderAdvice(command([], { app: decision.typed }), shimInvocation()), { note: IN_BASH_NOTE }));
+  }
   return new UserError(
     `--app ${renderArgument(decision.typed, invocation().program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — ${APP_CONFLICT_FROM_ROOT}:`,
-    { advice: [shellLine("posix", atRoot)] },
+    { advice },
   );
 }
 
@@ -81,6 +85,10 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
   }
   if (decision.reason === "missing-app-value") {
     reportError("--app needs a deployment name");
+    process.exit(1);
+  }
+  if (decision.reason === "invalid-app-value") {
+    reportError(decision.message);
     process.exit(1);
   }
   reportError(appConflictRefusal(decision));

@@ -300,6 +300,9 @@ const initAdvice = gitInitAdvice("demo");
 check("new-app's own note explains why (apps/ is gitignored here)", initAdvice.includes("gitignore"), true);
 check("and names the concrete command, not just the idea", initAdvice.includes("cd apps/demo && git init"), true);
 check("and confirms secrets are already kept out of that new repository", initAdvice.includes(".env") && initAdvice.includes("secrets/"), true);
+const lockCommand = /"([^"]*)"/.exec(initAdvice)?.[1] ?? "";
+check("and the lock line targets the new deployment, spelled from the sentence's root frame", lockCommand.split(" ").slice(-3), ["--app", "demo", "lock"]);
+check("and spells no path out of the checkout root", lockCommand.includes("../"), false);
 
 // --- a recipes root that is not a directory must die naming it, not pin an empty lock -----
 //

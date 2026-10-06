@@ -32,6 +32,8 @@ export type Declared = {
 export interface ToolStep {
   readonly tool: string;
   readonly arguments: Readonly<Record<string, unknown>>;
+  /** The advice's own note, when it carries one — the part of the remedy that is not argv. */
+  readonly note?: string;
 }
 
 /** The envelope every structured tool result carries. A text log is written for a person;

@@ -15,19 +15,19 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
-import { FROM_CHECKOUT_ROOT, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
-import { CHECKOUT_ROOT_NOTE } from "#framework/integration/gate.ts";
+import { FROM_CHECKOUT_ROOT, IN_BASH_NOTE, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { CHECKOUT_ROOT_NOTE, DISPATCHER_COMMANDS } from "#framework/integration/gate.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
-import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { command, type Advice, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
+import { checkoutRootProgram, renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { APP_CONFLICT_FROM_ROOT } from "#framework/entry/delegate.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, toolFormCell, type InvocationColumn } from "#checks/golden/advice.ts";
-import { entryDecisionRefusals } from "#checks/golden/matrix.ts";
+import { entryDecisionRefusals, gateInlineNoteAdvice, installedFrameRefusals, placeNamingRefusals } from "#checks/golden/matrix.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const APP_FLAG = "--app";
@@ -90,7 +90,11 @@ for (const { label, advice } of ADVICE_ROWS) {
     if (!("invocation" in column)) continue;
     const where = `${label} under ${column.label}`;
     const words = withoutNote(renderAdvice(advice, column.invocation), advice).split(" ");
-    checkTrue(`${where}: opens with the program as typed`, words[0] === column.invocation.program);
+    // A checkout-root row re-roots the program by design (rf6-fix30): the sentence names
+    // the checkout root, so the opener is the root spelling, not the column cwd spelling.
+    const rooted = advice.at === "checkout-root";
+    const opener = rooted ? checkoutRootProgram(column.invocation.program) : column.invocation.program;
+    checkTrue(`${where}: opens with ${rooted ? "the checkout root program" : "the program as typed"}`, words[0] === opener);
     const flags = words.slice(1).filter((word) => word === APP_FLAG);
     checkTrue(`${where}: at most one ${APP_FLAG}`, flags.length <= 1);
     const paired = words[1] === APP_FLAG;
@@ -404,7 +408,9 @@ for (const { label, advice } of ADVICE_ROWS) {
     continue;
   }
   const directStep = toolArguments(declared, advice.argv);
-  check(`${label}: the cell is the step the lookup produces`, cell, directStep === undefined ? PLACEHOLDER : JSON.stringify({ tool, arguments: directStep }));
+  // The step carries the advice note (rf6-fix30); the cell must mirror it.
+  const note = advice.note === undefined ? {} : { note: advice.note };
+  check(`${label}: the cell is the step the lookup produces`, cell, directStep === undefined ? PLACEHOLDER : JSON.stringify({ tool, arguments: directStep, ...note }));
   const filled = advice.argv.map((word) => (PLACEHOLDER_WORD.test(word) ? EXAMPLE : word));
   const stepArguments = toolArguments(declared, filled);
   if (stepArguments === undefined) {
@@ -420,24 +426,58 @@ for (const { label, advice } of ADVICE_ROWS) {
   }
 }
 
-/** Entry refusals whose sentence names a place (rf6-fix29): for every layout × argv of the
- *  entry matrix that refuses with a sentence naming the checkout root, each advice row must
- *  render identically under every invocation column — the sentence, not the refusing
- *  process, fixes the frame — and a row naming a clawforge program must paste the checkout
- *  root's own program. */
+/** Entry refusals whose sentence names a place (rf6-fix29, re-rooted by rf6-fix30): for
+ *  every layout × argv of the entry matrix that refuses with a sentence naming the checkout
+ *  root, a clawforge row spells the checkout root's program FOR ITS COLUMN — the frame the
+ *  sentence names — and pasted at the root every row resolves to the gate. A shell row is
+ *  one spelling everywhere (the bash shim's own). The gate's inline notes answer to the
+ *  same law. */
 const PLACE_MARKERS: readonly string[] = [FROM_CHECKOUT_ROOT, CHECKOUT_ROOT_NOTE, APP_CONFLICT_FROM_ROOT];
-for (const { label, error } of entryDecisionRefusals()) {
-  if (!PLACE_MARKERS.some((marker) => error.message.includes(marker))) continue;
-  checkTrue(`${label}: the place-naming refusal carries a row`, error.advice.length > 0);
-  for (const [index, advice] of error.advice.entries()) {
-    const where = `${label} row ${index + 1}`;
-    const spellings = MATRIX_COLUMNS
-      .filter((column): column is InvocationColumn => "invocation" in column)
-      .map((column) => renderAdvice(advice, column.invocation));
-    checkTrue(`${where}: one spelling under every invocation — the sentence fixes the frame`, new Set(spellings).size === 1);
-    const program = (spellings[0] ?? "").split(" ")[0];
-    if (program.includes("clawforge")) check(`${where}: the row pastes the checkout root's program`, program, renderProgram(shimInvocation()));
+const PLACE_COLUMNS = MATRIX_COLUMNS.filter((column): column is InvocationColumn => "invocation" in column);
+const checkPlaceRow = (label: string, advice: Advice): void => {
+  if (advice.kind !== CLAWFORGE_KIND) {
+    const spellings = PLACE_COLUMNS.map((column) => renderAdvice(advice, column.invocation));
+    checkTrue(`${label}: one spelling under every invocation — the sentence fixes the frame`, new Set(spellings).size === 1);
+    // A manual row is prose (the takeover note); only a shell row is pinned to the shim.
+    if (advice.kind === "shell") {
+      checkTrue(`${label}: the shell row is the bash shim's own`, (spellings[0] ?? "").startsWith(SHIM_PROGRAM));
+    }
+    return;
   }
+  for (const column of PLACE_COLUMNS) {
+    const cell = renderAdvice(advice, column.invocation);
+    const root = renderProgram({ ...column.invocation, program: checkoutRootProgram(column.invocation.program) });
+    check(`${label}: spells the checkout root's program for its column`, cell.split(" ")[0], root);
+    // After the program and its one optional `--app <name>` pair, what remains must be a
+    // command the gate dispatches at the root — its own, a dispatcher's, or a deployment's.
+    const words = cell.split(" ");
+    const rest = words[1] === APP_FLAG ? words.slice(3) : words.slice(1);
+    const word = rest[0];
+    checkTrue(`${label}: pasted at the root it resolves to the gate`, word === undefined || [...gateWords, ...DISPATCHER_COMMANDS].includes(word) || registry.find(word) !== undefined);
+  }
+};
+for (const { label, error } of entryDecisionRefusals()) {
+  if (PLACE_MARKERS.some((marker) => error.message.includes(marker))) {
+    checkTrue(`${label}: the place-naming refusal carries a row`, error.advice.length > 0);
+    for (const [index, advice] of error.advice.entries()) checkPlaceRow(`${label} row ${index + 1}`, advice);
+  }
+}
+for (const { label, advice } of gateInlineNoteAdvice()) checkPlaceRow(label, advice);
+
+/** The same refusals as the installed command builds them (bin.ts sets the invocation from
+ *  defaultInvocation before any refusal): the root-spelled row renders `clawforge …`, and
+ *  the bash shim row survives beside it because it differs — while the shim copy's own
+ *  build already is the root spelling and drops it. */
+const shimNoteSuffix = `  (${IN_BASH_NOTE})`;
+for (const { label, error } of installedFrameRefusals()) {
+  check(`${label}: the installed frame keeps the bash shim row`, error.advice.length, 2);
+  const [row, shimRow] = error.advice;
+  check(`${label}: row 1 spells the installed command at the root`, renderAdvice(row!, { program: "clawforge", mode: "installed", audience: "terminal" }).split(" ")[0], "clawforge");
+  const shimRender = renderAdvice(shimRow!, shimInvocation());
+  checkTrue(`${label}: row 2 is the bash shim with its note`, shimRender.startsWith(SHIM_PROGRAM) && shimRender.endsWith(shimNoteSuffix));
+}
+for (const { label, error } of placeNamingRefusals(shimInvocation())) {
+  check(`${label}: the shim copy's build drops the bash row`, error.advice.length, 1);
 }
 
 finish("advice matrix");

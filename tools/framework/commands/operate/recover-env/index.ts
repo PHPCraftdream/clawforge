@@ -24,6 +24,8 @@ import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { CONNECTION_FACTS, connectionFactDiffs, unrecoverableConnectionFacts } from "./facts.ts";
 import type { ConnectionFactDiff, ConnectionFacts } from "./facts.ts";
 import { runningConnectionFactsWithoutContext } from "./bootstrap.ts";
+import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
+import { unreachableProblem } from "#src/service/inspection.ts";
 
 export const RECOVER_ENV_ARGUMENTS = [
   { name: "dry-run", description: "Print what would change without writing", kind: "flag", effect: "read" },
@@ -263,11 +265,20 @@ export const RECOVER_ENV = commandBody({
     const raw = await readFile(path, "utf8");
     const env = parseEnv(raw);
 
-    const facts = await runningConnectionFactsWithoutContext({
-      env,
-      transport: await scope.transport(),
-      service: scope.service,
-    });
+    let facts: ConnectionFacts | undefined;
+    try {
+      facts = await runningConnectionFactsWithoutContext({
+        env,
+        transport: await scope.transport(),
+        service: scope.service,
+      });
+    } catch (error) {
+      if (!(error instanceof TransportUnreachableError)) throw error;
+      // The standard unreachable refusal, in status's words: the target was never
+      // reached, which is not a docker-not-running answer (rf6-fix30).
+      const problem = unreachableProblem(error);
+      die(`${problem.code}  ${problem.detail}\n    → ${problem.nextAction}`);
+    }
     if (facts === undefined) {
       die(
         "docker is not running, or its container could not be inspected — the connection " +

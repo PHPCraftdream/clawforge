@@ -304,7 +304,7 @@ async function handleAppToolCall(
     // true of each response rather than of the actions someone remembered to list. The
     // pipeline's facts (effect, changedWhen) drive `changed`.
     const structured = command.structured === true
-      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv, execution.facts, lookup)
+      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv, execution.facts, lookup, execution.error)
       : undefined;
     // Redaction is not an error-path courtesy: a successful diagnostic prints the same
     // logs, hook output and machine JSON a failure would have, so registered values are

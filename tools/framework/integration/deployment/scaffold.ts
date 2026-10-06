@@ -15,7 +15,8 @@ import { mkdir, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "../../core/io/log.ts";
 import { command } from "../../core/io/invocation/advice.ts";
-import { commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
+import { invocation } from "../../core/io/invocation/index.ts";
+import { checkoutRootProgram, commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
 import { monorepoRoot, parseEnv } from "../../core/env.ts";
 import { safeName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
@@ -77,9 +78,16 @@ async function writeGitignore(directory: string): Promise<void> {
 export const GIT_INIT_STEP = "git init";
 
 export function gitInitAdvice(name: string): string {
+  // One frame for the whole sentence — the checkout root, where the cd lands and the gate
+  // resolves: the lock names the new deployment and spells this copy's program from there.
+  const lock = renderAdvice(command(["lock"], { app: name }), {
+    program: checkoutRootProgram(invocation().program),
+    mode: "checkout",
+    audience: "terminal",
+  });
   return (
     `apps/ is entirely in this repository's own .gitignore, so apps/${name} has no git history ` +
-    `of its own — make it one if you want "${commandLine(["lock"])}" committed: cd apps/${name} && ${GIT_INIT_STEP} ` +
+    `of its own — make it one if you want "${lock}" committed: cd apps/${name} && ${GIT_INIT_STEP} ` +
     "(the .gitignore just written here already keeps .env and secrets/ out of it)"
   );
 }

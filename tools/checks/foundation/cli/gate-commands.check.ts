@@ -7,7 +7,7 @@
 // get, from the same functions.
 
 import { helpEntryLine } from "#framework/core/io/help-render.ts";
-import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { commandLine, renderAdvice } from "#framework/core/io/invocation/render.ts";
 import {
   runGateCommand,
   gateHelpLines,
@@ -19,6 +19,7 @@ import {
   unknownCommandMessage,
   didYouMeanMessage,
   outsideAppNote,
+  checkoutInlineNotes,
   CHECKOUT_ROOT_NOTE,
   checkoutListNote,
   NO_APP_TS,
@@ -319,7 +320,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const bareDeployment = await help(["status"]);
   check("a bare deployment command is still left to the caller", bareDeployment.code === undefined && bareDeployment.text === "", true);
   const helpedInCheckout = await help(["help", "status"], { checkout: "/some/checkout" });
-  check("in a checkout the note points at apps/<name> instead of init", helpedInCheckout.code === 0 && helpedInCheckout.text.includes(outsideAppNote("status", "/some/checkout")), true);
+  check("in a checkout the note names the checkout-root gate and never offers init", [helpedInCheckout.code, helpedInCheckout.text.includes(renderAdvice(checkoutInlineNotes()[0])), helpedInCheckout.text.includes(commandLine(["init"]))], [0, true, false]);
   check("a deployment command is still no typo in a checkout subfolder", checkoutSubfolderReport("status", "/some/checkout"), undefined);
 
   const inCheckout = await help(["help"], { checkout: "/some/checkout" });

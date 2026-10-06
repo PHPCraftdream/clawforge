@@ -355,6 +355,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * deploy-to-remote's printed remote lines paste from a fresh ssh session: the provider-keys
   hint carries the `cd '<remote>' &&` its sibling lines have, and the ssh tunnel line is the
   shared construction that quotes its arguments, so a host carrying `$` survives the paste.
+* Local tar runs (set build/pack and artifact load) go through the single owner module `set/artifacts/tar.ts` with a 10-minute default timeout, the flag-refusal retry normalizes its paths like the first attempt, and a retry that fails again is reported through the build's own refusal sentence (tar's first-attempt cause) instead of a thrown command failure.
 
 ### Fixed
 

@@ -11,7 +11,8 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/io/log.ts";
-import { spawnLocal, tarFlagRejected, tarLocalFlags, tarLocalPath } from "#src/runtime/transport/transport.ts";
+import type { LocalTarRunner } from "#src/set/artifacts/tar.ts";
+import { withLocalTarRunner, tarCreateArchive } from "#src/set/artifacts/tar.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf } from "#src/service/checksums.ts";
@@ -72,20 +73,12 @@ export async function buildSet(ctx: Context, setName: string): Promise<SetBuild>
 }
 
 /** What executes the archiver. A seam so checks can make tar fail mid-write on demand;
- *  spawnLocal spawns without a shell, so a PATH shim can't intercept it. */
-type TarRunner = typeof spawnLocal;
-
-let tarRunner: TarRunner = spawnLocal;
+ *  the runner spawns without a shell, so a PATH shim can't intercept it. */
+export type TarRunner = LocalTarRunner;
 
 /** Runs `body` with the archiver answered by `substitute` instead of executed. */
-export async function withTarRunner<T>(substitute: TarRunner, body: () => Promise<T>): Promise<T> {
-  const previous = tarRunner;
-  tarRunner = substitute;
-  try {
-    return await body();
-  } finally {
-    tarRunner = previous;
-  }
+export function withTarRunner<T>(substitute: TarRunner, body: () => Promise<T>): Promise<T> {
+  return withLocalTarRunner(substitute, body);
 }
 
 /** Writes the artifact: the manifest as set.json plus every file it inventories, archived
@@ -139,20 +132,12 @@ async function writeArtifact(
     // rename and a mid-write failure never truncates the artifact already at that path.
     const temporary = resolve(setsDir, `.clawforge-build-${randomBytes(8).toString("hex")}.tmp`);
     try {
-      // spawnLocal, not the transport: a set is assembled from files on THIS machine, and
-      // must not depend on a reachable target. Windows: GNU tar reads a drive letter in an
-      // absolute `-f` path as a remote host spec; `--force-local` stops that, but stock
-      // bsdtar doesn't know the flag — retry without it only for that refusal, so any
-      // other failure keeps its own cause instead of a remote-host error.
-      const forceLocal = tarLocalFlags();
-      // tarLocalPath: the create side's own -C staging decodes escapes the same way the
-      // load side's does (rf6-fix33).
-      let result = await tarRunner("tar", [...forceLocal, "-czf", tarLocalPath(temporary), "-C", tarLocalPath(staging), "."], { allowFailure: true });
-      if (result.code !== 0 && forceLocal.length > 0 && tarFlagRejected(result)) {
-        // Drop whatever the failed attempt left so the retry starts clean.
-        await rm(temporary, { force: true });
-        await tarRunner("tar", ["-czf", tarLocalPath(temporary), "-C", tarLocalPath(staging), "."]);
-      } else if (result.code !== 0) {
+      // Local tar (set/artifacts/tar.ts), not the transport: a set is assembled from files
+      // on THIS machine, and must not depend on a reachable target. The flags, path
+      // spelling and flag-refusal retry live there; the archive path lets the retry drop
+      // the partial file the failed attempt left.
+      const result = await tarCreateArchive(temporary, staging);
+      if (result.code !== 0) {
         // The first attempt's cause is the report: a retry under a tar that accepted the flag
         // would answer a corrupt archive with remote-host noise instead of the truth.
         die(`tar could not write the set archive: ${(result.stderr || result.stdout).trim()}`);

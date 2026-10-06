@@ -7,12 +7,12 @@
 // token/data-based, so this file adds no prose literals of its own.
 
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { runProcess } from "../spawn.ts";
 import { check, checkTrue, finish } from "../harness.ts";
-import { runControls, FAIL_MARKER } from "../../controls/run-controls.ts";
+import { copyRepo, runControls, FAIL_MARKER } from "../../controls/run-controls.ts";
 import type { ControlDecl } from "../../controls/controls.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-controls-self-"));
@@ -119,6 +119,37 @@ await writeFile(fileURLToPath(new URL("./executed.marker", import.meta.url)), "r
   const sixth = await runControls(root, [control("S11", { check: "check-hangs-on-edit.ts", fragment: "never printed" })], { timeoutMs: 4000 });
   check("S11: an edited run that times out is reported as crashed", sixth.results[0]?.kind, "check-crashed");
   checkTrue("S11: the crashed control is not held", sixth.results[0]?.ok === false);
+
+  // A tracked file deleted from the working tree is listed by git ls-files but must not
+  // crash the copy: it is skipped, the surviving file keeps its mode.
+  const repoRoot = await mkdtemp(join(tmpdir(), "clawforge-controls-self-repo-"));
+  try {
+    await writeFile(join(repoRoot, "package.json"), "{}\n");
+    await writeFile(join(repoRoot, "survivor.txt"), "survives\n");
+    await writeFile(join(repoRoot, "deleted.txt"), "gone\n");
+    check("the deletion repo initializes", (await runProcess("git", ["init", "-q"], { cwd: repoRoot })).code, 0);
+    check("the deletion repo commits", (await runProcess("git", ["add", "."], { cwd: repoRoot })).code, 0);
+    check(
+      "the deletion repo commits",
+      (await runProcess("git", ["commit", "-q", "-m", "seed"], { cwd: repoRoot, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } })).code,
+      0,
+    );
+    await rm(join(repoRoot, "deleted.txt"));
+    await chmod(join(repoRoot, "survivor.txt"), 0o640);
+    const copy = await mkdtemp(join(tmpdir(), "clawforge-controls-self-copy-"));
+    try {
+      await copyRepo(repoRoot, copy);
+      const copied = await readFile(join(copy, "survivor.txt"), "utf8");
+      checkTrue("the copy does not throw on a tracked-but-deleted file", copied === "survives\n");
+      checkTrue("the deleted tracked file is absent from the copy", !(await readdir(copy)).includes("deleted.txt"));
+      const stats = await stat(join(copy, "survivor.txt"));
+      checkTrue("the surviving file keeps its mode", process.platform === "win32" || (stats.mode & 0o777) === 0o640);
+    } finally {
+      await rm(copy, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(repoRoot, { recursive: true, force: true });
+  }
 
   const after = await snapshot();
   const beforeEntries = [...before.entries()].sort(([a], [b]) => (a < b ? -1 : 1));

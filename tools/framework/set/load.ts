@@ -18,7 +18,7 @@ import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { safeName } from "#src/core/values/names.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
-import { spawnLocal, tarFlagRejected, tarLocalFlags, tarLocalPath } from "#src/runtime/transport/transport.ts";
+import { runLocalTar } from "#src/set/artifacts/tar.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { recipeNames } from "#src/service/recipe.ts";
 import { desiredStateShapeError, validateSet } from "#src/set/ownership/validate.ts";
@@ -378,29 +378,15 @@ async function validateManifest(value: unknown): Promise<SetManifest> {
   return value as unknown as SetManifest;
 }
 
-// Every argument tar itself decodes goes forward-slash (tarLocalPath): a backslashed -C
-// staging reads its escapes and every artifact is refused (rf6-fix33).
-async function tar(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const forceLocal = tarLocalFlags();
-  let result = await spawnLocal("tar", [...forceLocal, ...args.map(tarLocalPath)], { allowFailure: true });
-  // Retry without the flag only when the flag itself was the refusal (bsdtar); any other
-  // failure keeps its first error — a retry under GNU tar reports the drive letter as a
-  // remote host instead of the real cause.
-  if (result.code !== 0 && forceLocal.length > 0 && tarFlagRejected(result)) {
-    result = await spawnLocal("tar", args, { allowFailure: true });
-  }
-  return result;
-}
-
 /** The integrity half of the artifact path: verifies archive structure, extracts only after
  *  that verification, then verifies every byte against the manifest. Throws on any archive-
  *  vs-manifest disagreement; it deliberately runs NO validation of the set's content —
  *  whether the set is coherent is body knowledge, decided by validateLoadedSet, so the load
  *  mode can never change which findings exist. */
 async function verifyArtifact(artifact: string, staging: string): Promise<VerifiedArtifact> {
-  const listing = await tar(["-tzf", artifact]);
+  const listing = await runLocalTar(["-tzf", artifact]);
   if (listing.code !== 0) throw new Error(`could not inspect ${artifact}: ${(listing.stderr || listing.stdout).trim()}`);
-  const verbose = await tar(["-tvzf", artifact]);
+  const verbose = await runLocalTar(["-tvzf", artifact]);
   if (verbose.code !== 0) throw new Error(`could not inspect links in ${artifact}: ${(verbose.stderr || verbose.stdout).trim()}`);
 
   const entries: ArchiveEntry[] = [];
@@ -423,7 +409,7 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
     if (type !== "-" && type !== "d") throw new Error(`artifact contains unsupported entry type: ${shown}`);
   }
 
-  const extract = await tar(["--no-same-owner", "--no-same-permissions", "-xzf", artifact, "-C", staging]);
+  const extract = await runLocalTar(["--no-same-owner", "--no-same-permissions", "-xzf", artifact, "-C", staging]);
   if (extract.code !== 0) throw new Error(`could not unpack ${artifact}: ${(extract.stderr || extract.stdout).trim()}`);
 
   const rawManifest = await readFile(join(staging, "set.json"), "utf8").catch(() => {

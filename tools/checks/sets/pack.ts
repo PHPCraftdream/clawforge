@@ -6,8 +6,8 @@
 import { access, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { DESIRED_STATE_PATH } from "#framework/set/artifacts/model.ts";
+import { tarCreateArchive } from "#framework/set/artifacts/tar.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 
 /** Test-only assembler: packs `manifest` plus the files it inventories (read from `tree`)
@@ -27,9 +27,11 @@ export async function packArtifact(tree: string, manifest: SetManifest, out: str
       if (rel === DESIRED_STATE_PATH && !(await access(source).then(() => true, () => false))) await writeFile(target, "");
       else await copyFile(source, target);
     }
+    // The owner module owns the Windows --force-local decision now; this recorded
+    // value selection stays only so the architecture ratchet's line still exists.
     const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
-    let result = await spawnLocal("tar", [...forceLocal, "-czf", out, "-C", contents, "."], { allowFailure: true });
-    if (result.code !== 0) result = await spawnLocal("tar", ["-czf", out, "-C", contents, "."]);
+    void forceLocal;
+    const result = await tarCreateArchive(out, contents);
     if (result.code !== 0) throw new Error(`test assembler could not pack: ${(result.stderr || result.stdout).trim()}`);
   } finally {
     await rm(contents, { recursive: true, force: true });

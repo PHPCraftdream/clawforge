@@ -65,7 +65,8 @@ function excluded(path: string): boolean {
   return COPY_EXCLUDES.some((root) => path === root || path.startsWith(`${root}/`));
 }
 
-/** Tracked files plus untracked-but-not-ignored ones — the repository as git would ship it.
+/** Tracked files plus untracked-but-not-ignored ones — the repository as git would ship it
+ *  (a tracked path deleted from the working tree is not part of it and is skipped).
  *  NUL-delimited output, so names git would quote survive verbatim. */
 async function repoFiles(repoRoot: string): Promise<string[]> {
   const files = new Set<string>();
@@ -79,13 +80,19 @@ async function repoFiles(repoRoot: string): Promise<string[]> {
   return [...files];
 }
 
-async function copyRepo(repoRoot: string, tempRoot: string): Promise<void> {
+export async function copyRepo(repoRoot: string, tempRoot: string): Promise<void> {
   for (const path of await repoFiles(repoRoot)) {
     const source = join(repoRoot, path);
+    // A tracked-but-deleted path is listed by git ls-files yet absent from the working tree.
+    const stats = await lstat(source).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (stats === undefined) continue;
     const destination = join(tempRoot, path);
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, await readFile(source));
-    await chmod(destination, (await stat(source)).mode);
+    await chmod(destination, stats.mode);
   }
   const nodeModules = join(repoRoot, "node_modules");
   try {

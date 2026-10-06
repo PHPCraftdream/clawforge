@@ -18,7 +18,7 @@ import { command } from "../../core/io/invocation/advice.ts";
 import { invocation } from "../../core/io/invocation/index.ts";
 import { checkoutRootProgram, commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
 import { monorepoRoot, parseEnv } from "../../core/env.ts";
-import { safeName } from "../../core/values/names.ts";
+import { newName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
@@ -93,7 +93,7 @@ export function gitInitAdvice(name: string): string {
 }
 
 export async function createApp(name: string): Promise<void> {
-  safeName("deployment", name);
+  newName("deployment", name);
 
   const directory = resolve(appsDir, name);
 

@@ -19,7 +19,7 @@ import { commandLine, SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import type { GateCommand } from "../gate.ts";
 import { log, info, die } from "../../core/io/log.ts";
-import { safeName } from "../../core/values/names.ts";
+import { newName } from "../../core/values/names.ts";
 import { parseDeclaredArgs } from "../../core/command/index.ts";
 import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
@@ -344,7 +344,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   // — see deployment.ts) — checked first, since there's no argument to fall back to here.
   const base = basename(root);
   try {
-    safeName("deployment", base);
+    newName("deployment", base);
   } catch (error) {
     die(
       `${(error as Error).message} — this becomes the compose project name and the archive ` +

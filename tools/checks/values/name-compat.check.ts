@@ -16,6 +16,7 @@ import { checksumOf } from "#framework/service/checksums.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 import { parseAgentConfig } from "#framework/commands/management/provision-agent/declaration.ts";
 import { reservedNameMessage } from "#framework/core/values/names.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -69,6 +70,8 @@ try {
   check("an agent config named aux reads", parseAgentConfig(config).agentId, DEVICE);
   const agentMintRefusal = (() => { try { parseAgentConfig({ ...config, agentId: "con" }, true); return undefined; } catch (error) { return (error as Error).message; } })();
   check("provision-agent creator path uses its specific reserved-name reason", agentMintRefusal, reservedNameMessage("agent", "con"));
+const deploymentMintRefusal = await createApp("con").then(() => undefined, (error: unknown) => (error as Error).message);
+check("new-app creator path refuses device names with the reserved-name reason", deploymentMintRefusal, reservedNameMessage("deployment", "con"));
 
 } finally {
   await rm(resolve(root), { recursive: true, force: true });

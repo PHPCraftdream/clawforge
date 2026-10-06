@@ -321,7 +321,7 @@ Set-Location -LiteralPath '<p с '' >'`, а `cmd` не задаётся (fallbac
 `tools/checks/surfaces/frame-law.check.ts` (группа surfaces, не exclusive, без записи в checkout):
 
 1. **Producer'ы** — реестр `FRAME_PRODUCERS` в `tools/checks/golden/frames.ts`: каждый строится **реальным**
-   конструктором на фейковой ФС из `golden/matrix.ts` (корень `/clawforge-checkout`, `/home/u/app`, …):
+   конструктором на фейковой ФС из `golden/matrix.ts` (корень `/clawforge-checkout`, `/home/node/app`, …):
    корневой шим (cwd: корень, `docs/`, `apps/demo`), launcher checkout (env из `mcpLauncherContent`, извлечённый
    разбором текста, как `invocation-hints.check.ts`), шим `init` (env из `SHIM`), `defaultLaunch` (global,
    checkout-копия, локальный пакет posix/win32/Git Bash), legacy-значения G1/L1 и v1 G2/G3/L2 как fixture-строки,

@@ -13,10 +13,11 @@ import { checkoutFrameworkSource, FRAMEWORK_EXPORT_SOURCES } from "#framework/co
 import { monorepoRoot } from "#framework/core/env.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 import { scratchDeployment, stubContext } from "./fixture.ts";
 const { outerRecipes } = scratchDeployment();
+const apps = await isolatedAppsRoot("hook-framework-import");
 
 async function verifyRevision(name: string): Promise<{ revision?: number }> {
   const { ctx } = stubContext({});
@@ -105,7 +106,7 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   // deployment name and this check must never delete what it did not create (R33-02).
   const prefix = "gateprobe-";
   const marker = ".clawforge-check-fixture";
-  const appsDir = resolve(monorepoRoot, "apps");
+  const appsDir = apps.root;
   await mkdir(appsDir, { recursive: true });
   // A sweep deletes only marked leftovers: a user's own gateprobe-* deployment — same
   // prefix, no marker — must survive a check run untouched (R33-02, reproduced with
@@ -168,6 +169,7 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
       .catch(() => false);
     check("a user's unmarked gateprobe-* deployment survives the stale-fixture sweep", decoyStillThere, true);
     await rm(decoy, { recursive: true, force: true });
+    await apps.dispose();
   }
 }
 

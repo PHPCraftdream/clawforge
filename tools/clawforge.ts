@@ -29,7 +29,7 @@ import { command } from "./framework/core/io/invocation/advice.ts";
 import { SHIM_PROGRAM } from "./framework/core/io/invocation/render.ts";
 import { invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
 import { useGateCommands } from "./framework/core/io/invocation/render.ts";
-import { monorepoRoot } from "./framework/core/env.ts";
+import { monorepoRoot, appsRootFor } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
 import { normalizeVersionAlias } from "./framework/integration/version.ts";
@@ -38,6 +38,8 @@ import { resolveFrameworkFromSources } from "./framework/entry/delegate.ts";
 import { isVerbatim } from "./framework/core/command/parse.ts";
 import { nodeFs, resolveCheckoutEntry } from "./framework/entry/resolve.ts";
 import { checkoutGate } from "./framework/entry/registry.ts";
+import { pathToFileURL } from "node:url";
+import { resolve as pathResolve } from "node:path";
 
 // A deployment's app.ts importing @clawforge/framework resolves onto this checkout's
 // sources — there is no dist build here (recipe hooks map the same table in the hook loader).
@@ -129,7 +131,8 @@ switch (decision.kind) {
 
     let app: AppDefinition;
     try {
-      const module = (await import(`../apps/${decision.appName}/app.ts`)) as { default: AppDefinition };
+      const appModule = pathToFileURL(pathResolve(appsRootFor(monorepoRoot), decision.appName, "app.ts")).href;
+      const module = (await import(appModule)) as { default: AppDefinition };
       app = module.default;
     } catch (error) {
       reportError(`cannot load deployment "${decision.appName}": ${(error as Error).message}`);

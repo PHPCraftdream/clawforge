@@ -7,7 +7,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const frameworkRoot = resolve(repoRoot, "tools", "framework");
 
 async function walk(dir: string): Promise<string[]> {

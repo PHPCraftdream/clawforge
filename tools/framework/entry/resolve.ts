@@ -7,6 +7,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
+import { appsRootFor } from "../core/env.ts";
 import { safeName } from "../core/values/names.ts";
 import type { Invocation, InvocationApp } from "../core/io/invocation/index.ts";
 import type { CommandArgument } from "../core/app.ts";
@@ -128,15 +129,15 @@ export type CheckoutEntryDecision =
 /** Visible apps/<name> directories holding app.ts, sorted — the same rule scanApps applies. */
 function availableNames(root: string, fs: FsProbe): string[] {
   const names: string[] = [];
-  for (const entry of fs.readdir(resolve(root, "apps"))) {
+  for (const entry of fs.readdir(resolve(appsRootFor(root)))) {
     if (entry.startsWith(".")) continue;
-    if (!fs.isDirectory(resolve(root, "apps", entry))) continue;
+    if (!fs.isDirectory(resolve(appsRootFor(root), entry))) continue;
     try {
       safeName("deployment", entry);
     } catch {
       continue;
     }
-    if (fs.exists(resolve(root, "apps", entry, "app.ts"))) names.push(entry);
+    if (fs.exists(resolve(appsRootFor(root), entry, "app.ts"))) names.push(entry);
   }
   return names.sort();
 }
@@ -193,7 +194,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
       kind: "gate-command",
       name: rest[0],
       args: rest.slice(1),
-      app: isValidDeploymentName(name) ? appFact(name, selectedBy, handedProgram, resolve(root, "apps", name), cwd) : undefined,
+      app: isValidDeploymentName(name) ? appFact(name, selectedBy, handedProgram, resolve(appsRootFor(root), name), cwd) : undefined,
     };
   }
 
@@ -206,13 +207,13 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
 
   const baseCommandNames = [...deploymentCommands, ...gateCommands, ...DISPATCHER_COMMANDS];
 
-  const deploymentDir = resolve(root, "apps", name);
+  const deploymentDir = resolve(appsRootFor(root), name);
   if (!fs.exists(resolve(deploymentDir, "app.ts"))) {
     // Other deployments may exist under another name: name them instead of claiming none.
     const available = availableNames(root, fs);
     const sole = soleDeploymentFallback(envApp !== undefined || appFlag.value !== undefined, available);
     if (sole !== undefined) {
-      return { kind: "run", deploymentDir: resolve(root, "apps", sole), appName: sole, argv: rest, app: appFact(sole, "sole", handedProgram, resolve(root, "apps", sole), cwd), soleNote: sole };
+      return { kind: "run", deploymentDir: resolve(appsRootFor(root), sole), appName: sole, argv: rest, app: appFact(sole, "sole", handedProgram, resolve(appsRootFor(root), sole), cwd), soleNote: sole };
     }
     if (rest.length === 0 || rest[0] === "help" || rest[0] === "--help" || rest[0] === "-h" || isDeploymentHelpRequest(rest, deploymentCommands)) {
       const pick = available.length === 0

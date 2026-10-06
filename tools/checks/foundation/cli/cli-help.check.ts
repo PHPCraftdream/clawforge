@@ -11,14 +11,14 @@
 // this spawns the real gate (tools/clawforge.ts) with a bounded wait rather than asserting on a
 // direct function call.
 
-import { rm, readFile, access } from "node:fs/promises";
+import { rm, readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { UNKNOWN_COMMAND } from "#framework/integration/gate.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
 
 /** Runs the real gate with a hard deadline. stdin stays an open, never-written pipe: a server
@@ -34,8 +34,8 @@ async function runGate(args: string[], timeoutMs = CHILD_NODE_DEADLINE_MS): Prom
 }
 
 const deploymentName = `cli-help-check-${randomBytes(4).toString("hex")}`;
-let cleanupFailed = false;
 
+const apps = await isolatedAppsRoot("cli-help");
 try {
   await createApp(deploymentName);
 
@@ -44,7 +44,7 @@ try {
   // leaving config/, recipes/ and deployment.lock.json — the parts lock.ts's own advice tells
   // an operator to commit — trackable. Only actual ignore-pattern lines count: an explanatory
   // comment mentioning "config/" in passing must not read as excluding it.
-  const gitignoreLines = (await readFile(resolve(appsDir, deploymentName, ".gitignore"), "utf8"))
+  const gitignoreLines = (await readFile(resolve(apps.root, deploymentName, ".gitignore"), "utf8"))
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== "" && !line.startsWith("#"));
@@ -159,27 +159,10 @@ try {
     true,
   );
 } finally {
-  // Windows: a just-exited gate child or an antivirus scan can still hold handles on the
-  // freshly written .env/.codex files, so a bare rm intermittently fails with EPERM/EBUSY/
-  // ENOTEMPTY and leaks the fixture into the real apps/ — tripping the runner's
-  // "the run changed the checkout" guard. Retry through those transient errors, then verify;
-  // if it still exists, fail loudly instead of leaking silently.
-  const fixture = resolve(appsDir, deploymentName);
-  await rm(fixture, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  let gone = false;
-  await access(fixture).catch(() => {
-    gone = true;
-  });
-  cleanupFailed = !gone;
+  // dispose() retries through transient Windows handle errors and removes the whole root,
+  // so this per-fixture rm is only defense in depth (a no-op once dispose succeeded).
+  await apps.dispose();
+  await rm(resolve(apps.root, deploymentName), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 finish("cli-help");
-
-// finish() sets process.exitCode from the check results, so the cleanup verdict has to land
-// after it — otherwise a leftover fixture would exit 0 and leak silently.
-if (cleanupFailed) {
-  process.stderr.write(
-    `cli-help.check: FAILED to remove fixture ${resolve(appsDir, deploymentName)} — it is leaking into the real checkout\n`,
-  );
-  process.exitCode = 1;
-}

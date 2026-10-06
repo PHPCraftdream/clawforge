@@ -7,13 +7,12 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { log, info, maskSecrets } from "../core/io/log.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
-import { parseEnv, toSettings, type Settings } from "../core/env.ts";
+import { appsRootFor, monorepoRoot, parseEnv, toSettings, type Settings } from "../core/env.ts";
 import { createContext, type Context } from "../core/context.ts";
 import { useDeployment, selectedDeployment } from "../runtime/deployment.ts";
 import { NotBootstrapped } from "../runtime/runtime.ts";
 import { hasDigest } from "../runtime/docker/image-ref.ts";
 import type { AppDefinition } from "../core/app.ts";
-import { appsDir } from "./deployment/scaffold.ts";
 import { scanApps } from "./deployment/names.ts";
 
 /** "running"/"stopped" answer isRunning(); "not-bootstrapped" is NotBootstrapped (the data
@@ -126,7 +125,7 @@ async function summarizeDeployment(
  *  whichever directory was active. Restored to whatever it was before this ran (an active
  *  MCP session must not find itself pointed at apps/'s last entry once `list` returns). */
 export async function listDeployments(options: ListDeploymentsOptions = {}): Promise<DeploymentSummary[]> {
-  const root = options.appsRoot ?? appsDir;
+  const root = options.appsRoot ?? appsRootFor(monorepoRoot);
   const checkStatus = options.checkStatus ?? true;
   const buildContext = options.buildContext ?? defaultBuildContext;
 

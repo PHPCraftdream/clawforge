@@ -1,4 +1,5 @@
-// Creating a new deployment under apps/. Listing existing ones is list.ts, which shares
+// Creating a new deployment under apps/ (or the check-only override — appsRootFor).
+// Listing existing ones is list.ts, which shares
 // this file's appsDir.
 //
 // A deployment is a directory of configuration, not a codebase: .env, desired state,
@@ -13,11 +14,12 @@
 
 import { mkdir, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { log, info, die } from "../../core/io/log.ts";
 import { command } from "../../core/io/invocation/advice.ts";
 import { invocation } from "../../core/io/invocation/index.ts";
 import { checkoutRootProgram, commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
-import { monorepoRoot, parseEnv } from "../../core/env.ts";
+import { appsRootFor, monorepoRoot, parseEnv } from "../../core/env.ts";
 import { newName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
@@ -25,17 +27,30 @@ import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGit
 
 export const appsDir = resolve(monorepoRoot, "apps");
 
+// Under the check-only apps root there is no checkout two levels up — the
+// declaration imports this checkout's framework by absolute file URL instead.
+function declarationSpecifier(module: string): string {
+  const override = process.env["CLAWFORGE_CHECKS_APPS_DIR"];
+  if (override !== undefined && override !== "")
+    return JSON.stringify(pathToFileURL(resolve(monorepoRoot, "tools", "framework", module)).href);
+  return JSON.stringify(`../../tools/framework/${module}`);
+}
+
 function declarationFor(name: string): string {
+  const seam = process.env["CLAWFORGE_CHECKS_APPS_DIR"] !== undefined &&
+    process.env["CLAWFORGE_CHECKS_APPS_DIR"] !== "";
   return `// The ${name} deployment.
 //
 // Says which service this deployment manages and which framework commands it exposes.
 // Its configuration lives next to this file: .env, config/, secrets/, recipes/.
 //
 // Run it with:  ${renderAdvice(command(["status"], { app: name }), shimInvocation())}
-
-import { defineApp } from "../../tools/framework/core/app.ts";
-import { mountPoints } from "../../tools/framework/runtime/mounts.ts";
-import { openclawCommands } from "../../tools/framework/commands/interface/index.ts";
+${seam ? `// Check-only root: this textual specifier marks the deployment as
+// checkout-sourced for importsCheckoutSourcesIn: import { defineApp } from "../../tools/framework/core/app.ts";
+` : ""}
+import { defineApp } from ${declarationSpecifier("core/app.ts")};
+import { mountPoints } from ${declarationSpecifier("runtime/mounts.ts")};
+import { openclawCommands } from ${declarationSpecifier("commands/interface/index.ts")};
 
 export default defineApp({
   name: "${name}",
@@ -61,7 +76,7 @@ const DESIRED_STATE = `[
  *  ones under apps/. Exported because bootstrap creates the file too, when a deployment
  *  directory exists without one — both paths must produce the same isolated settings. */
 export async function deploymentEnv(name: string, portStart?: number): Promise<string> {
-  return templateEnv(name, appsDir, portStart);
+  return templateEnv(name, appsRootFor(monorepoRoot), portStart);
 }
 
 /** Appended, not overwritten — shares its lines with init.ts's updateGitignore, minus the
@@ -95,7 +110,7 @@ export function gitInitAdvice(name: string): string {
 export async function createApp(name: string): Promise<void> {
   newName("deployment", name);
 
-  const directory = resolve(appsDir, name);
+  const directory = resolve(appsRootFor(monorepoRoot), name);
 
   // Existence is checked before anything is written: overwriting would destroy a filled-in
   // .env, and its keys with it.

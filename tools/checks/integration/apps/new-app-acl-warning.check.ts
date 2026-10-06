@@ -7,13 +7,12 @@
 // seam private-file.check.ts's own dedupeChecks uses, to force the "exposed" finding.
 
 import { randomBytes } from "node:crypto";
-import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { resetWslBoundaryDedupe, withToolRunner } from "#framework/security/privacy/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 
 const utf16ish = (text: string): string => text.split("").join("\0");
 
@@ -30,6 +29,7 @@ const scriptedWsl = async (command: string, args: string[], timeoutMs: number) =
 };
 
 const name = `new-app-acl-check-${randomBytes(4).toString("hex")}`;
+const apps = await isolatedAppsRoot("new-app-acl-warning");
 try {
   resetWslBoundaryDedupe();
   let output = "";
@@ -38,7 +38,7 @@ try {
       output += chunk;
     }, () => createApp(name)));
 
-  const createdIndex = output.indexOf(`created ${resolve(appsDir, name)}`);
+  const createdIndex = output.indexOf(`created ${resolve(apps.root, name)}`);
   const nextIndex = output.indexOf("next:");
   const boundaryIndex = output.indexOf("https://github.com/PHPCraftdream/clawforge/blob/main/docs/guide/requirements.md#windows-acl-and-the-wsl-boundary");
 
@@ -49,7 +49,7 @@ try {
   checkTrue("the ACL/WSL-boundary note comes after next:, not before created", nextIndex < boundaryIndex);
   checkTrue("the note is condensed — one line, not the old two-paragraph warning", !output.includes("optional hardening:"));
 } finally {
-  await rm(resolve(appsDir, name), { recursive: true, force: true });
+  await apps.dispose();
 }
 
 finish("new-app-acl-warning");

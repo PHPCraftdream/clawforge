@@ -40,6 +40,11 @@ export const DEPLOY_ARGUMENTS = [
 export const INSTALLED_PACKAGE_MODE = "the framework is running from an installed package";
 
 export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<string> {
+  // Check-only seam (stage 7 S0.4): a check process sets CLAWFORGE_CHECKS_SOURCE_ROOT so
+  // the deploy preflight scans a temp source tree; nothing user-facing sets it, so unset
+  // means the checkout itself.
+  const override = process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"];
+  if (override !== undefined && override !== "") root = override;
   if (!(await isMonorepoCheckout(root))) {
     // The bootstrap line runs on the SERVER, so it is spelled for that host, not for
     // wherever this run stands (rf6-fix33): the shim's own spelling — under a Windows

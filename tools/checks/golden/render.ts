@@ -7,17 +7,17 @@
 // list must show up as a reviewed diff of these files.
 //
 // Everything here runs without a real target: no docker, no network, no host state. The
-// only fixture written is a scratch deployment under the checkout's apps/ (gitignored),
-// created and removed around the subprocess calls that need a resolvable deployment, and
-// temp directories under the OS temp dir.
+// only fixture written is a scratch deployment under a temp apps root (CLAWFORGE_CHECKS_APPS_DIR,
+// via appsRootFor), created and removed around the subprocess calls that need a resolvable
+// deployment, and temp directories under the OS temp dir.
 //
 // Placeholders scrubbed from every snapshot (see scrub()):
 //   <root>      the clawforge checkout root on this machine
 //   <tmp>       the OS temp directory
 //   <home>      the user's home directory
 // The scratch deployment is always named "golden-fixture", so hints that name it are
-// stable across machines. A developer whose apps/ already holds that name gets a loud
-// createApp refusal rather than a silent snapshot.
+// stable across machines, and its root is checked-out fresh (rm'd then recreated) each
+// run rather than colliding with a developer's apps/.
 //
 // Known machine dependence, recorded instead of papered over: the checkout gate's top-level
 // help, MCP tools/list and the completion scripts are rendered by spawning the real gate
@@ -37,7 +37,7 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { COMPLETION_COMMAND_NAME, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand, runGateCommand } from "#framework/integration/gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
@@ -51,6 +51,7 @@ import { useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { checkoutGate } from "#framework/entry/registry.ts";
 import { UnknownArgumentError } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
+import { isolatedAppsRoot } from "#checks/kit/harness.ts";
 
 const GATE_SCRIPT = resolve(monorepoRoot, "tools", "clawforge.ts");
 const BIN_SCRIPT = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts");
@@ -237,11 +238,9 @@ export async function renderGolden(): Promise<Record<string, string>> {
 
   // --- help ---------------------------------------------------------------------------
 
-  const fixtureDir = resolve(appsDir, FIXTURE_APP);
-  let fixtureCreated = false;
+  const apps = await isolatedAppsRoot("golden-render");
   try {
     await createApp(FIXTURE_APP);
-    fixtureCreated = true;
 
     // Checkout entry: the real gate script renders its own top-level help (gate help lines
     // included) with the scratch deployment selected, and each gate command's --help.
@@ -292,7 +291,7 @@ export async function renderGolden(): Promise<Record<string, string>> {
     const response = responseLine === undefined ? undefined : JSON.parse(responseLine) as { result?: unknown };
     snapshots["mcp-tools-list.json"] = `${JSON.stringify(response?.result ?? {}, null, 2)}\n`;
   } finally {
-    if (fixtureCreated) await rm(fixtureDir, { recursive: true, force: true });
+    await apps.dispose();
   }
 
   // --- completion scripts ---------------------------------------------------------------

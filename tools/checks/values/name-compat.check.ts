@@ -18,10 +18,11 @@ import { parseAgentConfig } from "#framework/commands/management/provision-agent
 import { reservedNameMessage } from "#framework/core/values/names.ts";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 
 const DEVICE = "aux";
 const root = await mkdtemp(join(tmpdir(), "clawforge-name-compat-"));
+const apps = await isolatedAppsRoot("name-compat");
 try {
   // A deployment directory named like a device: listed, selectable, removable.
   const appsRoot = join(root, "apps");
@@ -74,6 +75,7 @@ const deploymentMintRefusal = await createApp("con").then(() => undefined, (erro
 check("new-app creator path refuses device names with the reserved-name reason", deploymentMintRefusal, reservedNameMessage("deployment", "con"));
 
 } finally {
+  await apps.dispose();
   await rm(resolve(root), { recursive: true, force: true });
 }
 

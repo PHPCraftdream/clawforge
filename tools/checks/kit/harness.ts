@@ -3,6 +3,9 @@
 // file's checks — no reset between files is needed.
 
 import { deepStrictEqual } from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { inspect } from "node:util";
 import { CapabilityProbe, isCapability, type Capability } from "./capabilities/capabilities.ts";
 import { parseRequireList } from "./capabilities/gate.ts";
@@ -90,4 +93,37 @@ export function finish(suite: string): void {
   const skipNote = skippedTotal === 0 ? "" : `, ${skippedTotal} skipped (needs ${breakdown})`;
   process.stderr.write(failed === 0 ? `all ${suite} checks passed${skipNote}\n` : `${failed} failed${skipNote}\n`);
   process.exitCode = failed === 0 ? 0 : 1;
+}
+
+// Write isolation (stage 7 S0.4): a check that needs deployments sets
+// CLAWFORGE_CHECKS_APPS_DIR, which framework/core/env.ts's appsRootFor() honors —
+// createApp and the gate's deployment resolution then land under the OS temp dir,
+// never the checkout's apps/. Each call gets its own mkdtemp directory (unique even for
+// concurrent runs of the same check), under a stable per-check prefix so leaked dirs stay
+// attributable; snapshots stay deterministic because golden scrub() maps tmpdir() to <tmp>,
+// erasing the random suffix along with the rest of the temp path.
+const CHECKS_APPS_ENV = "CLAWFORGE_CHECKS_APPS_DIR";
+
+export interface IsolatedApps {
+  readonly root: string;
+  /** Restores the env and removes the root — call in finally. */
+  dispose(): Promise<void>;
+}
+
+export async function isolatedAppsRoot(name: string): Promise<IsolatedApps> {
+  // mkdtemp guarantees uniqueness, so concurrent/interleaved runs never collide and the
+  // setup must not rm first (that would delete a sibling run's fixtures).
+  const root = await mkdtemp(join(tmpdir(), `clawforge-checks-apps-${name}-`));
+  const previous = process.env[CHECKS_APPS_ENV];
+  process.env[CHECKS_APPS_ENV] = root;
+  return {
+    root,
+    async dispose(): Promise<void> {
+      if (previous === undefined) delete process.env[CHECKS_APPS_ENV];
+      else process.env[CHECKS_APPS_ENV] = previous;
+      // Same bounded retry as cli-help's cleanup: transient Windows EBUSY/EPERM/ENOTEMPTY
+      // (freshly exited gate children, antivirus) must not leak the root.
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    },
+  };
 }

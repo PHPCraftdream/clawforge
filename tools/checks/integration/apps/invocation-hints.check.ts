@@ -5,6 +5,7 @@
 // from it, the entry's hand-over of the prefix, and the entry's own default invocation.
 
 import { resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { renderUsage, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import {
   INVOKED_AS_ENV,
@@ -38,7 +39,7 @@ import { doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 
 const HINT = "./clawforge";
@@ -72,6 +73,7 @@ async function samples(): Promise<{ usage: string; commandHelp: string; refusal:
   return { usage, commandHelp, refusal, json, envelope: JSON.stringify(envelope), nextActions: envelope?.nextActions ?? [] };
 }
 
+const apps = await isolatedAppsRoot("invocation-hints");
 try {
   // --- the helper -----------------------------------------------------------------------------
 
@@ -192,9 +194,22 @@ try {
   // committed shim is bash-only, so Windows names npm's bin wrapper) cannot come out of the
   // checkout copy this process runs, so it is pinned end to end by system-install.check.ts,
   // on a real local package.
-  const probeAppRoot = resolve(process.cwd(), "apps", "invocation-hints-probe");
+  // A checkout copy from apps/<name> two levels under a checkout root holding the launcher:
+  // the geometry must exist inside the temp root, since the walk-up no longer finds the real
+  // checkout from there. The markers checkoutGateIn() requires (entry/resolve.ts:241-250):
+  // tools/clawforge.ts beside tools/framework/package.json named @clawforge/framework; plus
+  // the ./clawforge launcher at the checkout root that the program spelling names. The
+  // checkout is passed explicitly — classifyCopy() pins copy.path to the running checkout,
+  // and bin.ts hands defaultInvocation() exactly this walked-to checkout (bin.ts:46).
+  const fakeCheckout = resolve(apps.root, "synthetic-checkout");
+  await mkdir(resolve(fakeCheckout, "tools", "framework"), { recursive: true });
+  await mkdir(resolve(fakeCheckout, "apps", "invocation-hints-probe"), { recursive: true });
+  await writeFile(resolve(fakeCheckout, "tools", "framework", "package.json"), JSON.stringify({ name: "@clawforge/framework" }));
+  await writeFile(resolve(fakeCheckout, "tools", "clawforge.ts"), "");
+  await writeFile(resolve(fakeCheckout, "clawforge"), "");
+  const probeAppRoot = resolve(fakeCheckout, "apps", "invocation-hints-probe");
   check("a checkout copy from the checkout root names the root shim", await defaultInvocation(process.cwd()), { program: SHIM_PROGRAM, mode: "checkout" });
-  check("a checkout copy from apps/<name> names the launcher's two-levels-up path", await defaultInvocation(probeAppRoot), { program: "../../clawforge", mode: "checkout" });
+  check("a checkout copy from apps/<name> names the launcher's two-levels-up path", await defaultInvocation(probeAppRoot, undefined, fakeCheckout), { program: "../../clawforge", mode: "checkout" });
 
   // --- the value between processes: versioned JSON in CLAWFORGE_INVOCATION -------------------
 
@@ -439,8 +454,8 @@ try {
   // A run that refused inside a DIFFERENT checkout-shaped tree names that walked-to
   // checkout's gate (bin.ts passes the decision's checkout), not the running copy's.
   {
-    const other = resolve(process.cwd(), "apps", "another-checkout");
-    const value = { ...(await defaultInvocation(resolve(process.cwd(), "apps", "invocation-hints-probe"), undefined, other)), audience: "terminal" as const };
+    const other = resolve(apps.root, "another-checkout");
+    const value = { ...(await defaultInvocation(resolve(apps.root, "invocation-hints-probe"), undefined, other)), audience: "terminal" as const };
     check("defaultInvocation names a decided checkout that differs from the running copy's",
       value, { program: "../another-checkout/clawforge", mode: "checkout", audience: "terminal" });
   }
@@ -460,6 +475,7 @@ try {
 } finally {
   setInvocation(MONO);
   await teardownFixtureDeployment(deployment);
+  await apps.dispose();
 }
 
 finish("invocation hints");

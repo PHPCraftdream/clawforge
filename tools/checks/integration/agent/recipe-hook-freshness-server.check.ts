@@ -17,11 +17,11 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { deepStrictEqual } from "node:assert/strict";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 
 // Forces "auto" onto LocalTransport in this process and the server it spawns below (NODE_OPTIONS
 // propagates), the same as mcp-server.check.ts: the lock this file's verify call takes needs a
@@ -81,7 +81,8 @@ function startServer(name: string) {
 // "-check-" in the name so a leftover from a killed run (SIGKILL skips the finally below) is
 // swept by run.ts's own orphan sweep, the same as every other check-owned deployment.
 const deploymentName = `mcp-hook-fresh-check-${randomBytes(4).toString("hex")}`;
-const recipeDir = resolve(appsDir, deploymentName, "recipes", "probe");
+const apps = await isolatedAppsRoot("mcp-hook-freshness");
+const recipeDir = resolve(apps.root, deploymentName, "recipes", "probe");
 const verifyPath = resolve(recipeDir, "verify.ts");
 const hook = (revision: number): string =>
   `export async function verify() { return { ok: true, revision: ${revision} }; }\n`;
@@ -96,8 +97,8 @@ try {
   // the instance lock's home — stays inside the scratch app. useLinuxHost() above resolves
   // "auto" onto LocalTransport, which takes this host's own path as-is — no wsl.exe mount
   // translation needed.
-  const envPath = resolve(appsDir, deploymentName, ".env");
-  const dataDir = resolve(appsDir, deploymentName, "data");
+  const envPath = resolve(apps.root, deploymentName, ".env");
+  const dataDir = resolve(apps.root, deploymentName, "data");
   await writeFile(
     envPath,
     (await readFile(envPath, "utf8")).replace(/^OC_DATA_DIR=.*$/m, `OC_DATA_DIR=${dataDir}`),
@@ -131,7 +132,8 @@ try {
   checkTracked("the server survives the mid-session swap and exits cleanly", code, 0);
   if (anyFailed) process.stderr.write(`first answer: ${JSON.stringify(first)}\nserver stderr:\n${server.diagnostics()}\n`);
 } finally {
-  await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
+  await rm(resolve(apps.root, deploymentName), { recursive: true, force: true });
+  await apps.dispose();
 }
 
 finish("mcp-hook-freshness");

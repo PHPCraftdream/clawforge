@@ -11,15 +11,14 @@
 // A scratch deployment is created for the duration, the same way mcp-server.check.ts does:
 // the check must not depend on whichever deployment happens to be on this machine.
 
-import { rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA } from "#framework/integration/mcp/server.ts";
 import { STRUCTURED_ENVELOPE_HELP } from "#framework/core/io/help-render.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 function run(args: string[], input = ""): Promise<{ stdout: string; stderr: string }> {
@@ -38,6 +37,8 @@ function consoleCommands(help: string): string[] {
 }
 
 const deployment = `mcp-mirror-check-${randomBytes(4).toString("hex")}`;
+
+const apps = await isolatedAppsRoot("mcp-mirror");
 
 try {
   await createApp(deployment);
@@ -204,7 +205,7 @@ try {
     ?.result?.content?.[0]?.text ?? "";
   check("the help tool with no command matches ./clawforge help exactly", helpBareText, (help.stdout + help.stderr).trim());
 } finally {
-  await rm(resolve(appsDir, deployment), { recursive: true, force: true });
+  await apps.dispose();
 }
 
 finish("mcp-mirror");

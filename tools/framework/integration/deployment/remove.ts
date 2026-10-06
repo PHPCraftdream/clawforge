@@ -12,7 +12,7 @@ import { safeName } from "../../core/values/names.ts";
 import { humanSize } from "../../core/io/size.ts";
 import { commandLine } from "../../core/io/invocation/render.ts";
 import { listDeployments, type ListDeploymentsOptions } from "../list.ts";
-import { appsDir } from "./scaffold.ts";
+import { appsRootFor, monorepoRoot } from "../../core/env.ts";
 
 export interface RemoveAppOptions {
   /** Overridable so a check can point at a scratch apps/ instead of the real one. */
@@ -105,7 +105,7 @@ async function hasOwnGitHistory(directory: string): Promise<boolean> {
  *  destroy that first. The argv re-parse used to live here too; the gate's
  *  parseDeclaredArgs(REMOVE_APP_ARGUMENTS) is the one parse. */
 export async function removeApp(name: string, yes: boolean, options: RemoveAppOptions = {}): Promise<number> {
-  const appsRoot = options.appsRoot ?? appsDir;
+  const appsRoot = options.appsRoot ?? appsRootFor(monorepoRoot);
 
   const directory = await resolveTargetDirectory(name, appsRoot);
   const state = await currentState(name, appsRoot, options.buildContext, options.listDeployments ?? listDeployments);

@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rename, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
 import { CLAWFORGE_CONTROL_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp/project.ts";
 import { initApp } from "#framework/integration/deployment/init.ts";
-import { createApp, appsDir, deploymentEnv } from "#framework/integration/deployment/scaffold.ts";
+import { createApp, deploymentEnv } from "#framework/integration/deployment/scaffold.ts";
+import { isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -13,6 +15,8 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-mcp-project-")));
 let monorepoApp: string | undefined;
 let claimedSibling: string | undefined;
+const checksAppsEnv = "CLAWFORGE_CHECKS_APPS_DIR";
+const apps = await isolatedAppsRoot("mcp-project");
 try {
   const entries = { demo: { command: "node", args: ["test.js", "control-mcp"] } };
   const initial = '# retain this\nmodel = "configured-model"\nnotes = """\n[mcp_servers.demo]\ncommand = "inside a string"\n"""\n' +
@@ -97,13 +101,34 @@ try {
 
   // "-check-" in both names so a leftover from a killed run (SIGKILL skips the finally
   // below) is swept by run.ts's own orphan sweep, the same as every other check-owned
-  // deployment.
+  // deployment. The deployment is created under a synthetic checkout (apps/<name> two levels
+  // under a root with tools/clawforge.ts) because the monorepo launcher resolves its gate as
+  // deploymentRoot/../../tools/clawforge.ts — layout parity with a real checkout, with the
+  // synthetic tools/clawforge.ts a shim that hands off to the real gate of this checkout.
   const name = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
-  monorepoApp = resolve(appsDir,name);
+  const syntheticRoot = resolve(apps.root, "synthetic-checkout");
+  monorepoApp = resolve(syntheticRoot, "apps", name);
+  const realGate = resolve(fileURLToPath(new URL("../../../clawforge.ts", import.meta.url)));
+  await mkdir(join(syntheticRoot, "tools"), { recursive: true });
+  await writeFile(
+    join(syntheticRoot, "tools", "clawforge.ts"),
+    `// Check-only shim: stands in for the monorepo gate at this synthetic checkout's root.\n` +
+    `import { pathToFileURL } from "node:url";\n` +
+    `if (process.env.CLAWFORGE_REAL_GATE === undefined) throw new Error("CLAWFORGE_REAL_GATE not set");\n` +
+    `await import(pathToFileURL(process.env.CLAWFORGE_REAL_GATE).href);\n`,
+    "utf8",
+  );
+  // createApp places the deployment under appsRootFor(monorepoRoot), which honors
+  // CLAWFORGE_CHECKS_APPS_DIR: point it at the synthetic apps/ and KEEP it there for
+  // everything that exercises the deployment — the launcher child (and the control-mcp
+  // gate it runs) resolves deployments through the same variable, so restoring to the
+  // isolated apps root early would make the gate answer "deployment not found". The env
+  // is torn down in the outer finally below.
+  process.env[checksAppsEnv] = join(syntheticRoot, "apps");
   // An empty directory left by a refused `init` is accepted; a non-empty one is not.
-  await mkdir(monorepoApp,{recursive:true});
-  await withOutputSink(()=>{},()=>createApp(name));
-  await assert.rejects(withOutputSink(()=>{},()=>createApp(name)),/already exists/,"new-app refuses a non-empty directory");
+  await mkdir(monorepoApp, { recursive: true });
+  await withOutputSink(() => {}, () => createApp(name));
+  await assert.rejects(withOutputSink(() => {}, () => createApp(name)), /already exists/, "new-app refuses a non-empty directory");
   // Same rule as init.check.ts: no template key the published image rejects.
   const desiredState = JSON.parse(await readFile(resolve(monorepoApp, "config", "desired-state.json"), "utf8")) as { path: string; value: unknown }[];
   assert.ok(!desiredState.some((entry) => entry.path.startsWith("telemetry")), "new-app declares no telemetry key the published image rejects");
@@ -122,7 +147,7 @@ try {
   await setupProjectMcp(monorepoApp, "monorepo");
   assert.equal(await readFile(join(monorepoApp, MCP_LAUNCHER_FILENAME), "utf8"), mcpLauncherContent("monorepo"), "mcp-setup rewrites the previous checkout launcher");
   const candidateName = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
-  claimedSibling = resolve(appsDir, `claim-check-${randomBytes(5).toString("hex")}`);
+  claimedSibling = resolve(apps.root, "synthetic-checkout", "apps", `claim-check-${randomBytes(5).toString("hex")}`);
   await mkdir(claimedSibling, { recursive: true });
   const candidate = projectPort(new Set(), 42);
   assert.notEqual(projectPort(new Set(), 43), candidate, "different project salts produce different candidates");
@@ -133,12 +158,14 @@ try {
   const native = JSON.parse(await readFile(join(monorepoApp,".mcp.json"),"utf8"));
   const monorepoEntry = native.mcpServers[CLAWFORGE_CONTROL_MCP_NAME];
   const input = JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list"})+"\n";
-  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp},input,timeoutMs:5000});
+  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp,CLAWFORGE_REAL_GATE:realGate},input,timeoutMs:5000});
   const reply = JSON.parse(child.stdout);
   assert.ok(reply.result.tools.some((tool: {name:string})=>tool.name==="mcp-setup"));
   process.stderr.write("all project MCP setup checks passed\n");
 } finally {
   if(claimedSibling!==undefined)await rm(claimedSibling,{recursive:true,force:true});
-  if(monorepoApp!==undefined)await rm(monorepoApp,{recursive:true,force:true});
+  if(monorepoApp!==undefined)await rm(resolve(apps.root,"synthetic-checkout"),{recursive:true,force:true});
+  delete process.env[checksAppsEnv];
+  await apps.dispose();
   await rm(root,{recursive:true,force:true});
 }

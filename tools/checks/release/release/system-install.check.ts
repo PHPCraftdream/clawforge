@@ -6,13 +6,13 @@
 // (the ./clawforge shim and the MCP launcher), which must reach the system-wide command when
 // the deployment has no local package.
 
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, projectMcpEntries } from "#framework/integration/mcp/project.ts";
 import { usageTopLine, usageFooterHint } from "#framework/core/io/help-render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
@@ -63,6 +63,29 @@ const expected = (JSON.parse(await readFile(resolve(monorepoRoot, "tools", "fram
 const prefix = await mkdtemp(join(tmpdir(), "clawforge-system-install-"));
 const outside = await mkdtemp(join(tmpdir(), "clawforge-system-apps-"));
 const checkoutApp = `sys-install-check-${randomBytes(4).toString("hex")}`;
+// A synthetic checkout for the apps/-parent probes: same geometry as the real one (tools/framework
+// manifest + tools/clawforge.ts beside it), with the gate a shim handing off to the real gate, so
+// the hand-over and takeover logic runs physically while every deployment lands in the temp tree.
+const sc = await mkdtemp(join(tmpdir(), "clawforge-system-checkout-"));
+const scApps = join(sc, "apps");
+// Declared here so the finally can clean up even when the failure happens before the
+// assignment inside the try block.
+let packRoot: string | undefined;
+const realGate = resolve(monorepoRoot, "tools", "clawforge.ts");
+await mkdir(join(sc, "tools", "framework"), { recursive: true });
+await writeFile(join(sc, "tools", "framework", "package.json"), JSON.stringify({ name: "@clawforge/framework" }), "utf8");
+await writeFile(
+  join(sc, "tools", "clawforge.ts"),
+  `// Check-only shim: stands in for the real gate at this synthetic checkout's root.\n` +
+  `import { pathToFileURL } from "node:url";\n` +
+  `if (process.env.CLAWFORGE_REAL_GATE === undefined) throw new Error("CLAWFORGE_REAL_GATE not set");\n` +
+  `await import(pathToFileURL(process.env.CLAWFORGE_REAL_GATE).href);\n`,
+  "utf8",
+);
+process.env["CLAWFORGE_REAL_GATE"] = realGate;
+// Deployments resolve through appsRootFor, so this points createApp and the gate at the synthetic
+// apps/ — set before the spawn env below is built, so the children inherit it too.
+process.env["CLAWFORGE_CHECKS_APPS_DIR"] = scApps;
 const bin = windows ? prefix : join(prefix, "bin");
 const env = withOnPath(bin);
 const globalPackage = join(prefix, ...(windows ? [] : ["lib"]), "node_modules", "@clawforge", "framework");
@@ -84,9 +107,43 @@ function tail(result: Run): void {
   if (result.code !== 0) process.stderr.write(`    ${result.output.trim().split("\n").slice(-6).join("\n    ")}\n`);
 }
 
+// The pack-and-install runs entirely on a TEMP COPY of the packing tree (see below), so the
+// prepack build's dist/ lands in the temp tree, never in this checkout.
 try {
+  // --- the pack: a temp copy of the packing tree -----------------------------------------
+  // tools/framework's prepack (tools/build-framework-package.ts) and the installer
+  // (tools/dev/install-system.ts) both derive every path from their own import.meta.url —
+  // nothing is pinned to the real checkout — so copying the layout they expect and running the
+  // copied installer keeps the produced tarball byte-equivalent while dist/ is rebuilt in the
+  // temp tree. The layout each piece reads:
+  //   tools/framework/**            sources, tsconfig.declaration.json, package.json, README.md,
+  //                                 LICENSE*, NOTICE, THIRD_PARTY_NOTICES.md, docker-compose.yml,
+  //                                 .env.example (npm pack's "files" + build script's copies)
+  //   tsconfig.json                 repo root, extended by tsconfig.declaration.json; tsgo runs
+  //                                 with the tree root as cwd
+  //   tools/build-framework-package.ts  the prepack script, run as "../build-framework-package.ts"
+  //   tools/dev/install-system.ts + resolve-on-path.ts + install-messages.ts  the installer and
+  //                                 its imports; its repoRoot is its own grandparent
+  //   node_modules                  tsgo (@typescript/native-preview) and @types/node; the build
+  //                                 resolves them upward, so one link at the temp root suffices
+  packRoot = await mkdtemp(join(tmpdir(), "clawforge-pack-"));
+  await mkdir(join(packRoot, "tools", "dev"), { recursive: true });
+  await cp(resolve(monorepoRoot, "tools", "framework"), join(packRoot, "tools", "framework"), {
+    recursive: true,
+    filter: (entry) => {
+      const name = basename(entry);
+      return name !== "dist" && name !== "node_modules";
+    },
+  });
+  await cp(resolve(monorepoRoot, "tsconfig.json"), join(packRoot, "tsconfig.json"));
+  await cp(resolve(monorepoRoot, "tools", "build-framework-package.ts"), join(packRoot, "tools", "build-framework-package.ts"));
+  for (const file of ["install-system.ts", "resolve-on-path.ts", "install-messages.ts"]) {
+    await cp(resolve(monorepoRoot, "tools", "dev", file), join(packRoot, "tools", "dev", file));
+  }
+  await symlink(resolve(monorepoRoot, "node_modules"), join(packRoot, "node_modules"), windows ? "junction" : "dir");
+
   // --- the installer --------------------------------------------------------------------
-  const installed = await run(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "dev", "install-system.ts"), "--prefix", prefix], monorepoRoot, { timeoutMs: 300_000 });
+  const installed = await run(process.execPath, ["--experimental-strip-types", resolve(packRoot, "tools", "dev", "install-system.ts"), "--prefix", prefix], packRoot, { timeoutMs: 300_000 });
   tail(installed);
   check("the installer succeeds into a scratch prefix", installed.code, 0);
   check("and reports the installed command", installed.output.includes(INSTALLED_MARK), true);
@@ -264,7 +321,7 @@ try {
   const statusHelp = await clawforge(["status", "--help"], monorepoRoot);
   check("status --help works the same way", statusHelp.code === 0 && statusHelp.output.includes("status"), true);
   // An existing but empty apps/<name>: new-app would take it over, so the answer says so.
-  const emptyApp = resolve(appsDir, `${checkoutApp}-empty`);
+  const emptyApp = resolve(scApps, `${checkoutApp}-empty`);
   await mkdir(emptyApp, { recursive: true });
   try {
     const emptyStatus = await clawforge(["--app", `${checkoutApp}-empty`, "status"], monorepoRoot);
@@ -272,14 +329,14 @@ try {
   } finally {
     await rm(emptyApp, { recursive: true, force: true });
   }
-  const inApp = await clawforge(["help"], resolve(appsDir, checkoutApp));
+  const inApp = await clawforge(["help"], resolve(scApps, checkoutApp));
   tail(inApp);
   check("in apps/<name> of a checkout the checkout's own gate answers", inApp.code === 0 && inApp.output.includes("new-app"), true);
   check("and its hints keep the name the user typed", inApp.output.includes(usageFooterHint(installedHint)), true);
-  const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(appsDir, checkoutApp)));
+  const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(scApps, checkoutApp)));
   check("version --json in a checkout app says checkout and the checkout root", [checkoutInfo.source, checkoutInfo.path], ["checkout", await realpath(monorepoRoot)]);
   // --app is passed on once: the same name as the cwd's is kept, another one is refused.
-  const appDir = resolve(appsDir, checkoutApp);
+  const appDir = resolve(scApps, checkoutApp);
   const sameApp = await clawforge(["--app", checkoutApp, "help"], appDir);
   check("apps/<name> accepts its own --app without doubling it", sameApp.code === 0 && sameApp.output.includes("new-app"), true);
   const otherApp = await clawforge(["--app", "someone-else", "help"], appDir);
@@ -298,7 +355,7 @@ try {
 
   // The file system may not tell apps from APPS; the hand-over must not depend on the spelling.
   await requires("windows-host", "APPS/<name> hands over like apps/<name>", async () => {
-    const upper = join(monorepoRoot, "APPS", checkoutApp);
+    const upper = join(sc, "APPS", checkoutApp);
     const upperInfo = lastJson(await clawforge(["version", "--json"], upper));
     check("from APPS/<name> the hand-over to the checkout gate still happens", upperInfo.source, "checkout");
     const upperStatus = await clawforge(["help"], upper);
@@ -306,7 +363,7 @@ try {
   });
 
   // An app.ts importing a checkout's framework sources outside apps/<name> is not loaded as a second copy.
-  const strayDir = resolve(appsDir, `.${checkoutApp}-stray`, "nested");
+  const strayDir = resolve(scApps, `.${checkoutApp}-stray`, "nested");
   await mkdir(strayDir, { recursive: true });
   try {
     await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "../../../tools/framework/core/app.ts";\nexport default defineApp({});\n', "utf8");
@@ -323,7 +380,7 @@ try {
     const installedStatus = await clawforge(["status"], strayDir);
     check("and its commands are not refused for their location", installedStatus.output.includes(FOREIGN_SOURCES_NOTE), false);
   } finally {
-    await rm(resolve(appsDir, `.${checkoutApp}-stray`), { recursive: true, force: true });
+    await rm(resolve(scApps, `.${checkoutApp}-stray`), { recursive: true, force: true });
   }
 
   // The global command inside a checkout never creates a deployment in the framework sources.
@@ -341,7 +398,7 @@ try {
   check("a typo outside an app is an unknown command with a suggestion, not a missing app.ts", typo.code === 1 && typo.output.includes(unknownCommandMessage("stauts")) && typo.output.includes(didYouMeanMessage(closestCommand("stauts", names)!)) && !typo.output.includes(NO_APP_TS_HERE), true);
   const helpTypo = await clawforge(["help", "int"], docs);
   check("help <typo> in a checkout never suggests init", helpTypo.code === 1 && helpTypo.output.includes(unknownCommandMessage("int")) && !helpTypo.output.includes("init"), true);
-  const emptyDocs = resolve(docs, `${checkoutApp}-empty`);
+  const emptyDocs = resolve(sc, "docs", `${checkoutApp}-empty`);
   await mkdir(emptyDocs, { recursive: true });
   try {
     const nested = await clawforge(["init"], emptyDocs);
@@ -349,7 +406,7 @@ try {
   } finally {
     await rm(emptyDocs, { recursive: true, force: true });
   }
-  const freshApp = resolve(appsDir, `${checkoutApp}-new`);
+  const freshApp = resolve(scApps, `${checkoutApp}-new`);
   await mkdir(freshApp, { recursive: true });
   try {
     const initInCheckout = await clawforge(["init"], freshApp);
@@ -360,7 +417,7 @@ try {
   }
   // The reuse advice only names folders new-app would accept: not hidden, not unsafe names.
   for (const folder of [`.${checkoutApp}-hid`, "Bad Name"]) {
-    const unusable = resolve(appsDir, folder);
+    const unusable = resolve(scApps, folder);
     await mkdir(unusable, { recursive: true });
     try {
       const refused = await clawforge(["init"], unusable);
@@ -381,9 +438,14 @@ try {
   tail(atRoot);
   check("and at the checkout root too", atRoot.code === 0 && atRoot.output.includes("new-app"), true);
 } finally {
-  await rm(resolve(appsDir, checkoutApp), { recursive: true, force: true });
-  await rm(resolve(appsDir, `${checkoutApp}-b`), { recursive: true, force: true });
+  await rm(resolve(scApps, checkoutApp), { recursive: true, force: true });
+  await rm(resolve(scApps, `${checkoutApp}-b`), { recursive: true, force: true });
+  // The synthetic tree has no git, so no read-only bits to clear on Windows.
+  await rm(sc, { recursive: true, force: true });
+  delete process.env["CLAWFORGE_REAL_GATE"];
+  delete process.env["CLAWFORGE_CHECKS_APPS_DIR"];
   await rm(outside, { recursive: true, force: true });
+  if (packRoot !== undefined) await rm(packRoot, { recursive: true, force: true });
   await rm(prefix, { recursive: true, force: true });
 }
 

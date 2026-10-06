@@ -16,7 +16,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -26,7 +26,7 @@ import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
 
 const IMPORT_NOTE = "imported recipe", NOTES_TEXT = "plain notes", progressMasked = "progress mentions ***", gateMasked = "gate says ***";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
-import { check, finish, requires } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot, requires } from "#checks/kit/harness.ts";
 import { runProcess, type ProcessResult } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
@@ -63,11 +63,15 @@ function runScript(script: string, input: string): Promise<ProcessResult> {
 
 const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;
 
+// One isolated apps root for every deployment this file creates (the file has no single
+// top-level try, so it lives at module scope and is disposed just before finish()).
+const apps = await isolatedAppsRoot("mcp-server");
+
 try {
   await createApp(deploymentName);
 
   // A real `recipe import` round trip: one of the plain-text actions, driven end to end.
-  const importSource = resolve(appsDir, deploymentName, "fixture-source");
+  const importSource = resolve(apps.root, deploymentName, "fixture-source");
   await mkdir(importSource, { recursive: true });
   await writeFile(resolve(importSource, "recipe.json"), JSON.stringify({ description: "Import probe" }), "utf8");
   lines.push(JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "recipe", arguments: { action: "import", name: importSource, confirm: true } } }));
@@ -137,7 +141,7 @@ try {
   check("and it is the envelope schema itself", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
 } finally {
-  await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
+  await rm(resolve(apps.root, deploymentName), { recursive: true, force: true });
 }
 
 // Mixed command groups gate only mutating actions. This keeps the MCP contract safe when a
@@ -219,7 +223,7 @@ try {
     check("lock check is read-only for MCP gating", callFactsFor(openclawCommands.lock!, ["--check"]).effect, "read");
     check("lock write remains mutable for MCP gating", callFactsFor(openclawCommands.lock!, []).effect, "change");
   } finally {
-    await rm(resolve(appsDir, recipeDeployment), { recursive: true, force: true });
+    await rm(resolve(apps.root, recipeDeployment), { recursive: true, force: true });
   }
 }
 
@@ -285,7 +289,7 @@ try {
       true,
     );
   } finally {
-    await rm(resolve(appsDir, lockDeployment), { recursive: true, force: true });
+    await rm(resolve(apps.root, lockDeployment), { recursive: true, force: true });
   }
 }
 
@@ -298,7 +302,7 @@ try {
 // the strength of the action's name alone.
 await requires("gnu-userland", "recipe verify and onboard over MCP", async () => {
   const verifyDeployment = `mcp-check-verify-${randomBytes(4).toString("hex")}`;
-  const recipeDir = resolve(appsDir, verifyDeployment, "recipes", "probe");
+  const recipeDir = resolve(apps.root, verifyDeployment, "recipes", "probe");
   const verifyLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe" } } },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe", confirm: true } } },
@@ -315,8 +319,8 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
     // relative one, so the drive maps to its /mnt mount; where the transport is local the resolved
     // path is already a plain POSIX one and passes through unchanged. The finally below removes it
     // with the rest of the app.
-    const envPath = resolve(appsDir, verifyDeployment, ".env");
-    const dataDir = resolve(appsDir, verifyDeployment, "data");
+    const envPath = resolve(apps.root, verifyDeployment, ".env");
+    const dataDir = resolve(apps.root, verifyDeployment, "data");
     const drive = /^([A-Za-z]):[\\/](.*)$/.exec(dataDir);
     const targetDataDir = drive === null ? dataDir : `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll("\\", "/")}`;
     await writeFile(
@@ -357,7 +361,7 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
     check("its result is the structured catalog, not raw text", Array.isArray(listResult?.recipes), true);
     check("and the catalog names the probe recipe", listResult?.recipes?.some((entry) => entry.name === "probe"), true);
   } finally {
-    await rm(resolve(appsDir, verifyDeployment), { recursive: true, force: true });
+    await rm(resolve(apps.root, verifyDeployment), { recursive: true, force: true });
   }
 });
 
@@ -397,7 +401,7 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
       true,
     );
   } finally {
-    await rm(resolve(appsDir, badCallDeployment), { recursive: true, force: true });
+    await rm(resolve(apps.root, badCallDeployment), { recursive: true, force: true });
   }
 }
 
@@ -686,4 +690,5 @@ function conforms(
   }
 }
 
+await apps.dispose();
 finish("mcp-server");

@@ -29,6 +29,14 @@ import { envFile } from "../runtime/deployment.ts";
 export const frameworkRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const monorepoRoot = resolve(frameworkRoot, "..", "..");
 
+// Check-only seam (stage 7 S0.4): a check process sets CLAWFORGE_CHECKS_APPS_DIR so
+// deployments resolve under a temp root; nothing user-facing sets it, so unset means
+// the checkout's own apps/.
+export function appsRootFor(root: string): string {
+  const override = process.env["CLAWFORGE_CHECKS_APPS_DIR"];
+  return override === undefined || override === "" ? resolve(root, "apps") : resolve(override);
+}
+
 /** The WSL distro every default target assumes; one owner — layout.check.ts's single-
  *  definition audit refuses a second literal default elsewhere. */
 export const DEFAULT_WSL_DISTRO = "Ubuntu-24.04";

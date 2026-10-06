@@ -16,7 +16,7 @@ import {
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
 import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { newName } from "#src/core/values/names.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
 import { importHookModule } from "./hook-runtime.ts";
@@ -194,10 +194,15 @@ const SKIPPED_SUMMARY_LIMIT = 8;
 /** Hooks whose presence earns the operator-rights warning below. */
 const RECIPE_HOOK_FILES = ["prepare.ts", "verify.ts", "onboard.ts"];
 
-export async function runImportAction(name: string, newName: string | undefined): Promise<void> {
+/** The name an import lands under: new-name when given, else the source's last segment. */
+export function importNameOf(source: string, newName: string | undefined): string {
+  return newName ?? basename(resolve(source));
+}
+
+export async function runImportAction(name: string, newNameArg: string | undefined): Promise<void> {
   const source = resolve(name);
-  const importedName = newName ?? basename(source);
-  safeName("recipe", importedName);
+  const importedName = importNameOf(name, newNameArg);
+  newName("recipe", importedName);
   try { await access(resolve(source, "recipe.json")); } catch { die(`recipe source has no recipe.json: ${source}`); }
   const destination = resolve(recipesDirectory(), importedName);
   try {
@@ -280,7 +285,7 @@ export async function verify(): Promise<{ ok: boolean }> {
 }
 
 export async function runNewAction(name: string, withHooks: boolean): Promise<void> {
-  safeName("recipe", name);
+  newName("recipe", name);
   const destination = resolve(recipesDirectory(), name);
   try {
     await access(destination);

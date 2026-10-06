@@ -25,12 +25,12 @@ import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/gro
 export const EXPOSE_TAILSCALE_ARGUMENTS = [
   {
     name: "apply",
-    summary: "run the printed `tailscale serve` command on the target",
+    summary: "run tailscale serve on the target",
     description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it",
     kind: "flag",
     effect: "destroy",
   },
-  ...LOCK_TAKEOVER_ARGUMENTS,
+  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The probe's refusal when the target has no tailscale, exported so checks assert the same

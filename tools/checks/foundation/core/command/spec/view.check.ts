@@ -120,12 +120,12 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   // The R31-02 offenders, by their observable schema text.
   const schemaOf = (commandName: string, argumentName: string): string =>
     (inputSchema(openclawCommands[commandName]) as { properties: Record<string, { description?: string }> }).properties[argumentName].description ?? "";
-  check("break-lock's schema line is the declared summary", schemaOf("bootstrap", "break-lock"), "Take over a held instance lock");
+  check("break-lock's schema line is the declared summary", schemaOf("bootstrap", "break-lock"), "Take lock");
   check("recover-env.adopt-runtime is a complete clause", schemaOf("recover-env", "adopt-runtime"), "Take the running container as authoritative");
-  check("expose.apply's summary is the declared phrase, bounded to 60", schemaOf("expose", "apply"), "run the printed `tailscale serve` command on the target (tailscale)");
+  check("expose.apply's summary is the declared phrase, bounded to 60", schemaOf("expose", "apply"), "run tailscale serve on the target (tailscale)");
   check("incident.keep-exposure is a complete phrase", schemaOf("incident", "keep-exposure"), "Proceed with the gateway published on every interface");
-  check("backup.apply keeps the contrast", schemaOf("backup", "apply").startsWith("Apply the action instead of only previewing it"), true);
-  check("set.keep is a complete phrase", schemaOf("set", "keep").startsWith("keep the throwaway instance running instead of removing it"), true);
+  check("backup.apply keeps its declared scope", openclawCommands.backup.arguments?.find((argument) => argument.name === "apply")?.actions, ["prune-replaced", "install", "uninstall"]);
+  check("set.keep is a complete phrase", schemaOf("set", "keep").startsWith("keep the throwaway instance instead of removing it"), true);
   check("pull.migrate is a complete phrase", schemaOf("pull", "migrate").startsWith("Migrate profile"), true);
   check("accept.set is a complete phrase", schemaOf("accept", "set").startsWith("Check the verified artifact and save an acceptance receipt"), true);
   check("cli.args is the fixed text, not a cut inside the JSON example", schemaOf("cli", "args"), "Arguments passed to OpenClaw's CLI verbatim");
@@ -134,15 +134,16 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   check("host.root is a complete phrase, not a cut at the colon", schemaOf("host", "root"), "Request root; one half of the elevation consent");
   check("restore.json fits the budget whole", schemaOf("restore", "json"), "Emit restored data and the gateway startup outcome as JSON");
   check("secrets.json no longer reads as refused by itself", schemaOf("secrets", "json"), "Emit the default read-only report as JSON");
-  // The lock-takeover pair names the actions it applies to wherever it is scoped to some of
-  // them (backup, expose, watch, recipe, set): the tail the shared-description table used to
-  // swallow is what tells a client which action a flag belongs to.
-  check("backup.break-lock names the actions it applies to", schemaOf("backup", "break-lock"), "Take over a held instance lock (prune-replaced, install, uninstall)");
-  check("backup.break-foreign-lock names the actions it applies to", schemaOf("backup", "break-foreign-lock"), "Host id of an orphaned lock to take over (prune-replaced, install, uninstall)");
-  check("expose.break-lock names the actions it applies to", schemaOf("expose", "break-lock"), "Take over a held instance lock (tailscale)");
-  check("watch.break-lock names the actions it applies to", schemaOf("watch", "break-lock"), "Take over a held instance lock (install, uninstall)");
-  check("recipe.break-lock names the actions it applies to", schemaOf("recipe", "break-lock"), "Take over a held instance lock (verify, onboard, diagnose, install, remove)");
-  check("set.break-lock names the actions it applies to", schemaOf("set", "break-lock"), "Take over a held instance lock (forget)");
+  // Lock-takeover descriptions retain their declared action-specific semantics and scope.
+  // Action ownership is represented by declaration metadata, not parsed from rendered prose.
+  const scopedActions = (commandName: string, argumentName: string) =>
+    openclawCommands[commandName].arguments?.find((argument) => argument.name === argumentName)?.actions;
+  check("backup.break-lock scopes its action", scopedActions("backup", "break-lock"), ["prune-replaced", "install", "uninstall"]);
+  check("backup.break-foreign-lock scopes its action", scopedActions("backup", "break-foreign-lock"), ["prune-replaced", "install", "uninstall"]);
+  check("expose.break-lock scopes its action", scopedActions("expose", "break-lock"), ["tailscale"]);
+  check("watch.break-lock scopes its actions", scopedActions("watch", "break-lock"), ["install", "uninstall"]);
+  check("recipe.break-lock scopes its actions", scopedActions("recipe", "break-lock"), ["verify", "onboard", "diagnose", "install", "remove"]);
+  check("set.break-lock scopes its action", scopedActions("set", "break-lock"), ["forget"]);
   // A gate command's argument carries no `summary`: the declared description reaches the
   // schema whole — the cut used to trim both of these, and the option used to gain a
   // `(value: <…>)` tail naming its own valueName.
@@ -158,34 +159,26 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   );
 
   const declaredBackupInterval = (openclawCommands.backup.arguments ?? []).find((argument) => argument.name === "interval");
-  const intervalUnitRule = declaredBackupInterval?.summary ?? declaredBackupInterval?.description ?? "";
-  const declaredWatchInterval = (openclawCommands.watch.arguments ?? []).find((argument) => argument.name === "interval");
-  const intervalBareMinutes = declaredWatchInterval?.summary ?? declaredWatchInterval?.description ?? "";
   const backupSchema = inputSchema(openclawCommands.backup) as { properties: Record<string, { description?: string }> };
   check("backup.action says what no action word means", backupSchema.properties.action.description, "Omit to create a backup");
-  check(
-    "backup.interval keeps the explicit-unit rule",
-    (backupSchema.properties.interval.description ?? "").includes(intervalUnitRule),
-    true,
-  );
+  const description = schemaOf("backup", "interval");
+  check("backup.interval summary matches its declaration", declaredBackupInterval?.summary, "Interval: default 1d; explicit unit required");
+  check("backup.interval schema matches its full declared property", description, schemaArgumentDescription(declaredBackupInterval as CommandArgument));
   const watchSchema = inputSchema(openclawCommands.watch) as { properties: Record<string, { description?: string }> };
-  check(
-    "watch.interval keeps what a bare number means",
-    (watchSchema.properties.interval.description ?? "").includes(intervalBareMinutes),
-    true,
-  );
+  const watchInterval = openclawCommands.watch.arguments?.find((argument) => argument.name === "interval");
+  check("watch interval schema matches its full declared property", watchSchema.properties.interval.description, schemaArgumentDescription(watchInterval as CommandArgument, argumentScopes(openclawCommands.watch, "interval")));
+
 }
 
 // --- argument summaries are bounded to 60 characters -----------------------------------------
 //
-// ArgumentBase documents the contract: a summary is at most 60 characters (the MCP schema
-// line) and is required once the description runs longer. The bound is enforced here rather
-// than in the loader: the loader variant empirically broke tsgo inference downstream
-// (recipe/index.ts Values), and the shortened summaries keep their full text in the
-// description.
+// ArgumentBase documents the contract: each declared summary and emitted schema description is
+// at most 60 characters. For composed descriptions, each declared part is bounded without the
+// action-scope suffix; the suffix is metadata, not part of the summary budget.
 
 {
   const offenders: string[] = [];
+  const emittedOffenders: string[] = [];
   let cases = 0;
   for (const [name, command] of Object.entries(openclawCommands)) {
     const entry = specOf(command);
@@ -204,16 +197,24 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
       }
     }
   }
-  checkTrue("every argument summary is bounded to 60 (" + offenders.length + " offenders: " + offenders.join("; ") + ")", offenders.length === 0);
-  // The merged view composes per-action descriptions: a composition past 60 characters
-  // needs its own summary, or the schema is back to carrying the whole text (the bound
-  // applies to the declared summary; the composed one embeds the action lists).
   for (const [name, command] of Object.entries(openclawCommands)) {
     for (const argument of command.arguments ?? []) {
-      if (argument.description.length <= 60 || argument.summary !== undefined) continue;
-      offenders.push(name + "." + argument.name + ": composed description is longer than 60 without a summary");
+      const scopes = argumentScopes(command, argument.name);
+      if (scopes !== undefined) {
+        for (const part of scopes) {
+          const text = part.summary ?? part.description;
+          if (text.length > 60) emittedOffenders.push(`${name}.${argument.name}: composed text is ${text.length} characters (max 60)`);
+        }
+        continue;
+      }
+      const description = (inputSchema(command) as { properties: Record<string, { description?: string }> }).properties[argument.name]?.description;
+      if (description === undefined) continue;
+      if (description.length > 60) emittedOffenders.push(`${name}.${argument.name}: emitted description is ${description.length} characters (max 60)`);
     }
   }
+  checkTrue("every declared argument summary is bounded to 60 (" + offenders.length + " offenders: " + offenders.join("; ") + ")", offenders.length === 0);
+  checkTrue("the emitted noncomposed description stays bounded", emittedOffenders.length === 0);
+  checkTrue(`every emitted composed schema part fits 60 characters (${emittedOffenders.length} offenders: ${emittedOffenders.join("; ")})`, emittedOffenders.length === 0);
   checkTrue("the summary sweep reaches arguments (" + cases + " cases)", cases > 0);
 }
 

@@ -13,7 +13,7 @@ import { randomBytes } from "node:crypto";
 import { log, info, warn, die, maskSecrets, registerSecret } from "#src/core/io/log.ts";
 import { format, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { parseEnv, serializeEnvLine, frameworkRoot, composeFile } from "#src/core/env.ts";
+import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride, composeProjectName } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
 import type { Context } from "#src/core/context.ts";
@@ -51,7 +51,7 @@ export const SET_TRY_ARGUMENTS = [
   },
   {
     name: "keep",
-    summary: "keep the throwaway instance running instead of removing it",
+    summary: "keep the throwaway instance instead of removing it",
     description: "With try: keep the throwaway instance running instead of removing it",
     kind: "flag",
   },
@@ -184,6 +184,8 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   // the live secrets file, and an unreachable target must not mask the local refusal.
   const unpacked = await unpackArtifactVerified(artifact);
   const staging = unpacked.staging;
+  // Register local values before the target read: a transport failure may echo one verbatim.
+  for (const value of Object.values(secretValues)) registerSecret(value);
   const liveSecretsPath = secretsFileOnTarget(ctx);
   let liveSecrets: string | undefined;
   try {
@@ -199,7 +201,6 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   }
   // Registered so a transport error that echoes one of these values is masked when the
   // failure is reported — including the read failure right below.
-  for (const value of Object.values(secretValues)) registerSecret(value);
   if (liveSecrets !== undefined) {
     Object.assign(secretValues, parseEnv(liveSecrets));
     for (const value of Object.values(secretValues)) registerSecret(value);
@@ -404,9 +405,11 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
           ? `--keep: instance "${tryName}" left running at ${tryCtx.settings.serviceUrl}, data at ${dataRoot}`
           : `--keep: instance "${tryName}" was not confirmed running; inspect it before cleanup, data at ${dataRoot}`);
         // --app selects apps/<name> only, so no gate invocation can address a throwaway
-        // directory: the note names the compose teardown (the argv stop() runs) instead.
-        info(`deployment retained at ${tempDir}; the gate cannot address a throwaway directory — stop it by hand when done:`);
-        info(`  docker compose --env-file ${join(tempDir, ".env")} --project-name ${composeProjectName()} --file ${composeFile} --project-directory ${tempDir} --profile cli down`);
+        // directory. The compose teardown is not spelled out: its env file is a private
+        // temporary one that compose operations write to the target and remove after each call
+        // (docs/internal/backlog-p3.md), so a command line built here would name a path that
+        // does not exist.
+        info(`deployment retained at ${tempDir} (compose project ${composeProjectName()}); the gate cannot address a throwaway directory — stop its containers by hand when done,`);
         info(`  then remove the data root ${dataRoot} and the directory ${tempDir}`);
       }
     }
@@ -488,6 +491,7 @@ export const SET_TRY = defineAction({
   summary: "Try a set in a throwaway instance",
   effect: "destroy",
   arguments: SET_TRY_ARGUMENTS,
+  localFacts: [{ argument: "set", fact: "artifact" }],
   prepare: ({ values }) => tryPlan(values),
   run: (ctx, options) => runSetTry(ctx, options),
 });

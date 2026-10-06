@@ -14,10 +14,15 @@ function isWarning(problem: unknown): boolean {
   return (problem as { severity?: unknown } | null)?.severity === "warning";
 }
 
+/** The stages before `run`: a refusal there changed nothing. An unknown or omitted stage is
+ *  not on this list, so it keeps the conservative answer (the command's own facts). */
+export const PRE_RUN_STAGES: ReadonlySet<string> = new Set(["parse", "confirm", "environment", "context", "prepare"]);
+
 /** The envelope's `changed`. With the pipeline's facts: the command's own changedWhen first
  *  (a legacy command), then `read` → false, else the document's boolean, else true. Without
  *  them (a direct call), the old declaration-only rule. */
-function changedFact(command: Declared, fields: { changed?: unknown }, args: string[], facts?: CallFacts): boolean {
+function changedFact(command: Declared, fields: { changed?: unknown }, args: string[], facts?: CallFacts, error?: unknown, stage?: string): boolean {
+  if (error !== undefined && stage !== undefined && PRE_RUN_STAGES.has(stage)) return false;
   if (facts !== undefined) {
     if (facts.changed !== undefined) return facts.changed;
     if (facts.effect === "read") return false;
@@ -131,16 +136,16 @@ export function structuredResult(command: Declared, output: string, operationId:
  *  returned bare, since the tool declares one outputSchema for all its actions. A text
  *  action's envelope stays silent where a structured one speaks — no healthy, no problems,
  *  no nextActions — a gap can be seen, a guess cannot be trusted. */
-export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined, error?: unknown): StructuredResult {
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined, error?: unknown, stage?: string): StructuredResult {
   const structured = structuredResult(command, machineOutput ?? output, operationId, args, facts, lookup);
-  if (structured !== undefined) return structured;
+  if (structured !== undefined) return { ...structured, changed: changedFact(command, structured.result !== null && typeof structured.result === "object" ? structured.result as { changed?: unknown } : {}, args, facts, error, stage) };
   // A refusal that never emitted a document still carries its remedy (rf6-fix30): the thrown
   // UserError's advice becomes nextActions/nextSteps, so an MCP client sees the same next
   // step the console's arrow line spells.
   const advice = error instanceof UserError ? error.advice : [];
   return {
     operationId,
-    changed: changedFact(command, {}, args, facts),
+    changed: changedFact(command, {}, args, facts, error, stage),
     problems: [],
     warnings: [],
     nextActions: [...new Set(advice.map((entry) => maskSecrets(renderAdvice(entry))))],
@@ -242,6 +247,7 @@ export function validate(command: Declared, args: Record<string, unknown>, conte
 
   if (spec !== undefined) {
     const shape = specShape(spec);
+    const unknownAction = typeof args.action === "string" && shape.actions?.[args.action] === undefined;
     const chosen = typeof args.action === "string" && shape.actions?.[args.action] !== undefined
       ? args.action
       : shape.defaultAction;
@@ -259,20 +265,22 @@ export function validate(command: Declared, args: Record<string, unknown>, conte
     // slot is refused in the binder's required voice — toArgv emits by position, so
     // either would land in a slot the caller never named.
     const prefix = [context.name, chosen].filter((part) => part !== undefined && part !== "").join(" ");
-    for (const argument of declared.values()) {
-      if (argument.kind !== "positional" || argument.name === "action") continue;
-      if (!given(argument) || own.some((entry) => entry.name === argument.name)) continue;
-      problems.push(appliesToMessage(argument.name, argument.actions ?? [], chosen ?? ""));
+    if (!unknownAction) {
+      for (const argument of declared.values()) {
+        if (argument.kind !== "positional" || argument.name === "action") continue;
+        if (!given(argument) || own.some((entry) => entry.name === argument.name)) continue;
+        problems.push(appliesToMessage(argument.name, argument.actions ?? [], chosen ?? ""));
+      }
+      const firstGiven = own.findIndex(given);
+      if (firstGiven > 0) problems.push(requiredArgumentRefusal(own[0], prefix));
     }
-    const firstGiven = own.findIndex(given);
-    if (firstGiven > 0) problems.push(requiredArgumentRefusal(own[0], prefix));
     // toArgv puts a variadic after a bare `--`, where the tokenizer would fill a missing
     // positional from its first word: with a variadic given, a required positional must be too.
     const variadicGiven = [...declared.values()].some((argument) => {
       const value = args[argument.name];
       return argument.kind === "variadic" && Array.isArray(value) && value.length > 0;
     });
-    if (variadicGiven) {
+    if (!unknownAction && variadicGiven) {
       for (const argument of declared.values()) {
         if (argument.kind !== "positional" || argument.required !== true) continue;
         const value = args[argument.name];

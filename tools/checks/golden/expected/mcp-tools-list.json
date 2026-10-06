@@ -16,11 +16,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -37,11 +37,11 @@
         "properties": {
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           }
         }
       }
@@ -54,11 +54,11 @@
         "properties": {
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           }
         }
       }
@@ -71,11 +71,11 @@
         "properties": {
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           }
         }
       }
@@ -108,11 +108,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "confirm": {
             "type": "boolean",
@@ -174,19 +174,19 @@
           },
           "native": {
             "type": "boolean",
-            "description": "Consistent snapshot without stopping the gateway (create)"
+            "description": "Snapshot; gateway runs (create)"
           },
           "share": {
             "type": "boolean",
-            "description": "Shareable profile with verification (create)"
+            "description": "Share profile with verification (create)"
           },
           "migrate": {
             "type": "boolean",
-            "description": "Migrate profile: no provider keys (create)"
+            "description": "Migrate profile, no keys (create)"
           },
           "with-secrets": {
             "type": "boolean",
-            "description": "Full profile: includes provider keys (create)"
+            "description": "Full profile with keys (create)"
           },
           "dry-run": {
             "type": "boolean",
@@ -194,27 +194,27 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit archives and replaced copies as JSON instead of text (list, prune-replaced)"
+            "description": "Emit JSON (list, prune-replaced)"
           },
           "apply": {
             "type": "boolean",
-            "description": "Apply the action instead of only previewing it (prune-replaced, install, uninstall)"
+            "description": "Apply, not preview (prune-replaced, install, uninstall)"
           },
           "keep": {
             "type": "string",
-            "description": "Keep this many newest copies instead of deleting all of them (prune-replaced)"
+            "description": "Number to keep (prune-replaced)"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock (prune-replaced, install, uninstall)"
+            "description": "Take lock (prune-replaced, install, uninstall)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over (prune-replaced, install, uninstall)"
+            "description": "Orphan host (prune-replaced, install, uninstall)"
           },
           "interval": {
             "type": "string",
-            "description": "how often — 30m, 6h or 1d, explicit unit required (install)"
+            "description": "Interval: default 1d; explicit unit required (install)"
           },
           "confirm": {
             "type": "boolean",
@@ -239,11 +239,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "fresh-identity": {
             "type": "boolean",
@@ -301,11 +301,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -330,11 +330,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "fresh-identity": {
             "type": "boolean",
@@ -404,11 +404,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "confirm": {
             "type": "boolean",
@@ -614,11 +614,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -754,11 +754,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -898,7 +898,7 @@
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -936,15 +936,15 @@
           },
           "apply": {
             "type": "boolean",
-            "description": "run the printed `tailscale serve` command on the target (tailscale)"
+            "description": "run tailscale serve on the target (tailscale)"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock (tailscale)"
+            "description": "Take lock (tailscale)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over (tailscale)"
+            "description": "Orphan host (tailscale)"
           },
           "json": {
             "type": "boolean",
@@ -987,15 +987,15 @@
           },
           "apply": {
             "type": "boolean",
-            "description": "mutate the target's crontab instead of only printing it (install, uninstall)"
+            "description": "Change target crontab, not just print (install, uninstall)"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock (install, uninstall)"
+            "description": "Take lock (install, uninstall)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over (install, uninstall)"
+            "description": "Orphan host (install, uninstall)"
           },
           "confirm": {
             "type": "boolean",
@@ -1031,11 +1031,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "confirm": {
             "type": "boolean",
@@ -1299,11 +1299,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -1348,7 +1348,7 @@
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -1385,11 +1385,11 @@
           },
           "name": {
             "type": "string",
-            "description": "directory to copy the recipe from (import); recipe name (new, verify, onboard, diagnose, install, remove, status, logs)"
+            "description": "directory to copy the recipe from (import); recipe (new, verify, onboard, diagnose, install, remove, status, logs)"
           },
           "new-name": {
             "type": "string",
-            "description": "import under this name, not the source directory's own (import)"
+            "description": "Use this name instead of the source name (import)"
           },
           "json": {
             "type": "boolean",
@@ -1401,11 +1401,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock (verify, onboard, diagnose, install, remove)"
+            "description": "Take lock (verify, onboard, diagnose, install, remove)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over (verify, onboard, diagnose, install, remove)"
+            "description": "Orphan host (verify, onboard, diagnose, install, remove)"
           },
           "tail": {
             "type": "string",
@@ -1485,7 +1485,7 @@
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over"
+            "description": "Orphan host"
           },
           "json": {
             "type": "boolean",
@@ -1678,7 +1678,7 @@
           },
           "keep": {
             "type": "boolean",
-            "description": "keep the throwaway instance running instead of removing it (try)"
+            "description": "keep the throwaway instance instead of removing it (try)"
           },
           "kind": {
             "type": "string",
@@ -1691,11 +1691,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock (forget)"
+            "description": "Take lock (forget)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Host id of an orphaned lock to take over (forget)"
+            "description": "Orphan host (forget)"
           },
           "confirm": {
             "type": "boolean",

@@ -26,7 +26,10 @@ export function scopeByAction(slices: Readonly<Record<string, readonly CommandAr
     const parts = argumentParts(slices, argument.name);
     return {
       ...argument,
-      ...(parts === undefined ? {} : { description: parts.map((part) => `${part.description} (${part.actions.join(", ")})`).join("; ") }),
+      ...(parts === undefined ? {} : {
+        description: parts.map((part) => `${part.description} (${part.actions.join(", ")})`).join("; "),
+        ...(parts.every((part) => part.summary !== undefined) ? { summary: parts.map((part) => `${part.summary} (${part.actions.join(", ")})`).join("; ") } : { summary: undefined }),
+      }),
       ...(actions.length === all.length ? {} : { actions }),
     };
   });
@@ -82,17 +85,18 @@ export function argumentRules(command: { readonly run?: unknown }): readonly Arg
  *  the view composes it, and help-render.ts and the MCP schema read the parts instead of
  *  parsing the composed text apart again. */
 function argumentParts(slices: Readonly<Record<string, readonly ArgumentSpec[]>>, name: string): readonly ArgumentScope[] | undefined {
-  const byDescription = new Map<string, { readonly actions: string[]; readonly summary?: string }>();
+  const byDescription = new Map<string, { readonly description: string; readonly actions: string[]; readonly summary?: string }>();
   for (const action of Object.keys(slices)) {
     for (const argument of slices[action]) {
       if (argument.name !== name) continue;
-      const found = byDescription.get(argument.description);
-      if (found === undefined) byDescription.set(argument.description, { actions: [action], summary: argument.summary });
+      const key = `${argument.description}\u0000${argument.summary ?? ""}`;
+      const found = byDescription.get(key);
+      if (found === undefined) byDescription.set(key, { description: argument.description, actions: [action], summary: argument.summary });
       else if (!found.actions.includes(action)) found.actions.push(action);
     }
   }
   if (byDescription.size <= 1) return undefined;
-  return [...byDescription.entries()].map(([description, { actions, summary }]) => ({
+  return [...byDescription.values()].map(({ description, actions, summary }) => ({
     actions, description, ...(summary === undefined ? {} : { summary }),
   }));
 }

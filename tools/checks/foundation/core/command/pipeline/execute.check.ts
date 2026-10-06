@@ -21,11 +21,12 @@ import { join } from "node:path";
 import { main, runApp } from "#framework/entry/cli.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { commandBody, defineAction, materializeCommands, multiActionBody, unknownArgumentMessage } from "#framework/core/command/index.ts";
-import { commandLine, renderAdvice } from "#framework/core/io/invocation/render.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { PORT_RANGE } from "#framework/core/values/value.ts";
 import { toArgv } from "#framework/integration/mcp/call.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
@@ -33,7 +34,7 @@ import { provisionAgent } from "#framework/commands/management/provision-agent/i
 import { secrets } from "#framework/commands/management/secrets.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { spawnLocal } from "#framework/runtime/transport/exec.ts";
-import { die, dieWithExitCode, UserError } from "#framework/core/io/log.ts";
+import { die, dieWithExitCode, UserError, registerSecret } from "#framework/core/io/log.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import { ArgumentError, ConfirmationRequiredError, UnknownArgumentError } from "#framework/core/command/index.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -42,7 +43,6 @@ import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";
-import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useLinuxHost();
 
@@ -248,7 +248,8 @@ try {
 
   // --- the --json failure contract, through the real entry point --------------------------------
 
-  const remedy = command(["bootstrap"], { note: "then start it" });
+  const remedy = command(["bootstrap", "--token", "advice-secret-987"]);
+  registerSecret("advice-secret-987");
   const contractApp: AppDefinition = {
     name: "json-contract-fixture",
     description: "fixture",
@@ -325,9 +326,9 @@ try {
     const { output } = await capture(() => main(contractApp, ["advised", "--json"]));
     const document = /\{[\s\S]*\}/.exec(output)?.[0] ?? "";
     const parsed = JSON.parse(document) as { error?: { message?: string }; nextActions?: string[]; next?: Array<{ kind?: string; argv?: string[]; note?: string }> };
-    checkTrue("a refusal with advice names the failure in its --json document", (parsed.error?.message ?? "").includes("bootstrapped"));
-    checkTrue("the --json document renders the refusal's remedy", Array.isArray(parsed.nextActions) && parsed.nextActions[0] === renderAdvice(remedy));
-    check("the --json document carries the refusal's structured remedy", parsed.next, [{ kind: "clawforge", argv: ["bootstrap"], note: "then start it" }]);
+    checkTrue("a refusal with advice names the failure in its --json document", (parsed.error?.message ?? "").includes(["this", "deployment", "has", "never", "been", "bootstrapped"].join(" ")));
+    checkTrue("the --json document renders the refusal's remedy", Array.isArray(parsed.nextActions) && parsed.nextActions[0] === "./clawforge bootstrap --token ***");
+    checkTrue("the --json document carries the refusal's structured remedy", JSON.stringify(parsed.next) === JSON.stringify([{ kind: "clawforge", argv: ["bootstrap", "--token", "***"] }]));
   }
 
   {

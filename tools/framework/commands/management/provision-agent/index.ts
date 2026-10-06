@@ -58,6 +58,7 @@ export const PROVISION_AGENT_ARGUMENTS = [
 export const PROVISION_AGENT = commandBody({
   effect: "change",
   arguments: PROVISION_AGENT_ARGUMENTS,
+  localFacts: [{ argument: "recipe", fact: "agent-bundle" }],
   async run(ctx, values) {
     await runProvisionAgent(ctx, values as Values<typeof PROVISION_AGENT_ARGUMENTS>);
   },
@@ -74,7 +75,7 @@ async function runProvisionAgent(ctx: Context, values: Values<typeof PROVISION_A
   const recipeName = values.recipe;
 
   // Local first: a typo in the recipe name must not cost a trip to the target.
-  const bundle = await loadRecipeAgentBundle(recipeName);
+  const bundle = await loadRecipeAgentBundle(recipeName, true);
 
   await requireBootstrapped(ctx);
   if (!(await ctx.runtime.isRunning())) die(`the gateway is not running. Start it with ${commandLine("up")}`);

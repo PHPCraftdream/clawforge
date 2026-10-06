@@ -38,7 +38,7 @@ check("apply recognizes a standalone dry-run flag", dryRunGiven(["--dry-run"]), 
 // now that value option refuses to swallow a declared flag and names which one needs a value.
 check("--expect right before --dry-run needs a value, not a swallowed flag", deathOf(() => dryRunGiven(["--expect", "--dry-run"])), "--expect needs a value");
 check("--set right before --dry-run needs a value, not a swallowed flag", deathOf(() => dryRunGiven(["--set", "--dry-run"])), "--set needs a value");
-check("apply still recognizes dry-run after an option value", dryRunGiven(["--expect", "checksum", "--dry-run"]), true);
+check("apply still recognizes dry-run after an option value", dryRunGiven(["--expect", "a".repeat(64), "--dry-run"]), true);
 
 {
   const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();

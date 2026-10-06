@@ -6,15 +6,27 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import {
   parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, specOf, specShape, type CallShape,
 } from "#framework/core/command/index.ts";
 import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { renderCommandHelp } from "#framework/core/io/help-render.ts";
+import { ruleText } from "#framework/core/command/parse.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+
+// Multi-member conflicts render as an exhaustive help restriction, with a final `or`.
+{
+  const args = ["source", "one", "two", "three"].map((name) => ({ name, description: name, kind: "flag" as const }));
+  const text = ruleText({ rule: "conflicts", name: "source", with: ["one", "two", "three"] }, args, {}, { mode: "help" });
+  check("three-member conflict help names every member, in order", text.match(/--[a-z]+/g), ["--source", "--one", "--two", "--three"]);
+  const words = text.split(" ");
+  check("it is one any-of clause", words.filter((word, at) => word === "any" && words[at + 1] === "of").length, 1);
+  check("the members are not joined by and", words.includes("and"), false);
+  check("the last member follows a final or", words.slice(-2), ["or", "--three"]);
+}
 
 // --- every declaration is well formed ----------------------------------------
 

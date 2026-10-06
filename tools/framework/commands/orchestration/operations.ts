@@ -11,7 +11,7 @@ import { listOperations, readOperation, operationsDir } from "#src/service/opera
 import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
-import { ValueError, type ValueParser } from "#src/core/values/value.ts";
+import { ValueError, type ValueParser, pathSegmentValue } from "#src/core/values/value.ts";
 
 /** `--limit`'s grammar: a whole number above zero, one refusal for both mistakes. */
 function limitValue(): ValueParser<number> {
@@ -27,7 +27,7 @@ function limitValue(): ValueParser<number> {
 }
 
 export const OPERATIONS_ARGUMENTS = [
-  { name: "id", description: "Operation id to show in full", kind: "positional" },
+  { name: "id", description: "Operation id to show in full", kind: "positional", parse: pathSegmentValue("an operation id", "20260101000000000-apply-ab12cd") },
   {
     name: "limit",
     summary: "How many recent operations to list",

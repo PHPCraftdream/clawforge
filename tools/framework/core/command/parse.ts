@@ -82,7 +82,15 @@ export function ruleText(
       : groupClause(byName, rule.with);
     return withReason(`${ruleLabel(byName, rule.name)} requires ${clause}`);
   }
-  if (rule.rule === "conflicts") return withReason(`${ruleLabel(byName, rule.name)} cannot be combined with ${groupClause(byName, options.incomplete ?? rule.with)}`);
+  if (rule.rule === "conflicts") {
+    const members = options.mode === "help"
+      ? rule.with
+      : options.incomplete ?? rule.with;
+    const clause = options.mode === "help"
+      ? `any of ${members.length < 3 ? members.map((name) => ruleLabel(byName, name)).join(" or ") : `${members.slice(0, -1).map((name) => ruleLabel(byName, name)).join(", ")} or ${ruleLabel(byName, members[members.length - 1]!)}`}`
+      : groupClause(byName, members);
+    return withReason(`${ruleLabel(byName, rule.name)} cannot be combined with ${clause}`);
+  }
   if (options.mode === "help") return groupsClause(byName, rule.groups);
   if (options.case === "mix") return withReason(`${lead}takes ${groupsClause(byName, rule.groups)}, not both`);
   if (options.case === "incomplete") {

@@ -10,6 +10,7 @@ import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
 import { nameValue } from "#src/core/values/value.ts";
+import { newName } from "#src/core/values/names.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
@@ -245,6 +246,8 @@ export function storeExistsRefusal(path: string): string {
 }
 
 async function dumpToStore(ctx: Context, storeName: string, force: boolean): Promise<void> {
+  // The store file name is minted here; readers keep safeName so a store named before the device rule stays readable.
+  newName("store", storeName);
   const path = secretStoreFile(storeName);
 
   const exists = await access(path).then(
@@ -320,6 +323,8 @@ async function runApplyAction(ctx: Context, store: string, breakForeignLockHost:
 
 /** --init-store: creates an empty store locally, refusing to overwrite a filled one. */
 async function runInitStoreAction(ctx: Context, store: string, force: boolean): Promise<void> {
+  // The store file name is minted here; readers keep safeName so a store named before the device rule stays readable.
+  newName("store", store);
   const path = secretStoreFile(store);
 
   // An existing store holds filled-in keys, unrecoverable elsewhere if overwritten silently.

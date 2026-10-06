@@ -24,7 +24,7 @@
 //   - full dispatch through a recording transport, and one real bare-machine run.
 
 import { host, rootElevationRequested, ROOT_CONSENT, ROOT_ARRIVAL, IDENTITY_UNKNOWN, commandFailedMessage, HOST_ARGUMENTS } from "#framework/commands/interface/host/index.ts";
-import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, engineDistroNote, probeAnsweredEvidence, probeNoAnswerEvidence, parseWslDistroListing, probeUidAnswer, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
+import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, probeAnsweredEvidence, probeNoAnswerEvidence, parseWslDistroListing, probeUidAnswer, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
@@ -214,7 +214,7 @@ check("both flags together are consent", rootElevationRequested(true), true);
     localIdentity: async () => unprivilegedHere,
   });
   check("the docker-desktop engine declares what the audit found: it arrives as root", execution.arrivesAsRoot, true);
-  check("and says so before anything runs", execution.note === engineDistroNote("wsl:Ubuntu-24.04"), true);
+  check("and says so before anything runs", execution.note?.includes(["root (uid", "0)"].join(" ")) === true && execution.note.includes(["default", "user"].join(" ")) && execution.note.includes(["no other", "login user"].join(" ")), true);
   check("the docker-desktop engine runs away from this process too", execution.runsHere, false);
   check("the collapse off windows is not declared root", (await resolveHostContext(ctxWith(recordingTransport().transport), "engine", { platform: "linux", listWslDistros: async () => [], localIdentity: async () => unprivilegedHere })).arrivesAsRoot, undefined);
   check("nor the engine without docker-desktop", (await resolveHostContext(ctxWith(recordingTransport().transport), "engine", { platform: "win32", listWslDistros: async () => ["Ubuntu-24.04"], localIdentity: async () => unprivilegedHere })).arrivesAsRoot, undefined);
@@ -491,6 +491,7 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   check("context is a plain string argument", properties.context?.type, "string");
   check("context exposes exactly the three contexts", properties.context?.enum, ["target", "engine", "local"]);
   check("root is a boolean flag", properties.root?.type, "boolean");
+  check("root schema carries its complete consent note", properties.root?.description, "Request root; one half of the elevation consent");
   check("confirm-root is a boolean flag", properties["confirm-root"]?.type, "boolean");
   check("args is the command list", properties.args?.type, "array");
   check("args entries are strings", properties.args?.items?.type, "string");

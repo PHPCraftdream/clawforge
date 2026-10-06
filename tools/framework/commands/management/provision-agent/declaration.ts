@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { die } from "#src/core/io/log.ts";
 import { recipesDir } from "#src/runtime/deployment.ts";
 import { containerPaths } from "#src/runtime/mounts.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { newName, safeName } from "#src/core/values/names.ts";
 import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
 
 const DEFAULT_CRON_SCHEDULE = "17 3 * * *"; // daily, off-peak, off the :00/:30 pileup minutes
@@ -30,7 +30,10 @@ export interface RecipeAgentBundle {
   readonly cronMessage?: string;
 }
 
-export function parseAgentConfig(raw: unknown): AgentConfig {
+/** `minting` is the creator side (provision-agent writes these names into an instance): the
+ *  Windows device names are refused there; a reader of an existing record or recipe keeps the
+ *  pre-device-rule grammar, so an `aux` agent already on disk still reads. */
+export function parseAgentConfig(raw: unknown, minting = false): AgentConfig {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) die("agent/config.json must be an object");
   const obj = raw as Partial<Record<keyof AgentConfig, unknown>>;
   if (typeof obj.agentId !== "string" || obj.agentId === "") die("agent/config.json: \"agentId\" must be a non-empty string");
@@ -40,9 +43,10 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
   }
   // These values become path segments, OpenClaw identifiers and plan arguments — same
   // portable name contract as recipes/deployments.
-  safeName("agent", obj.agentId);
-  safeName("MCP server", obj.mcpServerName);
-  if (obj.cronJobName !== undefined) safeName("cron job", obj.cronJobName);
+  const checkName = minting ? newName : safeName;
+  checkName("agent", obj.agentId);
+  checkName("MCP server", obj.mcpServerName);
+  if (obj.cronJobName !== undefined) checkName("cron job", obj.cronJobName);
   if (obj.cronTimezone !== undefined) {
     if (typeof obj.cronTimezone !== "string" || obj.cronTimezone === "") die("cronTimezone must be an IANA timezone");
     try { new Intl.DateTimeFormat("en", { timeZone: obj.cronTimezone }); } catch { die("cronTimezone must be an IANA timezone"); }
@@ -80,7 +84,7 @@ export async function collectRecipeFiles(dir: string, excludeDir: string): Promi
  *  provisioning; a plainly absent agent/ stays the honest "no bundle" case. config.json and
  *  (when cron is declared) cron-message.txt are mandatory — the policy holding either back
  *  refuses rather than silently reading or dropping it. */
-export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeAgentBundle> {
+export async function loadRecipeAgentBundle(recipeName: string, minting = false): Promise<RecipeAgentBundle> {
   const recipeDir = resolve(recipesDir(), recipeName);
   const agentDir = resolve(recipeDir, "agent");
 
@@ -112,7 +116,7 @@ export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeA
   } catch (error) {
     throw new Error(`recipe "${recipeName}" agent/config.json is not valid JSON: ${(error as Error).message}`);
   }
-  const config = parseAgentConfig(parsed);
+  const config = parseAgentConfig(parsed, minting);
 
   // Top-level *.md only — a file the walker already excluded never reaches `files`, so it
   // never reaches promptFiles or the workspace it gets written to.

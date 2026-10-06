@@ -2,7 +2,7 @@
 // `next` advice becomes tool steps beside nextActions, a thrown refusal's advice becomes
 // the fallback envelope's remedy, and an advice note rides the step (rf6-fix30).
 import { structuredResult } from "#framework/integration/mcp/server.ts";
-import { toolEnvelope } from "#framework/integration/mcp/call.ts";
+import { toolEnvelope, PRE_RUN_STAGES } from "#framework/integration/mcp/call.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice } from "#framework/core/io/invocation/render.ts";
@@ -38,6 +38,20 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   const payload = JSON.stringify({ next: [{ kind: "clawforge", argv: ["lock"], note: "write the lock after the check" }] });
   const noted = structuredResult({ summary: "s", structured: true, readOnly: true }, payload, "op-note", [], undefined, (name: string) => (name === "lock" ? { summary: "s", arguments: [] } : undefined));
   check("a document's note rides the tool step", noted?.nextSteps, [{ tool: "lock", arguments: {}, note: "write the lock after the check" }]);
+}
+
+{
+  // `changed` for a refused destroy call: false for every refusal at a stage before `run`;
+  // a refusal at run, or with the stage unknown or omitted, keeps the conservative `true`.
+  const destroy = { summary: "s", structured: true };
+  const facts = { effect: "destroy" as const };
+  const refusal = new UserError("refused");
+  const changedAt = (stage: string | undefined): boolean => toolEnvelope(destroy, "", undefined, "op-stage", [], facts, undefined, refusal, stage).changed;
+  check("the pre-run stages are the five the pipeline has before run", [...PRE_RUN_STAGES].sort(), ["confirm", "context", "environment", "parse", "prepare"]);
+  for (const stage of PRE_RUN_STAGES) check(`a refusal at ${stage} reports changed: false`, changedAt(stage), false);
+  check("a refusal at run keeps changed: true", changedAt("run"), true);
+  check("a refusal with no stage keeps changed: true", changedAt(undefined), true);
+  check("a refusal with an unknown stage keeps changed: true", changedAt("somewhere-else"), true);
 }
 
 finish("mcp-envelope");

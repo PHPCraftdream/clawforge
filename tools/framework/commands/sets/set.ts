@@ -9,7 +9,8 @@
 import { die, log, info } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { nameValue } from "#src/core/values/value.ts";
+import { nameValue, newNameValue, ValueError, type ValueParser } from "#src/core/values/value.ts";
+import { newName, safeName } from "#src/core/values/names.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateLoadedSet, loadSet } from "#src/set/load.ts";
@@ -24,7 +25,7 @@ import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/gro
 import { SET_TRY } from "./set-try.ts";
 import { SET_DIFF_ARGUMENTS, runSetDiff } from "./set-diff.ts";
 import { SET_RECEIPTS } from "./set-receipts.ts";
-import { withArtifactInspected, refuseMissingArtifact } from "#src/set/artifacts/install.ts";
+import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, defaultSetName } from "./set-manifest.ts";
 import { defineAction, multiActionBody, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
@@ -32,7 +33,7 @@ import { defineAction, multiActionBody, type ArgumentSpec, type Values } from "#
 const SET_NAME_SUMMARY = "Set name";
 
 export const SET_BUILD_ARGUMENTS = [
-  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", parse: nameValue("set") },
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", parse: newNameValue("set") },
   { name: "json", summary: "Emit the manifest and its id as JSON", description: "Emit the manifest and its id as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
@@ -42,9 +43,17 @@ export const SET_VALIDATE_ARGUMENTS = [
   { name: "json", summary: "Emit the findings as JSON", description: "Emit the findings as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
+/** An object name the target already carries (reader grammar): the refusal is safeName's own sentence. Creating one is provision-agent's, and that mints — newName there. */
+const OBJECT_NAME_VALUE: ValueParser<string> = {
+  expected: "an object name", example: "helper", invalidExample: "Bad_Name",
+  parse(raw) {
+    try { return safeName("object", raw); } catch (error) { throw new ValueError(`: ${(error as Error).message}`); }
+  },
+};
+
 export const SET_FORGET_ARGUMENTS = [
   { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", required: true, choices: ["agent", "mcp-server", "cron-job"] },
-  { name: "name", summary: "Object name", description: "Object name", kind: "option", valueName: "name", required: true },
+  { name: "name", summary: "Object name", description: "Object name", kind: "option", valueName: "name", required: true, parse: OBJECT_NAME_VALUE },
   ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
@@ -154,7 +163,10 @@ async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUM
 
 /** `clawforge set build`: the artifact, and an inventory of what went into it. */
 async function buildAction(ctx: Context, { name, json: jsonOnly }: Values<typeof SET_BUILD_ARGUMENTS>): Promise<void> {
-  const built = await buildSet(ctx, name ?? defaultSetName(deploymentName()));
+  // The artifact's file name is minted here: the creator grammar, so a set built on this machine is always a file every host can open and remove.
+  const setName = name ?? defaultSetName(deploymentName());
+  newName("set", setName);
+  const built = await buildSet(ctx, setName);
 
   // Same split as lock: --json or a captured caller gets the machine-readable answer;
   // a terminal gets the inventory, because an artifact whose contents can only be
@@ -204,12 +216,7 @@ export const SET = multiActionBody({
       summary: "Check a set without a running instance",
       effect: "read",
       arguments: SET_VALIDATE_ARGUMENTS,
-      // A typo in --set dies here, in the prepare stage, before the context (and so before
-      // any target contact) is built.
-      prepare: async ({ values: v }, local) => {
-        if (v.set !== undefined) await refuseMissingArtifact(v.set, local.exists);
-        return v;
-      },
+      localFacts: [{ argument: "set", fact: "artifact" }],
       run: (ctx, { name, set: artifact, json: jsonOnly }) => validateAction(ctx, { name, artifact, jsonOnly }),
     }),
     diff: defineAction({
@@ -217,6 +224,7 @@ export const SET = multiActionBody({
       effect: "read",
       arguments: SET_DIFF_ARGUMENTS,
       rules: [{ rule: "oneOf", groups: [["artifacts"], ["from", "to"]], required: true }],
+      localFacts: [{ argument: "artifacts", fact: "artifact" }, { argument: "from", fact: "artifact" }, { argument: "to", fact: "artifact" }],
       prepare: ({ values: v }) => ({ from: v.from ?? v.artifacts[0], to: v.to ?? v.artifacts[1], json: v.json }),
       run: runSetDiff,
     }),

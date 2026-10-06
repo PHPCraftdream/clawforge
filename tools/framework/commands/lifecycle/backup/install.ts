@@ -41,14 +41,14 @@ export const NOTHING_INSTALLED = "no backup schedule was installed for this depl
 export const BACKUP_INSTALL_ARGUMENTS = [
   {
     name: "interval",
-    summary: "how often — 30m, 6h or 1d, explicit unit required",
+    summary: "Interval: default 1d; explicit unit required",
     description: "With install: how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day",
     kind: "option",
     valueName: "interval",
     parse: scheduleIntervalValue({ bareMinutes: false }),
   },
   BACKUP_APPLY_ARGUMENT,
-  ...LOCK_TAKEOVER_ARGUMENTS,
+  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The slice `uninstall` uses — no --interval, since there is no schedule to set. A strict
@@ -56,7 +56,7 @@ export const BACKUP_INSTALL_ARGUMENTS = [
  *  declaration itself (same convention as watch's own WATCH_UNINSTALL_ARGUMENTS). */
 export const BACKUP_UNINSTALL_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
-  ...LOCK_TAKEOVER_ARGUMENTS,
+  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface InstallValues extends Values<typeof BACKUP_INSTALL_ARGUMENTS> {}

@@ -2,7 +2,7 @@
 // ValueError that `bind` (core/command/parse.ts) turns into an ArgumentError naming the argument.
 
 import { UserError } from "#src/core/io/log.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { newName, safeName } from "#src/core/values/names.ts";
 
 /** A refused value. `clause` is the text after the argument's label (`--tail`, `<name>`):
  *  `takes a number of lines, not "abc"`. A clause starting with ":" attaches to the label
@@ -86,7 +86,37 @@ export function nameValue(kind: string): ValueParser<string> {
   };
 }
 
-/** Any non-empty text — what an option with no parser means. */
+/** A name about to be minted (newName): the reader grammar plus the Windows device names,
+ *  refused at parse for commands that create the named thing. */
+export function newNameValue(kind: string): ValueParser<string> {
+  return {
+    expected: `a ${kind} name`, example: "local", invalidExample: "aux",
+    parse(raw) {
+      try {
+        return newName(kind, raw);
+      } catch (error) {
+        throw new ValueError(`: ${(error as Error).message}`);
+      }
+    },
+  };
+}
+
+/** A path segment under the target's data directory (`operations <id>`): one file name
+ *  inside one directory — never empty, never a flag look-alike, never a separator or a
+ *  dot run, so an id can only name a file where the reader looks it up. */
+export function pathSegmentValue(expected: string, example: string): ValueParser<string> {
+  return {
+    expected, example, invalidExample: "../x",
+    parse(raw) {
+      // oxlint-disable-next-line no-control-regex -- Control characters cannot name a path segment.
+      if (raw === "" || raw.length > 200 || raw[0] === "-" || /[\\/]/.test(raw) || raw === "." || raw === ".." || /[\u0000-\u001f]/.test(raw)) {
+        throw new ValueError(`takes ${expected}, not "${raw}"`);
+      }
+      return raw;
+    },
+  };
+}
+
 export function nonEmptyValue(expected = "a value"): ValueParser<string> {
   return {
     expected, example: "x", invalidExample: "",

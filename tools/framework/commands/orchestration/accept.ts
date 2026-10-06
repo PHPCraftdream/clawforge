@@ -22,7 +22,7 @@ import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts
 import { recipeServerContainerPath, mcpServerMatches } from "#src/commands/management/provision-agent/index.ts";
 import type { CheckOutcome } from "#src/commands/check-outcome.ts";
 import type { Context } from "#src/core/context.ts";
-import { withUnpackedArtifact, refuseMissingArtifact } from "#src/set/artifacts/install.ts";
+import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import { readAcceptanceFile } from "#src/set/recipe-files.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
@@ -367,8 +367,12 @@ interface AcceptPlan {
 export const ACCEPT = commandBody({
   effect: "change",
   arguments: ACCEPT_ARGUMENTS,
-  prepare: async ({ values }, local) => {
-    if (values.set !== undefined) await refuseMissingArtifact(values.set, local.exists);
+  localFacts: [
+    // With --set, the recipe names one inside the artifact, not one on this machine.
+    { argument: "recipe", fact: "acceptance", unless: "set" },
+    { argument: "set", fact: "artifact" },
+  ],
+  prepare: async ({ values }) => {
     return {
       recipe: values.recipe,
       set: values.set,

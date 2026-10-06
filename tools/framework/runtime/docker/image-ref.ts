@@ -19,6 +19,9 @@ export interface ImageRef {
   readonly digest?: string;
 }
 
+// A leading dash would reach docker's own argv as a flag (`upgrade --image=-x` ran
+// `docker buildx imagetools inspect -x`). Docker has never accepted one, so no recorded
+// value can exist — refusing it at the grammar breaks no reader.
 function splitReference(value: string): ImageRef | undefined {
   if (value === "" || value.trim() !== value || /\s/.test(value)) return undefined;
   let rest = value;
@@ -34,6 +37,7 @@ function splitReference(value: string): ImageRef | undefined {
   if (slash > 0) {
     const head = rest.slice(0, slash);
     if (head.includes(".") || head.includes(":") || head === "localhost") {
+      if (head.startsWith("-")) return undefined;
       registry = head;
       rest = rest.slice(slash + 1);
     }
@@ -46,7 +50,7 @@ function splitReference(value: string): ImageRef | undefined {
     repository = rest.slice(0, colon);
     if (!TAG.test(tag) || repository === "") return undefined;
   }
-  if (repository === "" || repository.includes(":") || repository.includes("@")) return undefined;
+  if (repository === "" || repository.startsWith("-") || repository.includes(":") || repository.includes("@")) return undefined;
   return { registry, repository, tag, digest };
 }
 

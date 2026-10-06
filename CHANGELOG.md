@@ -9,6 +9,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Unreachable-target failures retain structured remedies across console, JSON and MCP; operation history and rollback refuse unreachable targets rather than answering empty. Checkout-root advice uses a runnable shim, checkout refusals include shell-specific pasteable rows, and bootstrap reports the tag-preserving pinned image reference.
 * Gate help keeps effect notes, gate decisions preserve the selected deployment for advice, blank OC_APP is unset, and deploy spells the server-side bootstrap hint with the server shim.
 * Set artifact tar paths are normalized for Windows GNU tar; the check runner enumerates files inside ignored directories. The prose-ratchet widening measures const-held, regex, and array-held pins (162 measured, 162 recorded); this is a measurement widening, not product prose growth.
+* Recipe import checks the source directory for `recipe.json` during prepare, before any target contact; the derived destination basename is separately checked against the creator-name grammar during prepare. `set try` and `set diff` reject missing artifacts during prepare, and `accept` rejects missing recipe acceptance files locally.
+* Names use separate reader and creator grammars: existing Windows device-name deployments remain readable, while new recipes, sets, stores and agents refuse reserved device names at creation. Deployment creator sites in `integration/deployment/scaffold.ts`, `integration/deployment/init.ts`, and the `new-app` gate were not changed because those paths are explicitly out of scope.
+* `set try` registers locally stored secret values before attempting the live target-secret read, so a transport failure that echoes a value is masked even on the first run. With `--keep` it names the retained directory and compose project in a plain sentence (no runnable teardown line is printed).
+* Local facts (missing artifacts, recipes, recipe sources, agent bundles, and acceptance files) are refused during prepare, consistently for console and MCP, before target access. Recipe source existence is not a parse-time check; a malformed derived creator name remains a separate prepare-time refusal.
+* Parser declarations validate operation ids, checksums and `set forget` names; image references beginning with `-` are rejected. MCP refuses unknown actions and reports unchanged state as `changed: false`; conflicting option help identifies any-of alternatives.
 
 * A recipe folder whose name is not a recipe name is refused where the set is read, not
   after it ships: `set validate` and `set build` answer the shared `SET_RECIPE_INVALID`
@@ -33,16 +38,17 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 * Arguments are grammar-checked before anything is contacted: `deploy --path` is held to the remote-root
   boundary in the prepare stage, `set receipts --set-id` and `--receipt` and the `set`/`recipe`/app
-  names are held to the id grammar at parse (`recipe install <name>`, `recipe import`'s source and
-  `new-name` included), and `apply`/`plan`/`accept` refuse a `--set` artifact the local filesystem does not have
+  names are held to the id grammar at parse (`recipe install <name>` and `recipe import`'s explicit
+  `new-name`; import's source `recipe.json` and derived destination basename creator grammar are
+  checked during prepare), and `apply`/`plan`/`accept` refuse a `--set` artifact the local filesystem does not have
   in the prepare stage — an unreachable target can no longer report instead of the argument refusal.
 
 * `set try` unpacks and verifies the artifact before it reads the target's live secrets: a typo'd
   `--set` path or a corrupt artifact is refused before the target is contacted, a failed secrets read
   still removes its staging and reports masked, and `--keep` retains only a try that took on target
-  resources — a failure before the instance exists leaves nothing behind. The retention note prints the
-  real `docker compose down` command instead of pointing at a framework CLI no gate invocation can run
-  there.
+  resources — a failure before the instance exists leaves nothing behind. The retained-instance note is
+  plain text: no runnable teardown line is available because its private compose env file is removed
+  after each call.
 
 * An MCP call that passes a positional of another action of a multi-action command (`recipe`'s
   `<name>` for `recipe new`) is refused with the console's applies-to sentence, a call that leaves the
@@ -64,8 +70,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   only an action that creates or overwrites a store can replace one) instead of being silently ignored.
 
 * Names Windows refuses on any directory — `con`, `prn`, `aux`, `nul`, `com1`-`com9`, `lpt1`-`lpt9` — are refused
-  wherever the framework checks a name (recipe, set, store, app names) instead of creating directories
-  the host cannot open or remove (previously valid names, now refused).
+  when creating recipes, sets, stores and apps; readers accept existing names (previously valid names, now refused on creation).
 
 * Argument summaries are bounded to 60 characters for the MCP schema line, the full text staying in the
   description: `recipe import`'s `new-name`, `upgrade --image`, `rollback --previous-set`,

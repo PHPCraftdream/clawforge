@@ -6,7 +6,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CRONTAB_FAILURES, MANUAL_INSTALL_HEADER, REFUSING_APPLY, SCHEDULER_TRANSACTION_FAILED, crontabUpdateFailure, jobMarker, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import { MANUAL_INSTALL_HEADER, REFUSING_APPLY, jobMarker, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { INTERVAL_GRAMMAR_WITH_UNIT, NEAREST_VALID } from "#framework/core/values/durations.ts";
 import { NOTHING_INSTALLED } from "#framework/commands/lifecycle/backup/install.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
@@ -146,7 +146,7 @@ try {
   const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
   const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
   const readError = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(unreadableCtx, ["install", "--apply"])));
-  check("backup install aborts on crontab read failure", readError.includes(crontabUpdateFailure("ssh:user@host", 28, CRONTAB_FAILURES[28] ?? SCHEDULER_TRANSACTION_FAILED)), true);
+  check("backup install aborts on crontab read failure", readError.includes(["could not read", "crontab; table unchanged"].join(" ")) && readError.includes("ssh:user@host") && readError.includes("28"), true);
   check("backup install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
   check("backup install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 

@@ -26,7 +26,7 @@ import { JSON_ARGUMENT } from "./list.ts";
  *  action's destructive form, so the effect model demands the confirmation. */
 export const BACKUP_APPLY_ARGUMENT = {
   name: "apply",
-  summary: "Apply the action instead of only previewing it",
+  summary: "Apply, not preview",
   description: "Apply the action instead of only previewing it (delete, or install/uninstall the schedule)",
   kind: "flag",
   effect: "destroy",
@@ -36,8 +36,8 @@ export const BACKUP_APPLY_ARGUMENT = {
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
 export const BACKUP_PRUNE_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
-  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", parse: countValue("a non-negative integer") },
-  ...LOCK_TAKEOVER_ARGUMENTS,
+  { name: "keep", summary: "Number to keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", parse: countValue("a non-negative integer") },
+  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
   JSON_ARGUMENT,
 ] as const satisfies readonly ArgumentSpec[];
 

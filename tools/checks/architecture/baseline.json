@@ -1,9 +1,9 @@
 {
   "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it. Retired: localizeOptOuts (infoRaw/reportErrorVerbatim/localizeHints) counted three symbols that no longer exist, so it could never move; the property it stood for, that the output layers print the text they are given, is pinned by advice-matrix.check.ts (info() and reportError write rendered advice un-rewritten).",
   "rawArgvScans": {
-    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails",
+    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone",
     "files": {},
-    "total": 38,
+    "total": 37,
     "exempt": {
       "tools/framework/core/command/parse.ts": {
         "reason": "the tokenizer and parseCall's action pick: the one reading every other site defers to",
@@ -93,12 +93,6 @@
         "reason": "mirrors parseCall's action pick (first word, not a dash, naming an action; else the default action) for the pre-parse --json decision; the rest is tokenize's reading",
         "lines": {
           "if (first !== undefined && !first.startsWith(\"-\") && names.includes(first)) {": 1
-        }
-      },
-      "tools/framework/commands/orchestration/rollback.ts": {
-        "reason": "a value grammar on one bound value (an operation id never looks like a flag), not a scan of argv",
-        "lines": {
-          "if (raw === \"\" || raw.startsWith(\"-\")) throw new ValueError(\"needs an operation id\");": 1
         }
       },
       "tools/framework/commands/orchestration/apply.ts": {
@@ -387,8 +381,8 @@
     "total": 108
   },
   "proseEquality": {
-    "comment": "stage 5 + cross-cutting (I9): prose as the third argument of check(name, actual, \"literal with a space\") — a form prosePins (includes only) and proseMatchers (equality operator required) both miss, so rewriting a === pin into check() lowers proseMatchers while the prose stays; equality ratchet: growth fails, the existing sites are not being converted now; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth)",
-    "total": 219
+    "comment": "stage 5 + cross-cutting (I9): prose as the third argument of check(name, actual, \"literal with a space\") — a form prosePins (includes only) and proseMatchers (equality operator required) both miss, so rewriting a === pin into check() lowers proseMatchers while the prose stays; equality ratchet: growth fails, the existing sites are not being converted now; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth); rf6-p16: schema action-scope and interval checks use structural assertions instead of prose equality",
+    "total": 216
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",

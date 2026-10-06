@@ -244,11 +244,18 @@ export async function unpackArtifact(artifact: string): Promise<string> {
   return (await unpackArtifactVerified(artifact)).staging;
 }
 
+/** The refusal text for a --set artifact path the local filesystem does not have; shared
+ *  with the prepare-stage fact check (core/command/local-facts.ts), so both surfaces and
+ *  both stages answer with one sentence. */
+export function missingArtifactMessage(path: string): string {
+  return `${path} not found — build one with ${commandLine("set build")}, or pass the path to an existing set artifact`;
+}
+
 /** The prepare-stage refusal for a --set artifact path the local filesystem does not have:
  * the command dies before the context is built, so an unreachable target cannot mask it. */
 export async function refuseMissingArtifact(path: string, exists: (path: string) => Promise<boolean>): Promise<void> {
   if (!(await exists(path))) {
-    die(`${path} not found — build one with ${commandLine("set build")}, or pass the path to an existing set artifact`);
+    die(missingArtifactMessage(path));
   }
 }
 

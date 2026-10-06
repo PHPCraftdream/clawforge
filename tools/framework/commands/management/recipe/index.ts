@@ -10,7 +10,7 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { countValue, nameValue } from "#src/core/values/value.ts";
+import { countValue, nameValue, newNameValue } from "#src/core/values/value.ts";
 import {
   defineAction,
   multiActionBody,
@@ -47,6 +47,8 @@ import {
   runVerifyAction,
 } from "./actions.ts";
 import { INVALID_MANIFEST } from "./lifecycle.ts";
+import { newName } from "#src/core/values/names.ts";
+import { importNameOf } from "./actions.ts";
 
 function describe(recipe: Recipe): void {
   const state = recipe.enabled ? "" : "  [disabled]";
@@ -125,13 +127,22 @@ export { importHookModule } from "./hook-runtime.ts";
 const RECIPE_DEFAULT_ACTION = "list";
 
 const NAME_ARGUMENT = {
-  summary: "recipe name",
+  summary: "recipe",
   name: "name",
   description: "Recipe name",
   kind: "positional",
   required: true,
   parse: nameValue("recipe"),
 } as const satisfies ArgumentSpec;
+
+const NEW_NAME_ARGUMENT = {
+  ...NAME_ARGUMENT,
+  parse: newNameValue("recipe"),
+} as const satisfies ArgumentSpec;
+
+/** new mints the name it will create: the creator grammar (Windows device names included),
+ *  refused at parse. Every other action addresses an existing recipe — the reader grammar. */
+const RECIPE_LOCK_ARGUMENTS = LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" }));
 
 /** import copies a source directory, not a recipe name: any path is the source, and only the
  * name it lands under (new-name, else the last segment of the source) is held to the grammar. */
@@ -184,18 +195,25 @@ export const RECIPE = multiActionBody({
       summary: "Copy a recipe directory into recipes/",
       arguments: [SOURCE_ARGUMENT, {
         name: "new-name",
-        summary: "import under this name, not the source directory's own",
+        summary: "Use this name instead of the source name",
         description: "With import: import under this name instead of the source directory's own name",
         kind: "positional",
-        parse: nameValue("recipe"),
+        parse: newNameValue("recipe"),
       }],
       // Repository-side only: no target, no lock — either works before bootstrap has
       // prepared the lock home.
+      localFacts: [{ argument: "name", fact: "recipe-source" }],
+      prepare: ({ values }) => {
+        // The name it lands under is minted: refused here, before any context is built,
+        // instead of mid-copy — the same words the run's own check keeps.
+        newName("recipe", importNameOf(values.name, values["new-name"]));
+        return values;
+      },
       run: (_ctx, values) => runImportAction(values.name, values["new-name"]),
     }),
     new: defineAction({
       summary: "Scaffold a recipes/<name>/ skeleton",
-      arguments: [NAME_ARGUMENT, {
+      arguments: [NEW_NAME_ARGUMENT, {
         name: "with-hooks",
         summary: "add commented prepare.ts/verify.ts stubs",
         description: "With new: add commented prepare.ts/verify.ts stubs",
@@ -206,27 +224,31 @@ export const RECIPE = multiActionBody({
     }),
     verify: defineAction({
       summary: "Run the recipe's verify.ts hook",
-      arguments: [NAME_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      localFacts: [{ argument: "name", fact: "recipe" }],
+      arguments: [NAME_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "verify", values, () => runVerifyAction(ctx, values.name)),
     }),
     onboard: defineAction({
       summary: "Run the recipe's onboard.ts hook",
-      arguments: [NAME_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      localFacts: [{ argument: "name", fact: "recipe" }],
+      arguments: [NAME_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "onboard", values, () => runOnboardAction(ctx, values.name)),
     }),
     diagnose: defineAction({
-      summary: "Bundle stack state, logs and the verify hook into one report",
-      arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      summary: "Bundle stack, logs and verify hook into a report",
+      localFacts: [{ argument: "name", fact: "recipe" }],
+      arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "diagnose", values, () => runDiagnoseAction(ctx, values.name, values.tail)),
     }),
     install: defineAction({
       summary: "Build a recipe from source and start it",
+      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, {
         name: "force-disabled",
         summary: "build a recipe marked disabled",
         description: "With install: build a recipe marked disabled",
         kind: "flag",
-      }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      }, DRY_RUN_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS,],
       run: (ctx, values) => runLocked(ctx, "install", values, () => {
         const name = values.name;
         return values["dry-run"] === true
@@ -236,12 +258,13 @@ export const RECIPE = multiActionBody({
     }),
     remove: defineAction({
       summary: "Stop and remove a recipe's stack",
+      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, {
         name: "volumes",
         summary: "delete its volumes too",
         description: "With remove: delete its volumes too",
         kind: "flag",
-      }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      }, DRY_RUN_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS,],
       run: (ctx, values) => runLocked(ctx, "remove", values, () => {
         const name = values.name;
         return values["dry-run"] === true
@@ -251,12 +274,14 @@ export const RECIPE = multiActionBody({
     }),
     status: defineAction({
       summary: "Show the recipe stack's compose status",
+      localFacts: [{ argument: "name", fact: "recipe" }],
       effect: "read",
       arguments: [NAME_ARGUMENT],
       run: (ctx, values) => runStatusAction(ctx, values.name),
     }),
     logs: defineAction({
       summary: "Read a recipe stack's logs",
+      localFacts: [{ argument: "name", fact: "recipe" }],
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
       run: (ctx, values) => runLogsAction(ctx, values.name, values.tail),

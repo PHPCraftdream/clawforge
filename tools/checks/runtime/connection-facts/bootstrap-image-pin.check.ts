@@ -178,7 +178,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}
 OPENCLAW_IMAGE=${SHARED_TAG}
 OPENCLAW_GATEWAY_TOKEN=test-token
 `, async () => {
-  // The real resolveImageDigest() (image-digest.ts) already answers with the channel kept —
+  // The real resolveImageDigest() (image-ref.ts) already answers with the channel kept —
   // this stub returns the same shape it would, so this path is checked for what it actually
   // does with that answer (pin it as-is) rather than for resolveImageDigest's own logic,
   // which runtime-image-identity.check.ts covers directly.

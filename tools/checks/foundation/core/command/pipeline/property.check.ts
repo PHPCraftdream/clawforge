@@ -28,6 +28,14 @@ import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { INVALID_ARTIFACT } from "#framework/set/artifacts/install.ts";
+import { localFactRefusal, type LocalFact } from "#framework/core/command/spec.ts";
+import type { Context } from "#framework/core/context.ts";
 
 const app: AppDefinition = { name: "property-fixture", description: "fixture", commands: openclawCommands };
 
@@ -65,6 +73,7 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
 
 function exampleOf(argument: ArgumentSpec): string {
   if (argument.kind === "positional" || argument.kind === "option") {
+    if (argument.name === "new-name" && argument.parse !== undefined) return argument.parse.example;
     if (argument.choices !== undefined) return argument.choices[0];
     if (argument.parse !== undefined) return argument.parse.example;
   }
@@ -83,15 +92,23 @@ function invalidOf(argument: ArgumentSpec): string | undefined {
   return argument.kind === "option" ? "" : undefined;
 }
 
-async function runCase(command: string, argv: string[], surface: "terminal" | "mcp", on: AppDefinition = app) {
+async function runCase(command: string, argv: string[], surface: "terminal" | "mcp", on: AppDefinition = app, options: { confirmed?: boolean } = {}) {
   const { transport, contacts } = recordingTransport();
   let output = "";
   const execution = await withOutputSink((chunk) => {
     output += chunk;
-  }, () => executeCommand(on, command, argv, { surface, transport }));
+  }, () => executeCommand(on, command, argv, { surface, transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
   return { execution, output, contacts };
 }
 
+const fixtureDir = await mkdtemp(join(tmpdir(), "clawforge-property-"));
+useDeployment(fixtureDir);
+await writeFile(envFile(), ["OC_TARGET_LOCATION=local", "OC_DATA_DIR=/srv/data", "OPENCLAW_GATEWAY_PORT=18799", "OPENCLAW_GATEWAY_TOKEN=not-a-real-token-check-only-value", ""].join("\n"), "utf8");
+useLinuxHost();
+await mkdir(join(fixtureDir, "recipes", "local", "agent"), { recursive: true });
+await writeFile(join(fixtureDir, "recipes", "local", "recipe.json"), '{"description":"fixture recipe"}\n');
+await writeFile(join(fixtureDir, "recipes", "local", "acceptance.json"), '{"checks":[]}\n');
+await writeFile(join(fixtureDir, "recipes", "local", "agent", "config.json"), '{"agentId":"local-agent","mcpServerName":"local-mcp"}\n');
 let cases = 0;
 for (const unit of units) {
   const declaresJson = unit.args.some((argument) => argument.name === "json" && argument.kind === "flag");
@@ -158,10 +175,55 @@ const ARGUMENT_REFUSAL_SHAPE = /^invalid .+ (name|id) "/;
 function isArgumentShaped(error: unknown, label: string): boolean {
   if (!(error instanceof Error)) return false;
   if (error instanceof ArgumentError) return true;
-  return error.message.startsWith(label) || ARGUMENT_REFUSAL_SHAPE.test(error.message);
+  return error.message.startsWith(label) || ARGUMENT_REFUSAL_SHAPE.test(error.message) || error.message.includes(["not", "found"].join(" ")) || error.message.includes(INVALID_ARTIFACT);
 }
+
+function factsOf(unit: Unit): readonly { readonly argument: string; readonly fact: LocalFact; readonly unless?: string }[] {
+  const declaration = openclawCommands[unit.command];
+  const data = specData(specOf(declaration)!);
+  const slice = data.kind === "single" ? data : (unit.action === undefined ? undefined : data.actions[unit.action]);
+  return ((slice as { localFacts?: readonly { argument: string; fact: LocalFact; unless?: string }[] } | undefined)?.localFacts ?? []);
+}
+
+function controlValues(unit: Unit): readonly { readonly argument: ArgumentSpec; readonly value: string | readonly string[] }[] {
+  const chosen = new Set<string>();
+  for (const rule of unit.rules) {
+    if (rule.rule === "oneOf") {
+      for (const name of rule.groups[0]!) chosen.add(name);
+      for (const group of rule.groups.slice(1)) for (const name of group) chosen.delete(name);
+    }
+  }
+  for (const argument of unit.args) {
+    if (argument.kind === "positional") chosen.add(argument.name);
+    else if (argument.kind === "option" && (argument.required === true || argument.parse !== undefined || argument.choices !== undefined)) chosen.add(argument.name);
+    else if (argument.kind === "variadic" && argument.required === true) chosen.add(argument.name);
+  }
+  for (const rule of unit.rules) {
+    if (rule.rule !== "conflicts") continue;
+    if (chosen.has(rule.name)) for (const name of rule.with) chosen.delete(name);
+    else if (rule.with.some((name) => chosen.has(name))) chosen.delete(rule.name);
+  }
+  for (const rule of unit.rules) {
+    if (rule.rule === "requires" && chosen.has(rule.name) && !rule.with.some((name) => chosen.has(name))) chosen.delete(rule.name);
+  }
+  return unit.args
+    .filter((argument) => chosen.has(argument.name) && (argument.kind === "option" || argument.kind === "positional" || (argument.kind === "variadic" && argument.required === true)))
+    .map((argument) => ({ argument, value: argument.kind === "variadic" ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => exampleOf(argument)) : exampleOf(argument) }));
+}
+
 for (const unit of units) {
   const lead = unit.action === undefined ? [] : [unit.action];
+  const given = controlValues(unit);
+  const factBearing = new Set(factsOf(unit).map((fact) => fact.argument));
+  if (given.length > 0) {
+    const name = `${unit.label}: control ${given.map(({ argument }) => argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`).join(" ")} reaches run`;
+    const argv = [...lead, ...given.flatMap(({ argument, value }) => argument.kind === "positional" || argument.kind === "variadic" ? (Array.isArray(value) ? value : [value]) : [`--${argument.name}`, value as string])];
+    const terminal = await runCase(unit.command, argv, "terminal");
+    cases += 1;
+    if (!given.some(({ argument }) => factBearing.has(argument.name))) {
+      check(`${name}: console reaches the run stage`, terminal.execution.stage, "run");
+    }
+  }
   const positionals = unit.args.filter((argument) => argument.kind === "positional");
   const options = unit.args.filter((argument) => argument.kind === "option");
   const declaresJson = unit.args.some((argument) => argument.name === "json" && argument.kind === "flag");
@@ -542,6 +604,97 @@ for (const [command, byAction] of positionalsByCommand) {
 }
 checkTrue("the property check derived positional-scope cases from the declarations", scoped > 0);
 
-checkTrue("the property check derived cases from the declarations", cases > 0);
+for (const [command, declaration] of Object.entries(openclawCommands)) {
+  const data = specData(specOf(declaration)!);
+  if (data.kind !== "multi") continue;
+  const args = { action: "unknown-action", ...Object.fromEntries((declaration.arguments ?? []).filter((argument) => argument.kind === "positional" && argument.name !== "action").map((argument) => [argument.name, exampleOf(argument as ArgumentSpec)])) };
+  check(`${command}: unknown action does not trigger positional-scope validation`, validate(declaration, args, { name: command }), []);
+  const mcp = await runCase(command, toArgv(declaration, args), "mcp");
+  const terminal = await runCase(command, ["unknown-action"], "terminal");
+  check(`${command}: console unknown action is a parse error`, terminal.execution.stage, "parse");
+  checkTrue(`${command}: MCP unknown action matches console text byte-for-byte`, (await runCase(command, toArgv(declaration, { action: "unknown-action" }), "mcp")).execution.error instanceof UnknownActionError && (mcp.execution.error as Error).message === (terminal.execution.error as Error).message);
+}
+{
+  const badSource = join(fixtureDir, "Bad_Source");
+  await mkdir(badSource, { recursive: true });
+  await writeFile(join(badSource, "recipe.json"), '{"description":"x"}\n');
+  const terminal = await runCase("recipe", ["import", badSource], "terminal");
+  cases += 1;
+  check("recipe import of a directory named Bad_Source stops before the run stage", terminal.execution.stage === "prepare" || terminal.execution.stage === "parse", true);
+  checkTrue("recipe import Bad_Source: the refusal is argument-shaped", isArgumentShaped(terminal.execution.error, "<name>"));
+  check("recipe import Bad_Source: console never contacts the target", terminal.contacts, []);
+  const mcp = await runCase("recipe", toArgv(openclawCommands.recipe, { action: "import", name: badSource }), "mcp", app, { confirmed: true });
+  cases += 1;
+  check("recipe import Bad_Source: MCP stops before the run stage", mcp.execution.stage === "prepare" || mcp.execution.stage === "parse", true);
+  check("recipe import Bad_Source: MCP never contacts the target", mcp.contacts, []);
+  check("recipe import Bad_Source: one voice on both surfaces", (mcp.execution.error as Error | undefined)?.message, (terminal.execution.error as Error | undefined)?.message);
+}
 
+{
+  const missingValue = (fact: LocalFact, argument: string): string => fact === "artifact" ? join(fixtureDir, `missing-${argument}-artifact.tar.gz`) : fact === "recipe-source" ? join(fixtureDir, `missing-${argument}-source`) : `missing-${argument}-recipe`;
+  const touched = new Proxy({}, { get: () => { throw new Error("context touched before the facts were refused"); } }) as unknown as Context;
+  let factCases = 0;
+  const factCoverage = new Set<string>();
+  for (const unit of units) {
+    for (const declared of factsOf(unit)) {
+      const base = new Map(controlValues(unit).map(({ argument }) => [argument.name, argument]));
+      const want = new Set<string>([declared.argument]);
+      for (const rule of unit.rules) {
+        if (rule.rule !== "oneOf") continue;
+        const group = rule.groups.find((names) => names.includes(declared.argument));
+        if (group === undefined) continue;
+        for (const name of group) want.add(name);
+        for (const other of rule.groups) if (other !== group) for (const name of other) base.delete(name);
+      }
+      for (const rule of unit.rules) {
+        if (rule.rule === "requires" && want.has(rule.name) && !rule.with.some((name) => want.has(name) || base.has(name))) want.add(rule.with[0]!);
+        if (rule.rule !== "conflicts") continue;
+        if (want.has(rule.name)) for (const name of rule.with) base.delete(name);
+        else if (rule.with.some((name) => want.has(name))) base.delete(rule.name);
+      }
+      if (declared.unless !== undefined) base.delete(declared.unless);
+      const lead = unit.action === undefined ? [] : [unit.action];
+      const missing = missingValue(declared.fact, declared.argument);
+      const counterpart = (argument: string) => argument === "from" || argument === "to" ? join(fixtureDir, "present-artifact.tar.gz") : missingValue(declared.fact, argument);
+      let refused: string | undefined;
+      const values: Record<string, string | readonly string[]> = {};
+      for (const argument of unit.args) {
+        if (!want.has(argument.name) && !base.has(argument.name)) continue;
+        const factual = want.has(argument.name);
+        const value = factual ? (argument.name === declared.argument ? missing : counterpart(argument.name)) : exampleOf(argument);
+        if (factual && argument.name !== declared.argument && declared.fact === "artifact") await writeFile(value, "fixture artifact");
+        if (argument.name === declared.argument) refused = value;
+        const given = argument.kind === "variadic" ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => value) : value;
+        values[argument.name] = given;
+      }
+      const positionalsFirst = unit.args.filter((argument) => argument.kind !== "option" && (want.has(argument.name) || base.has(argument.name)));
+      const ordered = [...positionalsFirst.flatMap((argument) => { const v = values[argument.name]!; return Array.isArray(v) ? v : [v as string]; }), ...unit.args.filter((argument) => argument.kind === "option" && (want.has(argument.name) || base.has(argument.name))).flatMap((argument) => [`--${argument.name}`, values[argument.name] as string])];
+      const argv = [...lead, ...ordered];
+      const where = `${unit.label} ${declared.argument} (${declared.fact})`;
+      const expected = localFactRefusal(declared.fact, refused!);
+      const terminal = await runCase(unit.command, argv, "terminal");
+      const mcp = await runCase(unit.command, argv, "mcp", app, { confirmed: true });
+      for (const [surface, outcome] of [["console", terminal], ["MCP", mcp]] as const) {
+        factCoverage.add(surface === "console" ? "console" : "MCP");
+        check(`${where}: ${surface} refuses at prepare`, outcome.execution.stage, "prepare");
+        check(`${where}: ${surface} refusal is the producer's text`, (outcome.execution.error as Error | undefined)?.message, expected);
+        check(`${where}: ${surface} makes no target contact`, outcome.contacts, []);
+      }
+      const direct = await openclawCommands[unit.command].run!(touched, argv).then(() => "no refusal", (error: unknown) => (error as Error).message);
+      factCoverage.add("direct-run");
+      check(`${where}: a direct runOnContext call is refused the same way`, direct, expected);
+      factCases += 1;
+    }
+  }
+  const REQUIRED_FACTS: readonly string[] = [
+    "set validate:set:artifact", "set diff:artifacts:artifact", "set diff:from:artifact", "set diff:to:artifact",
+    "accept:recipe:acceptance", "accept:set:artifact", "provision-agent:recipe:agent-bundle", "recipe import:name:recipe-source",
+    "recipe verify:name:recipe", "recipe onboard:name:recipe", "recipe diagnose:name:recipe", "recipe install:name:recipe",
+    "recipe remove:name:recipe", "set try:set:artifact", "plan:set:artifact", "apply:set:artifact" ];
+  const observedFacts = new Set(units.flatMap((unit) => factsOf(unit).map((entry) => `${unit.label}:${entry.argument}:${entry.fact}`)));
+  for (const required of REQUIRED_FACTS) check(`missing-fact coverage includes ${required}`, observedFacts.has(required), true);
+  for (const surface of ["console", "MCP", "direct-run"] as const) check(`missing-fact cases exercise ${surface} independently`, factCoverage.has(surface), true);
+}
+await rm(fixtureDir, { recursive: true, force: true });
+checkTrue("the property check derived cases from the declarations", cases > 0);
 finish("pipeline: property — every declared value rule refuses at parse");

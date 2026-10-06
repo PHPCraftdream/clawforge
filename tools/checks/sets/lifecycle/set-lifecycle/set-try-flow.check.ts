@@ -1,8 +1,7 @@
 // runSetTry() driven from a real built artifact: success, a pull failure, a teardown failure
 // and --keep, each leaving its own acceptance-evidence receipt. Split out of
-// set-lifecycle.check.ts; see fixture.ts for the shared transport/context. Self-contained —
-// builds its own artifact rather than reusing another file's, since none of these scenarios
-// care about the artifact's specific declared content, only that it is a valid set.
+// set-lifecycle.check.ts; see fixture.ts for the shared transport/context. The retained
+// The retained output is pinned as plain user-facing text, including its actionable teardown note.
 
 import assert from "node:assert/strict";
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
@@ -10,12 +9,14 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { runSetTry } from "#framework/commands/sets/set-try.ts";
-import { deploymentDir, envFile } from "#framework/runtime/deployment.ts";
+import { deploymentDir, envFile, composeProjectName, useDeployment } from "#framework/runtime/deployment.ts";
 import { setSourceDir } from "#framework/set/artifacts/source.ts";
 import { listReceipts } from "#framework/set/artifacts/receipt.ts";
 import { parseEnv, serializeEnvLine } from "#framework/core/env.ts";
 import { createFixture } from "./fixture.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
+import { targetSiblingRoot } from "#framework/commands/sets/set-try-env.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 const fixture = await createFixture();
 const { root, sourceData, files, events, writeContents, ctx } = fixture;
@@ -38,6 +39,8 @@ try {
     serializeEnvLine("LOCAL_ONLY", localValue),
     "",
   ].join("\n"));
+  const liveSecretsPath = `${sourceData}/config/.env`;
+
   const privateDirectories: string[] = [];
   const privateFiles: string[] = [];
 
@@ -55,6 +58,18 @@ try {
       return fixture.context(parseEnv(await readFile(envFile(), "utf8")));
     },
   };
+  // A fresh fixture/process has not completed a successful set try: local secret values
+  // must already be registered when the very first target read fails.
+  const originalReadFile = ctx.transport.readFile.bind(ctx.transport);
+  (ctx.transport as { readFile: typeof originalReadFile }).readFile = async (path) => {
+    if (path === liveSecretsPath) throw new Error(`synthetic read failure: ${staleValue}`);
+    return originalReadFile(path);
+  };
+  const firstReadFailure = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
+  assert.notEqual(firstReadFailure.error, undefined, "the failed target read is reported");
+  assert.equal(firstReadFailure.error?.message.includes(staleValue), false, "local secret is masked on the first failed target read");
+  (ctx.transport as { readFile: typeof originalReadFile }).readFile = originalReadFile;
+
   fixture.state.running = false;
   const tried = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
   assert.equal(tried.error, undefined, tried.error?.message);
@@ -91,7 +106,6 @@ try {
     "key values must arrive at config/.env by a rename from their staging path",
   );
 
-  const originalReadFile = ctx.transport.readFile.bind(ctx.transport);
   // A missing artifact is unpacked and verified before the target is contacted: a typo
   // path costs no round trip of secret values, and its refusal is the artifact refusal.
   const typo = join(root, "no-such-set.tar.gz");
@@ -106,7 +120,6 @@ try {
   assert.match(typoRefusal.error?.message ?? "", /is not a valid set artifact/);
   assert.equal(contacts, 0, "a missing artifact is refused before the target is contacted");
 
-  const liveSecretsPath = `${sourceData}/config/.env`;
   for (const code of ["EACCES", "EIO", "ETIMEDOUT", "ENOENT"]) {
     const protectedBefore: number = privateDirectories.length;
     const eventsBefore = events.length;
@@ -168,8 +181,36 @@ try {
   assert.match(badImage.error?.message ?? "", /SET_IMAGE_INVALID/);
   assert.equal(privateDirectories.length, protectedBeforeBadImage, "an invalid image cannot create a trial");
   assert.equal(events.length, eventsBeforeBadImage, "an invalid image cannot mutate target state");
-  const kept = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: true, jsonOnly: true }, dependencies));
-  assert.equal(kept.error, undefined, kept.error?.message);
+  let retainedOutput = "";
+  let retainedMachine = "";
+  let retainedError: unknown;
+  try {
+    await withOutputSink(
+      (chunk) => { retainedOutput += chunk; },
+      () => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: true, jsonOnly: false }, dependencies),
+      (chunk) => { retainedMachine += chunk; },
+    );
+  } catch (error) {
+    retainedError = error;
+  }
+  const kept = { output: retainedMachine || retainedOutput, error: retainedError };
+  assert.equal(kept.error, undefined, (kept.error as Error | undefined)?.message);
+  const retainedDir = fixture.state.lastTryDir;
+  // runSetTry restores the active deployment before returning; read the Compose identity
+  // while the retained deployment is selected, matching the product's info() call scope.
+  useDeployment(retainedDir);
+  const composeProject = composeProjectName();
+  useDeployment(root);
+  const dataRoot = targetSiblingRoot("/tmp/openclaw/data", composeProject);
+  const retainedLines = retainedOutput.split("\n");
+  assert.deepEqual(
+    retainedLines.filter((line) => line.includes(retainedDir)),
+    [
+      `    deployment retained at ${retainedDir} (compose project ${composeProject}); the gate cannot address a throwaway directory — stop its containers by hand when done,`,
+      `      then remove the data root ${dataRoot} and the directory ${retainedDir}`,
+    ],
+    JSON.stringify({ retainedLines, retainedDir, composeProject, dataRoot }),
+  );
   assert.ok(
     [...writeContents].some(([, content]) => parseEnv(content).WIKI_TOKEN === staleValue),
     "only a proven missing live file permits the local-store fallback",

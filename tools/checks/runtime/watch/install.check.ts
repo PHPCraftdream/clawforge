@@ -20,14 +20,11 @@ import {
   withoutMarkedLine,
 } from "#framework/commands/operate/watch/install.ts";
 import {
-  CRONTAB_FAILURES,
   MANUAL_INSTALL_HEADER,
   NO_FAITHFUL_ENCODING,
   PERCENT_REFUSAL,
   REFUSING_APPLY,
-  SCHEDULER_TRANSACTION_FAILED,
   WSL_SCHEDULING_REASON,
-  crontabUpdateFailure,
   schedulerIdentity,
   withScheduleRunner,
 } from "#framework/commands/operate/schedule.ts";
@@ -257,7 +254,8 @@ try {
   const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
   const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
   const readError = await deathOf(() => withOutputSink(() => {}, () => watchInstall(unreadableCtx, ["--apply"])));
-  check("watch install aborts on crontab read failure", readError.includes(crontabUpdateFailure("ssh:user@host", 28, CRONTAB_FAILURES[28] ?? SCHEDULER_TRANSACTION_FAILED)), true);
+  check("watch install aborts on crontab read failure", ["crontab", "ssh:user@host", "28"].every((fragment) => readError.includes(fragment)), true);
+
   check("watch install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
   check("watch install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 

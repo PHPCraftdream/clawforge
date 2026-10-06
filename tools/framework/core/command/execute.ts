@@ -10,7 +10,7 @@ import type { AppCommand, AppDefinition } from "#src/core/app.ts";
 import { callFacts, callFactsFor, legacyPreparesEnvironment, type CallFacts, type EffectShape } from "#src/core/command/effect.ts";
 import { ConfirmationRequiredError, UnknownArgumentError } from "#src/core/command/errors.ts";
 import { isVerbatim, parseCall, tokenize, type CallShape } from "#src/core/command/parse.ts";
-import { localScope, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
+import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { scopeByAction } from "#src/core/command/view.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError } from "#src/core/io/log.ts";
@@ -189,7 +189,8 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
     try {
       useApplicationRecipesDir(app.recipesDir);
       clearRecipesDir();
-      plan = phases.prepare === undefined ? call.values : await phases.prepare(call, localScope());
+      const slice = data.kind === "single" ? data : data.actions[call.action!];
+      plan = await preparedPlan(slice, call);
     } catch (error) {
       return failed("prepare", error, facts, shape, call.action, call.given.includes("json"));
     }

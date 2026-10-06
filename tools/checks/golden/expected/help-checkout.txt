@@ -144,7 +144,7 @@
       --no-pull              Use the image already present locally
       --check                Read-only prerequisite report — no lock, no mutation
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
     
     Fixed order, each step paid for in debugging: .env and the gateway token first (compose interpolates them), then data directories owned by uid 1000, the image, baseline config (or the gateway crash-loops on "Missing config"), the provider from config/.env, this deployment's desired-state.json, a secrets preflight, and only then start.
@@ -155,7 +155,7 @@
 ==> up — Start the service and wait until it serves
     Usage: ./clawforge up [--break-lock] [--break-foreign-lock <hostId>]
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
     Checks secrets and the gateway port before starting, not after —
     a missing SecretRef or a port already held by another deployment otherwise surfaces as a crash-loop with the real reason buried in the container log.
@@ -165,7 +165,7 @@
 ==> restart — Restart the instance so it re-reads its configuration
     Usage: ./clawforge restart [--break-lock] [--break-foreign-lock <hostId>]
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
     `up` cannot do this: it converges on "running", and an instance that is already running and healthy is already converged — an edit to openclaw.json inside a bind mount changes nothing the runtime compares.
     That is why apply-config and configure-provider point here: their changes only take effect on the next start of the gateway process.
@@ -176,7 +176,7 @@
 ==> down — Stop and remove the containers (data is kept)
     Usage: ./clawforge down [--break-lock] [--break-foreign-lock <hostId>]
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
     Data lives in host bind mounts, not in runtime-managed volumes, so this never touches it.
 
@@ -189,7 +189,7 @@
       --yes                  Perform the removal instead of a dry run
       --confirm-name <name>  Confirms the deployment's own name
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --yes requires --confirm-name
     
     The inverse of bootstrap. Always stops and removes the compose project's containers, network and volumes (down, plus volumes) — nothing else goes without its own flag:
@@ -229,7 +229,7 @@
       --apply                Apply the action instead of only previewing it (delete, or install/uninstall the schedule) (prune-replaced, install, uninstall)
       --keep <n>             Keep this many newest copies instead of deleting all of them (prune-replaced)
       --break-lock           Take over the instance lock held by another operation (prune-replaced, install, uninstall)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (prune-replaced, install, uninstall)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (prune-replaced, install, uninstall)
       --interval <interval>  how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day (install)
     
     With no action: stops the gateway for the duration by default — OpenClaw keeps state in SQLite with a multi-megabyte -wal sibling, and a copy taken mid-write is not restorable.
@@ -256,7 +256,7 @@
       <archive>              Path to the archive; newest if omitted
       --force                Skip the confirmation prompt
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --fresh-identity       Drop identity and paired devices (cloning, not moving)
       --no-start             Leave the service stopped afterwards
       --dry-run              Show what would happen without touching the target
@@ -281,7 +281,7 @@
       --migrate              Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary
       --hot                  Do not stop the service (risks a partial write)
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
     
     Defaults to migrate, unlike `backup`, which defaults to full: moving an instance's state should not silently also hand over provider keys.
@@ -299,7 +299,7 @@
       <archive>              Snapshot to push; newest if omitted
       --force                Skip the confirmation prompt
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --fresh-identity       Drop identity and paired devices (cloning, not moving)
       --dry-run              Show what would happen without touching the target
       --json                 Emit the outcome as JSON
@@ -332,7 +332,7 @@
       --dry-run              Print the plan without changing anything
       --json                 Emit the outcome as JSON
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
     Resolves the target (--image <ref>, or the deployment's own OPENCLAW_IMAGE) to a digest and pulls that digest specifically — a shared tag another deployment on the same Docker may also use never moves.
     A tag is re-resolved at the registry every run — that includes OPENCLAW_IMAGE once it is already pinned to repo:tag@sha256:…, so upgrade with no --image still checks whether the tracked tag has moved instead of comparing the pin to itself and always finding nothing to do.
@@ -418,7 +418,7 @@
       --expect <checksum>    Declaration checksum the plan was computed against
       --dry-run              Show the steps without running any of them
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
     
     Runs exactly the steps `./clawforge plan` lists, in that order, and stops at the first failure — the steps depend on each other, so continuing would report success for an instance nobody has. Every step lands in the operation journal as done, failed, advisory (never this command's job) or blocked (an earlier step already failed) — the words `./clawforge operations` reads back, nothing left out.
@@ -456,10 +456,10 @@
       --no-restart           Restore the file without restarting the instance
       --previous-set         Reinstall the previously installed set instead of restoring one config file
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
       --dry-run              Show what would happen without touching anything
-      --previous-set cannot be combined with --operation and --no-restart
+      --previous-set cannot be combined with any of --operation or --no-restart
     
     `./clawforge apply` copies the live configuration aside before its first mutating step. This puts that copy back and restarts, because a configuration the instance has not read is not in force.
     Not the same operation as `./clawforge push`, and the difference matters at exactly the wrong moment: push replaces the whole data directory from a snapshot — every workspace, every agent's memory, every transcript written since. This replaces one file. Undoing a bad configuration should not cost an agent its notes.
@@ -493,14 +493,14 @@
       --dump                 Reconstruct desired-state.json from the live instance's config
       --force                Overwrite an existing desired-state.json (with --dump); refused without it
       --break-lock           Take over the instance lock held by another operation (real apply only)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
-      --dry-run cannot be combined with --dump
-      --dry-run cannot be combined with --force
-      --break-lock cannot be combined with --dump
-      --break-foreign-lock cannot be combined with --dump
-      --break-lock cannot be combined with --dry-run
-      --break-foreign-lock cannot be combined with --dry-run
+      --dry-run cannot be combined with any of --dump
+      --dry-run cannot be combined with any of --force
+      --break-lock cannot be combined with any of --dump
+      --break-foreign-lock cannot be combined with any of --dump
+      --break-lock cannot be combined with any of --dry-run
+      --break-foreign-lock cannot be combined with any of --dry-run
       --force requires --dump
     
     The declaration in config/desired-state.json is the source of truth:
@@ -523,7 +523,7 @@
       --run                  open the tunnel in the foreground until Ctrl+C; needs a real terminal (ssh)
       --apply                run the printed `tailscale serve` command on the target instead of only printing it (tailscale)
       --break-lock           Take over the instance lock held by another operation (tailscale)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (tailscale)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (tailscale)
       --json                 Emit the exposure and tailscale report as JSON (status)
     
     Three actions, narrowest scope first.
@@ -544,7 +544,7 @@
       --interval <interval>  time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24) (install)
       --apply                mutate the target's crontab instead of only printing it (install, uninstall)
       --break-lock           Take over the instance lock held by another operation (install, uninstall)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (install, uninstall)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (install, uninstall)
     
     Five actions.
     check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real but not about whether the instance is serving),
@@ -592,7 +592,7 @@
       --tail <n>             Lines of log to collect (default 500)
       --json                 Emit the report as JSON
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
     OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the `tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, which would also drop every other service's own route on that host);
     when the route shape cannot be parsed reliably, nothing is turned off and the exact manual command is printed instead.
@@ -715,7 +715,7 @@
       --env <var>            Secret variable, for example OPENAI_API_KEY
       --force                Replace an existing provider SecretRef
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
     
     Provider ids come from models.providers/auth.profiles. A populated <ID>_API_KEY entry in target config/.env opts into a new provider; --env selects a different variable and explicit models.providers.<id>.apiKey SecretRefs are preserved. Keys never enter openclaw.json. --provider and --env make any provider convention explicit.
@@ -730,13 +730,13 @@
       --dump                 Recover a local store from the running instance
       --store <name>         Store name, e.g. local or prod
       --force                Replace an existing store (with --init-store or --dump)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the default read-only report as JSON (names/state/where-found only, never values) — refused with --template/--print-template/--init-store/--apply/--dump
       --break-foreign-lock requires --apply
       --store requires --init-store, --apply or --dump
       --force requires --init-store or --dump
-      --print-template cannot be combined with --template and --init-store and --apply and --dump
-      --json cannot be combined with --template and --print-template and --init-store and --apply and --dump
+      --print-template cannot be combined with any of --template, --init-store, --apply or --dump
+      --json cannot be combined with any of --template, --print-template, --init-store, --apply or --dump
     
     The manifest comes from two sources, not one: explicit SecretRefs in openclaw.json,
     plus the conventional key each configured provider expects but never references directly (scanning the config alone misses the provider key entirely).
@@ -763,7 +763,7 @@
       --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
       --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, remove)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (verify, onboard, diagnose, install, remove)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, remove)
       --tail <n>             lines to return per service (diagnose, logs)
       --force-disabled       build a recipe marked disabled (install)
       --dry-run              show what would happen (install, remove)
@@ -796,7 +796,7 @@
     Usage: ./clawforge provision-agent <recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]
       <recipe>               Recipe name under recipes/ (required)
       --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Emit the outcome as JSON
     
     A scope upgrade never starts a model turn implicitly; use accept or set try with --with-model when you explicitly authorize the exact request.
@@ -873,7 +873,7 @@
       --keep                 keep the throwaway instance running instead of removing it (try)
       --kind <kind>          agent, mcp-server, or cron-job (forget) [agent|mcp-server|cron-job]
       --break-lock           Take over the instance lock held by another operation (forget)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (forget)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (forget)
       diff: <artifacts…> or --from and --to (one required)
       receipts: --receipt requires --set-id
     

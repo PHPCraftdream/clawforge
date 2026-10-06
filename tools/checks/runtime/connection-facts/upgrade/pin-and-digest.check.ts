@@ -10,7 +10,7 @@ import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { parseEnv } from "#framework/core/env.ts";
-import { DATA_DIR, SHARED_TAG, PREVIOUS_DIGEST, PINNED_WITH_TAG, PINNED_NO_TAG, makeUpgradeCtx, loggedCall } from "./stub.ts";
+import { DATA_DIR, SHARED_TAG, TARGET_DIGEST, PREVIOUS_DIGEST, PINNED_WITH_TAG, PINNED_NO_TAG, makeUpgradeCtx, loggedCall } from "./stub.ts";
 import { invalidImageReference } from "#framework/runtime/docker/image-ref.ts";
 import { UPGRADE_AVAILABLE, pinAdviceLine, settingsImageRefusal } from "#framework/commands/lifecycle/instance/upgrade.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -63,7 +63,19 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   check("recreate, .env pin and pinnedImage are one value on the tag path", calls.includes(recreateCall) && report.pinnedImage === pin, true);
 }
 
-// dry-run names the true pin in its plan
+// Explicit tagless digest through JSON dry-run, starting with a tagged .env pin: reports must
+// retain the repository's channel tag rather than publishing target.targetDigest bare.
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
+  const { ctx } = makeUpgradeCtx("success", { image: SHARED_TAG });
+  let outcome = "";
+  await withOutputSink((chunk) => { outcome += chunk; }, async () => {
+    await openclawCommands.upgrade.run(ctx, ["--dry-run", "--image", TARGET_DIGEST, "--json"]);
+  });
+  const report = JSON.parse(outcome) as { pinnedImage?: string };
+  check("JSON dry-run of a tagless tracked-repo digest retains the channel tag", report.pinnedImage, `${SHARED_TAG}@${TARGET_DIGEST.split("@")[1]}`);
+  check("JSON dry-run targets the reported pin rather than a digest-only target", report.pinnedImage === `${SHARED_TAG}@${TARGET_DIGEST.split("@")[1]}` && report.pinnedImage !== TARGET_DIGEST, true);
+}
 
 {
   await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
@@ -75,7 +87,6 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   check("the dry-run plan pins the tagged reference, not the bare digest", outcome.includes(pinAdviceLine(PINNED_WITH_TAG)), true);
 }
 
-// --- rollback over a bare-tag .env: recreate and pin are one string -------------------------
 
 {
   await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);

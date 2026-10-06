@@ -60,24 +60,24 @@ export const WATCH_INSTALL_ARGUMENTS = [
   },
   {
     name: "apply",
-    summary: "mutate the target's crontab instead of only printing it",
+    summary: "Change target crontab, not just print",
     description: "With install/uninstall: mutate the target's crontab instead of only printing it",
     kind: "flag",
     effect: "destroy",
   },
-  ...LOCK_TAKEOVER_ARGUMENTS,
+  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The slice `uninstall` uses — no --interval, since there is no schedule to set. */
 export const WATCH_UNINSTALL_ARGUMENTS = [
   {
     name: "apply",
-    summary: "mutate the target's crontab instead of only printing it",
+    summary: "Change target crontab, not just print",
     description: "With install/uninstall: mutate the target's crontab instead of only printing it",
     kind: "flag",
     effect: "destroy",
   },
-  ...LOCK_TAKEOVER_ARGUMENTS,
+  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
 ] as const satisfies readonly ArgumentSpec[];
 
 export function watchMarker(name: string): string {
@@ -134,7 +134,7 @@ async function runInstall(ctx: Context, values: Values<typeof WATCH_INSTALL_ARGU
 
 /** The `watch install` action. */
 export const WATCH_INSTALL = defineAction({
-  summary: "Print (or, with --apply, install) the watch crontab entry",
+  summary: "Print or install the watch cron entry",
   arguments: WATCH_INSTALL_ARGUMENTS,
   run: runInstall,
 });
@@ -179,7 +179,7 @@ async function runUninstall(ctx: Context, values: Values<typeof WATCH_UNINSTALL_
 
 /** The `watch uninstall` action. */
 export const WATCH_UNINSTALL = defineAction({
-  summary: "Print (or, with --apply, remove) the watch crontab entry",
+  summary: "Print or remove the watch cron entry",
   arguments: WATCH_UNINSTALL_ARGUMENTS,
   run: runUninstall,
 });

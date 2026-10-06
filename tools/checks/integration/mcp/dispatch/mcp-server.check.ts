@@ -71,6 +71,7 @@ try {
   await mkdir(importSource, { recursive: true });
   await writeFile(resolve(importSource, "recipe.json"), JSON.stringify({ description: "Import probe" }), "utf8");
   lines.push(JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "recipe", arguments: { action: "import", name: importSource, confirm: true } } }));
+  lines.push(JSON.stringify({ jsonrpc: "2.0", id: 12, method: "tools/call", params: { name: "apply", arguments: { set: resolve(importSource, "missing-artifact"), confirm: true } } }));
 
   const result = await runServer(deploymentName, lines.join("\n"));
   const responses = result.stdout
@@ -118,6 +119,10 @@ try {
   check("recipe import answers in the declared envelope", imported?.structuredContent !== undefined, true);
   check("recipe import reports that it changed something", imported?.structuredContent?.changed, true);
   check("recipe import keeps its own text beside the envelope", String(imported?.content?.[0]?.text ?? "").includes(IMPORT_NOTE), true);
+
+  const applyFailure = responses.find((r) => r.id === 12)?.result as { isError?: boolean; structuredContent?: { changed?: boolean } } | undefined;
+  check("apply missing artifact is a tool error", applyFailure?.isError, true);
+  check("apply failure before run reports changed false", applyFailure?.structuredContent?.changed, false);
 
   // --- structured results are declared, so a client knows the shape before calling -------
 

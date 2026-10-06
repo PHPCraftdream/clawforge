@@ -26,7 +26,7 @@ import type { StepStatus } from "#src/service/operations.ts";
 import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
-import { refuseMissingArtifact, withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
+import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
@@ -40,9 +40,9 @@ import { ValueError, type ValueParser } from "#src/core/values/value.ts";
 /** `--expect`'s grammar: the checksum `plan` printed with the plan. */
 function checksumValue(): ValueParser<string> {
   return {
-    expected: "a declaration checksum", example: "9f86d081", invalidExample: "",
+    expected: "a declaration checksum", example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", invalidExample: "nope",
     parse(raw) {
-      if (raw === "") throw new ValueError("needs a declaration checksum");
+      if (!/^[0-9a-f]{64}$/.test(raw)) throw new ValueError("takes a declaration checksum — 64 hexadecimal digits");
       return raw;
     },
   };
@@ -174,8 +174,8 @@ interface ApplyPlan {
 export const APPLY = commandBody({
   effect: "destroy",
   arguments: APPLY_ARGUMENTS,
-  prepare: async ({ values }, local) => {
-    if (values.set !== undefined) await refuseMissingArtifact(values.set, local.exists);
+  localFacts: [{ argument: "set", fact: "artifact" }],
+  prepare: async ({ values }) => {
     return {
       set: values.set,
       expect: values.expect,

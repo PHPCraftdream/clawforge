@@ -5,8 +5,8 @@
 
 import { bind, tokenize, ArgumentError } from "#framework/core/command/index.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
-import { countValue, nameValue, nonEmptyValue, portValue, regexValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
-import { invalidNameMessage, safeName } from "#framework/core/values/names.ts";
+import { countValue, nameValue, newNameValue, nonEmptyValue, portValue, regexValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
+import { newName, reservedNameMessage, safeName } from "#framework/core/values/names.ts";
 import { sinceValue } from "#framework/core/values/durations.ts";
 import { scheduleIntervalValue } from "#framework/commands/operate/schedule.ts";
 import { imageRefValue } from "#framework/runtime/docker/image-ref.ts";
@@ -136,18 +136,34 @@ for (const raw of ["6", "abc", "7m"]) {
   check(`backup install --interval ${JSON.stringify(raw)}`, refusalOf(scheduleIntervalValue({ bareMinutes: false }), raw, "interval"), await printedBy(backupInstall, ["--interval", raw]));
 }
 
-// Windows reserves device names on every path segment whatever the directory: a name the
-// name pattern accepts but cmd and Git Bash cannot open or remove (R18).
+// Windows device names: refused when a name is MINTED (newName), accepted when one is READ
+// (safeName) — a deployment, record or artifact named before the device rule stays usable.
 for (const raw of ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"]) {
-  let refused: string | undefined;
+  let readBack: string | undefined;
   try {
-    safeName("recipe", raw);
-  } catch (error) {
-    refused = (error as Error).message;
+    readBack = safeName("recipe", raw);
+  } catch {
+    readBack = undefined;
   }
-  check(`name: the reserved device name "${raw}" is refused`, refused, invalidNameMessage("recipe", raw));
-  check(`name: the reserved device name "${raw}" is refused through the parser`, refusalOf(nameValue("recipe"), raw, "name")?.includes(`invalid recipe name "${raw}"`), true);
+  check(`name: the pre-rule name "${raw}" still reads`, readBack, raw);
+  let reserved: string | undefined;
+  try {
+    newName("recipe", raw);
+  } catch (error) {
+    reserved = (error as Error).message;
+  }
+  check(`new name: the reserved device name "${raw}" is refused`, reserved, reservedNameMessage("recipe", raw));
+  check(`new name: "${raw}" is refused through the parser`, refusalOf(newNameValue("recipe"), raw, "name", "positional")?.includes(`recipe name "${raw}" is reserved`), true);
 }
-checkTrue('name: a lookalike with a suffix is still fine', safeName("recipe", "con-course") === "con-course");
+check("name: aux is accepted for reading", safeName("recipe", "aux"), "aux");
+check("new name: con uses the reserved-name refusal", (() => {
+  try {
+    newName("recipe", "con");
+  } catch (error) {
+    return (error as Error).message;
+  }
+  return "accepted";
+})(), reservedNameMessage("recipe", "con"));
+checkTrue("name: a lookalike with a suffix is still fine", safeName("recipe", "con-course") === "con-course");
 
 finish("value parser");

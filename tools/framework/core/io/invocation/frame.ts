@@ -223,6 +223,35 @@ export function shimFrame(from: Frame, app?: string): Frame {
   };
 }
 
+/** The frame of the TARGET that executes stored text (design S1.5): cron entries, schtasks
+ *  command lines, completion Install headers, the committed shims. The launch is pasted at
+ *  its own ROOT — the root spelling, never the directory the operator happened to stand in —
+ *  for the one shell the stored text names (the frame's primary when it names none). A bare
+ *  Launch (a writer that knows only the launch it emits) becomes the target's own frame:
+ *  POSIX, no places. */
+export function targetFrame(target: Frame | Launch, shell?: Shell): Frame {
+  const f: Frame = "launch" in target ? target : {
+    launch: target,
+    host: { kind: "operator", platform: "posix" },
+    shells: ["posix"],
+    cwd: { kind: "unknown" },
+    places: {},
+    app: { state: "none" },
+    audience: "terminal",
+  };
+  // A launch with a root pastes there; a launch read back from a hand-over (root "") has
+  // only portable spellings, so the frame's own paste directory stays — the spelling
+  // ignores it either way, and the shell-named branch needs a from to re-spell through.
+  const root = (f.launch.kind === "checkout-shim" || f.launch.kind === "deployment-shim" || f.launch.kind === "npm-bin") && f.launch.root !== ""
+    ? f.launch.root
+    : f.cwd.kind === "dir" ? f.cwd.path : undefined;
+  return {
+    ...f,
+    shells: [shell ?? f.shells[0]],
+    cwd: root === undefined ? { kind: "unknown" } : { kind: "dir", path: root },
+  };
+}
+
 /** Frame → frame: the frame the place-naming sentences direct to. Without a known checkout
  *  root the frame is returned as is; a cwd-resolving deployment fact becomes a flag (from
  *  the root, the cwd no longer picks the deployment). Shells are kept — a launch with no

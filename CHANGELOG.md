@@ -6,6 +6,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Completion Install: lines are spelled from the target shell's own frame: a script generated from a checkout subdirectory stores `./clawforge`, never `../clawforge`, and the bash/zsh Install lines spell npm's wrapper with forward slashes even when the command ran under the Windows wrapper.
 * The checkout-subfolder refusal prints a `cd` line each shell accepts.
 * Advice naming another deployment, printed inside a deployment by the system-wide command, runs there instead of being refused as an `--app` conflict.
 * Local facts of arguments — a missing artifact or recipe, an import source's derived name — are refused before the deployment's target is read.

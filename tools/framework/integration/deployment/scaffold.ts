@@ -17,7 +17,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { log, info, die } from "../../core/io/log.ts";
 import { command } from "../../core/io/invocation/advice.ts";
-import { commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
+import { commandLine, renderAdvice } from "../../core/io/invocation/render.ts";
+import { targetFrame } from "../../core/io/invocation/frame.ts";
 import { appsRootFor, monorepoRoot, parseEnv, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
 import { newName, type DeploymentName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
@@ -25,6 +26,10 @@ import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/priva
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
+
+// The target frame of the committed shim stored text names (S1.5): the app.ts run-it
+// line spells the shim itself, never the directory the operator ran new-app from.
+const storedTarget = targetFrame({ kind: "checkout-shim", root: "" }, "posix");
 
 // Under the check-only apps root there is no checkout two levels up — the
 // declaration imports this checkout's framework by absolute file URL instead.
@@ -35,7 +40,7 @@ function declarationSpecifier(module: string): string {
   return JSON.stringify(`../../tools/framework/${module}`);
 }
 
-function declarationFor(name: string): string {
+export function declarationFor(name: string): string {
   const seam = process.env["CLAWFORGE_CHECKS_APPS_DIR"] !== undefined &&
     process.env["CLAWFORGE_CHECKS_APPS_DIR"] !== "";
   return `// The ${name} deployment.
@@ -43,7 +48,7 @@ function declarationFor(name: string): string {
 // Says which service this deployment manages and which framework commands it exposes.
 // Its configuration lives next to this file: .env, config/, secrets/, recipes/.
 //
-// Run it with:  ${renderAdvice(command(["status"], { app: name }), shimInvocation())}
+// Run it with:  ${renderAdvice(command(["status"], { app: name }), storedTarget)}
 ${seam ? `// Check-only root: this textual specifier marks the deployment as
 // checkout-sourced for importsCheckoutSourcesIn: import { defineApp } from "../../tools/framework/core/app.ts";
 ` : ""}

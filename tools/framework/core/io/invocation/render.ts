@@ -17,6 +17,7 @@ import {
   pasteShells,
   resolvesByCwd,
   spell,
+  targetFrame,
   SHIM_PROGRAM,
   toCheckoutRoot,
   WINDOWS_BIN_PROGRAM,
@@ -354,10 +355,11 @@ export function installLine(argv: readonly string[], shell: Shell): string {
 }
 
 /** installLine with the note STRUCTURED: the completion composers place the note after the
- *  whole composed header line, never inside the executable pipeline. Same frame derivation
- *  as renderAdvice on the current invocation — the spelling matches installLine exactly. */
+ *  whole composed header line, never inside the executable pipeline. The TARGET frame
+ *  (frame.ts) drives the spelling: a stored line spells from its launch's own root for the
+ *  shell that pastes it, never from wherever the run stood. */
 export function installLineParts(argv: readonly string[], shell: Shell): AdviceRowPart {
-  return renderAdviceParts(command(argv, { shell }), currentFrame(), undefined, invocation().program)[0]!;
+  return renderAdviceParts(command(argv, { shell }), targetFrame(currentFrame(), shell), undefined, invocation().program)[0]!;
 }
 
 /** The caller-less reads that remain (all inside core/io/invocation/**, frameReads = 0

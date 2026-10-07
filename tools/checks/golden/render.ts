@@ -291,11 +291,12 @@ export async function renderGolden(): Promise<Record<string, string>> {
     const responseLine = listed.stdout.split("\n").find((line) => line.trim() !== "");
     const response = responseLine === undefined ? undefined : JSON.parse(responseLine) as { result?: unknown };
     snapshots["mcp-tools-list.json"] = `${JSON.stringify(response?.result ?? {}, null, 2)}\n`;
-  } finally {
-    await apps.dispose();
-  }
 
   // --- completion scripts ---------------------------------------------------------------
+  //
+  // Still inside the isolated apps root: every gate spawn below (completion included)
+  // must run against the empty scratch apps root, so the root is disposed only after
+  // the last spawn, in the finally at the end of this render.
 
   const completionParts: string[] = [];
   for (const shell of COMPLETION_SHELLS) {
@@ -312,6 +313,10 @@ export async function renderGolden(): Promise<Record<string, string>> {
     await rm(emptyDir, { recursive: true, force: true });
   }
   snapshots["completion-scripts.txt"] = completionParts.join("");
+
+  } finally {
+    await apps.dispose();
+  }
 
   // --- advice matrix -------------------------------------------------------------------------
 

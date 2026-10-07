@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { posix, resolve } from "node:path";
 import { die, info, regexEscape } from "../../core/io/log.ts";
 import { SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
+import { handoverOf, targetFrame, type Frame } from "../../core/io/invocation/frame.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { NEAREST_VALID, parseInterval } from "../../core/values/durations.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
@@ -324,17 +325,34 @@ export async function installedShimExists(root: string): Promise<boolean> {
   );
 }
 
+/** The target frame of a scheduled job (design S1.5): the bash shim at the root the job
+ *  runs from, POSIX-only — the entry the crontab line and the schtasks /tr spell. A
+ *  checkout-rooted job runs the checkout's own shim there. */
+export function scheduledTargetFrame(root: string, checkout = false): Frame {
+  return targetFrame({ kind: checkout ? "checkout-shim" : "deployment-shim", root }, "posix");
+}
+
+/** The ScheduledInvocation a target frame stands for: spelled by the frame's handover,
+ *  pasted where the frame's cwd puts it. */
+export function scheduledInvocation(frame: Frame, args: readonly string[]): ScheduledInvocation {
+  return {
+    cwd: frame.cwd.kind === "dir" ? frame.cwd.path : "",
+    command: handoverOf(frame).program,
+    args: [...args],
+  };
+}
+
 /** Where and how a job runs once it IS scheduled on a POSIX target — see schedulingSupport's
  *  own reasoning for why this is only asked once that already said yes. */
 export async function posixTargetInvocation(ctx: Context, jobArgs: readonly string[]): Promise<ScheduledInvocation> {
   const name = deploymentName();
   if (ctx.transport.description.startsWith("ssh:")) {
-    return { cwd: ctx.settings.remotePath, command: SHIM_PROGRAM, args: ["--app", name, ...jobArgs] };
+    return scheduledInvocation(scheduledTargetFrame(ctx.settings.remotePath), ["--app", name, ...jobArgs]);
   }
   const installed = await installedShimExists(deploymentDir());
   return installed
-    ? { cwd: deploymentDir(), command: SHIM_PROGRAM, args: [...jobArgs] }
-    : { cwd: monorepoRoot, command: SHIM_PROGRAM, args: ["--app", name, ...jobArgs] };
+    ? scheduledInvocation(scheduledTargetFrame(deploymentDir()), [...jobArgs])
+    : scheduledInvocation(scheduledTargetFrame(monorepoRoot, true), ["--app", name, ...jobArgs]);
 }
 
 /** cron's own accepted range (cronSchedule), translated into schtasks' vocabulary: a bare
@@ -414,7 +432,11 @@ export async function printSchedulingInstructions(
   apply: boolean,
 ): Promise<boolean> {
   const installed = await installedShimExists(deploymentDir());
-  const entryHost = installed ? resolve(deploymentDir(), "clawforge") : resolve(monorepoRoot, "clawforge");
+  // The stored line is built from the TARGET frame (S1.5): the shim at the root the job
+  // runs from decides where the entry lives and how the stored text names it; the
+  // transport spells that same entry for its own shell.
+  const target = scheduledTargetFrame(installed ? deploymentDir() : monorepoRoot, !installed);
+  const entryHost = resolve(target.cwd.kind === "dir" ? target.cwd.path : monorepoRoot, "clawforge");
   const posixArgs = installed ? [...jobArgs] : ["--app", name, ...jobArgs];
   const entryTarget = await ctx.paths.toTarget(entryHost);
   const invocation = ctx.transport.clientInvocation(entryTarget, posixArgs);

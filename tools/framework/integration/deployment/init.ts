@@ -12,8 +12,9 @@
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
 import { frameworkPackage, frameworkRoot, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
-import { handoverJson, spell, type Launch } from "../../core/io/invocation/frame.ts";
-import { renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
+import { handoverOf, targetFrame, type Launch } from "../../core/io/invocation/frame.ts";
+import { serializeInvocation } from "../../core/io/invocation/index.ts";
+import { renderAdvice } from "../../core/io/invocation/render.ts";
 import { command } from "../../core/io/invocation/advice.ts";
 import { commandLine, SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import type { CommandArgument } from "../../core/app.ts";
@@ -26,13 +27,13 @@ import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
-function declarationFor(name: string): string {
+export function declarationFor(name: string): string {
   return `// This deployment.
 //
 // Says which service this deployment manages and which framework commands it exposes.
 // Its configuration lives next to this file: .env, config/, secrets/, recipes/.
 //
-// Run it with: ${renderAdvice(command(["status"]), shimInvocation())}
+// Run it with: ${renderAdvice(command(["status"]), SHIM_TARGET)}
 
 import { defineApp } from "@clawforge/framework/app";
 import { mountPoints } from "@clawforge/framework/mounts";
@@ -67,8 +68,9 @@ const DESIRED_STATE = `[
 // deployment shim the committed shim names, and its v1 JSON — one source, so the emitted
 // text stays byte-identical with every other writer's (decision O7).
 const SHIM_LAUNCH: Launch = { kind: "deployment-shim", root: "" };
-const SHIM_HANDOVER = handoverJson(SHIM_LAUNCH, "terminal");
-const SHIM_SPELLING = spell(SHIM_LAUNCH, "posix", "posix", undefined) ?? SHIM_PROGRAM;
+const SHIM_TARGET = targetFrame(SHIM_LAUNCH, "posix");
+const SHIM_HANDOVER = serializeInvocation(handoverOf(SHIM_TARGET));
+const SHIM_SPELLING = handoverOf(SHIM_TARGET).program;
 
 export const SHIM = `#!/usr/bin/env bash
 # Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
@@ -138,7 +140,8 @@ export MSYS2_ARG_CONV_EXCL="*"
 exec "$node_bin" --experimental-strip-types "$script_path" "$@"
 `;
 
-async function writeShim(root: string): Promise<void> {
+/** The committed shim file writer; the durable-output check drives it directly. */
+export async function writeShim(root: string): Promise<void> {
   const file = resolve(root, "clawforge");
   await writeFile(file, SHIM, "utf8");
   await chmod(file, 0o755);

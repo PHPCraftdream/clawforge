@@ -17,8 +17,7 @@ const script = `
   const { commandBody, materializeCommands } = await import(${JSON.stringify(moduleUrl("core/command/spec.ts"))});
   const { emit } = await import(${JSON.stringify(moduleUrl("core/io/output.ts"))});
   const { UserError } = await import(${JSON.stringify(moduleUrl("core/io/log.ts"))});
-  await useDeployment(${JSON.stringify(fixture.root)});
-  const mode = process.env.CASE_MODE;
+  await useDeployment(${JSON.stringify(fixture.root)});  const mode = process.env.CASE_MODE;
   const body = (effect) => commandBody({
     effect, arguments: [], needs: "target",
     preparesEnvironment: mode.startsWith("environment"),
@@ -33,12 +32,25 @@ const script = `
     change: { summary: "fixture change", group: "change", structured: true, ...body("change") },
     read: { summary: "fixture read", group: "check", structured: true, ...body("read") },
   });
-  const settings = mode.startsWith("environment") ? () => { throw new UserError(mode === "environment-no-write" ? "settings refusal no write" : "settings refusal"); } : undefined;
+  const settings = mode === "environment" || mode === "environment-no-write" ? () => { throw new UserError(mode === "environment-no-write" ? "settings refusal no write" : "settings refusal"); } : undefined;
   const app = defineApp({ name: "fixture", description: "MCP changed fixture", commands, settings });
-  await serveMcp(app, [], [], {
+  const serve = () => serveMcp(app, [], [], {
     observe: (stage) => process.stderr.write("PIPELINE_STAGE " + stage + "\\n"),
     transport: new Proxy({}, { get: (_target, method) => (...args) => { process.stderr.write("TRANSPORT_CONTACT " + String(method) + "\\n"); throw new Error("fixture transport refusal"); } }),
   });
+  // environment-partial: the renamer double lands the new token content, then throws a non-
+  // transient EACCES — the same double the in-process environment case uses — so provisioning
+  // marks the error and the envelope reports changed: true.
+  if (mode === "environment-partial") {
+    const { withPrivateFileRenamer } = await import(${JSON.stringify(moduleUrl("security/privacy/private-file.ts"))});
+    const { rename } = await import("node:fs/promises");
+    await withPrivateFileRenamer(async (from, to) => {
+      await rename(from, to);
+      const failure = new Error("simulated rename contention");
+      failure.code = "EACCES";
+      throw failure;
+    }, serve);
+  } else await serve();
 `;
 
 try {
@@ -49,6 +61,8 @@ try {
     { label: "parse bare unknown named field", mode: "safe", call: { name: "change", arguments: { __unknown: "x" } }, expected: "parse", bare: true },
     { label: "destroy confirmation refusal", mode: "safe", call: { name: "destroy", arguments: {} }, expected: "confirm", bare: true },
     { label: "prepare refusal", mode: "prepare", call: { name: "change", arguments: {} }, expected: "prepare", changed: false, bare: false },
+    { label: "environment refusal, env unreadable (directory)", mode: "environment-fail", call: { name: "change", arguments: {} }, expected: "environment", changed: false, bare: false },
+    { label: "environment partial write after landed rename", mode: "environment-partial", call: { name: "change", arguments: {} }, expected: "environment", changed: true, bare: false },
     { label: "context refusal without environment write", mode: "environment-no-write", call: { name: "change", arguments: {} }, expected: "context", changed: false, bare: false },
     { label: "context refusal after environment token write", mode: "environment", call: { name: "change", arguments: {} }, expected: "context", changed: true, bare: false },
     { label: "safe mutating run", mode: "safe", call: { name: "change", arguments: { confirm: true } }, expected: "run", changed: true, bare: false },
@@ -58,14 +72,23 @@ try {
   const envPath = join(fixture.root, ".env");
   const originalEnv = await readFile(envPath, "utf8");
   for (const scenario of scenarios) {
+    await rm(envPath, { recursive: true });
     await writeFile(envPath, originalEnv, "utf8");
-    if (scenario.mode === "environment") {
+    if (scenario.mode === "environment" || scenario.mode === "environment-partial") {
       const withoutToken = originalEnv.replace(/^OPENCLAW_GATEWAY_TOKEN=.*\n/m, "");
       await writeFile(envPath, withoutToken, "utf8");
     }
-    const expectedToken = scenario.mode !== "environment";
-    const envBefore = await readFile(envPath, "utf8");
-    check(`${scenario.label}: token setup is independent`, envBefore.includes("OPENCLAW_GATEWAY_TOKEN="), expectedToken);
+    if (scenario.mode === "environment-fail") {
+      // The .env is replaced by a DIRECTORY of the same name before the child spawns: protect/
+      // createPrivateFile fail and the pipeline refuses at the environment stage.
+      await rm(envPath);
+      await mkdir(envPath);
+    }
+    if (scenario.mode !== "environment-fail") {
+      const expectedToken = scenario.mode !== "environment" && scenario.mode !== "environment-partial";
+      const envBefore = await readFile(envPath, "utf8");
+      check(`${scenario.label}: token setup is independent`, envBefore.includes("OPENCLAW_GATEWAY_TOKEN="), expectedToken);
+    }
     const mode = scenario.mode;
     const result = await runProcess(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
       cwd: process.cwd(), env: { ...process.env, CASE_MODE: mode },
@@ -85,19 +108,13 @@ try {
     check(`${scenario.label}: refusal envelope is bare as expected`, bare, scenario.bare);
     check(`${scenario.label}: recording transport untouched`, result.stderr.includes("TRANSPORT_CONTACT"), false);
     tally.case(scenario.label, observed.at(-1) as Stage | undefined ?? "parse", result.code === 0 ? undefined : new Error(result.stderr));
+    if (scenario.mode === "environment-fail") {
+      // Restore the file form for the next scenario's independent token setup.
+      await rm(envPath, { recursive: true });
+      await writeFile(envPath, originalEnv, "utf8");
+    }
   }
   check("fixture env is isolated in OS temp", originalEnv.includes(fixture.root), true);
-  await rm(envPath);
-  await mkdir(envPath);
-  const result = await runProcess(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
-    cwd: process.cwd(), env: { ...process.env, CASE_MODE: "environment-no-write" },
-    input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "change", arguments: {} } })}\n`, timeoutMs: 60_000,
-  });
-  const stageLine = new RegExp("PIPELINE_STAGE (parse|confirm|prepare|environment|context|run)", "g");
-  const observed = result.stderr.match(stageLine)?.map((entry) => entry.slice("PIPELINE_STAGE ".length)) ?? [];
-  check("environment refusal without writable env: stdio server exits successfully", result.code, 0);
-  check("environment refusal without writable env: actual stage observed", observed.at(-1), "environment");
-  check("environment refusal without writable env: recording transport untouched", result.stderr.includes("TRANSPORT_CONTACT"), false);
 } finally {
   tally.print("mcp-changed");
   await fixture.dispose();

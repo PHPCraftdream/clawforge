@@ -261,7 +261,7 @@ export async function validateSet(content: PortableContent, options: { checkFile
   const problems: Problem[] = [];
   await checkImagePinned(manifest, options.lock, problems);
   await checkRecipesComplete(content, options.checkFiles === true, problems);
-  problems.push(...content.diagnostics);
+  problems.push(...content.diagnostics.map((entry) => entry.problem));
   checkReferencesResolve(manifest, problems);
   checkSchedulesValid(manifest, problems);
   checkSecretsDeclared(manifest, content, problems);

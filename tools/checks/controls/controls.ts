@@ -522,5 +522,25 @@ export const CONTROLS: readonly ControlDecl[] = [
     check: "tools/checks/integration/apps/invocation-hints-rooted.check.ts",
     fragment: "delegated spawn inherits cwd",
   },
+  {
+    id: "C130",
+    finding: "S3.2 residual",
+    note: "build's refusal selection must use the diagnostic's structural source, not prose — the afterRecipe gate swaps to \"agent-config\", so an agent diagnostic whose text contains \"acceptance.json\" (agentId \"acceptance.json\") wins and the prose-substring bug resurfaces: the expected acceptance refusal is not produced",
+    product: "tools/framework/set/load.ts",
+    search: "const acceptanceProblem = diagnostics.find((entry) => entry.source === \"acceptance\");",
+    replace: "const acceptanceProblem = diagnostics.find((entry) => entry.source === \"agent-config\");",
+    check: "tools/checks/sets/lifecycle/portable-content.check.ts",
+    fragment: "refuses with the acceptance error before the agent diagnostic",
+  },
+  {
+    id: "C131",
+    finding: "S3.2 residual",
+    note: "the portable-content builder's `read` must memoize into `cache` — deleting the memoized entry forces a physical re-read on every access, breaking once-per-path",
+    product: "tools/framework/set/content.ts",
+    search: "    let pending = cache.get(abs);",
+    replace: "    let pending = cache.get(abs);\n    cache.delete(abs);",
+    check: "tools/checks/sets/lifecycle/portable-content.check.ts",
+    fragment: "physically read once",
+  },
 
 ];

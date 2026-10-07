@@ -195,10 +195,10 @@ export async function collectManifest(
     afterRecipe: async (_name, parsed, diagnostics) => {
       if (parsed.walkError !== undefined && options.reportInvalidDeclaration !== true) die(parsed.walkError);
       if (options.reportInvalidDeclaration !== true) {
-        const acceptanceProblem = diagnostics.find((entry) => entry.detail.includes("acceptance.json"));
-        if (acceptanceProblem !== undefined) die(acceptanceProblem.detail);
-        const agentProblem = diagnostics.find((entry) => entry.detail.includes("agent/config.json"));
-        if (agentProblem !== undefined) die(agentProblem.detail);
+        const acceptanceProblem = diagnostics.find((entry) => entry.source === "acceptance");
+        if (acceptanceProblem !== undefined) die(acceptanceProblem.problem.detail);
+        const agentProblem = diagnostics.find((entry) => entry.source === "agent-config");
+        if (agentProblem !== undefined) die(agentProblem.problem.detail);
       }
     },
     afterDeclaration: async (declaration) => {
@@ -250,15 +250,15 @@ export async function collectManifest(
     const parsed = base.parsed.recipes[recipe];
     // Only files the walk carried reach the manifest: a privateFiles entry is excluded there.
     const acceptancePath = acceptanceLabel(recipe);
-    const diagnostic = base.diagnostics.find((entry) => entry.detail.includes(`recipe "${recipe}"`) && entry.detail.includes("acceptance.json"));
-    if (base.inventory.some((file) => file.path === acceptancePath) && parsed.acceptance === undefined && diagnostic !== undefined && !report) die(diagnostic.detail);
+    const diagnostic = base.diagnostics.find((entry) => entry.recipe === recipe && entry.source === "acceptance");
+    if (base.inventory.some((file) => file.path === acceptancePath) && parsed.acceptance === undefined && diagnostic !== undefined && !report) die(diagnostic.problem.detail);
     if (base.inventory.some((file) => file.path === acceptancePath) && parsed.acceptance !== undefined) {
       acceptance[recipe] = parsed.acceptance;
     }
     const agent = agentFiles["config.json"] === undefined ? undefined : parsed.agent;
     if (agentFiles["config.json"] !== undefined && agent === undefined) {
-      const agentDiagnostic = base.diagnostics.find((entry) => entry.detail.includes(`recipe "${recipe}"`) && entry.detail.includes("agent/config.json"));
-      if (agentDiagnostic !== undefined && !report) die(agentDiagnostic.detail);
+      const agentDiagnostic = base.diagnostics.find((entry) => entry.recipe === recipe && entry.source === "agent-config");
+      if (agentDiagnostic !== undefined && !report) die(agentDiagnostic.problem.detail);
       if (agentDiagnostic === undefined && !report) die(`recipe "${recipe}" has an agent/ bundle without agent/config.json — provision-agent requires it`);
     }
     recipes[recipe] = {

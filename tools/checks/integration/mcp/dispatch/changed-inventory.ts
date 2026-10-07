@@ -4,7 +4,8 @@ import { runProcess } from "#checks/kit/spawn.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { specData, specOf, commandBody, materializeCommands, type ArgumentSpec, type ArgumentRule } from "#framework/core/command/index.ts";
 import { defineApp } from "#framework/core/app.ts";
-import { executeCommand, type Execution } from "#framework/core/command/execute.ts";
+import { executeCommand, type CommandIo, type Execution } from "#framework/core/command/execute.ts";
+import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { toolEnvelope } from "#framework/integration/mcp/call.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withPrivateFileRenamer } from "#framework/security/privacy/private-file.ts";
@@ -26,6 +27,14 @@ export interface ChangedInventoryUnit {
   readonly sliceArguments: readonly ArgumentSpec[];
   readonly sliceRules: readonly ArgumentRule[];
   readonly baseEffect: "read" | "change" | "destroy";
+  /** The unit's DECLARED needs: a single body's data.needs; an action slice carries neither
+   *  needs nor preparesEnvironment (ActionData/MultiData have no fields for them and the
+   *  multi runner scopes actions to the plain context), so the slice value ?? the multi
+   *  body's is always the default "target". */
+  readonly needs: "target" | "deployment";
+  /** The unit's DECLARED preparesEnvironment: a single body's data.preparesEnvironment;
+   *  action slices always derive false (see needs). */
+  readonly preparesEnvironment: boolean;
 }
 
 const example = (arg: ArgumentSpec): unknown => arg.kind === "flag" ? true : arg.value.example;
@@ -76,7 +85,7 @@ export function buildChangedInventory(): readonly ChangedInventoryUnit[] {
         const args = buildArgs(command, slice.args, slice.rules, target.flag, slice.action);
         try { bindNamed(specShape(body), { kind: "named", ...(slice.action ? { action: slice.action } : {}), args: { ...(slice.action ? { ...args, action: slice.action } : args), ...(target.effect === "destroy" ? { confirm: true } : {}) } }, command, { confirmed: true }); }
         catch (error) { throw new Error(`cannot build ${slice.label} ${target.effect} variant`, { cause: error }); }
-        units.push({ label: `${slice.label}${target.flag ? ` [--${target.flag.name}]` : " [base effect]"}`, command, ...(slice.action ? { action: slice.action } : {}), effect: target.effect, args, sliceArguments: slice.args, sliceRules: slice.rules, baseEffect: slice.effect });
+        units.push({ label: `${slice.label}${target.flag ? ` [--${target.flag.name}]` : " [base effect]"}`, command, ...(slice.action ? { action: slice.action } : {}), effect: target.effect, args, sliceArguments: slice.args, sliceRules: slice.rules, baseEffect: slice.effect, needs: data.kind === "single" ? data.needs : "target", preparesEnvironment: data.kind === "single" ? data.preparesEnvironment : false });
       }
     }
   }
@@ -107,8 +116,17 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
       // Declarations UNMODIFIED: the unit's original sliceArguments and sliceRules go in
       // verbatim (required/oneOf/requires/conflicts untouched), effect = unit.baseEffect.
       // Substitutions only: the run body is a safe no-op; in prepare mode prepare throws
-      // (stage-forcing seam); in context mode the app's settings throw (context-forcing seam).
-      const body = commandBody({ effect: unit.baseEffect, arguments: [...unit.sliceArguments], rules: [...unit.sliceRules], needs: "target", ...(mode === "prepare" ? { prepare: async () => { throw new UserError("prepare refusal"); } } : {}), run: async () => {}, structured: true });
+      // (stage-forcing seam — the unit's OWN prepare, e.g. recover-env's, is replaced by the
+      // throwing one so the case stays at the prepare stage); in context mode the app's
+      // settings throw (context-forcing seam). preparesEnvironment is the unit's REAL
+      // declaration (bootstrap, the only one: the fixture .env already carries the token
+      // line, so the environment stage is a no-op pass-through).
+      // Substitution exceptions (unit -> reason):
+      // - recover-env (needs "deployment" -> "target"): execute gives deployment-needs
+      //   commands a deploymentScope that never consults app.settings, so the context seam
+      //   cannot refuse the call and the case would reach run instead of its built-for
+      //   context stage. Every other unit keeps its real needs.
+      const body = commandBody({ effect: unit.baseEffect, arguments: [...unit.sliceArguments], rules: [...unit.sliceRules], needs: unit.needs === "deployment" ? "target" : unit.needs, ...(unit.preparesEnvironment ? { preparesEnvironment: true } : {}), ...(mode === "prepare" ? { prepare: async () => { throw new UserError("prepare refusal"); } } : {}), run: async () => {}, structured: true });
       return [name, { summary: unit.command, group: "change", structured: true, ...body }];
     })));
     const app = { name: "fixture", description: "changed inventory", commands, ...(mode === "context" ? { settings: () => { throw new UserError("context refusal"); } } : {}) };
@@ -147,13 +165,16 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
     rows.push({ mode, expected: requests.length, responses, stages, stderr: result.stderr });
   }
   const contactsLine = new RegExp("FIXTURE_CONTACTS (\\[[^\\n]*\\])");
-  const contacts = rows.map((row) => row.stderr).join("").match(contactsLine);
+  const rowContacts = (stderr: string): string => stderr.match(contactsLine)?.[1] ?? "absent";
   check("changed inventory child exits", failures, 0);
   check("changed inventory modes", rows.map((row) => row.mode), ["parse", "confirm", "prepare", "context", "run"]);
   for (const row of rows) {
     const selected = row.mode === "confirm" ? units.filter((unit) => unit.effect === "destroy") : units;
     check(`${row.mode}: response count`, row.responses.length, selected.length);
     check(`${row.mode}: request count`, row.expected, selected.length);
+    // PER ROW: zero contacts for the WHOLE batch — the child prints one FIXTURE_CONTACTS line
+    // per run, so this covers every probe of this mode at once.
+    check(`${row.mode}: zero fixture host contacts`, rowContacts(row.stderr), "[]");
     for (const response of row.responses) {
       const envelope = response.result;
       const payload = envelope !== undefined && envelope.structuredContent !== null && typeof envelope.structuredContent === "object" ? envelope.structuredContent as Record<string, unknown> : undefined;
@@ -168,7 +189,6 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
   }
   const counts = units.reduce((acc, unit) => (acc[unit.effect] = (acc[unit.effect] ?? 0) + 1, acc), {} as Record<string, number>);
   process.stdout.write(`changed inventory: ${units.length} (${JSON.stringify(counts)}); responses ${rows.reduce((sum, row) => sum + row.responses.length, 0)}\n`);
-  check("changed inventory no fixture host contacts", contacts?.[1], "[]");
   await runEnvironmentCases(tally, fixture);
 }
 
@@ -185,34 +205,40 @@ async function runEnvironmentCases(tally: StageTally, fixture: DeploymentFixture
   const envPath = join(fixture.root, ".env");
   const original = await readFile(envPath, "utf8");
   let _observed: Stage | undefined;
-  const io = { surface: "mcp" as const, confirmed: true, observe: (stage: Stage) => { _observed = stage; } };
+  // The fixture's recording transport goes to the call's io, so any target contact the
+  // pipeline attempted is logged; transport() clears the log, called once per case BEFORE
+  // the call so the log covers just that case.
+  const io = (transport: Transport): CommandIo => ({ surface: "mcp" as const, confirmed: true, transport, observe: (stage: Stage) => { _observed = stage; } });
   // (a) environment-fail: the fixture .env is replaced by a DIRECTORY of the same name, so
   // createPrivateFile/protect fail and the pipeline refuses at the environment stage.
+  const failTransport = fixture.transport();
   await rm(envPath);
   await mkdir(envPath);
-  const failRun = await executeCommand(app, "probe", { kind: "named", args: {} }, io);
+  const failRun = await executeCommand(app, "probe", { kind: "named", args: {} }, io(failTransport));
   await rm(envPath, { recursive: true });
   await writeFile(envPath, original, "utf8");
   const failEnvelope = toolEnvelope(probe, "", undefined, "probe-env-fail", [], failRun, undefined, failRun.error);
   check("environment-fail: stage", failRun.stage, "environment");
   check("environment-fail: changed envelope", failEnvelope.changed, false);
+  check("environment-fail: zero fixture host contacts", fixture.contacts().length, 0);
   tally.case("environment-fail", failRun.stage, failRun.stage === "environment" && failEnvelope.changed === false ? undefined : new Error(`stage ${failRun.stage} changed ${failEnvelope.changed}`));
   // (b) environment-partial: the token line is removed (env stays a file), the renamer double
   // lands the new token content then throws EACCES, so provisioningWrites marks the error and
   // execute's failed() carries environmentWrote -> the envelope reports changed: true.
   const withoutToken = original.replace(/^OPENCLAW_GATEWAY_TOKEN=.*\n/m, "");
   await writeFile(envPath, withoutToken, "utf8");
+  const partialTransport = fixture.transport();
   let partialRun: Execution | undefined;
   await withPrivateFileRenamer(async (from, to) => {
     await rename(from, to);
     const failure: NodeJS.ErrnoException = new Error("simulated rename contention");
     failure.code = "EACCES";
     throw failure;
-  }, async () => { partialRun = await executeCommand(app, "probe", { kind: "named", args: {} }, io); });
+  }, async () => { partialRun = await executeCommand(app, "probe", { kind: "named", args: {} }, io(partialTransport)); });
   await writeFile(envPath, original, "utf8");
   const partialEnvelope = toolEnvelope(probe, "", undefined, "probe-env-partial", [], partialRun, undefined, partialRun?.error);
   check("environment-partial: stage", partialRun?.stage, "environment");
   check("environment-partial: changed envelope after landed write", partialEnvelope.changed, true);
+  check("environment-partial: zero fixture host contacts", fixture.contacts().length, 0);
   tally.case("environment-partial", partialRun?.stage ?? "parse", partialRun?.stage === "environment" && partialEnvelope.changed === true ? undefined : new Error(`stage ${partialRun?.stage} changed ${partialEnvelope.changed}`));
-  check("environment cases: zero target contacts", fixture.contacts().length, 0);
 }

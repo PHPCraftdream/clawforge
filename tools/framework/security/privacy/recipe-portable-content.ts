@@ -210,6 +210,12 @@ async function visitPortableEntry(
     return;
   }
   if (entry.isSymbolicLink()) {
+    // Required JSON paths must be plain files — a link, whatever it targets, is carried
+    // under its own name and fails closed at the read.
+    if (state.requiredFiles.includes(recipeRelative)) {
+      state.files.push(relativePath);
+      return;
+    }
     const stats = await stat(real);
     if (stats.isDirectory()) await walkPortableSubdirectory(state, full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);
     else state.files.push(relativePath);

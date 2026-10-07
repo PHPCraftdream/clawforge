@@ -40,8 +40,12 @@ export const app: AppDefinition = { name: "property-fixture", description: "fixt
 /** A capture deployment: every openclawCommands command re-declared with the SAME arguments,
  *  rules and refuse tokens but a recording run, so a row can compare the bound call the
  *  pipeline ACTUALLY passed to run (values, action, given) between the console's argv and an
- *  MCP named call. Effect "read" (no confirm gate), local facts dropped (not binding rows'
- *  subject); the parse/bind machinery is the product's own. */
+ *  MCP named call. Per command, exactly this is substituted: effect forced to "read" (no
+ *  confirm gate), prepare replaced by a pass-through, run replaced by a recorder, refuse
+ *  tokens kept, localFacts dropped, and needs left undeclared — it defaults to "target", but
+ *  the recording transport is only consulted if a fact probes it, and since localFacts are
+ *  dropped no command ever does. Arguments and rules are kept verbatim; the parse/bind
+ *  machinery is the product's own. */
 export interface CapturedCall {
   readonly command: string;
   readonly action?: string;
@@ -84,6 +88,34 @@ export function captureApp(captured: CapturedCall[]): AppDefinition {
         })[name]!;
   }
   return { name: "capture-fixture", description: "fixture", commands };
+}
+
+// Guard: the capture really keeps the originals' arguments and rules (derived, sampled).
+{
+  const capture = captureApp([]);
+  const argNames = (slice: { arguments?: readonly { name: string }[] }): readonly string[] =>
+    (slice.arguments ?? []).map((argument) => argument.name);
+  let sampled = 0;
+  for (const [name, declaration] of Object.entries(openclawCommands)) {
+    if (sampled >= 2) break;
+    const entry = specOf(declaration);
+    const captureEntry = specOf(capture.commands[name]!);
+    if (entry === undefined || captureEntry === undefined) continue;
+    const data = specData(entry);
+    const captureData = specData(captureEntry);
+    const slices = data.kind === "single"
+      ? [{ arguments: data.arguments, rules: data.rules }]
+      : Object.values(data.actions);
+    const captureSlices = captureData.kind === "single"
+      ? [{ arguments: captureData.arguments, rules: captureData.rules }]
+      : Object.values(captureData.actions);
+    const same = slices.every((slice, index) =>
+      JSON.stringify(argNames(slice)) === JSON.stringify(argNames(captureSlices[index]!))
+      && (slice.rules ?? []).length === (captureSlices[index]!.rules ?? []).length);
+    checkTrue(`${name}: the capture command keeps the declared arguments and rules`, same);
+    sampled += 1;
+  }
+  checkTrue("the captureApp argument guard sampled declared commands", sampled > 0);
 }
 
 export interface Unit {

@@ -5,7 +5,7 @@
 // historical name `aux` (I14 compat) must still load and validate identically on both paths,
 // and the declaration findings must stay the historic full texts on both paths.
 
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { loadSet, validateLoadedSet } from "#framework/set/load.ts";
@@ -267,6 +267,34 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
       });
     }
 
+    // A required JSON path carried as a symlink/junction to a DIRECTORY must fail closed
+    // exactly like the direct-directory cases above — carried under its own name, refused
+    // at the read. Junction is the Windows fallback (no privilege needed); if neither link
+    // kind can be created, fail loudly rather than skipping silently.
+    for (const rel of ["acceptance.json", "agent/config.json"] as const) {
+      await recipeRefusalCase(`symlinked directory ${rel} fails closed with exact read error`, async (dir) => {
+        const file = resolve(dir, "recipes", "demo", ...rel.split("/"));
+        await rm(file);
+        const holding = resolve(dir, "recipes", "demo", "holding");
+        await mkdir(holding);
+        let linked = false;
+        try {
+          await symlink(holding, file, "dir");
+          linked = true;
+        } catch {
+          try {
+            await symlink(holding, file, "junction");
+            linked = true;
+          } catch { /* neither link kind available on this host */ }
+        }
+        check("required-file symlink could not be created on this host", linked ? "created" : "not created", "created");
+      }, async (dir) => {
+        let nodeError = new Error("not thrown");
+        try { await readFile(resolve(dir, "recipes", "demo", ...rel.split("/"))); } catch (error) { nodeError = error as Error; }
+        return `recipe "demo": recipes/demo/${rel} could not be read: ${nodeError.message}`;
+      });
+    }
+
     // Recipe parse refusal precedes the plain recipe's bad privateFiles policy.
     await recipeRefusalCase("malformed demo acceptance precedes plain recipe policy failure", async (dir) => {
       await rm(resolve(dir, "recipes"), { recursive: true });
@@ -279,6 +307,39 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
       try { JSON.parse("{bad"); } catch (error) { jsonError = error as Error; }
       return `recipe "demo": recipes/demo/acceptance.json is not valid JSON: ${jsonError.message}`;
     });
+    // Competing failures in ONE recipe: a malformed acceptance.json beside a malformed
+    // agent/config.json whose agentId is literally "acceptance.json" — the agent
+    // diagnostic's prose contains "acceptance.json", the old substring selection's trigger;
+    // the historical acceptance-before-agent refusal order must hold anyway.
+    {
+      const caseDeployment = await createBuildDeployment();
+      try {
+        await rm(resolve(caseDeployment, "recipes"), { recursive: true });
+        await mkdir(resolve(caseDeployment, "recipes", "demo"), { recursive: true });
+        await writeFile(resolve(caseDeployment, "recipes", "demo", "acceptance.json"), "{bad");
+        await mkdir(resolve(caseDeployment, "recipes", "demo", "agent"));
+        await writeFile(resolve(caseDeployment, "recipes", "demo", "agent", "config.json"), JSON.stringify({ agentId: "acceptance.json", mcpServerName: "mcp" }));
+        let jsonError = new Error("not thrown");
+        try { JSON.parse("{bad"); } catch (error) { jsonError = error as Error; }
+        const expected = `recipe "demo": recipes/demo/acceptance.json is not valid JSON: ${jsonError.message}`;
+        let refusal = "";
+        try {
+          await buildSet(buildCtx, "demo-set");
+        } catch (error) {
+          refusal = (error as Error).message;
+        }
+        check("recipe with competing acceptance and agent failures refuses with the acceptance error before the agent diagnostic", refusal, expected);
+        const loaded = await loadSet({ kind: "tree" }, {
+          name: "demo-set", declaredImage: buildCtx.settings.image, tolerateUnpinnedImage: true, reportInvalidDeclaration: true,
+        });
+        const details = (await validateLoadedSet(loaded)).filter((entry) => entry.code === "SET_RECIPE_INVALID").map((entry) => entry.detail);
+        check("recipe with competing acceptance and agent failures: validation reports both diagnostics", details.length, 2);
+        check("recipe with competing acceptance and agent failures: validation carries the acceptance detail", details.filter((detail) => detail === expected).length, 1);
+      } finally {
+        await removeBuildDeployment(caseDeployment);
+        useDeployment(deployment);
+      }
+    }
     // This fail-closed diagnostic is now explicit; the previous readOrAbsent behavior
     // swallowed source I/O failures instead of reporting the underlying read error.
     const sourceFailureCase = async (checkName: string, directory: boolean): Promise<void> => {
@@ -423,6 +484,60 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
     await artifactCase("the artifact's empty-declaration finding is the full historic text", "", () => missingOrEmptyTail);
     await artifactCase("the artifact's unparsable-declaration finding is the full historic text", invalidJson, (jsonError) => ` is not valid JSON: ${jsonError}`);
     await artifactCase("the artifact's wrong-shape-declaration finding is the full historic text", shapeBytes, () => shapeTail);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// --- the memoized read really reaches the physical fs, once per path -----------------------
+//
+// The builder's contract: each source path is read from disk ONCE (the `read` closure
+// memoizes into `cache`). The readFile seam counts physical reads so a check can prove the
+// memoization — here over a real fixture tree and a real packed artifact's unpacked staging.
+{
+  const deployment = await createBuildDeployment();
+  try {
+    const readOnceViaSeam = async (
+      checkPrefix: string,
+      request: Omit<Parameters<typeof collectPortableContent>[0], "readFile">,
+    ): Promise<void> => {
+      const counts = new Map<string, number>();
+      const readFileSeam = async (path: string): Promise<Buffer> => {
+        counts.set(path, (counts.get(path) ?? 0) + 1);
+        return readFile(path);
+      };
+      const base = await collectPortableContent({ ...request, readFile: readFileSeam });
+      const offenders = [...counts.entries()].filter(([, count]) => count > 1).map(([path]) => path);
+      // Fail-closed core: every physical read count must be exactly one; a failure NAMES the
+      // repeated path. No exact total (host-dependent), only once-per-path.
+      check(`${checkPrefix}: every source path is physically read once`, offenders.join("; "), "");
+      // The expected sources were read at all — derived from the inventory, no hand list.
+      const expectedSources = [...new Set([request.declarationPath, ...base.inventory.map((file) => file.origin)])].sort();
+      const missed = expectedSources.filter((path) => !counts.has(path));
+      check(`${checkPrefix}: the inventory's sources were each read at least once`, missed.join("; "), "");
+    };
+
+    // (a) the real fixture tree, recipeRoot as createBuildDeployment lays it out.
+    const manifest = (await loadSet({ kind: "tree" }, { name: "demo-set", declaredImage: buildCtx.settings.image })).manifest;
+    await readOnceViaSeam("tree", {
+      recipeRoot: resolve(deployment, "recipes"),
+      declarationPath: resolve(deployment, "config", "desired-state.json"),
+      recipes: Object.keys(manifest.recipes),
+    });
+
+    // (b) a real packed artifact's unpacked staging.
+    const artifact = resolve(deployment, "read-count.tar.gz");
+    await packArtifact(deployment, manifest, artifact);
+    const loaded = await loadSet({ kind: "artifact", path: artifact });
+    try {
+      await readOnceViaSeam("artifact staging", {
+        recipeRoot: join(loaded.staging!, "recipes"),
+        declarationPath: join(loaded.staging!, "config", "desired-state.json"),
+        recipes: Object.keys(loaded.manifest.recipes),
+      });
+    } finally {
+      if (loaded.staging !== undefined) await rm(loaded.staging, { recursive: true, force: true });
+    }
   } finally {
     await removeBuildDeployment(deployment);
   }

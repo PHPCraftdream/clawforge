@@ -52,6 +52,13 @@ export interface DeclarationContent {
   readonly values: readonly unknown[] | undefined;
 }
 
+/** Which carried file a content diagnostic is about — structural identity, not prose: a
+ *  prose substring once let an agent diagnostic whose text merely contained
+ *  "acceptance.json" (agentId "acceptance.json") win build's refusal over the real
+ *  acceptance error, breaking the acceptance-before-agent order. */
+export type DiagnosticSource = "recipe" | "agent-config" | "acceptance";
+export interface SetDiagnostic { readonly problem: Problem; readonly source: DiagnosticSource; readonly recipe: string; }
+
 /** One recipe's carried files as the walk saw them. `walkError` is the walker's own failure
  *  message — the build gate refuses on it; a rejected recipe.json is instead a diagnostic
  *  (recipeInvalidDefinition), because the content, not the source, is at fault. */
@@ -77,7 +84,7 @@ export interface PortableContent {
   readonly manifest: SetManifest;
   /** Content problems found while building (a rejected recipe.json, agent/config.json or
    *  acceptance.json); the validator passes them through as findings. */
-  readonly diagnostics: readonly Problem[];
+  readonly diagnostics: readonly SetDiagnostic[];
 }
 
 /** A model without its manifest yet (the tree's manifest is built FROM the inventory). */
@@ -85,7 +92,7 @@ export interface PortableContentBase {
   readonly inventory: readonly PortableFile[];
   readonly declaration: DeclarationContent;
   readonly parsed: { readonly recipes: Readonly<Record<string, ParsedRecipeContent>> };
-  readonly diagnostics: readonly Problem[];
+  readonly diagnostics: readonly SetDiagnostic[];
 }
 
 /** Where the model is built from. Both sources go through the same request shape: a tree
@@ -99,8 +106,10 @@ export interface PortableContentRequest {
   /** Bytes a caller already read (absolute path → utf8 text plus its checksum), used in
    *  place of a re-read. Both sides hash the same utf8 text, so the checksums agree. */
   readonly preRead?: ReadonlyMap<string, Buffer>;
+  /** Test seam: the physical reader the memoized `read` falls through to. Counts physical reads. */
+  readonly readFile?: (path: string) => Promise<Buffer>;
   readonly afterDeclaration?: (declaration: DeclarationContent) => Promise<void>;
-  readonly afterRecipe?: (name: string, parsed: ParsedRecipeContent, diagnostics: readonly Problem[], inventory: readonly PortableFile[]) => Promise<void>;
+  readonly afterRecipe?: (name: string, parsed: ParsedRecipeContent, diagnostics: readonly SetDiagnostic[], inventory: readonly PortableFile[]) => Promise<void>;
 }
 
 export function portableContent(base: PortableContentBase, manifest: SetManifest): PortableContent {
@@ -150,7 +159,7 @@ export async function collectPortableContent(request: PortableContentRequest): P
   const read = (abs: string): Promise<Buffer> => {
     let pending = cache.get(abs);
     if (pending === undefined) {
-      pending = readFile(abs);
+      pending = (request.readFile ?? readFile)(abs); // seam: a check proves each path is physically read once
       cache.set(abs, pending);
     }
     return pending;
@@ -163,7 +172,7 @@ export async function collectPortableContent(request: PortableContentRequest): P
   await request.afterDeclaration?.(declaration);
   const recipeNames = typeof request.recipes === "function" ? await request.recipes() : request.recipes;
   const inventory: PortableFile[] = [];
-  const diagnostics: Problem[] = [];
+  const diagnostics: SetDiagnostic[] = [];
   if (declaration.raw !== undefined) {
     const declarationBytes = await read(request.declarationPath).catch(() => undefined);
     if (declarationBytes !== undefined) inventory.push({ path: DESIRED_STATE_PATH, checksum: checksumOf(declarationBytes), size: declarationBytes.byteLength, origin: request.declarationPath });
@@ -189,7 +198,7 @@ export async function collectPortableContent(request: PortableContentRequest): P
           ? undefined
           : (() => { try { parseRecipeDefinition(name, recipeBytes.toString("utf8")); return undefined; } catch (parseError) { return (parseError as Error).message; } })();
         const reason = definitionError ?? (error as Error).message;
-        diagnostics.push(recipeInvalidDefinition(name, reason));
+        diagnostics.push({ problem: recipeInvalidDefinition(name, reason), source: "recipe", recipe: name });
         definitionDiagnosed = true;
         if (recipeBytes !== undefined) {
           carried.add("recipe.json");
@@ -203,7 +212,7 @@ export async function collectPortableContent(request: PortableContentRequest): P
         const bytes = await read(origin).catch((error: unknown) => {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
           if (rel === "agent/config.json" || rel === "acceptance.json") {
-            diagnostics.push(recipeInvalidDefinition(name, `recipe "${name}": recipes/${name}/${rel} could not be read: ${(error as Error).message}`, rel));
+            diagnostics.push({ problem: recipeInvalidDefinition(name, `recipe "${name}": recipes/${name}/${rel} could not be read: ${(error as Error).message}`, rel), source: rel === "agent/config.json" ? "agent-config" : "acceptance", recipe: name });
             return undefined;
           }
           throw error;
@@ -221,19 +230,19 @@ export async function collectPortableContent(request: PortableContentRequest): P
     if (agentText !== undefined) {
       const parsed = await parseAgentDeclaration(agentText, name);
       if (parsed.ok) agent = parsed.value;
-      else diagnostics.push(recipeInvalidDefinition(name, parsed.reason, "agent/config.json"));
+      else diagnostics.push({ problem: recipeInvalidDefinition(name, parsed.reason, "agent/config.json"), source: "agent-config", recipe: name });
     }
     const acceptanceText = await readOptionalText("acceptance.json");
     let acceptance: AcceptanceCheck[] | undefined;
     if (acceptanceText !== undefined) {
       const checks = await parseAcceptanceChecks(acceptanceText, name);
       if (checks.ok) acceptance = checks.value;
-      else diagnostics.push(recipeInvalidDefinition(name, checks.reason, "acceptance.json"));
+      else diagnostics.push({ problem: recipeInvalidDefinition(name, checks.reason, "acceptance.json"), source: "acceptance", recipe: name });
     }
-    const recipeText = carried.has("recipe.json") ? (await read(resolve(dir, "recipe.json")).catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; diagnostics.push(recipeInvalidDefinition(name, `recipe "${name}": recipes/${name}/recipe.json could not be read: ${(error as Error).message}`, "recipe.json")); return undefined; }))?.toString("utf8") : undefined;
+    const recipeText = carried.has("recipe.json") ? (await read(resolve(dir, "recipe.json")).catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; diagnostics.push({ problem: recipeInvalidDefinition(name, `recipe "${name}": recipes/${name}/recipe.json could not be read: ${(error as Error).message}`, "recipe.json"), source: "recipe", recipe: name }); return undefined; }))?.toString("utf8") : undefined;
     if (recipeText !== undefined && !definitionDiagnosed) {
       try { parseRecipeDefinition(name, recipeText); }
-      catch (error) { diagnostics.push(recipeInvalidDefinition(name, (error as Error).message)); }
+      catch (error) { diagnostics.push({ problem: recipeInvalidDefinition(name, (error as Error).message), source: "recipe", recipe: name }); }
     }
     recipes[name] = { dir, dirExists, walkError, agent, acceptance };
     await request.afterRecipe?.(name, recipes[name], diagnostics.slice(problemStart), inventory);

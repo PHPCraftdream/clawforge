@@ -2,10 +2,13 @@
 // console's argv path and an MCP tool call's named path — same stage, same refusal text,
 // zero contacts — derived from the declarations alone, over the kit deployment fixture.
 // Several rows assert FULL refusal texts: the binder's own requiredArgumentRefusal and
-// appliesToMessage wordings, and console-vs-named equality. The valid control and the
-// variadic rows also assert binding parity through a capture deployment (property-sweep's
-// captureApp): the bound call the REAL pipeline hands to run — values, action, given — must
-// be the same from the console's argv and an MCP named call. Repeated options and a bare
+// appliesToMessage wordings, and console-vs-named equality. The valid control, the
+// reversed-binding rows, and the variadic rows also assert binding parity through a capture
+// deployment (property-sweep's captureApp): the bound call the REAL pipeline hands to run —
+// values, action, given — must be the same from the console's argv and an MCP named call.
+// The variadic rows drive their capture through the capture deployment directly with a VALID
+// call (captureApp drops localFacts and pass-throughs prepare), so parity is asserted for
+// every eligible variadic unit even when the real pipeline refuses in prepare. Repeated options and a bare
 // `--` are argv shapes the named form cannot express, so they are console-only rows. The
 // first-refusal row is then answered by a real serveMcp child.
 // NOTE (ownProductExpectations exemption): exact-text and exact-binding expectations here
@@ -180,14 +183,20 @@ for (const unit of units) {
     [a.name]: exampleOf(a),
     ...Object.fromEntries(eligible.slice(2).map(({ argument }) => [argument.name, exampleOf(argument)])),
   };
-  await runCase(unit.command, bindArgv, "terminal", captureApp(argvCaptured));
-  await runNamed(unit.command, bindNamedArgs, captureApp(namedCaptured));
+  const bindA = await runCase(unit.command, bindArgv, "terminal", captureApp(argvCaptured));
+  const bindN = await runNamed(unit.command, bindNamedArgs, captureApp(namedCaptured));
   const bindArgvEntry = argvCaptured.find((entry) => entry.command === unit.command);
   const bindNamedEntry = namedCaptured.find((entry) => entry.command === unit.command);
-  if (bindArgvEntry === undefined || bindNamedEntry === undefined) continue;
-  check(`${unit.label}: reversed keys bind the same values`, bindNamedEntry.values, bindArgvEntry.values);
-  check(`${unit.label}: reversed keys bind the same given (declaration order)`, bindNamedEntry.given, bindArgvEntry.given);
-  reversedBindings += 1;
+  // A missing entry is only legitimate when the example call itself refuses at parse (e.g.
+  // the swapped pair trips a conflicts rule); a run-stage call with no entry fails by name.
+  const capturePairPresent = bindArgvEntry !== undefined && bindNamedEntry !== undefined;
+  checkTrue(`${unit.label}: the reversed-binding capture saw both bound calls (or the example call refuses at parse)`,
+    capturePairPresent || (bindA.execution.stage === "parse" && bindN.execution.stage === "parse"));
+  if (capturePairPresent) {
+    check(`${unit.label}: reversed keys bind the same values`, bindNamedEntry!.values, bindArgvEntry!.values);
+    check(`${unit.label}: reversed keys bind the same given (declaration order)`, bindNamedEntry!.given, bindArgvEntry!.given);
+    reversedBindings += 1;
+  }
 }
 checkTrue("reversed-order rows derived from the declarations", reversed > 0);
 checkTrue("reversed-key-order binding rows derived from the declarations", reversedBindings > 0);
@@ -341,6 +350,11 @@ for (const unit of units) {
 checkTrue("foreign-flag pairs derived from the declarations were checked in full text", foreignFlagPairs > 0);
 
 // 6. A variadic given as a JSON array reads like the argv tail.
+const variadicUnits = units.filter((unit) => {
+  const variadic = variadicOf(unit);
+  return variadic !== undefined && (variadic as { required?: boolean }).required !== true;
+});
+let variadicCaptures = 0;
 for (const unit of units) {
   const variadic = variadicOf(unit);
   if (variadic === undefined || (variadic as { required?: boolean }).required === true) continue;
@@ -354,23 +368,42 @@ for (const unit of units) {
   if (named.execution.stage !== "run") {
     check(`${unit.label}: <${variadic.name}…> as a JSON array never contacts the target`, named.contacts, []);
   }
-  // The same variadic call on both paths, each against its OWN capture app — only when the
-  // pipeline row itself reaches run (a parse refusal binds nothing to compare).
-  if (named.execution.stage === "run") {
+  // The variadic capture parity is asserted through the CAPTURE deployment for every eligible
+  // unit with a valid call: captureApp drops localFacts and pass-throughs prepare, so the unit
+  // reaches run even when the real pipeline's prepare refusal (stage parity above) stops it.
+  {
+    // The capture call must be VALID: a oneOf rule over the variadic (e.g. set diff's
+    // [artifacts] vs [from, to]) forbids the control values riding along, so the capture
+    // drops every control value that shares a oneOf group with the variadic — derived.
+    const oneOfOverVariadic = unit.rules.flatMap((rule) =>
+      rule.rule === "oneOf" && rule.groups.some((group) => group.includes(variadic.name)) ? [rule] : []);
+    const conflicting = new Set(oneOfOverVariadic
+      .flatMap((rule) => rule.groups.flat())
+      .filter((name) => name !== variadic.name));
+    const captureArgs = namedControlArgs(unit);
+    for (const name of conflicting) delete captureArgs[name];
     const argvCaptured: CapturedCall[] = [];
     const namedCaptured: CapturedCall[] = [];
-    await runCase(unit.command, [...controlArgv(unit), ...tail], "terminal", captureApp(argvCaptured));
-    await runNamed(unit.command, { ...namedControlArgs(unit), [variadic.name]: tail }, captureApp(namedCaptured));
+    await runCase(unit.command, [...controlArgvWithout(unit, conflicting), ...tail], "terminal", captureApp(argvCaptured));
+    await runNamed(unit.command, { ...captureArgs, [variadic.name]: tail }, captureApp(namedCaptured));
     const argvEntry = argvCaptured.find((entry) => entry.command === unit.command);
     const namedEntry = namedCaptured.find((entry) => entry.command === unit.command);
-    checkTrue(`${unit.label}: the capture saw both variadic bound calls`, argvEntry !== undefined && namedEntry !== undefined);
+    checkTrue(`${unit.label}: the variadic capture saw both bound calls`, argvEntry !== undefined && namedEntry !== undefined);
     if (argvEntry !== undefined && namedEntry !== undefined) {
-      check(`${unit.label}: <${variadic.name}…> binds the same values on the captured paths`, namedEntry.values[variadic.name], argvEntry.values[variadic.name]);
+      const argvValues = argvEntry.values[variadic.name];
+      const namedValues = namedEntry.values[variadic.name];
+      check(`${unit.label}: <${variadic.name}…> binds the same values on the captured paths`, namedValues, argvValues);
+      checkTrue(`${unit.label}: <${variadic.name}…> binds an array of the declared count with every tail element`,
+        Array.isArray(argvValues) && argvValues.length === count
+        && argvValues.every((element) => element !== undefined && tail.includes(String(element))));
       check(`${unit.label}: <${variadic.name}…> binds the same given on the captured paths`, namedEntry.given, argvEntry.given);
       check(`${unit.label}: <${variadic.name}…> binds the same action on the captured paths`, namedEntry.action, argvEntry.action);
+      variadicCaptures += 1;
     }
   }
 }
+checkTrue("variadic capture rows derived from the declarations completed the capture pair", variadicCaptures > 0);
+checkTrue("variadic units derived from the declarations", variadicUnits.length > 0);
 
 // 7. A repeated option is refused on the console path — the named form has no repeat to express.
 for (const unit of units) {

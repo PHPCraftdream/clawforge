@@ -487,7 +487,7 @@ await requires("linux-host", "the target-side safe-destroy script against a real
       ruleText({ rule: "requires", name: "yes", with: ["confirm-name"] }, DESTROY_ARGUMENTS)],
     ["a wrong --confirm-name", ["--data", "--yes", "--confirm-name", "not-this-deployment"], "prepare", "confirm-name", "does not match"],
   ] as const) {
-    const execution = await executeCommand(app, "destroy", [...argv], { surface: "terminal", transport });
+    const execution = await executeCommand(app, "destroy", { kind: "argv", argv: [...argv] }, { surface: "terminal", transport });
     check(`${label} stops at the ${stage} stage`, execution.stage, stage);
     checkTrue(`${label} is an ArgumentError naming the argument`, execution.error instanceof ArgumentError
       && (execution.error as ArgumentError).argument === argument);

@@ -26,8 +26,8 @@
 import { host, rootElevationRequested, ROOT_CONSENT, ROOT_ARRIVAL, IDENTITY_UNKNOWN, commandFailedMessage } from "#framework/commands/interface/host/index.ts";
 import { ENGINE_DISTRO, SAME_MACHINE, NO_LOCAL_ROOT, parseWslDistroListing, probeUidAnswer, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
-import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
+import { parseCall, specShape, specOf, bindNamed } from "#framework/core/command/index.ts";
+import { inputSchema, toArgv, toolDescription } from "#framework/integration/mcp/server.ts";
 import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { shellQuote } from "#framework/core/io/shell.ts";
@@ -519,10 +519,13 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
     });
   }
 
-  // choices and required are the parser's for a spec command (design 4): MCP validate checks
-  // the shape only, and the refusals come from the body's own parse — covered above.
-  check("validate passes a bad context's shape through to the parser", validate(openclawCommands.host, { context: "vm" }), []);
-  check("validate leaves the missing arguments to the parser", validate(openclawCommands.host, {}), []);
+  // choices and required are the binder's for a spec command: it refuses in the console's
+  // own words — compared against the console parseCall refusal, word for word.
+  const hostShape = specShape(specOf(openclawCommands.host)!);
+  const consoleRefusal = (argv: string[]) => { try { parseCall(hostShape, argv, "host"); return undefined; } catch (error) { return (error as Error).message; } };
+  const binderRefusal = (args: Record<string, unknown>) => { try { bindNamed(hostShape, { kind: "named", args }, "host"); return undefined; } catch (error) { return (error as Error).message; } };
+  check("the binder refuses a bad context in the console's own words", binderRefusal({ context: "vm" }), consoleRefusal(["vm"]));
+  check("the binder refuses the missing arguments in the console's own words", binderRefusal({}), consoleRefusal([]));
   const hostDescription = toolDescription("host", openclawCommands.host);
   const pointer = `${FULL_TEXT_POINTER}=host`;
   check("the schema shows the client the contexts; the description points to help for the rest", JSON.stringify(properties.context?.enum) === JSON.stringify(["target", "engine", "local"]) && hostDescription.includes(pointer), true);

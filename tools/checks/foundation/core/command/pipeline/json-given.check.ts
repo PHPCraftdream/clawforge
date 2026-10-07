@@ -59,7 +59,7 @@ async function runCase(command: string, argv: string[], on: AppDefinition = app)
   const chunks: string[] = [];
   const execution = await withOutputSink((chunk) => {
     chunks.push(chunk);
-  }, () => executeCommand(on, command, argv, { surface: "terminal", transport: fixture.transport() }));
+  }, () => executeCommand(on, command, { kind: "argv", argv: argv }, { surface: "terminal", transport: fixture.transport() }));
   const printed = chunks.some((chunk) => {
     try {
       return typeof (JSON.parse(chunk) as { error?: { message?: unknown } }).error?.message === "string";

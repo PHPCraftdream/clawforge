@@ -49,7 +49,7 @@ for (const kase of [
   { name: "configure-provider --env with an invalid variable", argv: ["--env", "1BAD"], stage: "parse", argument: "env" },
 ] as const) {
   const { transport, contacts } = recordingTransport();
-  const execution = await executeCommand(app, kase.argv[0] === "target" ? "host" : kase.argv[0] === "--json" || kase.argv[0] === "--break-foreign-lock" ? "secrets" : "configure-provider", [...kase.argv], { surface: "mcp", confirmed: true, transport });
+  const execution = await executeCommand(app, kase.argv[0] === "target" ? "host" : kase.argv[0] === "--json" || kase.argv[0] === "--break-foreign-lock" ? "secrets" : "configure-provider", { kind: "argv", argv: [...kase.argv] }, { surface: "mcp", confirmed: true, transport });
   check(`${kase.name} stops at the ${kase.stage} stage`, execution.stage, kase.stage);
   checkTrue(`${kase.name} is refused as an argument error`, execution.error instanceof ArgumentError);
   check(`${kase.name} names its argument`, (execution.error as ArgumentError).argument, kase.argument);

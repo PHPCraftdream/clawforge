@@ -9,7 +9,7 @@
 import type { AppCommand, AppDefinition } from "#src/core/app.ts";
 import { callFacts, callFactsFor, legacyPreparesEnvironment, type CallFacts, type EffectShape } from "#src/core/command/effect.ts";
 import { ConfirmationRequiredError, UnknownArgumentError } from "#src/core/command/errors.ts";
-import { isVerbatim, parseCall, selectAction, tokenize, type CallShape } from "#src/core/command/parse.ts";
+import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInput, type CallShape } from "#src/core/command/parse.ts";
 import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError } from "#src/core/io/log.ts";
@@ -126,9 +126,10 @@ function contextOptions(app: AppDefinition, io: CommandIo): ContextOptions {
 }
 
 /** The one pipeline. Precondition: `app.commands[name]` exists and `--help` was handled by
- *  the caller. A legacy command (no spec) runs exactly as before: argv as is, its own
+ *  the caller. Takes a CallInput: the console passes {kind:"argv"}, an MCP tool call
+ *  {kind:"named"}. A legacy command (no spec) runs exactly as before: argv as is, its own
  *  predicates deciding environment preparation. */
-export async function executeCommand(app: AppDefinition, name: string, argv: readonly string[], io: CommandIo): Promise<Execution> {
+export async function executeCommand(app: AppDefinition, name: string, input: CallInput, io: CommandIo): Promise<Execution> {
   const command = app.commands[name]!;
   const entry = specOf(command);
   const writesAtStart = machineWritesCount();
@@ -161,11 +162,12 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
     const shape = specShape(entry);
     let call: ParsedCall<Record<string, unknown>>;
     try {
-      call = parseCall(shape, argv, name);
+      call = input.kind === "argv" ? parseCall(shape, input.argv, name) : bindNamed(shape, input, name, { confirmed: io.confirmed === true });
     } catch (error) {
       // shape stays out of declaresJsonFlag here: before the call parses there is no chosen
-      // action, so the flat command declaration is the contract's original gate.
-      return failed("parse", error, undefined, undefined, undefined, jsonTokenGiven(shape, argv));
+      // action, so the flat command declaration is the contract's original gate. A named
+      // call has no terminal --json contract, so surface "mcp" regardless.
+      return failed("parse", error, undefined, undefined, undefined, input.kind === "argv" ? jsonTokenGiven(shape, input.argv) : false);
     }
     const facts = callFacts(shape, call);
     if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {
@@ -203,6 +205,9 @@ export async function executeCommand(app: AppDefinition, name: string, argv: rea
     return { stage: "run", facts };
   }
 
+  // Zero legacy commands ship today; a named call reaching one is an invariant breach, not
+  // a refusal, so it throws rather than returning an Execution.
+  const argv = input.kind === "argv" ? input.argv : (() => { throw new Error("a legacy command cannot take a named call"); })();
   const facts = callFactsFor(command, [...argv]);
   if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {
     return failed("confirm", new ConfirmationRequiredError(name), facts, undefined, undefined, legacyJsonGiven(command, argv));

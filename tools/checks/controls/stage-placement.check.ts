@@ -17,7 +17,7 @@ try {
   let output = "";
   const execution = await withOutputSink((chunk) => {
     output += chunk;
-  }, () => executeCommand(app, "destroy", ["--yes", "--confirm-name", "not-this-deployment"], { surface: "mcp", confirmed: true, transport: fixture.transport() }));
+  }, () => executeCommand(app, "destroy", { kind: "argv", argv: ["--yes", "--confirm-name", "not-this-deployment"] }, { surface: "mcp", confirmed: true, transport: fixture.transport() }));
   check("destroy refuses a wrong --confirm-name value at the prepare stage", execution.stage, "prepare");
   checkTrue("the refusal is an ArgumentError naming the argument", execution.error instanceof ArgumentError && (execution.error as ArgumentError).argument === "confirm-name");
   check("nothing ran: no document, no transport contact", [output, fixture.contacts().length], ["", 0]);

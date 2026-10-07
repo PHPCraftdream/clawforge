@@ -10,7 +10,8 @@ import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 import { CONFIRM_REQUIRED, effectProfile, bind, tokenize } from "#framework/core/command/index.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema } from "#framework/integration/mcp/server.ts";
-import { gateConfirmationRefusal, validate } from "#framework/integration/mcp/call.ts";
+import { gateConfirmationRefusal } from "#framework/integration/mcp/call.ts";
+import { validate } from "#framework/integration/mcp/legacy.ts";
 
 // --- gate commands: effect declared, destructive confirmed, required enforced -----------------
 //

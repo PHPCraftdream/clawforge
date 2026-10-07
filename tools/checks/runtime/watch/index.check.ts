@@ -65,7 +65,7 @@ try {
 
   {
     const { transport, contacts } = recordingTransport();
-    const missing = await executeCommand(app, "watch", [], { surface: "terminal", transport });
+    const missing = await executeCommand(app, "watch", { kind: "argv", argv: [] }, { surface: "terminal", transport });
     check("a bare watch stops at the parse stage", missing.stage, "parse");
     checkTrue("a bare watch is refused as an unknown action", missing.error instanceof UnknownActionError);
     check(
@@ -77,7 +77,7 @@ try {
   }
   {
     const { transport, contacts } = recordingTransport();
-    const unknown = await executeCommand(app, "watch", ["bogus"], { surface: "terminal", transport });
+    const unknown = await executeCommand(app, "watch", { kind: "argv", argv: ["bogus"] }, { surface: "terminal", transport });
     check("an unknown action stops at the parse stage", unknown.stage, "parse");
     checkTrue("an unknown action is refused by name", ((unknown.error as Error | undefined)?.message ?? "").includes("unknown action: bogus"));
     checkTrue("the refusal lists the expected words", ((unknown.error as Error | undefined)?.message ?? "").includes("(expected check, install, uninstall, status, test)"));
@@ -94,7 +94,7 @@ try {
     [["check", "--apply"], "apply", true],
   ] as const) {
     const { transport, contacts } = recordingTransport();
-    const execution = await executeCommand(app, "watch", [...argv], { surface: "terminal", transport });
+    const execution = await executeCommand(app, "watch", { kind: "argv", argv: [...argv] }, { surface: "terminal", transport });
     const label = `watch ${argv.join(" ")}`;
     check(`${label}: refused at the parse stage`, execution.stage, "parse");
     check(`${label}: an unknown-argument refusal is ${unknown}`, execution.error instanceof UnknownArgumentError, unknown);

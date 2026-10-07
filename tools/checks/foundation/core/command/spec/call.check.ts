@@ -1,24 +1,26 @@
 // The normalized call form (stage 7 S2.2), table-driven over every command that declares
 // actions, derived from the declarations alone. For every action: the console parse asserts
-// the SELECTED action's name, MCP validate accepts the named call, toArgv names the action
-// first, and the rendered help's action-choices list is exactly the declared set. A
-// positional another action owns, an unknown action and a bare call are refused on both
-// surfaces with one text — the console's — and the refusal texts are judged structurally
-// (voice tokens spelled here, never the product formatter's own constants). The unknown-
-// action cases are then answered by the real named MCP dispatch (a real serveMcp over the
-// real declarations), and an Object.prototype member is never a declared action.
+// the SELECTED action's name, the binder binds the named call, toArgv names the action
+// first (legacy), and the rendered help's action-choices list is exactly the declared set.
+// A positional another action owns, an unknown action and a bare call are refused with one
+// text — the console's — and the refusal texts are judged structurally (voice tokens
+// spelled here, never the product formatter's own constants). validate/toArgv are legacy;
+// the named surface binds through bindNamed — one order of checks, one first refusal, the
+// console's words. The unknown-action cases are then answered by the real named MCP
+// dispatch (a real serveMcp over the real declarations), and an Object.prototype member is
+// never a declared action.
 
 import {
-  UnknownActionError, parseCall, selectAction, specShape,
+  UnknownActionError, bindNamed, parseCall, selectAction, specShape,
 } from "#framework/core/command/index.ts";
-import { validate, toArgv } from "#framework/integration/mcp/call.ts";
+import { toArgv } from "#framework/integration/mcp/legacy.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { specOf, specData } from "#framework/core/command/spec.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { exampleOf, fixture, runCase, stages } from "#checks/foundation/core/command/pipeline/property-sweep.ts";
-import type { ArgumentSpec } from "#framework/core/command/index.ts";
+import { exampleOf, fixture, runCase, runNamed, stages } from "#checks/foundation/core/command/pipeline/property-sweep.ts";
+import type { ArgumentSpec, CallShape } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const Q = String.fromCharCode(96);
@@ -46,6 +48,16 @@ function appliesToVoice(argument: string, owners: readonly string[], action: str
     && ["applies", "to"].every((token) => message.includes(token))
     && owners.every((owner) => message.includes(Q + owner + Q))
     && message.includes(Q + action + Q);
+}
+
+/** The binder's first refusal, if any, for a named call. */
+function binderRefusal(shape: CallShape, args: Record<string, unknown>, command: string): Error | undefined {
+  try {
+    bindNamed(shape, { kind: "named", args }, command);
+    return undefined;
+  } catch (error) {
+    return error as Error;
+  }
 }
 
 // The real named MCP dispatch: one serveMcp child over the real declarations; every
@@ -92,7 +104,9 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
     } else {
       check(`${command} ${action}: the console parse selects the action`, call!.action, action);
     }
-    check(`${command} ${action}: MCP validate accepts the named call`, validate(declaration, { action }), []);
+    let consoleBare: string | undefined;
+    try { parseCall(shape, [action], command); } catch (error) { consoleBare = (error as Error).message; }
+    check(`${command} ${action}: the bare named call reads as the console's bare call`, binderRefusal(shape, { action }, command)?.message, consoleBare);
     check(`${command} ${action}: MCP argv names the action first`, toArgv(declaration, { action }), [action]);
 
     // A positional another action owns is one refusal, in the applies-to voice spelled
@@ -102,10 +116,10 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
       .find((argument) => !positionals.some((own) => own.name === argument.name));
     if (foreign !== undefined) {
       const owners = (foreign as { actions?: readonly string[] }).actions ?? names;
-      const problems = validate(declaration, { action, [foreign.name]: exampleOf(foreign as ArgumentSpec) }, { name: command });
-      check(`${command} ${action}: the foreign positional gets exactly one refusal`, problems.length, 1);
+      const refusal = binderRefusal(shape, { action, [foreign.name]: exampleOf(foreign as ArgumentSpec) }, command);
+      checkTrue(`${command} ${action}: the foreign positional is refused, once`, refusal !== undefined);
       checkTrue(`${command} ${action}: the foreign-positional refusal is in the applies-to voice`,
-        problems.length === 1 && appliesToVoice(foreign.name, owners, action, problems[0]!));
+        refusal !== undefined && appliesToVoice(foreign.name, owners, action, refusal.message));
     }
   }
 
@@ -115,7 +129,7 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   if (shape.defaultAction !== undefined) {
     check(`${command}: the bare console call selects the declared default action`, parseCall(shape, [], command).action, shape.defaultAction);
     check(`${command}: the bare named call selects the default`, selectAction(shape, { kind: "named", args: {} }, command).selected, { name: shape.defaultAction, how: "default" });
-    check(`${command}: MCP validate accepts the bare call`, validate(declaration, {}), []);
+    check(`${command}: the binder binds the bare named call`, binderRefusal(shape, {}, command), undefined);
   } else {
     let consoleMessage = "";
     try {
@@ -131,7 +145,7 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
     }
     checkTrue(`${command}: the bare console call is refused in the needs-an-action voice`, needsActionVoice(command, names, consoleMessage));
     checkTrue(`${command}: the bare named call is refused in the same voice`, needsActionVoice(command, names, namedMessage));
-    check(`${command}: MCP validate refuses the bare call with the console's words`, validate(declaration, {}, { name: command }), [consoleMessage]);
+    check(`${command}: the bare named call is refused with the console's words`, binderRefusal(shape, {}, command)?.message, consoleMessage);
   }
 
   // Unknown action: the console refusal is the parse stage with no target contact, in the
@@ -147,12 +161,16 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
     checkTrue(`${command} ${word}: an UnknownActionError`, terminal.execution.error instanceof UnknownActionError);
     const message = (terminal.execution.error as Error).message;
     checkTrue(`${command} ${word}: the console refusal is in the unknown-action voice`, unknownActionVoice(word, names, message));
-    check(`${command} ${word}: unknown action refuses with the console's words on MCP`, validate(declaration, { action: word }, { name: command }), [message]);
-    check(`${command} ${word}: an unknown property beside it changes nothing`, validate(declaration, { action: word, "no-such-property": "x" }, { name: command }), [message]);
+    check(`${command} ${word}: unknown action refuses with the console's words`, binderRefusal(shape, { action: word }, command)?.message, message);
+    check(`${command} ${word}: an unknown property beside it changes nothing`, binderRefusal(shape, { action: word, "no-such-property": "x" }, command)?.message, message);
     const mcp = await runCase(command, [word], "mcp");
     stages.case(`${command} ${word}`, mcp.execution.stage, mcp.execution.error);
     check(`${command} ${word}: the MCP argv pipeline answers the console text`, (mcp.execution.error as Error | undefined)?.message, message);
     check(`${command} ${word}: the refusal never reaches the target`, mcp.contacts, []);
+    const named = await runNamed(command, { action: word });
+    stages.case(`${command} ${word}`, named.execution.stage, named.execution.error);
+    check(`${command} ${word}: the named pipeline answers the console text`, (named.execution.error as Error | undefined)?.message, message);
+    check(`${command} ${word}: the named call never reaches the target`, named.contacts, []);
     checkTrue(`${command} ${word}: help offers no such action`, !help.includes(word));
     dispatchCases.push({ command, word, message });
   }
@@ -177,7 +195,7 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
     checkTrue(`${command} ${word}: prototype name is an UnknownActionError`, terminal.execution.error instanceof UnknownActionError);
     const message = (terminal.execution.error as Error).message;
     checkTrue(`${command} ${word}: prototype name refusal is in the unknown-action voice`, unknownActionVoice(word, names, message));
-    check(`${command} ${word}: prototype name refused with the console's words on MCP`, validate(declaration, { action: word }, { name: command }), [message]);
+    check(`${command} ${word}: prototype name refused with the console's words`, binderRefusal(shape, { action: word }, command)?.message, message);
   }
   break; // the class is one declaration model: the first multi command carries the table
 }

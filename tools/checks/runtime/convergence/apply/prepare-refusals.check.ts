@@ -54,7 +54,7 @@ const app: AppDefinition = {
 /** The (stage, error, contacts) triple a refused call produces. */
 async function refusal(name: string, argv: string[]): Promise<{ stage: string; error: unknown; contacts: string[] }> {
   const { transport, contacts } = recordingTransport();
-  const execution = await executeCommand(app, name, argv, { surface: "terminal", transport });
+  const execution = await executeCommand(app, name, { kind: "argv", argv: argv }, { surface: "terminal", transport });
   return { stage: execution.stage, error: execution.error, contacts };
 }
 

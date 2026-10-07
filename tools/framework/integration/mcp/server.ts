@@ -23,12 +23,16 @@ import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { executeCommand, type Execution } from "../../core/command/execute.ts";
+import { type CallInput } from "../../core/command/parse.ts";
 import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
-import { gateConfirmationRefusal, maskStructuredOutput, maskStructuredResult, toolEnvelope, validate, toArgv } from "./call.ts";
+import { gateConfirmationRefusal, maskStructuredOutput, maskStructuredResult, toolEnvelope } from "./call.ts";
+import { validate, toArgv } from "./legacy.ts";
+import { specOf } from "../../core/command/spec.ts";
 import { frameworkVersion } from "../../commands/management/lock.ts";
 
 export * from "./schema.ts";
 export * from "./call.ts";
+export * from "./legacy.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -81,7 +85,7 @@ interface JsonRpcRequest {
 async function captureRun(
   app: AppDefinition,
   name: string,
-  argv: string[],
+  input: CallInput,
   confirmed: boolean,
 ): Promise<{ output: string; machineOutput?: string; failure?: string; execution: Execution }> {
   const chunks: string[] = [];
@@ -92,7 +96,7 @@ async function captureRun(
       chunks.push(chunk);
     },
     async () => {
-      const execution = await executeCommand(app, name, argv, { surface: "mcp", confirmed });
+      const execution = await executeCommand(app, name, input, { surface: "mcp", confirmed });
       if (execution.error === undefined) {
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, execution };
       }
@@ -204,7 +208,7 @@ async function handleHelpTool(
   if (problems.length > 0) {
     reply(id, {
       isError: true,
-      content: [{ type: "text", text: maskSecrets(`help: ${problems.join("; ")}`) }],
+      content: [{ type: "text", text: maskSecrets(`help: ${problems[0]}`) }],
     });
     return;
   }
@@ -240,7 +244,7 @@ async function handleGateToolCall(
   if (problems.length > 0) {
     reply(id, {
       isError: true,
-      content: [{ type: "text", text: maskSecrets(problems.join("; ")) }],
+      content: [{ type: "text", text: maskSecrets(problems[0] ?? "") }],
     });
     return;
   }
@@ -273,19 +277,23 @@ async function handleAppToolCall(
   args: Record<string, unknown>,
   lookup: (name: string) => Declared | undefined,
 ): Promise<void> {
-  const problems = validate(command, args, { name });
+  // A declared body binds by name through the console's own binder. A command without a
+  // body — a stub server's run-replaced command, a hand-written AppCommand — still parses
+  // argv, so it goes through the legacy named→argv bridge (integration/mcp/legacy.ts),
+  // validate's shape check first, exactly the pre-binder path.
+  const legacy = specOf(command) === undefined;
+  let problems: string[] = [];
+  if (legacy) problems = validate(command as Declared, args, { name });
   if (problems.length > 0) {
-    reply(id, {
-      isError: true,
-      content: [{ type: "text", text: maskSecrets(problems.join("; ")) }],
-    });
+    reply(id, { isError: true, content: [{ type: "text", text: maskSecrets(problems[0] ?? "") }] });
     return;
   }
-
-  const argv = toArgv(command, args);
+  const argv = legacy ? toArgv(command as Declared, args) : undefined;
   try {
     const confirmed = args.confirm === true;
-    const { output, machineOutput, failure, execution } = await captureRun(app, name, argv, confirmed);
+    const { output, machineOutput, failure, execution } = await captureRun(
+      app, name, legacy ? { kind: "argv", argv: argv! } : { kind: "named", args }, confirmed,
+    );
 
     // A parse or confirmation refusal answers like a validate refusal: a bare tool error with
     // the parser's (or confirmation phrase's) own text, no envelope — the call never ran.
@@ -304,7 +312,9 @@ async function handleAppToolCall(
     // true of each response rather than of the actions someone remembered to list. The
     // pipeline's facts (effect, changedWhen) drive `changed`.
     const structured = command.structured === true
-      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv, execution.facts, lookup, execution.error, execution.stage)
+      // the envelope's argv is legacy provenance only (a spec command's changedFact reads
+      // the pipeline facts, never argv)
+      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, legacy ? argv! : [], execution.facts, lookup, execution.error, execution.stage)
       : undefined;
     // Redaction is not an error-path courtesy: a successful diagnostic prints the same
     // logs, hook output and machine JSON a failure would have, so registered values are

@@ -84,7 +84,7 @@ export async function runApp(
   // The one pipeline (parse → confirm → prepare → environment → context → run), shared with
   // the MCP surface. Only an argument error is reported here; anything else rethrows so
   // main() reports it — the contract the app-hooks checks rely on.
-  const execution = await executeCommand(app, name, args, { surface: "terminal" });
+  const execution = await executeCommand(app, name, { kind: "argv", argv: args }, { surface: "terminal" });
   if (execution.error === undefined) return 0;
   if (execution.error instanceof UnknownArgumentError) {
     reportUnknownArgument(name, execution.error);

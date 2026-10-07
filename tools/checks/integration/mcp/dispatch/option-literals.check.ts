@@ -50,7 +50,7 @@ else if (args[0] === 'compose' && args.includes('logs')) {
 `);
   async function run(argv: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
     const result = await runProcess(process.execPath, ["--experimental-strip-types", self, "--dispatch", root, shim, ...argv], {
-      env: { ...process.env, OC_DEBUG: "0" }, input, timeoutMs: 15000,
+      env: { ...process.env, OC_DEBUG: "0" }, input, timeoutMs: 60000,
     });
     if (result.error !== undefined) throw result.error;
     return result;

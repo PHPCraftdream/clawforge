@@ -537,7 +537,7 @@ await withDeployment(async (dir) => {
     const transport = new Proxy({} as Transport, {
       get: (_target, name) => () => { contacts.push(String(name)); throw new Error("unreachable target"); },
     });
-    const execution = await executeCommand(app, "incident", [...argv], { surface: "terminal", transport });
+    const execution = await executeCommand(app, "incident", { kind: "argv", argv: [...argv] }, { surface: "terminal", transport });
     const label = `incident ${argv.join(" ")}`;
     check(`${label}: refused at the parse stage`, execution.stage, "parse");
     check(`${label}: an unknown-argument refusal is ${unknown}`, execution.error instanceof UnknownArgumentError, unknown);

@@ -6,6 +6,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* MCP tool calls bind arguments by name with the console's own binder: an unknown action is refused as such, a positional never lands in another action's slot (`<name> applies to ...`), and the first refusal is reported in the console's words instead of a list.
+* MCP gate and help tool calls report the first refusal only, where they used to join every problem into one sentence.
 * `restore`, `push`, `verify` and `deploy` refuse a positional that begins with `-` even after `--` on the console, like the MCP surface already did.
 * `deploy` refuses a target that starts with `-` (it reached ssh as an option).
 * `configure-provider --provider` and `--env` are refused at parse in the argument kind's own words instead of after the settings are read.

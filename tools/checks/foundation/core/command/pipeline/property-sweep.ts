@@ -5,9 +5,9 @@
 import { executeCommand } from "#framework/core/command/execute.ts";
 import { specData } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
-import { specOf, type LocalFact } from "#framework/core/command/spec.ts";
+import { specOf, commandBody, defineAction, materializeCommands, multiActionBody, type LocalFact, type ParsedCall } from "#framework/core/command/spec.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import type { AppDefinition } from "#framework/core/app.ts";
+import type { AppCommand, AppDefinition } from "#framework/core/app.ts";
 import { checkTrue } from "#checks/kit/harness.ts";
 import { createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -36,6 +36,55 @@ await packArtifact(artifactTree, controlManifest, controlArtifact);
 export const stages = stageTally();
 
 export const app: AppDefinition = { name: "property-fixture", description: "fixture", commands: openclawCommands };
+
+/** A capture deployment: every openclawCommands command re-declared with the SAME arguments,
+ *  rules and refuse tokens but a recording run, so a row can compare the bound call the
+ *  pipeline ACTUALLY passed to run (values, action, given) between the console's argv and an
+ *  MCP named call. Effect "read" (no confirm gate), local facts dropped (not binding rows'
+ *  subject); the parse/bind machinery is the product's own. */
+export interface CapturedCall {
+  readonly command: string;
+  readonly action?: string;
+  readonly values: Record<string, unknown>;
+  readonly given: readonly string[];
+}
+export function captureApp(captured: CapturedCall[]): AppDefinition {
+  const record = (command: string, action: string | undefined, plan: ParsedCall<Record<string, unknown>>): void => {
+    captured.push({ command, ...(action === undefined ? {} : { action }), values: plan.values, given: plan.given });
+  };
+  const commands: Record<string, AppCommand> = {};
+  for (const [name, declaration] of Object.entries(openclawCommands)) {
+    const entry = specOf(declaration);
+    if (entry === undefined) continue;
+    const data = specData(entry);
+    // `prepare` passes the ParsedCall through, so run sees given too.
+    commands[name] = data.kind === "single"
+      ? materializeCommands({
+          [name]: {
+            ...commandBody({
+              effect: "read", arguments: data.arguments as never, rules: data.rules as never, refuse: data.refuse,
+              prepare: (call) => call,
+              run: async (_on, plan) => record(name, undefined, plan as never),
+            }),
+            summary: name, group: "low-level",
+          },
+        })[name]!
+      : materializeCommands({
+          [name]: {
+            ...multiActionBody({
+              effect: "read", action: data.action,
+              actions: Object.fromEntries(Object.entries(data.actions).map(([action, spec]) => [action, defineAction({
+                summary: action, effect: "read", arguments: (spec.arguments ?? []) as never, rules: spec.rules as never, refuse: spec.refuse,
+                prepare: (call) => call,
+                run: async (_on, plan) => record(name, action, plan as never),
+              })])),
+            }),
+            summary: name, group: "low-level",
+          },
+        })[name]!;
+  }
+  return { name: "capture-fixture", description: "fixture", commands };
+}
 
 export interface Unit {
   readonly label: string;
@@ -80,7 +129,14 @@ export async function runCase(command: string, argv: string[], surface: "termina
   let output = "";
   const execution = await withOutputSink((chunk) => {
     output += chunk;
-  }, () => executeCommand(on, command, argv, { surface, transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
+  }, () => executeCommand(on, command, { kind: "argv", argv }, { surface, transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
+  return { execution, output, contacts: fixture.contacts() };
+}
+
+export async function runNamed(command: string, args: Record<string, unknown>, on: AppDefinition = app, options: { confirmed?: boolean } = {}) {
+  const transport = fixture.transport();
+  let output = "";
+  const execution = await withOutputSink((chunk) => { output += chunk; }, () => executeCommand(on, command, { kind: "named", args }, { surface: "mcp", transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
   return { execution, output, contacts: fixture.contacts() };
 }
 

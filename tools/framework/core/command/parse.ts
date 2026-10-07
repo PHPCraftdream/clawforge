@@ -1,10 +1,6 @@
-// Argv parsing driven by a command's own declared `arguments` (core/app.ts's CommandArgument)
-// — the same list that already drives help text and the MCP schema (mcp/schema.ts's
-// inputSchema, mcp/call.ts's validate/toArgv) — so a flag the declaration knows and the
+// Argv parsing driven by a command's own declared `arguments` (core/app.ts) — the same list
+// that already drives help text and the MCP schema — so a flag the declaration knows and the
 // CLI parser does not (or the reverse) stops being possible to write by hand.
-//
-// tokenize reads tokens, bind turns them into typed values, parseCall adds the action word;
-// parseDeclaredArgs is the syntactic wrapper the hand-written parsers still call.
 
 import type { CommandArgument } from "#src/core/app.ts";
 import {
@@ -36,9 +32,7 @@ export function missingArgumentMessage(prefix: string, label: string): string {
   return `${prefix} needs ${label}`;
 }
 
-/** The one voice for a missing required argument: bind's refusal, word for word — the
- *  parser throws it and the MCP validate routes through it, so a tool call reads the
- *  console's own text instead of a second wording of the same refusal. */
+/** The one voice for a missing required argument: bind's refusal, word for word. */
 export function requiredArgumentRefusal(argument: ArgumentSpec, command?: string): string {
   const label = argument.kind === "option" ? `--${argument.name} <${argument.valueName ?? "value"}>`
     : argument.kind === "variadic" ? `<${argument.name}…>`
@@ -62,8 +56,7 @@ function groupsClause(declared: ReadonlyMap<string, ArgumentSpec>, groups: reado
   return groups.map((group) => groupClause(declared, group)).join(" or ");
 }
 
-/** The one voice a rule is refused and printed in: the parser's messages on error, the same
- *  clauses without the verb for `--help` (help-render adds its own prefix and marker). */
+/** The one voice a rule is refused and printed in. */
 export function ruleText(
   rule: ArgumentRule,
   declared: readonly ArgumentSpec[],
@@ -109,9 +102,7 @@ function isGiven(argument: ArgumentSpec | undefined, values: Record<string, unkn
   return values[argument.name] !== undefined;
 }
 
-/** The declaration's cross-field rules against the bound values, in declaration order: the
- *  first violation refuses. Runs after `bind`, so a value error or a missing required
- *  argument is still the first refusal. */
+/** The declaration's cross-field rules against the bound values, in declaration order. */
 export function enforceRules(
   declared: readonly ArgumentSpec[],
   rules: readonly ArgumentRule[] | undefined,
@@ -155,9 +146,7 @@ export function enforceRules(
   }
 }
 
-/** The one voice for an argument another action owns: the parser refuses the dashed token
- *  it saw, the MCP validate the JSON property — the same sentence, each surface's own
- *  spelling of the argument. */
+/** The one voice for an argument another action owns — both surfaces' own spelling. */
 export function appliesToMessage(name: string, actions: readonly string[], action: string): string {
   return `${name} ${APPLIES_TO} ${formatActions(actions)}, not \`${action}\``;
 }
@@ -174,14 +163,8 @@ export function argumentScopeRefusal(argument: ArgumentSpec | CommandArgument, a
   return actions !== undefined && !actions.includes(action) ? appliesToMessage(label ?? argument.name, actions, action) : undefined;
 }
 
-/** One value per declared argument, keyed by its name (not its `--flag` spelling):
- *   flag        true once seen, otherwise absent
- *   option      the value once seen (from `--opt value` or `--opt=value`); otherwise absent
- *               — a value is never absent for an option that was seen at all, since running
- *               out of argv with nothing to take as the value dies in the parser itself
- *   positional  the token assigned to that slot, once one was; otherwise absent
- *   variadic    every remaining token from where it starts, in order; otherwise absent
- */
+/** One value per declared argument, keyed by its name: flag true once seen, option its
+ *  value, positional its token, variadic every remaining token in order; otherwise absent. */
 export type ParsedArgs = Record<string, string | boolean | string[] | undefined>;
 
 /** Whether `token` is `--name` or `--name=...` for a flag/option this same declaration
@@ -243,8 +226,7 @@ export interface Scanned extends Tokens {
 
 /** tokenize for a partly typed line (completion): the same reading, but a token the parser
  *  would refuse is skipped instead of thrown, and an option takes the next word as its value
- *  even when it is a declared flag — so what a bare `--`, a verbatim tail or an unfinished
- *  option means is the tokenizer's own answer, whatever else on the line is wrong. */
+ *  even when it is a declared flag. */
 export function tokenizeLenient(declared: readonly CommandArgument[], argv: readonly string[], verbatimTail = false): Scanned {
   return scan(declared, argv, undefined, verbatimTail, undefined, true);
 }
@@ -267,8 +249,7 @@ function scan(
     else named.set(argument.name, argument);
   }
 
-  // True once a bare `--` was seen: every remaining token is positional/variadic, even one
-  // that looks like a flag.
+  // True once a bare `--` was seen: the rest is positional/variadic.
   let optionsEnded = false;
   // True once the variadic has started in verbatim mode: the rest is its, whatever it looks like.
   let tail = false;
@@ -293,8 +274,7 @@ function scan(
     if (!optionsEnded) refuseToken(refuse, token);
 
     if (!optionsEnded && bindsAsFlag(token)) {
-      // --opt=value is split before lookup so --app=name (long understood at the gate)
-      // and every other declared option read the same syntax consistently.
+      // --opt=value is split before lookup so every declared option reads the same syntax.
       let flagToken = token;
       let inlineValue: string | undefined;
       if (token.startsWith("--")) {
@@ -323,8 +303,7 @@ function scan(
       }
       given.push(argument.name);
       if (argument.kind === "flag") {
-        // A flag carries no value — "=value" on one is a mistake worth naming, not a
-        // silently ignored suffix.
+        // A flag carries no value — "=value" on one is a mistake worth naming.
         if (inlineValue !== undefined) {
           if (lenient) continue;
           throw new ArgumentError(`--${argument.name} is a flag and takes no value`, argument.name);
@@ -366,14 +345,12 @@ function scan(
   return { entries, given, optionsEnded, ...(pending === undefined ? {} : { pending }) };
 }
 
-/** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens,
- *  a value with a declared `parse` its parsed value. */
+/** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens. */
 function toParsedArgs(entries: readonly TokenEntry[]): ParsedArgs {
   const result: ParsedArgs = {};
   for (const { argument, value } of entries) {
     if (argument.kind === "variadic") {
-      // Each element goes through the declared element kind when one is present (the public
-      // `value` carrier); convert throws ArgumentError already, so no extra wrapping here.
+      // Each element goes through the declared element kind when one is present.
       const element = argument.value !== undefined
         ? convert(argument as ValueSpec<"option">, value as string) as string
         : value as string;
@@ -514,14 +491,8 @@ function refuseToken(refuse: Readonly<Record<string, string>> | undefined, token
 }
 
 // The normalized call form (stage 7 S2.2): ONE selection of the action — or of the single
-// unit — behind a call, from either surface's input shape: the console's positional tokens or
-// an MCP tool call's named input. The chosen unit's own arguments slice, its rules and refuse
-// tokens, and the cross-action scope (the applies-to diagnostics' source) come only from here,
-// so parse, MCP validate/toArgv, the --json probe and the checks cannot grow a second
-// default-action fallback or a second wording of the unknown-action refusal.
-//
-// Binding (values, provenance, named-form binding) is later S2.3 work; this module only
-// selects.
+// unit — from either surface's input shape, and only here (with slice, rules, refuse, scope),
+// so no caller grows a second default-action fallback or unknown-action wording.
 
 /** How a call reaches the parser: the console's argv, or an MCP tool call's named input. */
 export type CallInput =
@@ -601,6 +572,9 @@ export function selectAction(shape: CallShape, input: CallInput, command = ""): 
   };
   if (input.kind === "named") {
     const word = input.args.action;
+    if (word !== undefined && word !== "" && typeof word !== "string") {
+      throw new ArgumentError(`action takes a string`, "action");
+    }
     if (typeof word === "string" && word !== "") {
       if (!known.has(word)) dieUnknownAction(word, unknownActionMessage(word, names), names, "action");
       return chosen(word, "named", []);
@@ -628,4 +602,90 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
   const values = bind(declared, tokens, context);
   enforceRules(declared, chosen.rules, values, context);
   return { values, ...(action === undefined ? {} : { action }), given: tokens.given };
+}
+
+/** The one binder for both surfaces (argv via parseCall, named here): ONE check order, and
+ *  the first refusal throws. The unknown/foreign and JSON-shape refusals run first, in the
+ *  caller's property order; the values then convert in the selected slice's declaration
+ *  order. The named form is narrower — "" or false is "not given", no repeats, no `--` and
+ *  no refuse tokens — so only each value's JSON shape is checked here. */
+export function bindNamed(
+  shape: CallShape,
+  input: Extract<CallInput, { kind: "named" }>,
+  command = "",
+  options: { confirmed?: boolean } = {},
+): ParsedCall<Record<string, unknown>> {
+  const chosen = selectAction(shape, input, command);
+  const declared = chosen.slice;
+  const action = chosen.selected.name;
+  const context: BindContext = action === undefined ? { command } : { command, action };
+  const byName = new Map(declared.map((argument) => [argument.name, argument]));
+  const entries: TokenEntry[] = [];
+  const given: string[] = [];
+  // Pass 1 — caller's own property order: the unknown/foreign refusals and the JSON-shape
+  // checks stay first, the first bad one the one reported. Entries are recorded, not pushed.
+  const recorded = new Map<string, { argument: CommandArgument; value: string | true; readonly values?: readonly string[] }>();
+  for (const [name, value] of Object.entries(input.args)) {
+    if (name === "confirm" || (name === "action" && shape.actions !== undefined)) continue;
+    const argument = byName.get(name);
+    if (argument === undefined) {
+      const sibling = chosen.siblings.find((candidate) => candidate.name === name);
+      if (sibling !== undefined) {
+        const label = sibling.kind === "positional" ? `<${name}>` : `--${name}`;
+        throw new ArgumentError(argumentScopeRefusal(sibling, action ?? "", label)!, name);
+      }
+      // A positional of another action: the siblings list carries only flags and options
+      // (scopeByAction), so its owners are derived from the shape's own action slices here.
+      const owners = shape.actions === undefined
+        ? []
+        : Object.keys(shape.actions).filter((unit) => (shape.actions![unit].arguments ?? []).some((candidate) => candidate.name === name));
+      if (owners.length > 0) {
+        const foreign = Object.values(shape.actions!).flatMap((unit) => unit.arguments ?? []).find((candidate) => candidate.name === name)!;
+        const label = foreign.kind === "positional" ? `<${name}>` : `--${name}`;
+        throw new ArgumentError(appliesToMessage(label, owners, action ?? ""), name);
+      }
+      throw new UnknownArgumentError(`unknown argument: ${name}`, name);
+    }
+    if (argument.kind === "flag") {
+      if (typeof value !== "boolean") throw new ArgumentError(`${name} takes true or false`, name);
+      // false is "not given" — the same absence the tokenizer's argv form produces.
+      if (!value) continue;
+      recorded.set(name, { argument, value: true });
+      continue;
+    }
+    if (argument.kind === "variadic") {
+      if (!(Array.isArray(value) && value.every((element) => typeof element === "string" && element !== ""))) {
+        throw new ArgumentError(`${name} takes a list of non-empty strings`, name);
+      }
+      recorded.set(name, { argument, value: true, values: value });
+      continue;
+    }
+    if (typeof value !== "string") throw new ArgumentError(`${name} takes a string`, name);
+    if (value === "") continue;
+    recorded.set(name, { argument, value });
+  }
+  // Pass 2 — the selected slice's declaration order: entries (one per variadic element) in
+  // declaration order; `given` is flags and options only (parseCall's tokens.given).
+  for (const argument of declared) {
+    const record = recorded.get(argument.name);
+    if (record === undefined) continue;
+    if (record.values !== undefined) {
+      for (const element of record.values) entries.push({ argument, value: element });
+      continue;
+    }
+    entries.push({ argument, value: record.value });
+    if (argument.kind === "flag" || argument.kind === "option") given.push(argument.name);
+  }
+  // A confirmed MCP call rides the same set-by-confirm flags the confirm stage injects.
+  if (options.confirmed === true) {
+    for (const argument of declared) {
+      if (argument.kind !== "flag" || argument.setByConfirm !== true || given.includes(argument.name)) continue;
+      entries.push({ argument, value: true });
+      given.push(argument.name);
+    }
+  }
+  const tokens: Tokens = { entries, given, optionsEnded: false };
+  const values = bind(declared, tokens, context);
+  enforceRules(declared, chosen.rules, values, context);
+  return { values, ...(action === undefined ? {} : { action }), given };
 }

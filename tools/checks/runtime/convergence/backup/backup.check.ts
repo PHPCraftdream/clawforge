@@ -317,7 +317,7 @@ function stubBackupCtx(
   } as unknown as Transport;
 
   for (const argv of [["--native", "--profile", "share"], ["--native", "--migrate"], ["create", "--native", "--share"]]) {
-    const execution = await executeCommand(app, "backup", [...argv], { surface: "terminal", transport });
+    const execution = await executeCommand(app, "backup", { kind: "argv", argv: [...argv] }, { surface: "terminal", transport });
     check(`backup ${argv.join(" ")} stops at the prepare stage`, execution.stage, "prepare");
     checkTrue(`backup ${argv.join(" ")} is an ArgumentError naming --native`, execution.error instanceof ArgumentError
       && (execution.error as ArgumentError).argument === "native");

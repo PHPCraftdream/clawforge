@@ -67,7 +67,7 @@ for (const action of actions) {
     } else {
       // Through the pipeline: diff reads its flags after the artifacts at the prepare stage.
       const { transport, contacts } = recordingTransport();
-      const execution = await executeCommand(app, "set", argv, { surface: "mcp", confirmed: true, transport });
+      const execution = await executeCommand(app, "set", { kind: "argv", argv: argv }, { surface: "mcp", confirmed: true, transport });
       checkTrue(`${label}: not declared for this action, so the pipeline refuses it as that argument`,
         execution.error instanceof UnknownArgumentError && execution.error.argument === argument.name);
       check(`${label}: refused before any contact`, contacts, []);
@@ -121,7 +121,7 @@ const CASES: readonly { name: string; argv: string[]; stage: "parse" | "prepare"
 
 for (const kase of CASES) {
   const { transport, contacts } = recordingTransport();
-  const execution = await executeCommand(app, "set", kase.argv, { surface: "mcp", confirmed: true, transport });
+  const execution = await executeCommand(app, "set", { kind: "argv", argv: kase.argv }, { surface: "mcp", confirmed: true, transport });
   check(`${kase.name} stops at the ${kase.stage} stage`, execution.stage, kase.stage);
   checkTrue(`${kase.name} is refused as an argument error`, execution.error instanceof ArgumentError);
   if (kase.argument !== undefined) check(`${kase.name} names its argument`, (execution.error as ArgumentError).argument, kase.argument);

@@ -248,7 +248,7 @@ try {
     useDeployment(scratch);
     let captured = "";
     const execution = await withOutputSink((chunk) => { captured += chunk; }, () =>
-      executeCommand(app, "operations", ["--json"], { surface: "terminal", transport: contextTolerant.transport }));
+      executeCommand(app, "operations", { kind: "argv", argv: ["--json"] }, { surface: "terminal", transport: contextTolerant.transport }));
     await rm(scratch, { recursive: true, force: true });
     check("operations --json fails at the run stage on an unreachable target", execution.stage, "run");
     checkTrue("...with the transport refusal as the error", execution.error instanceof TransportUnreachableError);

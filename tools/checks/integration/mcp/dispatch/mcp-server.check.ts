@@ -19,9 +19,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription, validate } from "#framework/integration/mcp/server.ts";
+import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { callFactsFor, CONFIRM_REQUIRED } from "#framework/core/command/index.ts";
+import { callFactsFor, CONFIRM_REQUIRED, specOf, specShape, bindNamed } from "#framework/core/command/index.ts";
 import { DESTRUCTIVE_SOME } from "#framework/core/io/help-render.ts";
 import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
 
@@ -239,10 +239,12 @@ try {
 // accepts and the dispatcher destructures as [action, name, ...rest].
 {
   const recipeCommand = openclawCommands.recipe!;
+  const recipeShape = specShape(specOf(recipeCommand)!);
+  const binds = (args: Record<string, unknown>) => { try { bindNamed(recipeShape, { kind: "named", args }, "recipe"); return true; } catch { return false; } };
   const plain = { action: "import", name: "fixture-source", confirm: true };
-  check("import without a rename validates clean", validate(recipeCommand, plain), []);
+  check("import without a rename binds clean", binds(plain), true);
   const renamed = { action: "import", name: "fixture-source", "new-name": "renamed", confirm: true };
-  check("import with a rename validates clean", validate(recipeCommand, renamed), []);
+  check("import with a rename binds clean", binds(renamed), true);
   check("the schema documents the rename for clients", (inputSchema(recipeCommand).properties as Record<string, unknown>)["new-name"] !== undefined, true);
 }
 

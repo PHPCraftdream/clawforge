@@ -373,12 +373,12 @@ check("...but the headline still confirms the write happened", appliedHeadline(f
   const schema = inputSchema(command) as { properties: Record<string, unknown>; required: string[] };
   checkTrue(`the MCP schema offers confirm`, schema.properties.confirm !== undefined);
   checkTrue(`confirm is offered, not required (a dump without --force is a change)`, !schema.required.includes("confirm"));
-  const refused = await executeCommand(app, "apply-config", ["--dump", "--force"], { surface: "mcp", transport });
+  const refused = await executeCommand(app, "apply-config", { kind: "argv", argv: ["--dump", "--force"] }, { surface: "mcp", transport });
   check(`an MCP call without confirm stops at the confirm stage`, refused.stage, "confirm");
   checkTrue(`the refusal is the confirmation one`, refused.error instanceof ConfirmationRequiredError);
-  const confirmed = await executeCommand(app, "apply-config", ["--dump", "--force"], { surface: "mcp", transport, confirmed: true });
+  const confirmed = await executeCommand(app, "apply-config", { kind: "argv", argv: ["--dump", "--force"] }, { surface: "mcp", transport, confirmed: true });
   checkTrue(`confirm: true gets past the confirm stage`, confirmed.stage !== "confirm");
-  const terminal = await executeCommand(app, "apply-config", ["--dump", "--force"], { surface: "terminal", transport });
+  const terminal = await executeCommand(app, "apply-config", { kind: "argv", argv: ["--dump", "--force"] }, { surface: "terminal", transport });
   checkTrue(`the console still asks no confirmation flag`, terminal.stage !== "confirm");
 }
 

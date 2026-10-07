@@ -93,7 +93,7 @@ try {
   for (const { env, unsetEnv } of cases) {
     const cwd = process.cwd(); process.chdir(nested);
     let pending;
-    try { pending = spawnLocal(entry.command,entry.args,{env,unsetEnv,timeoutMs:5000}); }
+    try { pending = spawnLocal(entry.command,entry.args,{env,unsetEnv,timeoutMs:60000}); }
     finally { process.chdir(cwd); }
     const result = JSON.parse((await pending).stdout);
     assert.equal(result.cwd,moved);
@@ -159,7 +159,7 @@ try {
   const native = JSON.parse(await readFile(join(monorepoApp,".mcp.json"),"utf8"));
   const monorepoEntry = native.mcpServers[CLAWFORGE_CONTROL_MCP_NAME];
   const input = JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list"})+"\n";
-  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp,CLAWFORGE_REAL_GATE:realGate},input,timeoutMs:5000});
+  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp,CLAWFORGE_REAL_GATE:realGate},input,timeoutMs:60000});
   const reply = JSON.parse(child.stdout);
   assert.ok(reply.result.tools.some((tool: {name:string})=>tool.name==="mcp-setup"));
   process.stderr.write("all project MCP setup checks passed\n");

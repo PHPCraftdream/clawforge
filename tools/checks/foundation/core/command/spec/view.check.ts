@@ -4,8 +4,8 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { argumentsView, specData, specOf, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
-import { inputSchema, schemaArgumentDescription, validate } from "#framework/integration/mcp/server.ts";
+import { argumentsView, specData, specOf, specShape, bindNamed, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
+import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import * as kinds from "#framework/core/values/kinds.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -410,15 +410,18 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   check("a single body shows its arguments as declared", argumentsView(commandBody({ effect: "read", arguments: single, run })), single);
 }
 
-// --- F1/I4: set's per-action variadic reaches the declaration, the schema and MCP validate ---
+// --- F1/I4: set's per-action variadic reaches the declaration, the schema and the binder ---
 {
   const artifacts = (openclawCommands.set.arguments ?? []).find((argument) => argument.name === "artifacts");
   check("set declares the diff variadic", [artifacts?.kind, artifacts?.description], ["variadic", "Two positional artifacts"]);
   check("it is scoped to the actions that declare it", artifacts?.actions, ["diff"]);
   const setSchema = inputSchema(openclawCommands.set) as { properties: Record<string, { type: string; items?: { type: string } }> };
   check("the MCP schema renders it as a string array", [setSchema.properties.artifacts?.type, setSchema.properties.artifacts?.items?.type], ["array", "string"]);
-  check("MCP validate accepts two artifacts for set diff", validate(openclawCommands.set, { action: "diff", artifacts: ["a.tar.gz", "b.tar.gz"] }), []);
-  check("MCP validate refuses a non-string artifact", validate(openclawCommands.set, { action: "diff", artifacts: [1] }).length > 0, true);
+  const setShape = specShape(specOf(openclawCommands.set)!);
+  const binds = (args: Record<string, unknown>) => { try { bindNamed(setShape, { kind: "named", args }, "set"); return true; } catch (error) { return error; } };
+  check("the binder accepts two artifacts for set diff", binds({ action: "diff", artifacts: ["a.tar.gz", "b.tar.gz"] }), true);
+  const expected = "artifacts takes a list of non-empty strings";
+  check("the binder refuses a non-string artifact", (binds({ action: "diff", artifacts: [1] }) as Error).message, expected);
 }
 
 finish("action arguments");

@@ -25,7 +25,7 @@ import { executeCommand } from "#framework/core/command/execute.ts";
 import { callFactsFor } from "#framework/core/command/index.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
 import { inputSchema } from "#framework/integration/mcp/schema.ts";
-import { validate } from "#framework/integration/mcp/call.ts";
+import { validate } from "#framework/integration/mcp/legacy.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { DATA_DIR_UNSET } from "#framework/core/env.ts";
@@ -166,7 +166,7 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { transport, dockerCalls } = recoveryTransport();
-    const { output, error } = await capture(() => executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport }));
+    const { output, error } = await capture(() => executeCommand(recoverApp, "recover-env", { kind: "argv", argv: [] }, { surface: "terminal", transport }));
     check("the bootstrap run succeeds against a stubbed container", error, "");
     const merged = await readFile(envFile(), "utf8");
     check("the missing OC_DATA_DIR is filled from the container", merged.includes("OC_DATA_DIR=/srv/data"), true);
@@ -213,7 +213,7 @@ try {
         throw stubRefusal;
       },
     } as unknown as Transport;
-    const execution = await executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport: unreachable });
+    const execution = await executeCommand(recoverApp, "recover-env", { kind: "argv", argv: [] }, { surface: "terminal", transport: unreachable });
     const error = execution.error instanceof Error ? execution.error.message : String(execution.error ?? "");
     const problem = unreachableProblem(stubRefusal);
     check("an unreachable target is refused as unreachable", execution.error instanceof UserError && execution.error.message.includes("TARGET_UNREACHABLE"), true);
@@ -226,7 +226,7 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { transport } = recoveryTransport();
-    const { error } = await capture(() => executeCommand(recoverApp, "recover-env", ["--adopt-runtime"], { surface: "terminal", transport }));
+    const { error } = await capture(() => executeCommand(recoverApp, "recover-env", { kind: "argv", argv: ["--adopt-runtime"] }, { surface: "terminal", transport }));
     check("the adopt-runtime bootstrap run succeeds", error, "");
     const merged = await readFile(envFile(), "utf8");
     check("a diverged port IS written under --adopt-runtime", merged.includes("OPENCLAW_GATEWAY_PORT=18790"), true);
@@ -244,7 +244,7 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { transport } = recoveryTransport();
-    const { output, error } = await capture(() => executeCommand(recoverApp, "recover-env", ["--dry-run"], { surface: "terminal", transport }));
+    const { output, error } = await capture(() => executeCommand(recoverApp, "recover-env", { kind: "argv", argv: ["--dry-run"] }, { surface: "terminal", transport }));
     check("the dry-run bootstrap run succeeds", error, "");
     check("a dry run leaves .env byte-identical", await readFile(envFile(), "utf8"), seedWithoutDataDir);
     check("the dry run names the fact it would fill", output.includes("OC_DATA_DIR=/srv/data"), true);
@@ -262,7 +262,7 @@ try {
         Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/live-data/config" }],
       },
     });
-    const { error } = await capture(() => executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport }));
+    const { error } = await capture(() => executeCommand(recoverApp, "recover-env", { kind: "argv", argv: [] }, { surface: "terminal", transport }));
     check("a stopped matching container does not prevent recovery", error, "");
     check("the running container supplies the recovered data directory", (await readFile(envFile(), "utf8")).includes("OC_DATA_DIR=/srv/live-data"), true);
     check("all matching IDs are inspected until a running one is found", dockerCalls.filter((args) => args[0] === "inspect").map((args) => args[3]), ["stopped-id", "running-id"]);

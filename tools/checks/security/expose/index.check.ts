@@ -41,7 +41,7 @@ function recordingTransport(): { transport: Transport; contacts: string[] } {
 
 {
   const { transport, contacts } = recordingTransport();
-  const missing = await executeCommand(app, "expose", [], { surface: "terminal", transport });
+  const missing = await executeCommand(app, "expose", { kind: "argv", argv: [] }, { surface: "terminal", transport });
   check("a bare expose stops at the parse stage", missing.stage, "parse");
   checkTrue("a bare expose is refused as an unknown action", missing.error instanceof UnknownActionError);
   checkTrue("the refusal names the three valid actions", (missing.error as Error).message.includes("needs an action: ssh, tailscale, status"));
@@ -49,7 +49,7 @@ function recordingTransport(): { transport: Transport; contacts: string[] } {
 }
 {
   const { transport, contacts } = recordingTransport();
-  const unknown = await executeCommand(app, "expose", ["bogus"], { surface: "terminal", transport });
+  const unknown = await executeCommand(app, "expose", { kind: "argv", argv: ["bogus"] }, { surface: "terminal", transport });
   check("an unknown action stops at the parse stage", unknown.stage, "parse");
   checkTrue("an unknown action is refused by name", (unknown.error as Error).message.includes("unknown action: bogus"));
   checkTrue("the refusal lists the expected words", (unknown.error as Error).message.includes("(expected ssh, tailscale, status)"));
@@ -65,7 +65,7 @@ for (const [argv, argument, unknown] of [
   [["status", "--run"], "run", true],
 ] as const) {
   const { transport, contacts } = recordingTransport();
-  const execution = await executeCommand(app, "expose", [...argv], { surface: "terminal", transport });
+  const execution = await executeCommand(app, "expose", { kind: "argv", argv: [...argv] }, { surface: "terminal", transport });
   const label = `expose ${argv.join(" ")}`;
   check(`${label}: refused at the parse stage`, execution.stage, "parse");
   check(`${label}: an unknown-argument refusal is ${unknown}`, execution.error instanceof UnknownArgumentError, unknown);
@@ -78,7 +78,7 @@ for (const [argv, argument, unknown] of [
 
 for (const argv of [["tailscale", "--funnel"], ["tailscale", "funnel"], ["tailscale", "--apply", "--funnel"]]) {
   const { transport, contacts } = recordingTransport();
-  const execution = await executeCommand(app, "expose", argv, { surface: "terminal", transport });
+  const execution = await executeCommand(app, "expose", { kind: "argv", argv: argv }, { surface: "terminal", transport });
   const label = `expose ${argv.join(" ")}`;
   check(`${label}: refused at the parse stage`, execution.stage, "parse");
   checkTrue(`${label}: an argument error, not an unknown argument`, execution.error instanceof ArgumentError && !(execution.error instanceof UnknownArgumentError));

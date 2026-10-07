@@ -7,9 +7,9 @@ import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { inputSchema, toArgv } from "#framework/integration/mcp/server.ts";
 import {
-  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, specOf, specShape, type CallShape,
+  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, specOf, specShape, bindNamed, requiredArgumentRefusal, type CallShape, type ArgumentSpec,
 } from "#framework/core/command/index.ts";
 import { ValueError, type ValueParser } from "#framework/core/values/value.ts";
 import { choice, count, text } from "#framework/core/values/kinds.ts";
@@ -82,33 +82,37 @@ check("a flag is a boolean in the schema", pushSchema.properties.force.type, "bo
 // unconditionally required in the static schema — same shape restore/apply/rollback already have.
 check("destructive commands with readOnlyWhen make confirm conditional, not statically required", pushSchema.required.includes("confirm"), false);
 
-// --- validation --------------------------------------------------------------
+// --- binding -----------------------------------------------------------------
 
-check("a good call has no problems", validate(openclawCommands.pull, { profile: "share" }), []);
+check("a good named call binds", binderRefusal(specShape(specOf(openclawCommands.pull)!), { profile: "share" }, "pull"), undefined);
 check(
   "an unknown argument is rejected",
-  validate(openclawCommands.status, { bogus: "x" }),
-  ["unknown argument: bogus"],
+  [binderRefusal(specShape(specOf(openclawCommands.status)!), { bogus: "x" }, "status")?.message, binderRefusal(specShape(specOf(openclawCommands.status)!), { bogus: "x" }, "status")?.argument],
+  ["unknown argument: bogus", "bogus"],
 );
-// A spec command's choices and required belong to the parser, not to validate (which
-// checks only the form); the refusal comes in the parser's own words at call time.
+// Choices and required belong to the one binder now: it refuses in the parser's own words.
 function formRefusal(run: () => unknown): (Error & { argument?: string }) | undefined {
   try { run(); return undefined; } catch (error) { return error as Error & { argument?: string }; }
 }
-check("a spec command's validate is form-only: choices left to the parser", validate(openclawCommands.pull, { profile: "everything" }), []);
+function binderRefusal(shape: CallShape, args: Record<string, unknown>, command: string): (Error & { argument?: string }) | undefined {
+  try { bindNamed(shape, { kind: "named", args }, command); return undefined; } catch (error) { return error as Error & { argument?: string }; }
+}
 {
-  const error = formRefusal(() => parseCall(specShape(specOf(openclawCommands.pull)!), ["--profile", "everything"], "pull"));
-  check("the parser refuses a choice outside the list, in its own words", [error instanceof ArgumentError, error?.argument, error?.message], [true, "profile", '--profile takes one of full, migrate, share, not "everything"']);
+  const shape = specShape(specOf(openclawCommands.pull)!);
+  const binder = binderRefusal(shape, { profile: "everything" }, "pull");
+  const parser = formRefusal(() => parseCall(shape, ["--profile", "everything"], "pull"));
+  check("the named call is refused in the parser's own words: choices", binder?.message, parser?.message);
 }
 check(
   "a wrong type is rejected",
-  validate(openclawCommands.backup, { hot: "yes" }),
-  ["hot takes true or false"],
+  binderRefusal(specShape(specOf(openclawCommands.backup)!), { hot: "yes" }, "backup")?.message,
+  "hot takes true or false",
 );
-check("a spec command's validate is form-only: required left to the parser", validate(openclawCommands.verify, {}), []);
 {
-  const error = formRefusal(() => parseCall(specShape(specOf(openclawCommands.verify)!), [], "verify"));
-  check("the parser refuses a missing required argument", [error instanceof ArgumentError, error?.argument, error?.message], [true, "archive", "verify needs <archive>"]);
+  const shape = specShape(specOf(openclawCommands.verify)!);
+  const binder = binderRefusal(shape, {}, "verify");
+  const parser = formRefusal(() => parseCall(shape, [], "verify"));
+  check("the named call is refused in the parser's own words: required", [binder?.argument, binder?.message], ["archive", parser?.message]);
 }
 
 // --- variadic: the arguments of another program ---------------------------------------------
@@ -121,25 +125,34 @@ check("a variadic argument is an array in the schema", cliSchema.properties.args
 check("its items are strings", cliSchema.properties.args?.items?.type, "string");
 check("a required variadic is required", cliSchema.required.includes("args"), true);
 
-check("a well-formed variadic passes validation", validate(openclawCommands.cli, { args: ["status"] }), []);
-check(
-  "a variadic given a bare string is refused",
-  validate(openclawCommands.cli, { args: "status" }),
-  ["args takes a list of non-empty strings"],
-);
-check(
-  "a variadic containing a non-string is refused",
-  validate(openclawCommands.cli, { args: ["status", 7] }),
-  ["args takes a list of non-empty strings"],
-);
-check(
-  "a variadic containing an empty string is refused",
-  validate(openclawCommands.cli, { args: ["status", ""] }),
-  ["args takes a list of non-empty strings"],
-);
-// A spec command's required arguments are the parser's, not validate's: the missing-args
-// refusal arrives from parseCall in the parser's own words, one stage later (design 4).
-check("a missing required variadic is the parser's refusal, not validate's", validate(openclawCommands.cli, {}), []);
+check("a well-formed variadic binds", binderRefusal(specShape(specOf(openclawCommands.cli)!), { args: ["status"] }, "cli"), undefined);
+{
+  const shape = specShape(specOf(openclawCommands.cli)!);
+  const refusal = (args: unknown) => binderRefusal(shape, { args }, "cli")?.message;
+  check(
+    "a variadic given a bare string is refused",
+    refusal("status"),
+    "args takes a list of non-empty strings",
+  );
+  check(
+    "a variadic containing a non-string is refused",
+    refusal(["status", 7]),
+    "args takes a list of non-empty strings",
+  );
+  check(
+    "a variadic containing an empty string is refused",
+    refusal(["status", ""]),
+    "args takes a list of non-empty strings",
+  );
+  // The missing-args refusal is the binder's own, via requiredArgumentRefusal.
+  const missing = binderRefusal(shape, {}, "cli");
+  const argsSpec = (shape as { arguments?: readonly ArgumentSpec[] }).arguments!.find((argument) => argument.name === "args")!;
+  check(
+    "a missing required variadic is the binder's refusal",
+    [missing?.argument, missing?.message],
+    ["args", requiredArgumentRefusal(argsSpec as ArgumentSpec, "cli")],
+  );
+}
 
 // --- deploy: every flag deploy.ts actually parses is declared, so --help and MCP agree with it ---
 
@@ -149,9 +162,9 @@ check(
   ["adopt", "dry-run", "json", "no-bootstrap", "path", "target"],
 );
 check(
-  "--adopt passes MCP validation",
-  validate(openclawCommands.deploy, { target: "user@host", adopt: true }),
-  [],
+  "--adopt binds on the named path",
+  binderRefusal(specShape(specOf(openclawCommands.deploy)!), { target: "user@host", adopt: true }, "deploy"),
+  undefined,
 );
 
 // --- generic parser: every declared flag/option round-trips through argv, an undeclared

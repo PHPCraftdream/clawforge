@@ -24,7 +24,7 @@ import { commandBody, defineAction, materializeCommands, multiActionBody, unknow
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { PORT_RANGE } from "#framework/core/values/value.ts";
-import { toArgv } from "#framework/integration/mcp/call.ts";
+import { toArgv } from "#framework/integration/mcp/legacy.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
@@ -77,7 +77,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
 
   {
     const transport = fixture.transport();
-    const execution = await executeCommand(app, "recover-env", ["--zzz"], { surface: "terminal", transport });
+    const execution = await executeCommand(app, "recover-env", { kind: "argv", argv: ["--zzz"] }, { surface: "terminal", transport });
     stages.case("recover-env --zzz stops at the parse stage", execution.stage, execution.error);
     check("recover-env --zzz stops at the parse stage", execution.stage, "parse");
     checkTrue("recover-env --zzz is refused as an unknown argument", execution.error instanceof UnknownArgumentError);
@@ -90,7 +90,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
     const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-pipeline-noenv-"));
     useDeployment(emptyDir);
     const transport = fixture.transport();
-    const execution = await executeCommand(app, "recover-env", [], { surface: "terminal", transport });
+    const execution = await executeCommand(app, "recover-env", { kind: "argv", argv: [] }, { surface: "terminal", transport });
     stages.case("recover-env without .env stops at the prepare stage", execution.stage, execution.error);
     check("recover-env without .env stops at the prepare stage", execution.stage, "prepare");
     checkTrue("recover-env without .env is refused as a user error", execution.error instanceof UserError);
@@ -175,7 +175,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
     },
   };
   const transport = fixture.transport();
-  const refused = await executeCommand(app, "wipe", [], { surface: "mcp", transport });
+  const refused = await executeCommand(app, "wipe", { kind: "argv", argv: [] }, { surface: "mcp", transport });
   stages.case("a destructive MCP call without confirm stops at the confirm stage", refused.stage, refused.error);
   check("a destructive MCP call without confirm stops at the confirm stage", refused.stage, "confirm");
   checkTrue("the confirm refusal is a ConfirmationRequiredError", refused.error instanceof ConfirmationRequiredError);
@@ -184,7 +184,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
   check("a refused destructive call never runs", ran, false);
 
   // The confirmed control builds a real local context; the run itself touches nothing.
-  const allowed = await executeCommand(app, "wipe", [], { surface: "mcp", confirmed: true });
+  const allowed = await executeCommand(app, "wipe", { kind: "argv", argv: [] }, { surface: "mcp", confirmed: true });
   check("the same call with confirm: true reaches the run stage", allowed.stage, "run");
   stages.control("wipe with confirm: true reaches the run stage", allowed.stage);
   check("the confirmed call ran", ran, true);
@@ -215,7 +215,7 @@ try {
         },
       },
       kase.command,
-      [...kase.argv],
+      { kind: "argv", argv: [...kase.argv] },
       { surface: "terminal", transport },
     );
     checkTrue(`${kase.name} stops at the run stage`, execution.stage === "run");
@@ -357,7 +357,7 @@ try {
     const transport = fixture.transport();
     const execution = await withOutputSink((chunk) => {
       output += chunk;
-    }, async () => executeCommand(contractApp, "boom", ["--json"], { surface: "terminal", transport }));
+    }, async () => executeCommand(contractApp, "boom", { kind: "argv", argv: ["--json"] }, { surface: "terminal", transport }));
     check("a failing command's execution names the run stage", execution.stage, "run");
     checkTrue("and carries the error", execution.error instanceof Error);
     checkTrue("the pipeline itself emitted the error document", output.includes('"error"') && output.includes("unreachable"));

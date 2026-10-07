@@ -297,12 +297,13 @@ try {
       const { commandBody, materializeCommands } = await import(${JSON.stringify(moduleUrl("core/command/index"))});
       const { operateCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.operate"))});
       const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
+      const kinds = await import(${JSON.stringify(moduleUrl("core/values/kinds"))});
       useDeployment(${JSON.stringify(deployDir)});
       // A spec command with choices, so the MCP refusal comes from the shared parser and
       // not from the schema's own check.
       const PICK = commandBody({
         effect: "change",
-        arguments: [{ name: "action", description: "which one", kind: "positional", required: true, choices: ["a", "b"] }],
+        arguments: [{ name: "action", description: "which one", kind: "positional", required: true, value: kinds.choice(["a", "b"]) }],
         run: async () => {},
       });
       await serveMcp({

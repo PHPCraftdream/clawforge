@@ -15,6 +15,7 @@ import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =
@@ -310,6 +311,7 @@ export const SET_DIFF_ARGUMENTS = [
     summary: "original artifact",
     description: "With diff: original artifact",
     valueName: "artifact",
+    value: kinds.localFile("a set artifact path"),
   },
   {
     name: "to",
@@ -317,9 +319,10 @@ export const SET_DIFF_ARGUMENTS = [
     summary: "replacement artifact",
     description: "With diff: replacement artifact",
     valueName: "artifact",
+    value: kinds.localFile("a set artifact path"),
   },
   { name: "json", summary: "Emit JSON", kind: "flag", description: "Emit JSON" },
-  { name: "artifacts", kind: "variadic", count: 2, description: "Two positional artifacts" },
+  { name: "artifacts", kind: "variadic", count: 2, description: "Two positional artifacts", value: kinds.localFile("a set artifact path") },
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface SetDiffPlan { readonly from: string; readonly to: string; readonly json: boolean }

@@ -24,6 +24,7 @@ import { recordInstalledSet, unpackArtifactVerified } from "#src/set/artifacts/i
 // From its own module, not set.ts: set.ts reads SET_TRY_ARGUMENTS at load, so importing it
 // back here is a cycle that fails with a TDZ error when set-try is the entry.
 import { localSecretValues } from "./set-secrets-guard.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
@@ -43,7 +44,7 @@ import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/
 export * from "./set-try-env.ts";
 
 export const SET_TRY_ARGUMENTS = [
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", required: true },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", required: true, value: kinds.localFile("a set artifact path") },
   {
     name: "with-model",
     summary: "include acceptance checks that call the model",

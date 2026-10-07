@@ -9,8 +9,8 @@
 import { die, log, info } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { nameValue, newNameValue, ValueError, type ValueParser } from "#src/core/values/value.ts";
-import { newName, safeName } from "#src/core/values/names.ts";
+import { newName } from "#src/core/values/names.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateLoadedSet, loadSet } from "#src/set/load.ts";
@@ -29,31 +29,24 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, defaultSetName } from "./set-manifest.ts";
 import { defineAction, multiActionBody, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
+import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 
 const SET_NAME_SUMMARY = "Set name";
 
 export const SET_BUILD_ARGUMENTS = [
-  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", parse: newNameValue("set") },
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", value: kinds.name("set", "create") },
   { name: "json", summary: "Emit the manifest and its id as JSON", description: "Emit the manifest and its id as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const SET_VALIDATE_ARGUMENTS = [
-  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", parse: nameValue("set") },
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", value: kinds.name("set", "read") },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", value: kinds.localFile("a set artifact path") },
   { name: "json", summary: "Emit the findings as JSON", description: "Emit the findings as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
-/** An object name the target already carries (reader grammar): the refusal is safeName's own sentence. Creating one is provision-agent's, and that mints — newName there. */
-const OBJECT_NAME_VALUE: ValueParser<string> = {
-  expected: "an object name", example: "helper", invalidExample: "Bad_Name",
-  parse(raw) {
-    try { return safeName("object", raw); } catch (error) { throw new ValueError(`: ${(error as Error).message}`); }
-  },
-};
-
 export const SET_FORGET_ARGUMENTS = [
-  { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", required: true, choices: ["agent", "mcp-server", "cron-job"] },
-  { name: "name", summary: "Object name", description: "Object name", kind: "option", valueName: "name", required: true, parse: OBJECT_NAME_VALUE },
+  { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", required: true, value: kinds.choice(["agent", "mcp-server", "cron-job"]) },
+  { name: "name", summary: "Object name", description: "Object name", kind: "option", valueName: "name", required: true, value: kinds.name("owned-object", "read") },
   ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
@@ -148,6 +141,9 @@ async function validateAction(
  *  memory — a decision for whoever runs this, not something a plan does automatically. */
 async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUMENTS>): Promise<void> {
   const { kind, name } = values;
+  // `value: kinds.choice(...)` types the bound value as string (the kind's grammar is the
+  // authority at run time); the list above is exactly OwnedKind.
+  const ownedKind = kind as OwnedKind;
   // Same never-bootstrapped refusal as the sibling preflights; without it the isRunning()
   // check below dies with the bare NotBootstrapped message.
   await requireBootstrapped(ctx);
@@ -156,7 +152,7 @@ async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUM
   // `apply` calls this indirectly while already holding the lock; nested, the second acquire
   // would refuse the run its own caller started. Taken only when this is invoked directly.
   await withLockUnlessHeld(ctx, `set forget ${kind} ${name}`, newOperationId("set-forget"), takeoverOf(values), async () => {
-    await removeOwnedObject(ctx, kind, name);
+    await removeOwnedObject(ctx, ownedKind, name);
   });
   log(`${kind} "${name}" removed and no longer tracked as owned`);
 }

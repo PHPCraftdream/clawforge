@@ -12,12 +12,12 @@ import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
-import { ArgumentError } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
 export const CONFIGURE_PROVIDER_ARGUMENTS = [
-  { name: "provider", description: "Provider id, for example openai", kind: "option", valueName: "id" },
-  { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option", valueName: "var" },
+  { name: "provider", description: "Provider id, for example openai", kind: "option", valueName: "id", value: kinds.providerId() },
+  { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option", valueName: "var", value: kinds.envVar() },
   { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
@@ -47,13 +47,8 @@ interface ProviderOptions {
   takeover: LockTakeover;
 }
 
-/** The argument-only refusals: an id or variable name that cannot be right is refused in the
- *  prepare stage, before the target is contacted and before the instance lock is even
- *  attempted — never answered with "lock held" or a transport error. */
 function providerOptions(values: Values<typeof CONFIGURE_PROVIDER_ARGUMENTS>): ProviderOptions {
   const { provider, env } = values;
-  if (env !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env)) throw new ArgumentError(`invalid environment variable: ${env}`, "env");
-  if (provider !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) throw new ArgumentError(`invalid provider id: ${provider}`, "provider");
   return { force: values.force === true, provider, env, jsonOnly: values.json === true, takeover: takeoverOf(values) };
 }
 

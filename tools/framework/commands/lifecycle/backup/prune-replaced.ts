@@ -10,7 +10,7 @@
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import { countValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { runMaybePrivileged, sudoFor, needsOwnerEscalation, OWNER, answeredProbe } from "#src/runtime/datadir.ts";
@@ -36,7 +36,7 @@ export const BACKUP_APPLY_ARGUMENT = {
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
 export const BACKUP_PRUNE_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
-  { name: "keep", summary: "Number to keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", parse: countValue("a non-negative integer") },
+  { name: "keep", summary: "Number to keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", value: kinds.count("a non-negative integer") },
   ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
   JSON_ARGUMENT,
 ] as const satisfies readonly ArgumentSpec[];

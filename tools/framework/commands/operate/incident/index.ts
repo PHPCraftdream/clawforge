@@ -30,7 +30,7 @@ import { safeConnectionFacts, requireBootstrapped } from "../../../runtime/runti
 import { runSecurityAudit, type SecurityAuditReport } from "../../../security/audit.ts";
 import { blockingProblems } from "../../../service/inspection.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT, takeoverOf } from "../../interface/groups/shared-arguments.ts";
-import { countValue } from "../../../core/values/value.ts";
+import * as kinds from "../../../core/values/kinds.ts";
 
 /** Drives both incident's own declaration and its wrapper below. `--dry-run` is the read
  *  form: its effect lowers the body's destroy to read, so a dry run asks no MCP confirmation
@@ -65,7 +65,7 @@ export const INCIDENT_ARGUMENTS = [
     description: "Lines of log to collect (default 500)",
     kind: "option",
     valueName: "n",
-    parse: countValue("a number of lines", () => "needs a number of lines"),
+    value: kinds.count("a number of lines", () => "needs a number of lines"),
   },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },
   BREAK_LOCK_ARGUMENT,

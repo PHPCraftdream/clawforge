@@ -6,6 +6,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { argumentsView, specData, specOf, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription, validate } from "#framework/integration/mcp/server.ts";
+import * as kinds from "#framework/core/values/kinds.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
@@ -340,8 +341,8 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 {
   const run = async (): Promise<void> => {};
   const flag = (name: string, description = "d", extra: object = {}): ArgumentSpec => ({ name, kind: "flag", description, ...extra }) as ArgumentSpec;
-  const option = (name: string, description = "d", extra: object = {}): ArgumentSpec => ({ name, kind: "option", valueName: "v", description, ...extra }) as ArgumentSpec;
-  const positional = (name: string, extra: object = {}): ArgumentSpec => ({ name, kind: "positional", description: "d", ...extra }) as ArgumentSpec;
+  const option = (name: string, description = "d", extra: object = {}): ArgumentSpec => ({ name, kind: "option", valueName: "v", description, value: kinds.count(), ...extra }) as ArgumentSpec;
+  const positional = (name: string, extra: object = {}): ArgumentSpec => ({ name, kind: "positional", description: "d", value: kinds.text("d", { leadingDash: "allow" }), ...extra }) as ArgumentSpec;
 
   // Declared: list, forget, create (the default, last). The view orders flags: create, list, forget.
   const SLICES: Record<string, readonly ArgumentSpec[]> = {
@@ -369,8 +370,9 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   );
 
   const strip = (argument: object): object => {
-    const { required: _required, summary: _summary, ...rest } = argument as Record<string, unknown>;
-    return rest;
+    const { required: _required, summary: _summary, value, ...rest } = argument as Record<string, unknown>;
+    // The kind is the spec-side grammar; the view projects it as its parse carrier.
+    return value === undefined ? rest : { ...rest, parse: value };
   };
   const scoped = scopeByAction({ create: SLICES.create, list: SLICES.list, forget: SLICES.forget });
   check(
@@ -388,8 +390,8 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
     effect: "change", action: { description: "x" }, defaultAction: "a",
     actions: { a: defineAction({ summary: "a", arguments: [positional("p", { required: true })], run }), b: defineAction({ summary: "b", run }) },
   })).find((argument) => argument.name === "p")?.required, undefined);
-  const kinds = view.map((argument) => argument.kind);
-  check("positionals come before flags and options", kinds.lastIndexOf("positional") < kinds.findIndex((kind) => kind !== "positional"), true);
+  const kindsOrder = view.map((argument) => argument.kind);
+  check("positionals come before flags and options", kindsOrder.lastIndexOf("positional") < kindsOrder.findIndex((kind) => kind !== "positional"), true);
   check("a summary declared once, with one description, is kept", named("name")?.summary, "set");
 
   // The composed summary: described differently by the actions, declared by every part.

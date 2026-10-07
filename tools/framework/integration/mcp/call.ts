@@ -4,6 +4,7 @@
 
 import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { bindsAsFlag, choicesRefusal, effectProfile, requiredArgumentRefusal, specOf, specShape, tokenize, type ArgumentSpec } from "../../core/command/index.ts";
+import type { CommandArgument } from "../../core/app.ts";
 import { argumentScopeRefusal, selectAction, type SelectedUnit } from "../../core/command/parse.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
@@ -189,11 +190,6 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
   return maskSecrets(output.split(machineOutput).join(safePayload));
 }
 
-/** The refusal of a positional value the tokenizer would read as a flag. */
-export function positionalDashMessage(name: string): string {
-  return `${name} cannot begin with -`;
-}
-
 /** The refusal a destructive gate command's tool call owes before anything runs — the same
  *  confirmation rule the deployment path enforces in the pipeline's confirm stage
  *  (core/command/execute.ts), read from the gate command's declared effect. */
@@ -240,9 +236,6 @@ export function validate(command: Declared, args: Record<string, unknown>, conte
       problems.push(`${name} takes a string`);
       continue;
     }
-    // toArgv emits a positional bare, where the tokenizer would bind a leading dash as a flag.
-    // Refused here, not escaped with `--`: a variadic already owns the trailing `--`.
-    if (argument.kind === "positional" && bindsAsFlag(value)) problems.push(positionalDashMessage(name));
     if (spec === undefined && argument.choices !== undefined && !argument.choices.includes(value)) {
       problems.push(choicesRefusal(argument as ArgumentSpec, argument.choices, value));
     }
@@ -260,7 +253,7 @@ export function validate(command: Declared, args: Record<string, unknown>, conte
     }
     const chosenAction = chosen.selected.name ?? "";
     const own = chosen.slice.filter((argument) => argument.kind === "positional");
-    const given = (argument: ArgumentSpec): boolean => {
+    const given = (argument: CommandArgument | ArgumentSpec): boolean => {
       const value = args[argument.name];
       return value !== undefined && value !== "";
     };
@@ -288,7 +281,7 @@ export function validate(command: Declared, args: Record<string, unknown>, conte
       for (const argument of declared.values()) {
         if (argument.kind !== "positional" || argument.required !== true) continue;
         const value = args[argument.name];
-        if (value === undefined || value === "") problems.push(requiredArgumentRefusal(argument, prefix));
+        if (value === undefined || value === "") problems.push(requiredArgumentRefusal(argument as ArgumentSpec, prefix));
       }
     }
     return problems;
@@ -297,7 +290,7 @@ export function validate(command: Declared, args: Record<string, unknown>, conte
   for (const argument of declared.values()) {
     if (argument.required !== true) continue;
     const value = args[argument.name];
-    if (value === undefined || value === "") problems.push(requiredArgumentRefusal(argument, context.name));
+    if (value === undefined || value === "") problems.push(requiredArgumentRefusal(argument as ArgumentSpec, context.name));
   }
 
   return problems;
@@ -351,5 +344,12 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
     }
   }
 
-  return [...positional, ...named, ...(trailing.length === 0 ? [] : ["--", ...trailing])];
+  // A dash-leading positional value must reach the pipeline the way the console receives
+  // `cmd -- -x`: a bare `--` before the FIRST such positional, every named argument of ours
+  // before that `--`, and the positional tail (later positionals, then the variadic trailing
+  // values) after it — the kind's leading-dash policy, one owner on both surfaces, is what
+  // refuses it at parse. Without a dash-leading positional the output is unchanged.
+  const guarded = positional.findIndex((value) => bindsAsFlag(value));
+  if (guarded === -1) return [...positional, ...named, ...(trailing.length === 0 ? [] : ["--", ...trailing])];
+  return [...positional.slice(0, guarded), ...named, "--", ...positional.slice(guarded), ...trailing];
 }

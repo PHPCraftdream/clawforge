@@ -2,14 +2,13 @@
 
 import { shouldFollow, emitRaw, withOutputSink } from "#src/core/io/output.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import { countValue, regexValue } from "#src/core/values/value.ts";
-import { sinceValue } from "#src/core/values/durations.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 
 export const LOGS_ARGUMENTS = [
-  { name: "tail", description: "Lines to return when reading rather than following", kind: "option", valueName: "n", parse: countValue("a number of lines") },
-  { name: "since", summary: "Only lines at or after this duration/timestamp", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp", parse: sinceValue },
-  { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern", parse: regexValue() },
+  { name: "tail", description: "Lines to return when reading rather than following", kind: "option", valueName: "n", value: kinds.count("a number of lines") },
+  { name: "since", summary: "Only lines at or after this duration/timestamp", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp", value: kinds.since },
+  { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern", value: kinds.pattern() },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted; anywhere

@@ -10,7 +10,7 @@ import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { bind, defineAction, tokenize, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
-import { portValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 /** The slice of `expose`'s declaration this action's own argv actually uses. */
 /** Fixed phrases of the tunnel report, exported so checks assert the same text the product
@@ -30,7 +30,7 @@ export const EXPOSE_SSH_ARGUMENTS = [
     description: "With ssh: local port to bind (defaults to the gateway's own port)",
     kind: "option",
     valueName: "port",
-    parse: portValue(),
+    value: kinds.port(),
   },
   {
     name: "run",

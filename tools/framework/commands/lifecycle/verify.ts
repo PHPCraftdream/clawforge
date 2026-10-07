@@ -33,9 +33,10 @@ import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { privatePathsPolicy } from "#src/security/privacy/private-paths-ledger.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 export const VERIFY_ARGUMENTS = [
-  { name: "archive", description: "Archive to inspect", kind: "positional", required: true },
+  { name: "archive", description: "Archive to inspect", kind: "positional", required: true, value: kinds.text("archive to inspect", { leadingDash: "refuse" }) },
   PROFILE_ARGUMENT,
   { name: "json", summary: "Emit the verdict and findings as JSON", description: "Emit the verdict and findings as JSON — locations and kinds only, never credential values", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];

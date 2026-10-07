@@ -10,7 +10,7 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { countValue, nameValue, newNameValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import {
   defineAction,
   multiActionBody,
@@ -132,12 +132,12 @@ const NAME_ARGUMENT = {
   description: "Recipe name",
   kind: "positional",
   required: true,
-  parse: nameValue("recipe"),
+  value: kinds.recipeRef(),
 } as const satisfies ArgumentSpec;
 
 const NEW_NAME_ARGUMENT = {
   ...NAME_ARGUMENT,
-  parse: newNameValue("recipe"),
+  value: kinds.name("recipe", "create"),
 } as const satisfies ArgumentSpec;
 
 /** new mints the name it will create: the creator grammar (Windows device names included),
@@ -152,6 +152,7 @@ const SOURCE_ARGUMENT = {
   description: "Directory to copy the recipe from",
   kind: "positional",
   required: true,
+  value: kinds.localDirectory("directory to copy the recipe from", "recipes/local"),
 } as const satisfies ArgumentSpec;
 
 
@@ -161,7 +162,7 @@ const TAIL_ARGUMENT = {
   description: "With logs/diagnose: lines to return per service",
   kind: "option",
   valueName: "n",
-  parse: countValue("a number of lines"),
+  value: kinds.count("a number of lines"),
 } as const satisfies ArgumentSpec;
 
 const DRY_RUN_ARGUMENT = {
@@ -198,7 +199,7 @@ export const RECIPE = multiActionBody({
         summary: "Use this name instead of the source name",
         description: "With import: import under this name instead of the source directory's own name",
         kind: "positional",
-        parse: newNameValue("recipe"),
+        value: kinds.name("recipe", "create"),
       }],
       // Repository-side only: no target, no lock — either works before bootstrap has
       // prepared the lock home.

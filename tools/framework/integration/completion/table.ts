@@ -113,9 +113,17 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
         (argument): argument is CommandArgument & { choices: readonly string[] } =>
           argument.kind === "positional" && argument.choices !== undefined,
       );
+      // The registry kind (decision N1: `help`'s positional, never a schema enum) offers the
+      // command names at the word right after the command, exactly as its `choices` list did.
+      let offersRegistryNames = false;
+      for (const argument of args) {
+        if (argument.kind === "positional" && (argument.parse as { kind?: string } | undefined)?.kind === "commandName") offersRegistryNames = true;
+      }
+      const registryNames = offersRegistryNames ? registry.names : undefined;
       // A non-action positional's choices (completion's shell, host's context, help's command)
       // belong at the word right after the command, before any flag is typed.
-      first.set(name, positional === undefined ? globalFlags : [...new Set([...positional.choices, ...globalFlags])].sort());
+      const words = positional?.choices ?? registryNames;
+      first.set(name, words === undefined ? globalFlags : [...new Set([...words, ...globalFlags])].sort());
       after.set(`${name} *`, globalFlags);
       continue;
     }

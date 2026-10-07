@@ -11,11 +11,15 @@ import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server
 import {
   parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, specOf, specShape, type CallShape,
 } from "#framework/core/command/index.ts";
-import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
+import { ValueError, type ValueParser } from "#framework/core/values/value.ts";
+import { choice, count, text } from "#framework/core/values/kinds.ts";
+import type { ValueKind } from "#framework/core/values/kind.ts";
+import { argumentsView } from "#framework/core/command/view.ts";
+import { commandBody, CommandDeclarationError } from "#framework/core/command/spec.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { ruleText } from "#framework/core/command/parse.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 // Multi-member conflicts render as an exhaustive help restriction, with a final `or`.
 {
@@ -459,9 +463,9 @@ const argumentOf = (error: unknown): string | undefined => (error instanceof Arg
 
 const SINGLE: CallShape = {
   arguments: [
-    { name: "file", kind: "positional", description: "d", required: true },
-    { name: "n", kind: "option", valueName: "n", description: "d", parse: countValue("a number of lines") },
-    { name: "mode", kind: "option", valueName: "m", description: "d", choices: ["a", "b"] },
+    { name: "file", kind: "positional", description: "d", required: true, value: text("d", { leadingDash: "allow" }) },
+    { name: "n", kind: "option", valueName: "n", description: "d", value: count("a number of lines") },
+    { name: "mode", kind: "option", valueName: "m", description: "d", value: choice(["a", "b"]) },
     { name: "verbose", kind: "flag", description: "d" },
   ],
 };
@@ -493,8 +497,8 @@ check("given values are bound in typing order: mode first", argumentOf(refusal((
 check("a refused given value comes before a missing required one", argumentOf(refusal(() => parseCall(SINGLE, ["--n=x"]))), "n");
 check("required are reported in declaration order", argumentOf(refusal(() => parseCall({
   arguments: [
-    { name: "a", kind: "option", valueName: "a", description: "d", required: true },
-    { name: "b", kind: "positional", description: "d", required: true },
+    { name: "a", kind: "option", valueName: "a", description: "d", required: true, value: count() },
+    { name: "b", kind: "positional", description: "d", required: true, value: text("d", { leadingDash: "allow" }) },
   ],
 }, []))), "a");
 check("an option left without a value is an ArgumentError", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--n"]))), "n");
@@ -505,7 +509,8 @@ check("an unknown flag is an UnknownArgumentError", refusal(() => parseCall(SING
 check("a bare -- ends options", parseCall(SINGLE, ["--", "--verbose"]).values.file, "--verbose");
 
 const throwing = (error: Error): ValueParser<string> => ({ expected: "x", example: "x", invalidExample: "y", parse: () => { throw error; } });
-const withParser = (parse: ValueParser<string>): CallShape => ({ arguments: [{ name: "p", kind: "option", valueName: "p", description: "d", parse }] });
+const asKind = (parser: ValueParser<string>): ValueKind<string> => ({ ...parser, kind: "text", invalid: [{ raw: parser.invalidExample, stage: "parse", why: "the parser's own invalid example" }] });
+const withParser = (parse: ValueParser<string>): CallShape => ({ arguments: [{ name: "p", kind: "option", valueName: "p", description: "d", value: asKind(parse) }] });
 check("a parser's ValueError becomes an ArgumentError", refusal(() => parseCall(withParser(throwing(new ValueError("is wrong"))), ["--p=1"]))?.message, "--p is wrong");
 check("a clause starting with : attaches to the label", refusal(() => parseCall(withParser(throwing(new ValueError(": because"))), ["--p=1"]))?.message, "--p: because");
 check("a non-ValueError from a parser is not swallowed", refusal(() => parseCall(withParser(throwing(new RangeError("bug"))), ["--p=1"])) instanceof RangeError, true);
@@ -513,8 +518,8 @@ check("a non-ValueError from a parser is not swallowed", refusal(() => parseCall
 const MULTI: CallShape = {
   actions: {
     list: { arguments: [{ name: "json", kind: "flag", description: "d" }] },
-    create: { arguments: [{ name: "dry-run", kind: "flag", description: "d" }, { name: "profile", kind: "option", valueName: "p", description: "d", choices: ["full", "share"] }] },
-    forget: { arguments: [{ name: "kind", kind: "option", valueName: "kind", description: "d", required: true, choices: ["agent", "cron-job"] }] },
+    create: { arguments: [{ name: "dry-run", kind: "flag", description: "d" }, { name: "profile", kind: "option", valueName: "p", description: "d", value: choice(["full", "share"]) }] },
+    forget: { arguments: [{ name: "kind", kind: "option", valueName: "kind", description: "d", required: true, value: choice(["agent", "cron-job"]) }] },
   },
   defaultAction: "create",
 };
@@ -549,9 +554,9 @@ check("a choice of an action is enforced", argumentOf(refusal(() => parseCall(MU
 
 const VARIADIC: CallShape = {
   arguments: [
-    { name: "context", kind: "positional", description: "d", required: true },
+    { name: "context", kind: "positional", description: "d", required: true, value: text("d", { leadingDash: "allow" }) },
     { name: "root", kind: "flag", description: "d" },
-    { name: "args", kind: "variadic", verbatim: true, description: "d", required: true },
+    { name: "args", kind: "variadic", verbatim: true, description: "d", required: true, value: text("d", { leadingDash: "allow" }) },
   ],
 };
 check("a variadic starts at the first undeclared token", parseCall(VARIADIC, ["target", "--root", "ls", "-la"]).values, { context: "target", root: true, args: ["ls", "-la"] });
@@ -559,16 +564,16 @@ check("after it everything is literal, declared flags too", parseCall(VARIADIC, 
 check("an undeclared flag starts the variadic", parseCall(VARIADIC, ["target", "--version"]).values.args, ["--version"]);
 check("everything after -- is the variadic", parseCall(VARIADIC, ["target", "--", "--root"]).values, { context: "target", root: false, args: ["--root"] });
 check("a -- after the variadic started is literal", parseCall(VARIADIC, ["target", "ls", "--", "x"]).values.args, ["ls", "--", "x"]);
-check("a variadic alone takes a leading flag-looking token", parseCall({ arguments: [{ name: "args", kind: "variadic", verbatim: true, description: "d" }] }, ["--foo", "bar"]).values.args, ["--foo", "bar"]);
-check("an absent variadic is []", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d" }] }, []).values.args, []);
+check("a variadic alone takes a leading flag-looking token", parseCall({ arguments: [{ name: "args", kind: "variadic", verbatim: true, description: "d", value: text("d", { leadingDash: "allow" }) }] }, ["--foo", "bar"]).values.args, ["--foo", "bar"]);
+check("an absent variadic is []", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d", value: text("d", { leadingDash: "allow" }) }] }, []).values.args, []);
 check("a required variadic must be given", argumentOf(refusal(() => parseCall(VARIADIC, ["target"]))), "args");
 
 // Without `verbatim` a variadic only collects free tokens: flags and options stay recognized anywhere.
 const COLLECTING: CallShape = {
   arguments: [
-    { name: "from", kind: "option", valueName: "x", description: "d" },
+    { name: "from", kind: "option", valueName: "x", description: "d", value: text("d", { leadingDash: "allow" }) },
     { name: "json", kind: "flag", description: "d" },
-    { name: "files", kind: "variadic", description: "d" },
+    { name: "files", kind: "variadic", description: "d", value: text("d", { leadingDash: "allow" }) },
   ],
 };
 check("a collecting variadic reads a flag after its tokens", parseCall(COLLECTING, ["a", "b", "--json"]).values, { json: true, files: ["a", "b"] });
@@ -602,7 +607,7 @@ check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", r
   check("refuse: another action does not inherit it", refusal(() => parseCall(ACTIONS, ["two", "zap"])) instanceof UnknownArgumentError, true);
   // A token the tokenizer binds as an option's value is never refused, whatever it spells.
   {
-    const WITH_OPTION = { effect: "read", arguments: [{ name: "holder", kind: "option", valueName: "h", description: "d" }, { name: "go", kind: "flag", description: "d" }], refuse: { "--bad": REASON, bad: REASON } } as const;
+    const WITH_OPTION = { effect: "read", arguments: [{ name: "holder", kind: "option", valueName: "h", description: "d", value: text("d", { leadingDash: "allow" }) }, { name: "go", kind: "flag", description: "d" }], refuse: { "--bad": REASON, bad: REASON } } as const;
     check("refuse: a refused word bound as an option's value parses", parseCall(WITH_OPTION, ["--holder", "bad"]).values.holder, "bad");
     check("refuse: a refused flag spelling bound as an option's value parses", parseCall(WITH_OPTION, ["--holder", "--bad"]).values.holder, "--bad");
     check("refuse: the inline value spelling parses", parseCall(WITH_OPTION, ["--holder=bad"]).values.holder, "bad");
@@ -613,6 +618,62 @@ check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", r
     check("refuse: expose tailscale funnel is still refused", (refusal(() => parseCall(real, ["tailscale", "funnel"])) as Error).message.includes("never runs `tailscale funnel`"), true);
   }
   check("refuse: the funnel tokens are not arguments of expose", (openclawCommands.expose!.arguments ?? []).some((argument) => argument.name.includes("funnel")), false);
+}
+
+// --- declared value kinds on the spec (S2.4): the binder converts through the kind, the view
+// projects it into the legacy CommandArgument shape, and a declaration may not carry both ----
+
+const KINDS: CallShape = {
+  arguments: [
+    { name: "n", kind: "option", valueName: "n", description: "d", value: count("a non-negative integer") },
+    { name: "mode", kind: "option", valueName: "m", description: "d", value: choice(["full", "share"]) },
+  ],
+};
+check("a value kind's parsed type reaches the values", parseCall(KINDS, ["--n", "3"]).values.n, 3);
+{
+  const error = refusal(() => parseCall(KINDS, ["--n", "abc"]));
+  check("a kind's parse error surfaces as an ArgumentError naming the argument", [error instanceof ArgumentError, argumentOf(error)], [true, "n"]);
+  check("its text is the kind's clause after the label", error?.message?.split(" "), ["--n", "takes", "a", "non-negative", "integer,", "not", "\"abc\""]);
+}
+{
+  const error = refusal(() => parseCall(KINDS, ["--mode="]));
+  checkTrue("a choice kind refuses an empty value naming the argument", argumentOf(error) === "mode");
+  check("a choice kind refuses an empty value like the legacy branch", error?.message?.split(" "), ["--mode", "needs", "a", "value"]);
+}
+{
+  const error = refusal(() => parseCall(KINDS, ["--mode=everything"]));
+  checkTrue("a choice kind refuses an outsider naming the argument", argumentOf(error) === "mode");
+  check("a choice kind refuses an outsider with the choicesRefusal text", error?.message?.split(" "), ["--mode", "takes", "one", "of", "full,", "share,", "not", "\"everything\""]);
+}
+{
+  const declare = (argument: object): unknown => {
+    try {
+      commandBody({ effect: "read", arguments: [argument] as never, run: async () => {} });
+      return undefined;
+    } catch (error) {
+      return error;
+    }
+  };
+  const optionMissing = declare({ name: "x", kind: "option", valueName: "x", description: "d" }) as CommandDeclarationError | undefined;
+  check("an option with no value kind is a declaration error", optionMissing instanceof CommandDeclarationError, true);
+  check("its problem code is kind-missing", optionMissing?.problem, "kind-missing");
+  const positionalMissing = declare({ name: "x", kind: "positional", description: "d" }) as CommandDeclarationError | undefined;
+  check("a positional with no value kind is kind-missing too", positionalMissing instanceof CommandDeclarationError && positionalMissing.problem, "kind-missing");
+}
+{
+  const KIND_BODY = commandBody({
+    effect: "read",
+    arguments: [
+      { name: "n", kind: "option", valueName: "n", description: "d", value: count("a number of lines") },
+      { name: "mode", kind: "option", valueName: "m", description: "d", value: choice(["full", "share"]) },
+    ],
+    run: async () => {},
+  });
+  const viewed = argumentsView(KIND_BODY);
+  const n = viewed.find((argument) => argument.name === "n") as CommandArgument;
+  const mode = viewed.find((argument) => argument.name === "mode") as CommandArgument;
+  check("the view projects a kind as parse (it is a ValueParser)", [n.parse !== undefined && typeof (n.parse as ValueParser<number>).parse, Object.hasOwn(n, "value")], ["function", false]);
+  check("the view projects a choice kind as its list, with no parse and no value", [mode.choices, mode.parse, Object.hasOwn(mode, "value")], [["full", "share"], undefined, false]);
 }
 
 finish("argument");

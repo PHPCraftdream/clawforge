@@ -23,6 +23,7 @@ import { destructiveSymbol, effectNote, helpEntryLine, renderCommandHelp, render
 import { DISPATCHER_COMMANDS } from "../core/app.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 import { VERSION_ALIASES } from "./version.ts";
+import { commandName } from "../core/values/kinds.ts";
 
 export { closestCommand } from "../core/command/index.ts";
 
@@ -430,8 +431,9 @@ function defaultActionOf(command: AppCommand): { readonly defaultAction?: string
 
 /** Builds the one registry a surface reads: the deployment's commands, the gate's, and the two
  *  dispatcher entries the tail of `names` (`DISPATCHER_COMMANDS`) names. `help`'s positional
- *  carries every name as its `choices`, so completion, the docs table and the prose checks read
- *  it as any other positional. */
+ *  carries the registry as its `commandName` kind (decision N1: checked at parse with a
+ *  did-you-mean, never a schema `enum`), so completion, the docs table and the prose checks
+ *  read it as any other positional. */
 export function commandRegistry(source: {
   readonly deployment: Readonly<Record<string, AppCommand>>;
   readonly gate: readonly GateCommand[];
@@ -473,7 +475,7 @@ export function commandRegistry(source: {
     },
     {
       name: "help", origin: "dispatcher", summary: HELP_ENTRY_SUMMARY,
-      arguments: [{ name: "command", kind: "positional", description: HELP_COMMAND_DESCRIPTION, choices: names }],
+      arguments: [{ name: "command", kind: "positional", description: HELP_COMMAND_DESCRIPTION, parse: commandName(names, closestCommand) }],
     },
   ];
   return { entries, names, find: (name) => entries.find((entry) => entry.name === name) };

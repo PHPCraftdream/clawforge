@@ -17,9 +17,10 @@ import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, 
 import type { McpClient } from "#src/integration/mcp/project.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { ArgumentSpec } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 export const MCP_SETUP_ARGUMENTS = [
-  { name: "client", kind: "option", valueName: "client", choices: ["claude", "codex", "both"], summary: "Client configuration to update", description: "Client configuration to update (default both)" },
+  { name: "client", kind: "option", valueName: "client", value: kinds.choice(["claude", "codex", "both"]), summary: "Client configuration to update", description: "Client configuration to update (default both)" },
   { name: "json", kind: "flag", description: "Report changed files as JSON" },
   { name: "rewrite-launcher", kind: "flag", summary: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME}`, description: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
 ] as const satisfies readonly ArgumentSpec[];
@@ -98,12 +99,14 @@ export const MCP_SETUP = commandBody({
   },
 });
 
-function setupOptions(values: { client?: "claude" | "codex" | "both"; json?: boolean; "rewrite-launcher"?: boolean }): {
+function setupOptions(values: { client?: string; json?: boolean; "rewrite-launcher"?: boolean }): {
   client: McpClient;
   json: boolean;
   rewriteLauncher: boolean;
 } {
-  return { client: values.client ?? "both", json: values.json === true, rewriteLauncher: values["rewrite-launcher"] === true };
+  // `value: kinds.choice(...)` types the bound value as string (the binder refuses an
+  // outsider against `choices` before parse); the list is exactly McpClient.
+  return { client: (values.client ?? "both") as McpClient, json: values.json === true, rewriteLauncher: values["rewrite-launcher"] === true };
 }
 
 export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {

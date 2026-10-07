@@ -5,10 +5,12 @@
 
 import { bind, tokenize, ArgumentError } from "#framework/core/command/index.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
+import type { ValueKind } from "#framework/core/values/kind.ts";
 import { countValue, nameValue, newNameValue, nonEmptyValue, portValue, regexValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
 import { newName, reservedNameMessage, safeName } from "#framework/core/values/names.ts";
 import { sinceValue } from "#framework/core/values/durations.ts";
-import { scheduleIntervalValue } from "#framework/commands/operate/schedule.ts";
+import * as kinds from "#framework/core/values/kinds.ts";
+import { cronSchedule, nearestValidIntervals } from "#framework/commands/operate/schedule.ts";
 import { imageRefValue } from "#framework/runtime/docker/image-ref.ts";
 import { setIdValue, receiptIdValue } from "#framework/set/artifacts/receipt.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -24,11 +26,25 @@ const backupPruneReplaced = (ctx: Context, args: string[]) => openclawCommands.b
 const backupInstall = (ctx: Context, args: string[]) => openclawCommands.backup.run(ctx, ["install", ...args]);
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
+
+/** schedule.ts's cron range policy, as the commands themselves enforce it: a die (the
+ *  command's own voice, byte-identical to parseIntervalToMinutes's). */
+function cronRangeDie(minutes: number): void {
+  try {
+    cronSchedule(minutes);
+  } catch (error) {
+    const message = (error as Error).message;
+    const prefix = "--interval ";
+    throw new ValueError(message.startsWith(prefix) ? message.slice(prefix.length) : `: ${message}`);
+  }
+}
+
 /** What a user reads for `--<name> <raw>` through the shared binder. */
 function refusalOf(parser: ValueParser<unknown>, raw: string, name = "x", kind: "option" | "positional" = "option"): string | undefined {
+  const value: ValueKind<unknown> = { ...parser, kind: "text", invalid: [{ raw: parser.invalidExample, stage: "parse", why: "the parser's own invalid example" }] };
   const spec: ArgumentSpec = kind === "option"
-    ? { name, kind: "option", valueName: "v", description: "d", parse: parser }
-    : { name, kind: "positional", description: "d", parse: parser };
+    ? { name, kind: "option", valueName: "v", description: "d", value }
+    : { name, kind: "positional", description: "d", value };
   try {
     bind([spec], tokenize([spec], kind === "option" ? [`--${name}=${raw}`] : [raw]));
     return undefined;
@@ -61,8 +77,8 @@ check("name: a safe name", nameValue("recipe").parse("my-recipe"), "my-recipe");
 check("non-empty: any text", nonEmptyValue().parse("a b"), "a b");
 check("since: a duration", sinceValue.parse("1h30m"), "1h30m");
 check("since: a timestamp", sinceValue.parse("2026-10-01T10:00:00Z"), "2026-10-01T10:00:00Z");
-check("interval: 6h in minutes", scheduleIntervalValue({ bareMinutes: false }).parse("6h"), 360);
-check("interval: a bare number is minutes when allowed", scheduleIntervalValue({ bareMinutes: true }).parse("10"), 10);
+check("interval: 6h in minutes", kinds.interval({ requireUnit: true }).parse("6h"), 360);
+check("interval: a bare number is minutes when allowed", kinds.interval().parse("10"), 10);
 check("image: a reference", imageRefValue.parse("ghcr.io/openclaw/openclaw:2026.6.1").repository, "openclaw/openclaw");
 check("set id: 64 hex characters", setIdValue().parse("ab".repeat(32)), "ab".repeat(32));
 check("receipt id: a plain id", receiptIdValue().parse("fresh-1"), "fresh-1");
@@ -80,7 +96,7 @@ check("regex refuses an unclosed group", refusalOf(regexValue(), "(")?.startsWit
 check("name refuses upper case, positional label", refusalOf(nameValue("recipe"), "Bad", "x", "positional")?.startsWith("<x>: invalid recipe name \"Bad\""), true);
 check("non-empty refuses empty", refusalOf(nonEmptyValue(), ""), "--x needs a value");
 check("since refuses a sentence", refusalOf(sinceValue, "yesterday"), "--x takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, not \"yesterday\"");
-check("interval refuses garbage", refusalOf(scheduleIntervalValue({ bareMinutes: true }), "abc")?.startsWith("--x must be a number of minutes or look like 30m, 6h or 1d"), true);
+check("interval refuses garbage", refusalOf(kinds.interval(), "abc")?.startsWith("--x must be a number of minutes or look like 30m, 6h or 1d"), true);
 check("image refuses a space", refusalOf(imageRefValue, "not an image")?.startsWith("--x: \"not an image\" is not a valid image reference"), true);
 
 check("set id refuses a short blob", refusalOf(setIdValue(), "zz"), "--x: invalid set id \"zz\"");
@@ -91,8 +107,8 @@ check("receipt id refuses a path step", refusalOf(receiptIdValue(), ".."), "--x:
 
 const PARSERS: ReadonlyArray<readonly [string, ValueParser<unknown>]> = [
   ["count", countValue()], ["port", portValue()], ["regex", regexValue()], ["name", nameValue("recipe")],
-  ["non-empty", nonEmptyValue()], ["since", sinceValue], ["interval", scheduleIntervalValue({ bareMinutes: true })],
-  ["backup interval", scheduleIntervalValue({ bareMinutes: false })], ["image", imageRefValue],
+  ["non-empty", nonEmptyValue()], ["since", sinceValue], ["interval", kinds.interval()],
+  ["backup interval", kinds.interval({ requireUnit: true })], ["image", imageRefValue],
   ["set id", setIdValue()], ["receipt id", receiptIdValue()],
 ];
 for (const [name, parser] of PARSERS) {
@@ -130,10 +146,10 @@ for (const raw of ["x", "0", "65536", "08", "99999"]) {
 check("expose ssh --local-port (empty)", refusalOf(portValue(), "", "local-port"), await printedBy(exposeSsh, ["--local-port="]));
 check("upgrade --image", refusalOf(imageRefValue, "not an image", "image"), await printedBy(upgrade, ["--image", "not an image"]));
 for (const raw of ["abc", "", "7x"]) {
-  check(`watch install --interval ${JSON.stringify(raw)}`, refusalOf(scheduleIntervalValue({ bareMinutes: true }), raw, "interval"), await printedBy(watchInstall, ["--interval", raw]));
+  check(`watch install --interval ${JSON.stringify(raw)}`, refusalOf(kinds.interval({ nearestUnit: (value) => nearestValidIntervals(value).join(", "), enforceRange: (minutes) => cronRangeDie(minutes) }), raw, "interval"), await printedBy(watchInstall, ["--interval", raw]));
 }
 for (const raw of ["6", "abc", "7m"]) {
-  check(`backup install --interval ${JSON.stringify(raw)}`, refusalOf(scheduleIntervalValue({ bareMinutes: false }), raw, "interval"), await printedBy(backupInstall, ["--interval", raw]));
+  check(`backup install --interval ${JSON.stringify(raw)}`, refusalOf(kinds.interval({ requireUnit: true, nearestUnit: (value) => nearestValidIntervals(value).join(", "), enforceRange: (minutes) => cronRangeDie(minutes) }), raw, "interval"), await printedBy(backupInstall, ["--interval", raw]));
 }
 
 // Windows device names: refused when a name is MINTED (newName), accepted when one is READ

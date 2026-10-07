@@ -27,6 +27,7 @@ import { preflightSecrets, MissingSecretsError } from "#src/commands/management/
 import type { BackupPurpose } from "#src/core/app.ts";
 import { commandBody, type ArgumentSpec, type ParsedCall, type Values } from "#src/core/command/spec.ts";
 import { PROFILE_ARGUMENT, FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";
 
@@ -46,7 +47,7 @@ export const PULL_ARGUMENTS = [
 ] as const satisfies readonly ArgumentSpec[];
 
 export const PUSH_ARGUMENTS = [
-  { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
+  { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional", value: kinds.text("a snapshot path on the target") },
   { ...FORCE_ARGUMENT, setByConfirm: true },
   ...LOCK_TAKEOVER_ARGUMENTS,
   {

@@ -21,7 +21,6 @@ import { die, info, regexEscape } from "../../core/io/log.ts";
 import { SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { NEAREST_VALID, parseInterval } from "../../core/values/durations.ts";
-import { ValueError, type ValueParser } from "../../core/values/value.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
 import { spawnLocal, SshTransport } from "../../runtime/transport/transport.ts";
 import type { Context } from "../../core/context.ts";
@@ -84,7 +83,7 @@ function formatInterval(minutes: number): string {
   return minutes === 1440 ? "1d" : `${minutes / 60}h`;
 }
 
-function nearestValidIntervals(minutes: number): string[] {
+export function nearestValidIntervals(minutes: number): string[] {
   const below = [...VALID_INTERVAL_MINUTES].reverse().find((value) => value <= minutes);
   const above = VALID_INTERVAL_MINUTES.find((value) => value >= minutes);
   return [...new Set([below, above].filter((value): value is number => value !== undefined))].map(formatInterval);
@@ -474,20 +473,3 @@ export async function printUnschedulingInstructions(ctx: Context, job: string, a
   return true;
 }
 
-/** `--interval` as an argument parser over parseIntervalToMinutes: the same refusal sentences,
- *  with the leading `--interval` left to the argument's label. */
-export function scheduleIntervalValue(options: { bareMinutes: boolean }): ValueParser<number> {
-  return {
-    expected: "an interval such as 30m, 6h or 1d",
-    example: "30m",
-    invalidExample: "7x",
-    parse(raw) {
-      try {
-        return parseIntervalToMinutes(raw, options);
-      } catch (error) {
-        const message = (error as Error).message;
-        throw new ValueError(message.startsWith("--interval ") ? message.slice("--interval ".length) : `: ${message}`);
-      }
-    },
-  };
-}

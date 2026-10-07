@@ -10,15 +10,17 @@ import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
 import { isAbsolute, relative, sep, win32 } from "node:path";
 import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 export const DEPLOY_ARGUMENTS = [
-  { name: "target", description: "user@host", kind: "positional", required: true },
+  { name: "target", description: "user@host", kind: "positional", required: true, value: kinds.sshDestination() },
   {
     name: "path",
     summary: "Remote install directory",
     description: "Remote install directory (default: OC_REMOTE_PATH)",
     kind: "option",
     valueName: "path",
+    value: kinds.absolutePath(),
   },
   { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
   {

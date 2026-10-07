@@ -1,7 +1,7 @@
 {
   "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it. Retired: localizeOptOuts (infoRaw/reportErrorVerbatim/localizeHints) counted three symbols that no longer exist, so it could never move; the property it stood for, that the output layers print the text they are given, is pinned by advice-matrix.check.ts (info() and reportError write rendered advice un-rewritten).",
   "rawArgvScans": {
-    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone. 37 -> 36 (stage 7 S2.2): parseCall and execute.ts's --json probe read the action pick from selectAction (core/command/parse.ts); their own first-word scans are gone",
+    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone. 37 -> 36 (stage 7 S2.2): parseCall and execute.ts's --json probe read the action pick from selectAction (core/command/parse.ts); their own first-word scans are gone. 36 -> 40 (stage 7 S2.4): core/values/kinds.ts arrives (its interval wrapper's message-prefix slice, and the ssh/text leading-dash refusals over one raw value), and the interval wrappers in backup/watch install slice parseInterval's refusal prefix — all one-value refusals, exempted with reasons; schedule.ts's stale exemption is deleted with the flip that removed its line. Back at 36 (stage 7 S2.4, second pass): the dash refusals are expressed without startsWith (raw[0] === \"-\"), the install wrappers call kinds.ts's shared intervalRangeRefusal (whose own line is slice-based and adds no scan), and the kinds.ts interval wrapper's line is the one exempted occurrence — the same nature schedule.ts's deleted exemption had",
     "files": {},
     "total": 36,
     "exempt": {
@@ -83,8 +83,8 @@
           "return entry.args.every((value, index) => value === spec.args[index]);": 1
         }
       },
-      "tools/framework/commands/operate/schedule.ts": {
-        "reason": "a ValueError message prefix, not argv",
+      "tools/framework/core/values/kinds.ts": {
+        "reason": "scans inside ONE value's own refusal, not argv: the interval wrapper slicing the parser's message prefix (the same nature schedule.ts's exemption had before the flip deleted it); the ssh/text leading-dash refusals no longer scan (raw[0] === \"-\"), and the install wrappers now call kinds.ts's intervalRangeRefusal, whose own line is slice-based and adds no scan",
         "lines": {
           "throw new ValueError(message.startsWith(\"--interval \") ? message.slice(\"--interval \".length) : `: ${message}`);": 1
         }
@@ -201,6 +201,10 @@
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
     "total": 184
+  },
+  "untypedValueArguments": {
+    "comment": "stage 7 S2.4: value arguments of openclawCommands (option/positional/variadic element, per-action slices included) without a declared `value` kind, measured structurally through specOf/specData — the legacy parse/choices bridges are deleted, so any new occurrence fails",
+    "total": 0
   },
   "imageStringOps": {
     "comment": "stage 1 (ImageRef): CODE operations on image references outside runtime/docker/image-ref.ts; comments (line and block), prose string literals (contents containing whitespace) and multi-line string fragments (odd quote count) are stripped first, and the spellings cover @sha256 in code, split(/@/), includes/indexOf/lastIndexOf(\"@\"), lastIndexOf/split/indexOf/replace(\":\"), startsWith/endsWith(\"sha256\"), includes(\"sha256:\"); the exempt lines are hand-verified non-image uses — URL credential probes, an action-id separator, a chown owner spec, not image refs (the drift zone replace(\":\", \"\") line is prose-stripped and never counted)",
@@ -371,7 +375,7 @@
     "total": 427
   },
   "proseMatchers": {
-    "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth); rf6-fix25: one fewer — requires-bootstrapped's spaced endsWith(\"run ./clawforge bootstrap\") pin became a structured-advice assertion (renderAdvice(...).endsWith(\"bootstrap\")), so the prose moved into structure; rf6-fix29: two fewer — lock-home's sudo-line collector became one shared regex constant read by all three family blocks (the new spaced-root case adds no new match site)",
+    "comment": "stage 5 (design 5.1): prose in other operators — startsWith/endsWith/indexOf of a literal with a space, .match(/… …/), /…\\s…/.test(, ===/!== with a literal with a space, includes() splitting a pin across a \" + \" string join — outside the single-literal pins counted by prosePins; equality: translation must not move a pin into another operator; rf6-fix23: measurement widened to single-quoted delimiters (newly measured, not new growth); rf6-fix25: one fewer — requires-bootstrapped's spaced endsWith(\"run ./clawforge bootstrap\") pin became a structured-advice assertion (renderAdvice(...).endsWith(\"bootstrap\")), so the prose moved into structure; rf6-fix29: two fewer — lock-home's sudo-line collector became one shared regex constant read by all three family blocks (the new spaced-root case adds no new match site); S2.4: the control fragments are phrased so the registry adds no matcher site",
     "total": 108
   },
   "proseEquality": {

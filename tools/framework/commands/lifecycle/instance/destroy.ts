@@ -10,6 +10,7 @@ import { answeredProbe, sudoFor, sudoForRead } from "#src/runtime/datadir.ts";
 import { ArgumentError } from "#src/core/command/errors.ts";
 import { commandBody, type ArgumentSpec, type Values } from "#src/core/command/spec.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 /** --data/--backups/--snapshots name one of the three directories this deployment declares —
  *  never a free-form path — so "only remove what the deployment itself declared" is
@@ -34,7 +35,7 @@ export const DESTROY_ARGUMENTS = [
     kind: "flag",
   },
   { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy" },
-  { name: "confirm-name", description: "Confirms the deployment's own name", kind: "option", valueName: "name" },
+  { name: "confirm-name", description: "Confirms the deployment's own name", kind: "option", valueName: "name", value: kinds.name("deployment", "read") },
   ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 

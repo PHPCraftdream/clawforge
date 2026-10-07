@@ -21,6 +21,7 @@ import type { AppCommand, AppDefinition, CommandArgument } from "#framework/core
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import * as kinds from "#framework/core/values/kinds.ts";
 
 const app: AppDefinition = { name: "json-given-fixture", description: "fixture", commands: openclawCommands };
 const fixture = await createDeploymentFixture();
@@ -70,23 +71,14 @@ async function runCase(command: string, argv: string[], on: AppDefinition = app)
 }
 
 function exampleOf(argument: ArgumentSpec): string {
-  if (argument.kind === "positional" || argument.kind === "option") {
-    if (argument.choices !== undefined) return argument.choices[0];
-    if (argument.parse !== undefined) return argument.parse.example;
-  }
+  if (argument.kind === "positional" || argument.kind === "option") return argument.value.example;
   return "x";
 }
 
 /** A value the argument refuses, so the case always stops at the parse stage. */
 function invalidOf(argument: ArgumentSpec): string {
   if (argument.kind !== "option" && argument.kind !== "positional") return "";
-  if (argument.choices !== undefined) {
-    let outside = "outside-the-list";
-    while (argument.choices.includes(outside)) outside += "-x";
-    return outside;
-  }
-  if (argument.parse !== undefined) return argument.parse.invalidExample;
-  return "";
+  return argument.value.invalid.find((sample) => sample.stage === "parse")?.raw ?? "";
 }
 
 let cases = 0;
@@ -169,9 +161,9 @@ for (const unit of units) {
 const pullShape: Shape = {
   effect: "change",
   arguments: [
-    { name: "remote", kind: "positional", required: true, description: "where to pull from" },
-    { name: "profile", kind: "option", valueName: "profile", description: "the profile" },
-    { name: "keep", kind: "option", valueName: "count", description: "what to keep" },
+    { name: "remote", kind: "positional", required: true, description: "where to pull from", value: kinds.text("where to pull from") },
+    { name: "profile", kind: "option", valueName: "profile", description: "the profile", value: kinds.text("the profile") },
+    { name: "keep", kind: "option", valueName: "count", description: "what to keep", value: kinds.count() },
     { name: "json", kind: "flag", description: "machine output" },
   ],
 };
@@ -189,12 +181,12 @@ const backupShape: Shape = {
   defaultAction: "create",
   actions: {
     create: { arguments: [
-      { name: "name", kind: "positional", required: true, description: "the name" },
-      { name: "profile", kind: "option", valueName: "profile", description: "the profile" },
+      { name: "name", kind: "positional", required: true, description: "the name", value: kinds.text("the name") },
+      { name: "profile", kind: "option", valueName: "profile", description: "the profile", value: kinds.text("the profile") },
       { name: "json", kind: "flag", description: "machine output" },
     ] },
     list: { arguments: [
-      { name: "format", kind: "option", valueName: "format", required: true, description: "the format" },
+      { name: "format", kind: "option", valueName: "format", required: true, description: "the format", value: kinds.text("the format") },
       { name: "json", kind: "flag", description: "machine output" },
     ] },
   },
@@ -220,9 +212,9 @@ await differential("backup list: --json with the action word", backupShape, "bac
 const execShape: Shape = {
   effect: "change",
   arguments: [
-    { name: "profile", kind: "option", valueName: "profile", choices: ["debug"], description: "the profile" },
+    { name: "profile", kind: "option", valueName: "profile", description: "the profile", value: kinds.choice(["debug"]) },
     { name: "json", kind: "flag", description: "machine output" },
-    { name: "command", kind: "variadic", verbatim: true, description: "what to run" },
+    { name: "command", kind: "variadic", verbatim: true, description: "what to run", value: kinds.text("what to run", { leadingDash: "allow" }) },
   ],
 };
 const execApp: AppDefinition = {
@@ -248,7 +240,7 @@ async function legacyDifferential(label: string, shape: Shape, command: string, 
 const legacyShape: Shape = {
   effect: "change",
   arguments: [
-    { name: "profile", kind: "option", valueName: "profile", description: "the profile" },
+    { name: "profile", kind: "option", valueName: "profile", description: "the profile", value: kinds.text("the profile") },
     { name: "json", kind: "flag", description: "machine output" },
   ],
 };

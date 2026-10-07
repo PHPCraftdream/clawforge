@@ -3,7 +3,7 @@
 // file its own process, so this module's fixture and tally are per-process.
 
 import { executeCommand } from "#framework/core/command/execute.ts";
-import { ArgumentError, specData } from "#framework/core/command/index.ts";
+import { specData } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf, type LocalFact } from "#framework/core/command/spec.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -14,7 +14,6 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
-import { INVALID_ARTIFACT } from "#framework/set/artifacts/install.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
@@ -58,24 +57,22 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
 }
 
 export function exampleOf(argument: ArgumentSpec): string {
-  if (argument.kind === "positional" || argument.kind === "option") {
-    if (argument.name === "new-name" && argument.parse !== undefined) return argument.parse.example;
-    if (argument.choices !== undefined) return argument.choices[0];
-    if (argument.parse !== undefined) return argument.parse.example;
+  if (argument.kind === "positional" || argument.kind === "option" || argument.kind === "variadic") {
+    const kind = (argument as { value?: { example: string } }).value;
+    if (kind !== undefined) return kind.example;
+    // The public CommandArgument face (a kind projects as its parse carrier).
+    const legacy = argument as { parse?: { example: string }; choices?: readonly string[] };
+    if (legacy.parse !== undefined) return legacy.parse.example;
+    if (legacy.choices !== undefined) return legacy.choices[0]!;
   }
   return "x";
 }
 
-/** The value the argument must refuse, or undefined when it refuses nothing by declaration. */
-export function invalidOf(argument: ArgumentSpec): string | undefined {
-  if (argument.kind !== "positional" && argument.kind !== "option") return undefined;
-  if (argument.choices !== undefined) {
-    let outside = "outside-the-list";
-    while (argument.choices.includes(outside)) outside += "-x";
-    return outside;
-  }
-  if (argument.parse !== undefined) return argument.parse.invalidExample;
-  return argument.kind === "option" ? "" : undefined;
+/** EVERY parse-stage value the argument's kind refuses, raw; a flag refuses nothing by
+ *  declaration. The sweep turns each sample into a case, on both surfaces. */
+export function invalidSamplesOf(argument: ArgumentSpec): readonly string[] {
+  if (argument.kind === "flag") return [];
+  return argument.value.invalid.filter((sample) => sample.stage === "parse").map((sample) => sample.raw);
 }
 
 export async function runCase(command: string, argv: string[], surface: "terminal" | "mcp", on: AppDefinition = app, options: { confirmed?: boolean } = {}) {
@@ -85,14 +82,6 @@ export async function runCase(command: string, argv: string[], surface: "termina
     output += chunk;
   }, () => executeCommand(on, command, argv, { surface, transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
   return { execution, output, contacts: fixture.contacts() };
-}
-
-export const ARGUMENT_REFUSAL_SHAPE = /^invalid .+ (name|id) "/;
-export function isArgumentShaped(error: unknown, label: string, value?: string): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error instanceof ArgumentError) return true;
-  return error.message.startsWith(label) || ARGUMENT_REFUSAL_SHAPE.test(error.message) || error.message.includes(["not", "found"].join(" ")) || error.message.includes(["could", "not", "inspect"].join(" ")) || error.message.includes(INVALID_ARTIFACT)
-    || (value !== undefined && value.length >= 4 && error.message.includes(value));
 }
 
 export function factsOf(unit: Unit): readonly { readonly argument: string; readonly fact: LocalFact; readonly unless?: string }[] {
@@ -112,7 +101,7 @@ export function controlValues(unit: Unit): readonly { readonly argument: Argumen
   }
   for (const argument of unit.args) {
     if (argument.kind === "positional") chosen.add(argument.name);
-    else if (argument.kind === "option" && (argument.required === true || argument.parse !== undefined || argument.choices !== undefined)) chosen.add(argument.name);
+    else if (argument.kind === "option" && (argument.required === true || argument.value !== undefined)) chosen.add(argument.name);
     else if (argument.kind === "variadic" && argument.required === true) chosen.add(argument.name);
   }
   for (const rule of unit.rules) {

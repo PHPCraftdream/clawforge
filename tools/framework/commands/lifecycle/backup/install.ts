@@ -12,7 +12,9 @@
 import { info, log, warn } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import type { Context } from "#src/core/context.ts";
-import { scheduleIntervalValue } from "#src/commands/operate/schedule.ts";
+import { cronSchedule, nearestValidIntervals } from "#src/commands/operate/schedule.ts";
+import * as kinds from "#src/core/values/kinds.ts";
+import { intervalRangeRefusal } from "#src/core/values/kinds.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
@@ -45,7 +47,22 @@ export const BACKUP_INSTALL_ARGUMENTS = [
     description: "With install: how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day",
     kind: "option",
     valueName: "interval",
-    parse: scheduleIntervalValue({ bareMinutes: false }),
+    // The kind's grammar with schedule.ts's range policy: the cron range check throws the
+    // same ValueError the legacy wrapper produced (the command's own voice), the grammar
+    // refusal moves into the kind. An explicit unit stays required here.
+    value: kinds.interval({
+      requireUnit: true,
+      nearestUnit: (value) => nearestValidIntervals(value).join(", "),
+      enforceRange: (minutes) => {
+        try {
+          cronSchedule(minutes);
+        } catch (error) {
+          // The same ValueError the legacy wrapper produced: intervalRangeRefusal
+          // re-joins the label into cronSchedule's own "--interval …" sentence, byte for byte.
+          intervalRangeRefusal(error); // throws
+        }
+      },
+    }),
   },
   BACKUP_APPLY_ARGUMENT,
   ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),

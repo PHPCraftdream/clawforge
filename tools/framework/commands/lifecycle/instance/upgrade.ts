@@ -12,7 +12,8 @@ import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
-import { parse, tryParse, format, repositoryOf, withDigest, sameContent, digestOf, imageRefValue, invalidImageReference, type ImageRef } from "#src/runtime/docker/image-ref.ts";
+import { parse, tryParse, format, repositoryOf, withDigest, sameContent, digestOf, invalidImageReference, type ImageRef } from "#src/runtime/docker/image-ref.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -34,7 +35,7 @@ export const UPGRADE_ARGUMENTS = [
     description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE",
     kind: "option",
     valueName: "ref",
-    parse: imageRefValue,
+    value: kinds.image(),
   },
   { name: "dry-run", description: "Print the plan without changing anything", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },

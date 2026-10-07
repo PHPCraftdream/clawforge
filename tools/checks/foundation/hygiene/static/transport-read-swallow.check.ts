@@ -213,13 +213,13 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/lifecycle/verify.ts",
-    line: 249,
+    line: 250,
     reason:
       "the LIVE openclaw.json secret scan (verify.ts collectSecrets) only adds findings to a verify that reports an unreadable config elsewhere (inspect/doctor); the swallow cannot hide a failed verify",
   },
   {
     file: "tools/framework/commands/lifecycle/verify.ts",
-    line: 459,
+    line: 460,
     reason:
       "the catch is loud, not silent: warn() plus an unreadable-archived-config finding plus failures += 1 - the unknown is reported, never read as clean",
   },
@@ -243,7 +243,7 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/lifecycle/restore/index.ts",
-    line: 475,
+    line: 476,
     reason:
       "the caught error drives rollbackRestore, which reports it and unwinds the restore - the failure is the rollback's input, never read as clean",
   },

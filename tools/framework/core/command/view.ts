@@ -2,6 +2,16 @@
 
 import type { CommandArgument } from "#src/core/app.ts";
 import { specData, specOf, type ArgumentRule, type ArgumentSpec, type CommandBody } from "#src/core/command/spec.ts";
+import type { ValueKind } from "#src/core/values/kind.ts";
+
+/** A spec's public face: the kind never leaks — a choice kind shows its list, any other kind
+ *  is itself a ValueParser and shows as `parse`, exactly as the legacy declarations did. A
+ *  flag carries no value, so it passes through as declared. */
+function toCommandArgument(argument: ArgumentSpec): CommandArgument {
+  if (argument.kind === "flag") return argument as CommandArgument;
+  const { value, ...rest } = argument as ArgumentSpec & { value: ValueKind<never> };
+  return { ...rest, ...(value.choices !== undefined ? { choices: value.choices } : { parse: value }) } as CommandArgument;
+}
 
 /** One multi-action command's flags/options from what each action's own parser accepts:
  *  `actions` is derived (absent when every action takes it), so completion, --help and the MCP
@@ -84,7 +94,7 @@ export function argumentRules(command: { readonly run?: unknown }): readonly Arg
  *  (one text standing for all of them, as before). The one place the per-action split is known:
  *  the view composes it, and help-render.ts and the MCP schema read the parts instead of
  *  parsing the composed text apart again. */
-function argumentParts(slices: Readonly<Record<string, readonly ArgumentSpec[]>>, name: string): readonly ArgumentScope[] | undefined {
+function argumentParts(slices: Readonly<Record<string, readonly CommandArgument[]>>, name: string): readonly ArgumentScope[] | undefined {
   const byDescription = new Map<string, { readonly description: string; readonly actions: string[]; readonly summary?: string }>();
   for (const action of Object.keys(slices)) {
     for (const argument of slices[action]) {
@@ -113,7 +123,7 @@ function argumentParts(slices: Readonly<Record<string, readonly ArgumentSpec[]>>
  *  only when every part declares one. */
 export function argumentsView(body: CommandBody): readonly CommandArgument[] {
   const data = specData(body);
-  if (data.kind === "single") return data.arguments;
+  if (data.kind === "single") return data.arguments.map(toCommandArgument);
 
   const declared = Object.keys(data.actions);
   const order = data.defaultAction === undefined ? declared : [data.defaultAction, ...declared.filter((name) => name !== data.defaultAction)];
@@ -140,12 +150,12 @@ export function argumentsView(body: CommandBody): readonly CommandArgument[] {
     const { required: _required, ...rest } = argument as ArgumentSpec & { required?: boolean };
     const declaring = order.filter((action) => slices[action].some((other) => other.kind === "positional" && other.name === argument.name));
     const parts = argumentParts(slices, argument.name);
-    return {
+    return toCommandArgument({
       ...rest,
       ...(parts === undefined ? {} : { description: parts.map((part) => `${part.description} (${part.actions.join(", ")})`).join("; ") }),
       ...(everyAction((other) => (other as { required?: boolean }).required === true, argument.name) ? { required: true } : {}),
       ...(declaring.length === order.length ? {} : { actions: declaring }),
-    };
+    } as ArgumentSpec);
   });
 
   const variadics = new Map<string, { argument: ArgumentSpec; actions: string[] }>();
@@ -157,7 +167,7 @@ export function argumentsView(body: CommandBody): readonly CommandArgument[] {
       if (!entry.actions.includes(name)) entry.actions.push(name);
     }
   }
-  const mergedVariadics: CommandArgument[] = [...variadics.values()].map(({ argument, actions }) => ({
+  const mergedVariadics: CommandArgument[] = [...variadics.values()].map(({ argument, actions }) => toCommandArgument({
     ...argument,
     ...(actions.length === order.length ? {} : { actions }),
   }));
@@ -170,11 +180,11 @@ export function argumentsView(body: CommandBody): readonly CommandArgument[] {
       : parts.every((part) => part.summary !== undefined)
         ? parts.map((part) => `${part.summary} (${part.actions.join(", ")})`).join("; ")
         : undefined;
-    return {
+    return toCommandArgument({
       ...rest,
       ...(summary === undefined ? {} : { summary }),
       ...(everyAction((other) => (other as { required?: boolean }).required === true, argument.name) ? { required: true } : {}),
-    };
+    } as ArgumentSpec);
   });
   return [action, ...merged, ...mergedVariadics, ...scoped];
 }

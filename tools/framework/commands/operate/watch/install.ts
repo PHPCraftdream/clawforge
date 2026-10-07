@@ -19,15 +19,17 @@ import { requireBootstrapped } from "../../../runtime/runtime.ts";
 import type { Context } from "../../../core/context.ts";
 import { bind, defineAction, tokenize, type ArgumentSpec, type Values } from "../../../core/command/index.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "../../interface/groups/shared-arguments.ts";
+import * as kinds from "../../../core/values/kinds.ts";
+import { intervalRangeRefusal } from "../../../core/values/kinds.ts";
 import {
   cronLine as sharedCronLine,
   cronSchedule,
+  nearestValidIntervals,
   displayCommandLine,
   jobMarker,
   posixTargetInvocation,
   printSchedulingInstructions,
   printUnschedulingInstructions,
-  scheduleIntervalValue,
   schedulingSupport,
   schedulerIdentity,
   withoutMarkedLine as sharedWithoutMarkedLine,
@@ -56,7 +58,21 @@ export const WATCH_INSTALL_ARGUMENTS = [
     description: "With install: time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24)",
     kind: "option",
     valueName: "interval",
-    parse: scheduleIntervalValue({ bareMinutes: true }),
+    // The kind's grammar with schedule.ts's range policy: the cron range check throws the
+    // same ValueError the legacy wrapper produced (the command's own voice), the grammar
+    // refusal moves into the kind. Bare minutes stay allowed here.
+    value: kinds.interval({
+      nearestUnit: (value) => nearestValidIntervals(value).join(", "),
+      enforceRange: (minutes) => {
+        try {
+          cronSchedule(minutes);
+        } catch (error) {
+          // The same ValueError the legacy wrapper produced: intervalRangeRefusal
+          // re-joins the label into cronSchedule's own "--interval …" sentence, byte for byte.
+          intervalRangeRefusal(error); // throws
+        }
+      },
+    }),
   },
   {
     name: "apply",

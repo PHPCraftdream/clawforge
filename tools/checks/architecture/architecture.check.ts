@@ -19,9 +19,12 @@ import { operateCommands } from "#framework/commands/interface/groups/openclawCo
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
-import { versionGateCommand } from "#framework/integration/version.ts";
+import { versionGateCommand, VERSION_ARGUMENTS } from "#framework/integration/version.ts";
+import { INIT_ARGUMENTS } from "#framework/integration/deployment/init.ts";
+import { COMPLETION_ARGUMENTS } from "#framework/integration/completion/index.ts";
+import { commandRegistry } from "#framework/integration/gate.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
-import { specOf } from "#framework/core/command/index.ts";
+import { specData, specOf } from "#framework/core/command/index.ts";
 import { measureProseHeld } from "./prose-held.ts";
 import { CONTROLS } from "#checks/controls/controls.ts";
 import { importedFrameworkSymbols, scanOwnProduct, SCANNER_SELF_CHECKS } from "./own-product.ts";
@@ -53,6 +56,7 @@ interface Baseline {
   readonly legacyCommands: { readonly comment: string; readonly total: number };
   readonly unsummarizedDescriptions: { readonly comment: string; readonly total: number };
   readonly declaredArguments: { readonly comment: string; readonly total: number };
+  readonly untypedValueArguments: { readonly comment: string; readonly total: number };
   readonly imageStringOps: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly prosePins: PerFileMetric;
   readonly proseMatchers: { readonly comment: string; readonly total: number };
@@ -369,6 +373,39 @@ report(ratchet("rawArgvPredicates.requiresConfirmationWhen", baseline.rawArgvPre
 report(ratchet("legacyCommands", baseline.legacyCommands.total, legacyCount, [], []));
 report(ratchet("unsummarizedDescriptions", baseline.unsummarizedDescriptions.total, unsummarized, [], []));
 report(ratchet("declaredArguments", baseline.declaredArguments.total, argumentCount, [], []));
+
+// 4b. untypedValueArguments — stage 7 S2.4: every value argument (option, positional, and a
+// variadic's element kind, in single bodies and per-action slices alike) carries a declared
+// `value` kind; measured STRUCTURALLY through specOf/specData, never lexically. The counter
+// covers gate commands and the registry too (version, init, completion, and the registry's
+// `help` entry), whose public carrier is `parse`/`value` rather than a spec-side `value`.
+let untypedValueArgs = 0;
+for (const command of Object.values(openclawCommands)) {
+  const entry = specOf(command);
+  if (entry === undefined) continue;
+  const data = specData(entry);
+  const slices = data.kind === "single" ? [data.arguments] : Object.values(data.actions).map((action) => action.arguments);
+  for (const slice of slices) {
+    for (const argument of slice) {
+      if (argument.kind !== "option" && argument.kind !== "positional" && argument.kind !== "variadic") continue;
+      if ((argument as { value?: unknown }).value === undefined) untypedValueArgs += 1;
+    }
+  }
+}
+for (const gate of [...checkoutGateCommands, { arguments: VERSION_ARGUMENTS }, { arguments: INIT_ARGUMENTS }, { arguments: COMPLETION_ARGUMENTS }]) {
+  for (const argument of gate.arguments ?? []) {
+    if (argument.kind !== "option" && argument.kind !== "positional" && argument.kind !== "variadic") continue;
+    const public_ = argument as { parse?: unknown; choices?: unknown; value?: unknown };
+    if (public_.parse === undefined && public_.choices === undefined && public_.value === undefined) untypedValueArgs += 1;
+  }
+}
+const helpEntry = commandRegistry({ deployment: openclawCommands, gate: checkoutGateCommands, appName: "counter" }).find("help");
+for (const argument of helpEntry?.arguments ?? []) {
+  if (argument.kind !== "option" && argument.kind !== "positional" && argument.kind !== "variadic") continue;
+  const public_ = argument as { parse?: unknown; choices?: unknown; value?: unknown };
+  if (public_.parse === undefined && public_.choices === undefined && public_.value === undefined) untypedValueArgs += 1;
+}
+report(ratchet("untypedValueArguments", baseline.untypedValueArguments.total, untypedValueArgs, [], []));
 
 // 5. String operations on image references outside runtime/docker/image-ref.ts — stage 1
 // (ImageRef): one module owns the grammar, call sites get values. Trailing comments and

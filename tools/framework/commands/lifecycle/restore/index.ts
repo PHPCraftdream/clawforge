@@ -44,9 +44,10 @@ import type { Recipe } from "#src/service/recipe.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 export const RESTORE_ARGUMENTS = [
-  { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
+  { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional", value: kinds.text("path to the archive on the target", { leadingDash: "refuse" }) },
   { ...FORCE_ARGUMENT, setByConfirm: true },
   ...LOCK_TAKEOVER_ARGUMENTS,
   {

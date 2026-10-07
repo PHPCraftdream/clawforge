@@ -25,7 +25,7 @@ import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { LOCK_TAKEOVER_ARGUMENTS } from "#src/commands/interface/groups/shared-arguments.ts";
-import { pathSegmentValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 
 export const ROLLBACK_ARGUMENTS = [
@@ -35,7 +35,7 @@ export const ROLLBACK_ARGUMENTS = [
     description: "Operation id to undo (default: the most recent one with a snapshot)",
     kind: "option",
     valueName: "id",
-    parse: pathSegmentValue("an operation id", "20260101000000000-apply-ab12cd"),
+    value: kinds.id("operation", "20260101000000000-apply-ab12cd"),
   },
   { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
   // A flag, not `--set <artifact>`: rollback names no artifact of its own, it reinstalls

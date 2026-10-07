@@ -8,6 +8,7 @@ import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
 export const CLI_ARGUMENTS = [
@@ -18,6 +19,7 @@ export const CLI_ARGUMENTS = [
     kind: "variadic",
     verbatim: true,
     required: true,
+    value: kinds.text("arguments passed to OpenClaw's CLI", { leadingDash: "allow" }),
   },
 ] as const;
 

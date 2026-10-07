@@ -13,7 +13,7 @@
 
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { nameValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
@@ -42,9 +42,9 @@ export const ACCEPT_ARGUMENTS = [
     summary: "Recipe to check",
     description: "Recipe to check (default: every recipe that declares checks)",
     kind: "positional",
-    parse: nameValue("recipe"),
+    value: kinds.recipeRef(),
   },
-  { name: "set", description: "Check the verified artifact and save an acceptance receipt", kind: "option", valueName: "artifact" },
+  { name: "set", description: "Check the verified artifact and save an acceptance receipt", kind: "option", valueName: "artifact", value: kinds.localFile("a set artifact path") },
   { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];

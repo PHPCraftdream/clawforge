@@ -9,7 +9,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
-import { nameValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { newName } from "#src/core/values/names.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
@@ -32,7 +32,7 @@ export const SECRETS_ARGUMENTS = [
   { name: "init-store", description: "Create an empty store to fill in", kind: "flag", effect: "destroy" },
   { name: "apply", description: "Fill the target from a local store", kind: "flag", effect: "destroy" },
   { name: "dump", description: "Recover a local store from the running instance", kind: "flag", effect: "destroy" },
-  { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name", parse: nameValue("store") },
+  { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name", value: kinds.name("store", "read") },
   {
     name: "force",
     summary: "Replace an existing store",

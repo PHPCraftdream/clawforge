@@ -13,7 +13,7 @@ import {
 } from "#src/core/command/errors.ts";
 import type { ArgumentRule, ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
 import { scopeByAction } from "#src/core/command/view.ts";
-import { ValueError } from "#src/core/values/value.ts";
+import { ValueError, type ValueParser } from "#src/core/values/value.ts";
 
 /** Only for a multi-action command (backup): the action being parsed, and the full
  *  cross-action declaration to check an unrecognized flag against before giving up on it
@@ -372,9 +372,14 @@ function toParsedArgs(entries: readonly TokenEntry[]): ParsedArgs {
   const result: ParsedArgs = {};
   for (const { argument, value } of entries) {
     if (argument.kind === "variadic") {
+      // Each element goes through the declared element kind when one is present (the public
+      // `value` carrier); convert throws ArgumentError already, so no extra wrapping here.
+      const element = argument.value !== undefined
+        ? convert(argument as ValueSpec<"option">, value as string) as string
+        : value as string;
       const list = result[argument.name] as string[] | undefined;
-      if (list === undefined) result[argument.name] = [value as string];
-      else list.push(value as string);
+      if (list === undefined) result[argument.name] = [element];
+      else list.push(element);
     } else if (argument.kind !== "flag" && argument.parse !== undefined) {
       result[argument.name] = convert(argument as ValueSpec<"option">, value as string) as string;
     } else result[argument.name] = value;
@@ -403,21 +408,39 @@ function joinClause(label: string, clause: string): string {
   return clause.startsWith(":") ? `${label}${clause}` : `${label} ${clause}`;
 }
 
-/** One typed value from its text: empty without a parser is refused, `choices` is a closed
- *  list, `parse` has the last word and its ValueError becomes an ArgumentError. */
+/** One typed value from its text: the declared kind is the grammar (its choices list refuses
+ *  before parse). A gate command's declaration is the PUBLIC CommandArgument, whose
+ *  `parse`/`choices` carriers stay (they are ValueParsers, not spec fields) — those legacy
+ *  branches below serve that public type only; a spec body cannot express them. */
 function convert(argument: ValueSpec<"option"> | ValueSpec<"positional">, raw: string): unknown {
   const label = labelOf(argument);
-  if (argument.parse !== undefined) {
+  const kind = argument.value;
+  if (kind !== undefined) {
+    if (kind.choices !== undefined) {
+      // Today's order and wording: empty is "needs a value", an outsider the choices refusal.
+      if (raw === "") throw new ArgumentError(`${label} needs a value`, argument.name);
+      if (!kind.choices.includes(raw)) throw new ArgumentError(choicesRefusal(argument, kind.choices, raw), argument.name);
+      return raw;
+    }
     try {
-      return argument.parse.parse(raw);
+      return kind.parse(raw);
+    } catch (error) {
+      if (error instanceof ValueError) throw new ArgumentError(joinClause(label, error.clause), argument.name);
+      throw error;
+    }
+  }
+  const legacy = argument as unknown as { parse?: ValueParser<unknown>; choices?: readonly string[] };
+  if (legacy.parse !== undefined) {
+    try {
+      return legacy.parse.parse(raw);
     } catch (error) {
       if (error instanceof ValueError) throw new ArgumentError(joinClause(label, error.clause), argument.name);
       throw error;
     }
   }
   if (raw === "") throw new ArgumentError(`${label} needs a value`, argument.name);
-  if (argument.choices !== undefined && !argument.choices.includes(raw)) {
-    throw new ArgumentError(choicesRefusal(argument, argument.choices, raw), argument.name);
+  if (legacy.choices !== undefined && !legacy.choices.includes(raw)) {
+    throw new ArgumentError(choicesRefusal(argument, legacy.choices, raw), argument.name);
   }
   return raw;
 }
@@ -441,7 +464,10 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
   for (const { argument: token, value } of tokens.entries) {
     const argument = byName.get(token.name)!;
     if (argument.kind === "flag") values[argument.name] = true;
-    else if (argument.kind === "variadic") (values[argument.name] as string[]).push(value as string);
+    else if (argument.kind === "variadic") {
+      // A variadic's declared element kind converts each element like an option would.
+      (values[argument.name] as unknown[]).push(convert(argument as unknown as ValueSpec<"option">, value as string));
+    }
     else values[argument.name] = convert(argument, value as string);
   }
   for (const argument of declared) {

@@ -5,7 +5,7 @@
 // declaration closes over the finished command array (see completion.ts).
 
 import { parseDeclaredArgs } from "../core/command/index.ts";
-import { countValue } from "../core/values/value.ts";
+import * as kinds from "../core/values/kinds.ts";
 import { emit } from "../core/io/output.ts";
 import { createApp } from "../integration/deployment/scaffold.ts";
 import { removeApp } from "../integration/deployment/remove.ts";
@@ -19,12 +19,12 @@ const CHECK_RUNNER_PATH = ["../../checks/kit", "run.ts"].join("/");
 
 // Drives both new-app's parser and its declaration.
 const NEW_APP_ARGUMENTS: CommandArgument[] = [
-  { name: "name", description: "Deployment name", kind: "positional", required: true },
+  { name: "name", description: "Deployment name", kind: "positional", required: true, parse: kinds.name("deployment", "create") },
 ];
 
 // Drives both remove-app's parser and its declaration.
 const REMOVE_APP_ARGUMENTS: CommandArgument[] = [
-  { name: "name", description: "Deployment name", kind: "positional", required: true },
+  { name: "name", description: "Deployment name", kind: "positional", required: true, parse: kinds.name("deployment", "read") },
   { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag" },
 ];
 
@@ -40,6 +40,7 @@ const checkArguments: CommandArgument[] = [
     summary: "Only run checks whose relative path contains this text",
     description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any",
     kind: "variadic",
+    value: kinds.text("check path filter", { leadingDash: "allow" }),
   },
   { name: "list", description: "Print the matching check paths instead of running them", kind: "flag" },
   {
@@ -48,7 +49,7 @@ const checkArguments: CommandArgument[] = [
     description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))",
     kind: "option",
     valueName: "n",
-    parse: countValue(),
+    parse: kinds.count(),
   },
   {
     name: "require",
@@ -58,6 +59,7 @@ const checkArguments: CommandArgument[] = [
       "check that needs them, instead of skipping it — merged with OC_CHECK_REQUIRE",
     kind: "option",
     valueName: "cap,...",
+    parse: kinds.text("capabilities that must fail a check instead of skipping it"),
   },
 ];
 

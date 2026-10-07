@@ -4,9 +4,9 @@
 //
 // Everything is derived from the declarations of openclawCommands (a new command or action is
 // covered the moment it is declared; there is no per-command list and no exclusion):
-//   argv = the action word + an example for every preceding positional (choices[0], the
-//          parser's `example`, else "x") + the argument carrying its `invalidExample`
-//          (for `choices`: a value outside the list; an option without `parse`: an empty value).
+//   argv = the action word + an example for every preceding positional (the kind's
+//          `example`) + the argument carrying each of its kind's declared parse-stage
+//          samples (a variadic: the sample repeated per its count).
 // Expected, per case: stage "parse", an ArgumentError whose `argument` is that argument's name,
 // zero transport contacts, and the {"error":…} document only when the chosen action declares a
 // `json` flag (then `--json` rides argv; on MCP no document is ever printed).
@@ -16,15 +16,15 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ArgumentError, UnknownActionError, appliesToMessage, bind, requiredArgumentRefusal, specData, tokenize } from "#framework/core/command/index.ts";
+import { ArgumentError, UnknownActionError, appliesToMessage, bind, bindsAsFlag, requiredArgumentRefusal, specData, tokenize } from "#framework/core/command/index.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf } from "#framework/core/command/spec.ts";
-import { positionalDashMessage, toArgv, validate } from "#framework/integration/mcp/call.ts";
+import { toArgv, validate } from "#framework/integration/mcp/call.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { setManifestId } from "#framework/set/artifacts/model.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidOf, isArgumentShaped, runCase, stages, units } from "./property-sweep.ts";
+import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidSamplesOf, runCase, stages, units } from "./property-sweep.ts";
 let cases = 0;
 {
   const unpacked = await unpackArtifactVerified(controlArtifact);
@@ -37,47 +37,65 @@ for (const unit of units) {
   const lead = unit.action === undefined ? [] : [unit.action];
 
   for (const argument of unit.args) {
-    const invalid = invalidOf(argument);
-    if (invalid === undefined) continue;
-    const preceding = positionals.slice(0, positionals.indexOf(argument as typeof positionals[number]));
-    const name = `${unit.label}: ${argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`} ${JSON.stringify(invalid)}`;
+    const samples = invalidSamplesOf(argument);
+    if (samples.length === 0) continue;
+    // A variadic trails every positional; a positional precedes only the ones before it.
+    const preceding = argument.kind === "positional"
+      ? positionals.slice(0, positionals.indexOf(argument))
+      : positionals;
+    for (const invalid of samples) {
+      const name = `${unit.label}: ${argument.kind === "positional" ? `<${argument.name}>` : argument.kind === "variadic" ? `<${argument.name}…>` : `--${argument.name}`} ${JSON.stringify(invalid)}`;
 
-    const argv = [
-      ...lead,
-      ...preceding.map(exampleOf),
-      ...(argument.kind === "positional" ? [invalid] : [`--${argument.name}`, invalid]),
-      ...(declaresJson ? ["--json"] : []),
-    ];
-    const terminal = await runCase(unit.command, argv, "terminal");
-    cases += 1;
-    stages.case(name, terminal.execution.stage, terminal.execution.error);
-    check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
-    checkTrue(`${name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
-    check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument.name);
-    check(`${name}: console never contacts the target`, terminal.contacts, []);
-    if (declaresJson) {
-      const document = JSON.parse(terminal.output) as { error?: { message?: unknown } };
-      checkTrue(`${name}: --json gets the error document`, typeof document.error?.message === "string");
-    } else check(`${name}: no --json document without a json flag`, terminal.output, "");
+      // --json rides before any `--`: everything after it is positional.
+      const argv = [
+        ...lead,
+        ...(declaresJson ? ["--json"] : []),
+        ...preceding.map(exampleOf),
+        // A flag-looking value rides after a bare `--`: the tokenizer would refuse it
+        // as an unknown option before the kind's parse refusal is reached, and the kind —
+        // not the tokenizer — is the grammar under test here.
+        ...(argument.kind === "positional" ? (bindsAsFlag(invalid) ? ["--", invalid] : [invalid])
+          : argument.kind === "variadic"
+            ? [...(bindsAsFlag(invalid) ? ["--"] : []), ...Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => invalid)]
+            : [`--${argument.name}`, invalid]),
+      ];
+      const terminal = await runCase(unit.command, argv, "terminal");
+      cases += 1;
+      stages.case(name, terminal.execution.stage, terminal.execution.error);
+      check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+      checkTrue(`${name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+      check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument.name);
+      check(`${name}: console never contacts the target`, terminal.contacts, []);
+      if (declaresJson) {
+        const document = JSON.parse(terminal.output) as { error?: { message?: unknown } };
+        checkTrue(`${name}: --json gets the error document`, typeof document.error?.message === "string");
+      } else check(`${name}: no --json document without a json flag`, terminal.output, "");
 
-    if (invalid === "") continue;
-    const mcpArgs: Record<string, unknown> = {
-      ...(unit.action === undefined ? {} : { action: unit.action }),
-      ...Object.fromEntries(preceding.map((other) => [other.name, exampleOf(other)])),
-      [argument.name]: invalid,
-      ...(declaresJson ? { json: true } : {}),
-    };
-    const declaration = openclawCommands[unit.command];
-    check(`${name}: the MCP argument object is well-formed`, validate(declaration, mcpArgs), []);
-    const mcp = await runCase(unit.command, toArgv(declaration, mcpArgs), "mcp");
-    cases += 1;
-    stages.case(name, mcp.execution.stage, mcp.execution.error);
-    check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
-    checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
-    check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
-    check(`${name}: MCP never contacts the target`, mcp.contacts, []);
-    check(`${name}: MCP prints no document`, mcp.output, "");
-    check(`${name}: one voice on both surfaces`, (mcp.execution.error as Error).message, (terminal.execution.error as Error).message);
+      // toArgv drops an empty value (the caller did not give it): no MCP case, the
+      // surface's documented rule — not an exclusion of a command.
+      if (invalid === "") continue;
+      const mcpArgs: Record<string, unknown> = {
+        ...(unit.action === undefined ? {} : { action: unit.action }),
+        ...Object.fromEntries(preceding.map((other) => [other.name, exampleOf(other)])),
+        [argument.name]: argument.kind === "variadic" ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => invalid) : invalid,
+        ...(declaresJson ? { json: true } : {}),
+      };
+      const declaration = openclawCommands[unit.command];
+      check(`${name}: the MCP argument object is well-formed`, validate(declaration, mcpArgs), []);
+      const mcp = await runCase(unit.command, toArgv(declaration, mcpArgs), "mcp");
+      cases += 1;
+      stages.case(name, mcp.execution.stage, mcp.execution.error);
+      check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+      checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+      check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
+      check(`${name}: MCP never contacts the target`, mcp.contacts, []);
+      check(`${name}: MCP prints no document`, mcp.output, "");
+      check(
+        `${name}: one voice on both surfaces`,
+        (mcp.execution.error as Error).message,
+        (terminal.execution.error as Error).message,
+      );
+    }
   }
 }
 
@@ -85,14 +103,11 @@ for (const unit of units) {
 // stage, never after the context is built — by then a real host has already read the target
 // (WSL: /etc/wsl.conf) or refused it (LOCAL_TARGET_UNSUPPORTED), either of which masks the
 // refusal of the argument itself. Derived from the declarations alone: every value-taking
-// argument carries a value a grammar of this framework refuses — a declared grammar
-// invalidExample, else the shape every safeName grammar refuses — and a failure that happens
-// at the context or run stage must not be an argument refusal. (A grammar-less argument
-// whose run-stage refusal has fresh wording is not derivable from the declaration; declaring
-// its parser is the fix, and the value section above then pins it to the parse stage. On a
+// argument carries its kind's declared parse-stage samples, and the call is asserted to stop
+// no later than prepare — a refusal at the context or run stage fails the assertion. (On a
 // host where the context cannot be built at all (no deployment, an unsupported location) the
 // run stage is unreachable — the context refusal then masks any later grammar refusal, which
-// is exactly the masking this finding describes — so there the value section above carries the
+// is exactly the masking this finding describes — so the value section above carries the
 // assertion, with its zero-contact and both-surface checks.)
 //
 // The sweep runs on the kit deployment fixture (a valid temp deployment, recording transport)
@@ -143,31 +158,29 @@ for (const unit of units) {
   const options = unit.args.filter((argument) => argument.kind === "option");
   const declaresJson = unit.args.some((argument) => argument.name === "json" && argument.kind === "flag");
   for (const argument of [...positionals, ...options]) {
-    const declared = invalidOf(argument);
-    // An empty string is the no-parser convention (the empty value refusal), not a grammar:
-    // the sweep needs a value the grammar-less argument itself cannot survive.
-    const invalid = declared === undefined || declared === "" ? "Bad_Name" : declared;
-    const label = argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`;
-    const name = `${unit.label}: ${label} ${JSON.stringify(invalid)} refused no later than prepare`;
-    // a value the pair-rule companion judges must be judged WITH its trigger flag present,
-    // so the pair's judgment is exercised, not skipped.
-    const triggers = unit.rules.flatMap((rule) =>
-      rule.rule === "requires" && rule.any === undefined && rule.with.includes(argument.name)
-        ? unit.args.filter((trigger) => trigger.name === rule.name && trigger.kind === "flag")
-        : [],
-    );
-    const argv = [
-      ...lead,
-      ...positionals.map((other) => (other === argument ? invalid : exampleOf(other))),
-      ...options.flatMap((other) => [`--${other.name}`, other === argument ? invalid : exampleOf(other)]),
-      ...triggers.map((trigger) => `--${trigger.name}`),
-      ...(declaresJson ? ["--json"] : []),
-    ];
-    const terminal = await runCase(unit.command, argv, "terminal");
-    cases += 1;
-    stages.case(name, terminal.execution.stage, terminal.execution.error);
-    if (terminal.execution.stage === "context" || terminal.execution.stage === "run") {
-      checkTrue(`${name}: not an argument refusal after the context`, !isArgumentShaped(terminal.execution.error, label, invalid));
+    for (const invalid of invalidSamplesOf(argument)) {
+      const label = argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`;
+      const name = `${unit.label}: ${label} ${JSON.stringify(invalid)} refused no later than prepare`;
+      // a value the pair-rule companion judges must be judged WITH its trigger flag present,
+      // so the pair's judgment is exercised, not skipped.
+      const triggers = unit.rules.flatMap((rule) =>
+        rule.rule === "requires" && rule.any === undefined && rule.with.includes(argument.name)
+          ? unit.args.filter((trigger) => trigger.name === rule.name && trigger.kind === "flag")
+          : [],
+      );
+      const argv = [
+        ...lead,
+        ...positionals.map((other) => (other === argument ? invalid : exampleOf(other))),
+        ...options.flatMap((other) => [`--${other.name}`, other === argument ? invalid : exampleOf(other)]),
+        ...triggers.map((trigger) => `--${trigger.name}`),
+        ...(declaresJson ? ["--json"] : []),
+      ];
+      const terminal = await runCase(unit.command, argv, "terminal");
+      cases += 1;
+      stages.case(name, terminal.execution.stage, terminal.execution.error);
+      // Structural, not prose: an argument fact settled after the context is built has already
+      // read the target (WSL: /etc/wsl.conf) — the refusal must come from parse or prepare.
+      checkTrue(`${name}: refused no later than prepare`, terminal.execution.stage === "parse" || terminal.execution.stage === "prepare");
     }
   }
 }
@@ -363,19 +376,65 @@ for (const unit of units.filter((candidate) => candidate.command === "recipe" &&
   check(`${unit.label}: bare, MCP never contacts the target`, mcp.contacts, []);
 }
 
-// A positional value that begins with a dash would be bound as a flag by the tokenizer (toArgv
-// emits positionals bare): validate refuses it for every declared positional, on MCP.
+// A positional value that begins with a dash is refused by the VALUE KIND — the same owner
+// on both surfaces: the console reaches it through a bare `--`, MCP through toArgv's own
+// `--` before the first dash-binding positional. One voice, derived from the declarations:
+// the case exists only where the kind itself declares a parse-stage dash refusal (a path
+// kind accepts a dash-leading name — there is nothing to refuse, on either surface).
 for (const unit of units) {
   const declaration = openclawCommands[unit.command];
-  for (const argument of unit.args.filter((candidate) => candidate.kind === "positional")) {
+  const lead = unit.action === undefined ? [] : [unit.action];
+  const positionals = unit.args.filter((candidate) => candidate.kind === "positional");
+  for (const argument of positionals) {
+    if (!invalidSamplesOf(argument).some((sample) => bindsAsFlag(sample))) continue;
+    const preceding = positionals.slice(0, positionals.indexOf(argument));
     for (const value of ["--json", "-x"]) {
-      const mcpArgs = { ...(unit.action === undefined ? {} : { action: unit.action }), [argument.name]: value };
-      check(`${unit.label}: <${argument.name}> ${value}: MCP validate refuses`, validate(declaration, mcpArgs).includes(positionalDashMessage(argument.name)), true);
+      const name = `${unit.label}: <${argument.name}> ${value} one voice on both surfaces`;
+      const terminal = await runCase(unit.command, [...lead, ...preceding.map(exampleOf), "--", value], "terminal");
+      cases += 1;
+      stages.case(name, terminal.execution.stage, terminal.execution.error);
+      check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+      checkTrue(`${name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+      check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument.name);
+      check(`${name}: console never contacts the target`, terminal.contacts, []);
+      const mcpArgs = {
+        ...(unit.action === undefined ? {} : { action: unit.action }),
+        ...Object.fromEntries(preceding.map((other) => [other.name, exampleOf(other)])),
+        [argument.name]: value,
+      };
+      check(`${name}: the MCP argument object is well-formed`, validate(declaration, mcpArgs), []);
+      const mcp = await runCase(unit.command, toArgv(declaration, mcpArgs), "mcp");
+      cases += 1;
+      stages.case(name, mcp.execution.stage, mcp.execution.error);
+      check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+      checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+      check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
+      check(`${name}: MCP never contacts the target`, mcp.contacts, []);
+      check(`${name}: MCP prints no document`, mcp.output, "");
+      check(`${name}: one voice on both surfaces`, (mcp.execution.error as Error).message, (terminal.execution.error as Error).message);
     }
   }
 }
-for (const [command, args] of [["accept", { recipe: "--with-model" }], ["restore", { archive: "--dry-run" }], ["operations", { id: "--json" }]] as const) {
-  check(`${command} ${JSON.stringify(args)}: MCP validate refuses it`, validate(openclawCommands[command], args).length, 1);
+for (const [command, argument, value] of [["accept", "recipe", "--with-model"], ["restore", "archive", "--dry-run"], ["operations", "id", "--json"]] as const) {
+  const name = `${command} <${argument}> ${value} one voice on both surfaces`;
+  const terminal = await runCase(command, ["--", value], "terminal");
+  cases += 1;
+  stages.case(name, terminal.execution.stage, terminal.execution.error);
+  check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+  checkTrue(`${name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+  check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument);
+  check(`${name}: console never contacts the target`, terminal.contacts, []);
+  const declaration = openclawCommands[command];
+  check(`${name}: the MCP argument object is well-formed`, validate(declaration, { [argument]: value }), []);
+  const mcp = await runCase(command, toArgv(declaration, { [argument]: value }), "mcp");
+  cases += 1;
+  stages.case(name, mcp.execution.stage, mcp.execution.error);
+  check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+  checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+  check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument);
+  check(`${name}: MCP never contacts the target`, mcp.contacts, []);
+  check(`${name}: MCP prints no document`, mcp.output, "");
+  check(`${name}: one voice on both surfaces`, (mcp.execution.error as Error).message, (terminal.execution.error as Error).message);
 }
 
 // A read-effect flag lowers the call to read, which skips the MCP confirm stage: every pair of
@@ -460,7 +519,7 @@ for (const [command, byAction] of positionalsByCommand) {
       .find((argument) => !own.some((entry) => entry.name === argument.name));
     if (foreign !== undefined) {
       scoped += 1;
-      check(`${command} ${action}: a positional of another action is refused`, validate(declaration, { action, [foreign.name]: exampleOf(foreign) }, { name: command }), [appliesToMessage(foreign.name, (foreign as { actions?: readonly string[] }).actions ?? [], action)]);
+      check(`${command} ${action}: a positional of another action is refused`, validate(declaration, { action, [foreign.name]: exampleOf(foreign as ArgumentSpec) }, { name: command }), [appliesToMessage(foreign.name, (foreign as { actions?: readonly string[] }).actions ?? [], action)]);
     }
     const first = own[0];
     const last = own[own.length - 1];
@@ -511,7 +570,6 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   cases += 1;
   stages.case("recipe import Bad_Source", terminal.execution.stage, terminal.execution.error);
   check("recipe import of a directory named Bad_Source stops before the run stage", terminal.execution.stage === "prepare" || terminal.execution.stage === "parse", true);
-  checkTrue("recipe import Bad_Source: the refusal is argument-shaped", isArgumentShaped(terminal.execution.error, "<name>", badSource));
   check("recipe import Bad_Source: console never contacts the target", terminal.contacts, []);
   const mcp = await runCase("recipe", toArgv(openclawCommands.recipe, { action: "import", name: badSource }), "mcp", app, { confirmed: true });
   cases += 1;
@@ -519,6 +577,20 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   check("recipe import Bad_Source: MCP stops before the run stage", mcp.execution.stage === "prepare" || mcp.execution.stage === "parse", true);
   check("recipe import Bad_Source: MCP never contacts the target", mcp.contacts, []);
   check("recipe import Bad_Source: one voice on both surfaces", (mcp.execution.error as Error | undefined)?.message, (terminal.execution.error as Error | undefined)?.message);
+}
+
+// The value sweep above takes its sample from the declared kind, so a kind swap re-labels
+// its case instead of failing it; this hand-pinned case holds apply --expect's own grammar
+// (a declaration checksum is 64 hexadecimal digits, refused at parse) so removing the kind
+// is a failing negative control, not a rename (I11).
+{
+  const terminal = await runCase("apply", ["--expect", "zz"], "terminal");
+  cases += 1;
+  stages.case("apply --expect zz", terminal.execution.stage, terminal.execution.error);
+  check(`apply --expect "zz": console stops at the parse stage`, terminal.execution.stage, "parse");
+  checkTrue(`apply --expect "zz": console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+  check(`apply --expect "zz": console error names the argument`, (terminal.execution.error as ArgumentError).argument, "expect");
+  check(`apply --expect "zz": console never contacts the target`, terminal.contacts, []);
 }
 
 checkTrue("the property check derived cases from the declarations", cases > 0);

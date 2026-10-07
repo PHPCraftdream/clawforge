@@ -18,6 +18,7 @@ import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { exampleOf, fixture, runCase, stages } from "#checks/foundation/core/command/pipeline/property-sweep.ts";
+import type { ArgumentSpec } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const Q = String.fromCharCode(96);
@@ -101,7 +102,7 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
       .find((argument) => !positionals.some((own) => own.name === argument.name));
     if (foreign !== undefined) {
       const owners = (foreign as { actions?: readonly string[] }).actions ?? names;
-      const problems = validate(declaration, { action, [foreign.name]: exampleOf(foreign) }, { name: command });
+      const problems = validate(declaration, { action, [foreign.name]: exampleOf(foreign as ArgumentSpec) }, { name: command });
       check(`${command} ${action}: the foreign positional gets exactly one refusal`, problems.length, 1);
       checkTrue(`${command} ${action}: the foreign-positional refusal is in the applies-to voice`,
         problems.length === 1 && appliesToVoice(foreign.name, owners, action, problems[0]!));

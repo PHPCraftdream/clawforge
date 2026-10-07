@@ -3,6 +3,7 @@
 // definition instead of drifting into slightly different copies.
 
 import { PROFILES } from "#src/service/archive/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import type { LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 
 export const PROFILE_ARGUMENT = {
@@ -11,7 +12,7 @@ export const PROFILE_ARGUMENT = {
   description: "full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files)",
   kind: "option",
   valueName: "profile",
-  choices: PROFILES,
+  value: kinds.choice(PROFILES),
 } as const;
 
 export const FORCE_ARGUMENT = {
@@ -37,6 +38,7 @@ export const BREAK_FOREIGN_LOCK_ARGUMENT = {
   description: "Confirm <hostId> for a recorded remote lock owner",
   kind: "option",
   valueName: "hostId",
+  value: kinds.hostId(),
 } as const;
 
 /** The two lock-takeover arguments, as every locking command declares them. */

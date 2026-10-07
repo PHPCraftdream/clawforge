@@ -63,7 +63,7 @@ export function effectProfile(command: EffectDeclaration): EffectProfile {
   // A gate command's effect is the whole declaration: the same shape rules as a spec body's —
   // a read flag (remove-app's dry-run default has none yet) would soften alwaysDestroys.
   if (command.effect !== undefined) {
-    return shapeProfile({ effect: command.effect, arguments: command.arguments });
+    return shapeProfile({ effect: command.effect, arguments: command.arguments as readonly ArgumentSpec[] });
   }
   const destructive = command.destructive === true;
   return {

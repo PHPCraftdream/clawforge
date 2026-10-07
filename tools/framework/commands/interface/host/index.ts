@@ -16,6 +16,7 @@ import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport/transport.ts";
 import { commandBody, parseCall, runOnContext, specShape } from "#src/core/command/index.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
 
 /** The consent line the gate's refusal ends with; both flags must be spelled in argv. */
@@ -42,7 +43,7 @@ export const HOST_ARGUMENTS = [
     description: "Where to run: target (the deployment's transport), engine (the container engine's machine), local (this machine)",
     kind: "positional",
     required: true,
-    choices: ["target", "engine", "local"],
+    value: kinds.choice(["target", "engine", "local"]),
   },
   {
     name: "root",
@@ -63,6 +64,7 @@ export const HOST_ARGUMENTS = [
     kind: "variadic",
     verbatim: true,
     required: true,
+    value: kinds.text("command and arguments to run", { leadingDash: "allow" }),
   },
 ] as const satisfies readonly ArgumentSpec[];
 
@@ -77,7 +79,9 @@ interface HostInvocation {
  *  through untouched; that order is the parser's (tokenize's verbatim tail), not re-derived
  *  here. */
 function invocationOf(values: Values<typeof HOST_ARGUMENTS>): HostInvocation {
-  return { context: values.context, root: values.root, command: [...values.args] };
+  // `value: kinds.choice(...)` binds a string (the kind's grammar is the authority at run
+  // time); the list above is exactly HostContextName.
+  return { context: values.context as HostContextName, root: values.root, command: [...values.args] };
 }
 
 export function rootElevationRequested(root: boolean): boolean {

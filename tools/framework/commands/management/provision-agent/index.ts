@@ -22,7 +22,7 @@ import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
-import { nameValue } from "#src/core/values/value.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";
@@ -48,7 +48,7 @@ export * from "./declaration.ts";
 export * from "./reconcile.ts";
 
 export const PROVISION_AGENT_ARGUMENTS = [
-  { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true, parse: nameValue("recipe") },
+  { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true, value: kinds.recipeRef() },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },

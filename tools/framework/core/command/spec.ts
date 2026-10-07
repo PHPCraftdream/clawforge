@@ -17,6 +17,7 @@ import { parseEnv, type Env } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, envFile } from "#src/runtime/deployment.ts";
 import type { Transport } from "#src/runtime/transport/transport.ts";
 import type { ValueParser } from "#src/core/values/value.ts";
+import type { ValueKind } from "#src/core/values/kind.ts";
 import { UserError } from "#src/core/io/log.ts";
 
 /** What a call does to state: read < change < destroy. */
@@ -47,10 +48,10 @@ export interface ValueSpec<K extends "option" | "positional", N extends string =
   /** Required on an option. */
   readonly valueName?: string;
   readonly required?: boolean;
-  /** Mutually exclusive with `parse`. */
-  readonly choices?: readonly string[];
-  /** Neither `parse` nor `choices`: any non-empty string. */
-  readonly parse?: ValueParser<T>;
+  /** The declared value kind — the one grammar, example and invalid generator (stage 7 S2.4:
+   *  the legacy `parse`/`choices` bridges are gone; a grammar-less value argument is refused
+   *  at load with `kind-missing`). */
+  readonly value: ValueKind<T>;
 }
 
 export interface VariadicSpec<N extends string = string> extends ArgumentBase<N> {
@@ -61,6 +62,8 @@ export interface VariadicSpec<N extends string = string> extends ArgumentBase<N>
   readonly verbatim?: true;
   /** Exact number of values the variadic takes; absent: any number. */
   readonly count?: number;
+  /** The declared element kind. */
+  readonly value: ValueKind<string>;
 }
 
 export type ArgumentSpec = FlagSpec | ValueSpec<"option"> | ValueSpec<"positional"> | VariadicSpec;
@@ -118,8 +121,7 @@ export async function refuseMissingLocalFacts(facts: readonly LocalFactSpec[] | 
 
 type ValueOf<A> = A extends { kind: "flag" } ? boolean
   : A extends { kind: "variadic" } ? readonly string[]
-  : A extends { parse: ValueParser<infer T> } ? T
-  : A extends { choices: readonly (infer C)[] } ? C : string;
+  : A extends { value: ValueParser<infer T> } ? T : string;
 type Absent<A> = A extends { kind: "flag" | "variadic" } | { required: true } ? never : undefined;
 
 /** The values a call binds, by argument name. A flag is false and a variadic is [] when absent. */
@@ -268,9 +270,19 @@ function checkArguments(where: string, args: readonly ArgumentSpec[]): void {
       if (loose.effect !== undefined) fail("effect-not-flag", where, `${label} has an effect but is not a flag`);
       if (loose.setByConfirm !== undefined) fail("set-by-confirm-not-flag", where, `${label} is setByConfirm but not a flag`);
     }
-    if (argument.kind === "option" || argument.kind === "positional") {
-      if (argument.parse !== undefined && argument.choices !== undefined) fail("parse-with-choices", where, `${label} has both parse and choices`);
+    if (argument.kind === "option" || argument.kind === "positional" || argument.kind === "variadic") {
+      // The kind is the only grammar a value argument may carry (stage 7 S2.4: the legacy
+      // parse/choices bridges are deleted from the type, so this is always enforced).
+      if (argument.value === undefined) {
+        fail("kind-missing", where, `${label} declares no value kind (wrap its grammar in kinds.ts)`);
+      }
       if (argument.kind === "option" && argument.valueName === undefined) fail("option-without-value-name", where, `${label} is an option without a valueName`);
+      // Spec bodies cannot express both carriers via the types; this runtime guard catches
+      // bridged/erased declarations (gate commands never pass through checkArguments).
+      const legacy = argument as { parse?: unknown; choices?: unknown };
+      if (legacy.parse !== undefined || legacy.choices !== undefined) {
+        fail("grammar-ambiguous", where, `${label} carries a value kind and a legacy parse/choices carrier`);
+      }
     }
     if ((argument as { count?: unknown }).count !== undefined && argument.kind !== "variadic") {
       fail("count-not-variadic", where, `${label} has a count but is not variadic`);

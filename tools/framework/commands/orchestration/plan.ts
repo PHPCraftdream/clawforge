@@ -24,9 +24,10 @@ import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.t
 import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import * as kinds from "#src/core/values/kinds.ts";
 
 export const PLAN_ARGUMENTS = [
-  { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option", valueName: "artifact", value: kinds.localFile("a set artifact path") },
   { name: "json", description: "Emit the plan as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 

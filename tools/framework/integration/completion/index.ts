@@ -10,6 +10,7 @@
 // whichever of the system-wide command or the checkout shim was typed. Output never carries a machine path.
 
 import { parseDeclaredArgs } from "../../core/command/index.ts";
+import * as kinds from "../../core/values/kinds.ts";
 import { installLine } from "../../core/io/invocation/render.ts";
 import { emitRaw } from "../../core/io/output.ts";
 import { openclawCommands } from "../../commands/interface/index.ts";
@@ -26,7 +27,9 @@ export const COMPLETION_SHELLS: readonly CompletionShell[] = ["bash", "zsh", "pw
 export const COMPLETION_COMMAND_NAME = "completion";
 
 export const COMPLETION_ARGUMENTS: CommandArgument[] = [
-  { name: "shell", description: "bash, zsh or pwsh", kind: "positional", required: true, choices: COMPLETION_SHELLS },
+  // Both carriers stay: completion/table.ts and the MCP schema read `choices`; `parse` is the
+  // kind. The checkArguments ambiguity guard is spec-body-only — a gate command may carry both.
+  { name: "shell", description: "bash, zsh or pwsh", kind: "positional", required: true, choices: COMPLETION_SHELLS, parse: kinds.choice(COMPLETION_SHELLS) },
 ];
 
 /** The zsh script is the bash script, byte for byte, behind zsh's own header: `bashcompinit`

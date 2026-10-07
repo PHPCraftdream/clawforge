@@ -10,14 +10,14 @@ import {
   multiActionBody, runOnContext, specOf, type ArgumentSpec, type DeploymentScope,
 } from "#framework/core/command/index.ts";
 import type { Context } from "#framework/core/context.ts";
-import { countValue } from "#framework/core/values/value.ts";
+import * as kinds from "#framework/core/values/kinds.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const calls: string[] = [];
 const ctx = { transport: { description: "stub" } } as unknown as Context;
 
 const ARGS = [
-  { name: "n", kind: "option", valueName: "n", parse: countValue(), description: "d" },
+  { name: "n", kind: "option", valueName: "n", value: kinds.count(), description: "d" },
   { name: "dry-run", kind: "flag", effect: "read", description: "d" },
   { name: "wipe", kind: "flag", effect: "destroy", description: "d" },
 ] as const satisfies readonly ArgumentSpec[];
@@ -44,7 +44,7 @@ const MULTI = multiActionBody({
     show: defineAction({ summary: "show", run: async () => { calls.push("show"); } }),
     purge: defineAction({
       summary: "purge", effect: "destroy",
-      arguments: [{ name: "dry-run", kind: "flag", effect: "read", description: "d" }, { name: "target", kind: "positional", required: true, description: "d" }],
+      arguments: [{ name: "dry-run", kind: "flag", effect: "read", description: "d" }, { name: "target", kind: "positional", required: true, description: "d", value: kinds.text("d", { leadingDash: "allow" }) }],
       prepare: ({ action, values }) => { calls.push(`prepare ${action}`); return values.target; },
       run: async (_on, target) => { calls.push(`purge ${target}`); },
     }),
@@ -73,7 +73,11 @@ check("a legacy entry passes through as the same object", commands.legacy === LE
 check("a legacy entry has no spec", specOf(commands.legacy), undefined);
 check("prose and flags come from the entry", [commands.single.summary, commands.single.group, commands.single.details, commands.single.structured, commands.single.exportsSecrets], ["one", "change", "more", true, true]);
 check("consoleOnly comes from the entry", commands.multi.consoleOnly, true);
-check("a single body's arguments are shown as declared", commands.single.arguments, ARGS);
+check("a single body's arguments are shown as declared (the kind projects as its parse carrier)", commands.single.arguments, [
+  { name: "n", kind: "option", valueName: "n", parse: ARGS[0].value, description: "d" },
+  ARGS[1],
+  ARGS[2],
+]);
 check("a multi-action body's arguments are the derived view", commands.multi.arguments?.map((argument) => argument.name), ["action", "target", "dry-run"]);
 check("the view marks the dry-run flag as purge's", commands.multi.arguments?.find((argument) => argument.name === "dry-run")?.actions, ["purge"]);
 check("no argv predicates and no forceOnConfirmation on the face", ["readOnlyWhen", "changedWhen", "requiresConfirmationWhen", "forceOnConfirmation"].filter((key) => key in commands.single || key in commands.multi), []);
@@ -111,15 +115,18 @@ function loadError(declare: () => unknown): string {
 const run = async (): Promise<void> => {};
 const bad = (arguments_: readonly unknown[]) => () => commandBody({ effect: "read", arguments: arguments_ as readonly ArgumentSpec[], run });
 const flag = (name: string, extra: object = {}) => ({ name, kind: "flag", description: "d", ...extra });
-const option = (name: string, extra: object = {}) => ({ name, kind: "option", valueName: "v", description: "d", ...extra });
+const option = (name: string, extra: object = {}) => ({ name, kind: "option", valueName: "v", description: "d", value: kinds.count(), ...extra });
 
 check("a name declared twice", loadError(bad([flag("a"), option("a")])), "duplicate-name");
 check("a variadic that is not last", loadError(bad([{ name: "rest", kind: "variadic", description: "d" }, flag("a")])), "variadic-not-last");
 check("two variadics", loadError(bad([{ name: "r1", kind: "variadic", description: "d" }, { name: "r2", kind: "variadic", description: "d" }])), "variadic-not-last");
 check("an effect on an option", loadError(bad([option("a", { effect: "read" })])), "effect-not-flag");
 check("setByConfirm on an option", loadError(bad([option("a", { setByConfirm: true })])), "set-by-confirm-not-flag");
-check("parse together with choices", loadError(bad([option("a", { parse: countValue(), choices: ["x"] })])), "parse-with-choices");
-check("an option without a valueName", loadError(bad([{ name: "a", kind: "option", description: "d" }])), "option-without-value-name");
+check("an option without a value kind", loadError(bad([{ name: "a", kind: "option", valueName: "v", description: "d" }])), "kind-missing");
+check("a variadic without a value kind", loadError(bad([flag("a"), { name: "rest", kind: "variadic", description: "d" }])), "kind-missing");
+check("an option with a value kind and a legacy parse carrier", loadError(bad([option("a", { parse: kinds.count() })])), "grammar-ambiguous");
+check("a variadic with a value kind and a legacy choices carrier", loadError(bad([flag("a"), { name: "rest", kind: "variadic", description: "d", value: kinds.text("d"), choices: ["x"] } as unknown as ArgumentSpec])), "grammar-ambiguous");
+check("an option without a valueName", loadError(bad([{ name: "a", kind: "option", description: "d", value: kinds.count() }])), "option-without-value-name");
 check("preparesEnvironment without target", loadError(() => commandBody({ effect: "change", needs: "deployment", preparesEnvironment: true as never, arguments: [], run })), "prepares-environment-needs-target");
 check("a defaultAction outside the actions", loadError(() => multiActionBody({ effect: "read", action: { description: "x" }, defaultAction: "nope", actions: { a: defineAction({ summary: "a", run }) } })), "default-action-unknown");
 check("a duplicate inside an action", loadError(() => defineAction({ summary: "a", arguments: [flag("x"), flag("x")] as unknown as readonly ArgumentSpec[], run })), "duplicate-name");
@@ -128,7 +135,7 @@ check("a read flag and a destroy flag with no conflicts rule", loadError(bad([fl
 check("a read flag and a change flag, in either rule direction", loadError(() => commandBody({ effect: "read", arguments: [flag("a", { effect: "read" }), flag("b", { effect: "change" })] as unknown as readonly ArgumentSpec[], rules: [{ rule: "conflicts", name: "b", with: ["a"] }], run })), "");
 check("an action with an unrefused read and destroy flag", loadError(() => defineAction({ summary: "a", arguments: [flag("a", { effect: "read" }), flag("b", { effect: "destroy" })] as unknown as readonly ArgumentSpec[], run })), "effect-flags-unrefused");
 check("a read flag beside a flag without an effect is fine", loadError(bad([flag("a", { effect: "read" }), flag("b")])), "");
-check("a good declaration does not throw", loadError(bad([flag("a"), option("b"), { name: "rest", kind: "variadic", description: "d" }])), "");
+check("a good declaration does not throw", loadError(bad([flag("a"), option("b"), { name: "rest", kind: "variadic", description: "d", value: kinds.text("the rest", { leadingDash: "allow" }) }])), "");
 
 // --- runOnContext ----------------------------------------------------------------------------------------------------
 

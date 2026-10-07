@@ -52,6 +52,8 @@ export interface CommandArgument {
   /** Parses the typed value once, in one voice on every surface; without it the raw text
    *  reaches the command's run. Mutually exclusive with `choices` on an option. */
   readonly parse?: ValueParser<unknown>;
+  /** The declared element kind of a variadic (the public carrier; spec bodies carry `value`). */
+  readonly value?: ValueParser<unknown>;
   /** For a multi-action command (backup's `action` positional): which action(s) this
    *  argument belongs to. Absent for a single-action command or a shared argument. Read by
    *  help-render and by parseDeclaredArgs' cross-action lookup. */

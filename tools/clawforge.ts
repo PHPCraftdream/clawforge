@@ -24,6 +24,7 @@ import {
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
+import type { ArgumentSpec } from "./framework/core/command/spec.ts";
 import { reportError, info, UserError } from "./framework/core/io/log.ts";
 import { command } from "./framework/core/io/invocation/advice.ts";
 import { SHIM_PROGRAM } from "./framework/core/io/invocation/render.ts";
@@ -77,9 +78,9 @@ const decision = resolveCheckoutEntry({
   gateCommands: gateCommands.map((command) => command.name),
   deploymentCommands: Object.keys(openclawCommands),
   variadicCommands: Object.entries(openclawCommands)
-    .filter(([, command]) => isVerbatim(command.arguments ?? []))
+    .filter(([, command]) => isVerbatim((command.arguments ?? []) as readonly ArgumentSpec[]))
     .map(([commandName]) => commandName),
-  deploymentArguments: (name) => gateCommands.find((command) => command.name === name)?.arguments ?? openclawCommands[name]?.arguments,
+  deploymentArguments: (name) => (gateCommands.find((command) => command.name === name)?.arguments ?? openclawCommands[name]?.arguments) as readonly ArgumentSpec[],
 });
 
 switch (decision.kind) {

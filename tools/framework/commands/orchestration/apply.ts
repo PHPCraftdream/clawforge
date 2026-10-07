@@ -35,22 +35,11 @@ import type { Advice } from "#src/core/io/invocation/advice.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
-import { ValueError, type ValueParser } from "#src/core/values/value.ts";
-
-/** `--expect`'s grammar: the checksum `plan` printed with the plan. */
-function checksumValue(): ValueParser<string> {
-  return {
-    expected: "a declaration checksum", example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", invalidExample: "nope",
-    parse(raw) {
-      if (!/^[0-9a-f]{64}$/.test(raw)) throw new ValueError("takes a declaration checksum — 64 hexadecimal digits");
-      return raw;
-    },
-  };
-}
+import * as kinds from "#src/core/values/kinds.ts";
 
 export const APPLY_ARGUMENTS = [
-  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact" },
-  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum", parse: checksumValue() },
+  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact", value: kinds.localFile("a set artifact path") },
+  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum", value: kinds.checksum("hex64", { expected: "a declaration checksum", invalid: () => "takes a declaration checksum — 64 hexadecimal digits", example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }) },
   { name: "dry-run", description: "Show the steps without running any of them", kind: "flag", effect: "read" },
   ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },

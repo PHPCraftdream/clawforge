@@ -542,5 +542,25 @@ export const CONTROLS: readonly ControlDecl[] = [
     check: "tools/checks/sets/lifecycle/portable-content.check.ts",
     fragment: "physically read once",
   },
+  {
+    id: "C150",
+    finding: "fix33-Y item 1",
+    note: "the proseHeld measurement is scope-aware: replacing the lexical lookup with one file-wide set of spaced const names reinstates the scope-insensitive measurement, so the table's shadowing case fails",
+    product: "tools/checks/architecture/prose-held.ts",
+    search: `  const visible = (name: string, at: number, from: Scope): boolean => { for (let s: Scope | undefined = from; s !== undefined; s = s.parent) { const d = s.held.get(name); if (d !== undefined) return d.spaced && (s !== from || d.at < at); } return false; };`,
+    replace: `  const visible = (name: string): boolean => allSpaced.has(name);`,
+    check: "tools/checks/architecture/self/prose-held.check.ts",
+    fragment: "a shadowing const ends the outer held name",
+  },
+  {
+    id: "C151",
+    finding: "fix33-Y item 2",
+    note: "the tokenizer's regex-start rule stays punctuation-gated: starting a regex after any non-string token makes division after an identifier tokenize as a regex, failing the table's division case",
+    product: "tools/checks/architecture/prose-held.ts",
+    search: `previous === undefined || (previous.kind === "p" && ["(", ",", ":", "=", "!", "?", "[", "{", ";", "|", "&"].includes(previous.text))`,
+    replace: `previous === undefined || previous.kind === "id" || (previous.kind === "p" && ["(", ",", ":", "=", "!", "?", "[", "{", ";", "|", "&"].includes(previous.text))`,
+    check: "tools/checks/architecture/self/prose-held.check.ts",
+    fragment: "after identifiers stay division",
+  },
 
 ];

@@ -136,8 +136,7 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     async writePrivateFile(path, content) { state.files.set(path, typeof content === "string" ? content : ""); },
     async exists(path) {
       if (path === CONFIG_FILE) return true;
-      if (path === `${DATA}/config/.env`) return state.files.has(path);
-      return false;
+      return state.files.has(path);
     },
     async mkdirp() {},
     async remove(path) { state.files.delete(path); },

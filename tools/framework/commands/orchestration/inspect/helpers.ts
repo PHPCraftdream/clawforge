@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
+import { TargetReadUnknownError, readIfExists } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CronJob, AgentConfig } from "#src/commands/management/provision-agent/index.ts";
 import type { DeclaredState } from "#src/service/inspection.ts";
@@ -235,16 +236,20 @@ export async function readLiveConfigForProspective(ctx: Context): Promise<unknow
  *  empty base; anything else aborts before applyStore() writes a byte. */
 export async function readLiveConfigOrThrow(ctx: Context): Promise<unknown> {
   const path = `${ctx.settings.dataDir}/config/openclaw.json`;
-  if (!(await ctx.transport.exists(path))) return undefined;
-
-  let raw: string;
+  // The read contract (S3.4): absent stays the legitimate empty base; an unreadable file is
+  // unknown and travels with Advice (previously a plain Error stripped it).
+  let read: Awaited<ReturnType<typeof readIfExists>>;
   try {
-    raw = await ctx.transport.readFile(path);
+    read = await readIfExists(ctx.transport, path);
   } catch (error) {
-    throw new Error(`${path} exists but could not be read: ${(error as Error).message}`);
+    // The operator-facing sentence stays the one this refusal always had; the contract's
+    // Advice and the cause ride along.
+    if (error instanceof TargetReadUnknownError) throw new TargetReadUnknownError(`${path} exists but could not be read: ${(error.cause as Error | undefined)?.message ?? error.message}`, { cause: error.cause });
+    throw error;
   }
+  if (read.kind === "absent") return undefined;
   try {
-    return JSON5.parse(raw) as unknown;
+    return JSON5.parse(read.value) as unknown;
   } catch (error) {
     throw new Error(`${path} exists but is not valid JSON5: ${(error as Error).message}`);
   }

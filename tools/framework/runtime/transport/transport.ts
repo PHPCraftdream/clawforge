@@ -28,6 +28,8 @@ export { LocalTransport } from "./local.ts";
 export { WslTransport, stripWslNuls } from "./wsl.ts";
 export { SshTransport } from "./ssh.ts";
 export { listFilesVia } from "../../security/transport-listing.ts";
+export type { TargetRead } from "./quoting.ts";
+export { TargetReadUnknownError, listIfExists, probeExists, readIfExists } from "./quoting.ts";
 export { describeInvocation } from "./spawn-failure.ts";
 
 export interface TransportConfig {

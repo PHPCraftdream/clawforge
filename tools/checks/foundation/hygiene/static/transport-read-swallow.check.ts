@@ -1,0 +1,308 @@
+// The target-read ratchet (S3.4, invariant I14's reading half): no catch around a transport
+// READ in tools/framework/service or tools/framework/commands may discard the error — an
+// unreachable target is "could not find out" (thrown, with Advice), never "nothing there".
+// Reads are transport.readFile/exists/listFiles, the contract helpers themselves (a bare
+// catch around one converts its unknown into absence), and allowFailure exec reads whose
+// handler returns an empty/absent default. The analysis lives in
+// transport-read-swallow-rules.ts (tokenizer-based: strings and comments never authorize a
+// swallow); this file self-checks it on in-memory snippets, then scans the real trees. ALLOW
+// is the counted allow-list of deliberate sites: one reason per entry, entries must shrink,
+// and a stale entry (the site no longer flags) fails — never a silent parking spot.
+
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { analyze, type Hit } from "./transport-read-swallow-rules.ts";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
+
+// --- self-check: table-driven, in-memory, every case asserts the exact hits ---------------
+
+type SelfCase = { name: string; source: string; hits: string[] };
+
+// hits entries are "line:call:form" relative to the snippet (line 1-based).
+const SELF_CASES: SelfCase[] = [
+  {
+    name: "bare catch returning undefined around a read",
+    source: "try { return await ctx.transport.readFile(path); } catch { return undefined; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "bare catch returning false around exists",
+    source: "try { if (!(await ctx.transport.exists(live))) return a; } catch { return false; }",
+    hits: ["1:ctx.transport.exists(:try"],
+  },
+  {
+    name: "multiline try, catch bound but unused",
+    source: "try {\n  const raw = await ctx.transport.readFile(path);\n  return parse(raw);\n} catch (ignored) {\n  return DEFAULT;\n}",
+    hits: ["4:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "promise .catch(() => default) form",
+    source: "const files = await ctx.transport.listFiles(dir).catch(() => [] as string[]);",
+    hits: ["1:ctx.transport.listFiles(:promise"],
+  },
+  {
+    name: "promise .catch with a typed but unused parameter",
+    source: "const raw = await ctx.transport.readFile(path).catch((error: unknown) => \"\");",
+    hits: ["1:ctx.transport.readFile(:promise"],
+  },
+  {
+    name: "catch that only logs the error still discards it",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { console.log(error); return []; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "a comment saying rethrow does not authorize a swallow",
+    source: "try { return await ctx.transport.readFile(path); } catch { /* rethrow is pointless here */ return undefined; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "a string containing throw-error words does not authorize a swallow",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { log(\"throw error\"); return undefined; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "bare catch around readIfExists converts unknown into absent",
+    source: "try { return await readIfExists(ctx.transport, path); } catch { return undefined; }",
+    hits: ["1:readIfExists(:try"],
+  },
+  {
+    name: "bare catch around probeExists converts unknown into absent",
+    source: "try { return await probeExists(ctx.transport, path); } catch { return false; }",
+    hits: ["1:probeExists(:try"],
+  },
+  {
+    name: "allowFailure exec degraded to an empty string",
+    source: "try { const r = await ctx.transport.exec(\"cat\", [path], { allowFailure: true }); return r.stdout; } catch { return \"\"; }",
+    hits: ["1:ctx.transport.exec(:try"],
+  },
+  {
+    name: "allowFailure exec success-path .then is not a swallow",
+    source: "const files = await ctx.transport.exec(\"ls\", [dir], { allowFailure: true }).then((r) => r.stdout, () => []);",
+    hits: [],
+  },
+  {
+    name: "allowFailure exec degraded via rejected .catch arrow",
+    source: "const out = await ctx.transport.exec(\"cat\", [p], { allowFailure: true }).catch(() => \"\");",
+    hits: ["1:ctx.transport.exec(:promise"],
+  },
+  {
+    name: "exec catch that rethrows is fine",
+    source: "try { await ctx.transport.exec(\"cat\", [path], { allowFailure: true }); } catch (error) { throw error; }",
+    hits: [],
+  },
+  {
+    name: "exec without allowFailure is out of the read rule",
+    source: "try { await ctx.transport.exec(\"tar\", args); } catch { return undefined; }",
+    hits: [],
+  },
+  {
+    name: "catch that rethrows is fine",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { throw error; }",
+    hits: [],
+  },
+  {
+    name: "catch naming the narrow escape types is fine",
+    source: "try { return await ctx.transport.exists(path); } catch (error) { if (error instanceof TransportUnreachableError) throw error; return false; }",
+    hits: [],
+  },
+  {
+    name: "die() in the handler is fine",
+    source: "try { raw = await ctx.transport.readFile(path); } catch (readFailure) { die(`cannot read: ${readFailure}`); }",
+    hits: [],
+  },
+  {
+    name: "a bound, rethrowing error is kept (sudo fallback)",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { if (fallback()) throw error; return sudo(path); }",
+    hits: [],
+  },
+  {
+    name: "a write call is out of scope",
+    source: "try { await ctx.transport.writeFile(path, content); } catch { return undefined; }",
+    hits: [],
+  },
+  {
+    name: "a local node:fs read is out of scope",
+    source: "try { return await readFile(path, \"utf8\"); } catch { return undefined; }",
+    hits: [],
+  },
+  {
+    name: "catch around an unrelated try is not flagged",
+    source: "try { return JSON.parse(text); } catch { return undefined; }",
+    hits: [],
+  },
+  {
+    name: "exists inside the handler (an absent re-probe) still discards the original error",
+    source: "try { return await ctx.transport.readFile(path); } catch { return !(await ctx.transport.exists(path)); }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "a .catch( inside a string literal is not a handler",
+    source: "const sample = \"files().catch(() => [])\";\ntry { return await ctx.transport.readFile(path); } catch (error) { throw error; }",
+    hits: [],
+  },
+  {
+    name: "a .catch( inside a comment is not a handler",
+    source: "// listFiles(dir).catch(() => []);\ntry { return await ctx.transport.readFile(path); } catch (error) { throw error; }",
+    hits: [],
+  },
+  {
+    name: "handler paren matching skips a string with a closing paren",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { const s = (\")\"); return undefined; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+];
+
+for (const selfCase of SELF_CASES) {
+  const hits = analyze(selfCase.source).map((hit: Hit) => `${hit.line}:${hit.call}:${hit.form}`);
+  check(`transport-read-swallow self: ${selfCase.name}`, hits, selfCase.hits);
+}
+
+async function walk(dir: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name === "dist" || entry.name === "node_modules") continue;
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) files.push(...(await walk(full)));
+    else if (entry.name.endsWith(".ts")) files.push(full);
+  }
+  return files;
+}
+
+interface AllowEntry {
+  /** Repo-relative path, forward slashes. */
+  readonly file: string;
+  /** 1-based line of the catch handler. */
+  readonly line: number;
+  /** Why this swallow is deliberate. Shrink-only: a stale entry fails the check. */
+  readonly reason: string;
+}
+
+const ALLOW: readonly AllowEntry[] = [
+  {
+    file: "tools/framework/service/secrets.ts",
+    line: 97,
+    reason:
+      "noProviderConfigured is a best-effort diagnostic feeding smoke's hint; an unreadable config answers false (documented on the function) rather than aborting a report that has its own failure path",
+  },
+  {
+    file: "tools/framework/commands/orchestration/inspect/helpers.ts",
+    line: 227,
+    reason:
+      "readLiveConfigForProspective only falls the prospective view back to the declaration; observeConfig (drift.ts) owns reporting the unknown and re-probes with exists(), so the unknown surfaces there",
+  },
+  {
+    file: "tools/framework/commands/orchestration/inspect/drift.ts",
+    line: 83,
+    reason:
+      "the outer catch re-probes existence and reports CONFIG_DRIFT 'could not be read or reached' - the unknown becomes a visible finding, never an empty answer, and inspect keeps its other observations",
+  },
+  {
+    file: "tools/framework/commands/orchestration/inspect/drift.ts",
+    line: 90,
+    reason:
+      "the inner re-probe reports the unreachable stat as a CONFIG_DRIFT finding naming the cause and marks the file not-present for the outer handler - reported, never silent",
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/index.ts",
+    line: 220,
+    reason:
+      "a bonus 'provider: none configured yet' hint after bootstrap; doctor's own read of the same file reports a broken config, and the hint must never fail a bootstrap that just succeeded (comment on site)",
+  },
+  {
+    file: "tools/framework/commands/lifecycle/verify.ts",
+    line: 249,
+    reason:
+      "the LIVE openclaw.json secret scan (verify.ts collectSecrets) only adds findings to a verify that reports an unreadable config elsewhere (inspect/doctor); the swallow cannot hide a failed verify",
+  },
+  {
+    file: "tools/framework/commands/lifecycle/verify.ts",
+    line: 459,
+    reason:
+      "the catch is loud, not silent: warn() plus an unreadable-archived-config finding plus failures += 1 - the unknown is reported, never read as clean",
+  },
+  {
+    file: "tools/framework/service/archive/pack.ts",
+    line: 36,
+    reason:
+      "conservative default documented on site: an exists() the target could not answer is treated as PRESENT so privilege escalation is still demanded - never the other way round",
+  },
+  {
+    file: "tools/framework/commands/lifecycle/backup/index.ts",
+    line: 379,
+    reason:
+      "cleanup compensation: the catch collects the error into compensationErrors reported alongside the failure in flight - never discarded",
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 37,
+    reason:
+      "a port-probe tool that cannot even launch falls through to the next probe tool (ss, then netstat) and the function finally answers 'unavailable' - a visible gap, never a silent port claim",
+  },
+  {
+    file: "tools/framework/commands/lifecycle/restore/index.ts",
+    line: 475,
+    reason:
+      "the caught error drives rollbackRestore, which reports it and unwinds the restore - the failure is the rollback's input, never read as clean",
+  },
+  {
+    file: "tools/framework/commands/operate/recover-env/bootstrap.ts",
+    line: 72,
+    reason:
+      "one stale candidate container that cannot be inspected is skipped so the remaining candidates are still tried; exhausted candidates answer 'no facts' upstream, which recover-env reports as a gap",
+  },
+  {
+    file: "tools/framework/commands/operate/watch/health.ts",
+    line: 93,
+    reason:
+      "a df that cannot run becomes a DISK_UNKNOWN 'degraded' finding carrying the cause (never a silent ok, never a false down) - the watch contract's documented unknown state",
+  },
+  {
+    file: "tools/framework/commands/operate/watch/state.ts",
+    line: 105,
+    reason:
+      "documented gap (backlog): readScheduledWatchState turns any failure, including an unknown transport read, into known:false 'no watch history'; migrating it needs the corrupt-history and absent-history branches split first",
+  },
+];
+
+const scannedFiles = [
+  ...(await walk(resolve(repoRoot, "tools", "framework", "service"))),
+  ...(await walk(resolve(repoRoot, "tools", "framework", "commands"))),
+].sort();
+
+interface Flagged extends Hit {
+  readonly file: string;
+}
+
+const flagged: Flagged[] = [];
+let scanned = 0;
+for (const file of scannedFiles) {
+  const rel = relative(repoRoot, file).replaceAll("\\", "/");
+  scanned += 1;
+  for (const hit of analyze(await readFile(file, "utf8"))) flagged.push({ file: rel, ...hit });
+}
+
+const key = (entry: Flagged): string => `${entry.file}:${entry.line}`;
+const allowedKeys = new Set(ALLOW.map((entry) => `${entry.file}:${entry.line}`));
+
+const unallowed = flagged.filter((entry) => !allowedKeys.has(key(entry)));
+check(
+  "transport-read-swallow: every swallowing catch is migrated or allow-listed with a reason",
+  unallowed.map((entry) => `${key(entry)} [${entry.call}]`),
+  [],
+);
+
+const stale = ALLOW.filter((entry) => !flagged.some((flag) => key(flag) === `${entry.file}:${entry.line}`));
+check(
+  "transport-read-swallow: no stale allow-list entry (a listed site must still flag)",
+  stale.map((entry) => `${entry.file}:${entry.line}: ${entry.reason.slice(0, 60)}...`),
+  [],
+);
+checkTrue("transport-read-swallow: the allow-list only shrinks (counted, now recorded)", ALLOW.length <= 14);
+
+console.log(
+  `transport-read-swallow: ${scanned} files scanned, ${flagged.length} swallowing catches, ${ALLOW.length} allow-listed (must shrink), ${stale.length} stale`,
+);
+finish("transport-read-swallow");

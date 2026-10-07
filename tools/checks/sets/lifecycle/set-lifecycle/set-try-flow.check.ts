@@ -128,7 +128,7 @@ try {
       return originalReadFile(path);
     };
     const refused = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
-    assert.match(refused.error?.message ?? "", /cannot read live secrets/);
+    assert.match(refused.error?.message ?? "", /could not read .* on the target/);
     assert.equal(refused.error?.message.includes(secretValue), false);
     assert.equal(privateDirectories.length, protectedBefore, "read failure cannot create a trial");
     assert.equal(events.length, eventsBefore, "read failure cannot mutate target state");
@@ -141,7 +141,7 @@ try {
     return originalExists(path);
   };
   const unknownPresence = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
-  assert.match(unknownPresence.error?.message ?? "", /cannot read live secrets/);
+  assert.match(unknownPresence.error?.message ?? "", /could not check whether .* exists on the target/);
   assert.equal(unknownPresence.error?.message.includes(secretValue), false);
   assert.equal(privateDirectories.length, protectedBeforeProbe, "an inconclusive presence probe cannot create a trial");
   assert.equal(events.length, eventsBeforeProbe, "an inconclusive presence probe cannot mutate target state");

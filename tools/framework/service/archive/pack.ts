@@ -30,6 +30,8 @@ export function dataDirParent(dataDir: string): string {
 export async function privilegePrefixFor(ctx: Context, readPaths: readonly string[], writePath?: string): Promise<string[]> {
   for (const path of readPaths) {
     let present: boolean;
+    // Conservative on purpose (S3.4 exception): an exists() the target could not answer is
+    // treated as PRESENT, so privilege escalation is still demanded, never skipped.
     try { present = await ctx.transport.exists(path); }
     catch { present = true; }
     if (!present) continue;

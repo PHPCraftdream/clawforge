@@ -55,10 +55,15 @@ export interface CommandFailure extends Error {
  *  failed); `nextAction` names the specific thing to check. A UserError carrying that remedy as
  *  advice, so every surface spells it the one way — the console arrow line (formatError), the
  *  --json failure document and the MCP envelope (execute.ts/call.ts lift UserError advice). */
+/** The Advice every unreachable refusal carries, by construction: a site that cannot name
+ *  a more specific next step still hands the operator the connection checklist. */
+export const TRANSPORT_UNREACHABLE_NEXT_STEP =
+  "check the target connection: OC_TARGET_LOCATION (local/wsl/ssh), OC_WSL_DISTRO, OC_SSH_HOST";
+
 export class TransportUnreachableError extends UserError {
   readonly nextAction?: string;
   constructor(message: string, nextAction?: string) {
-    super(message, nextAction === undefined ? undefined : { advice: [manual(nextAction)] });
+    super(message, { advice: [manual(nextAction ?? TRANSPORT_UNREACHABLE_NEXT_STEP)] });
     this.name = "TransportUnreachableError";
     this.nextAction = nextAction;
   }

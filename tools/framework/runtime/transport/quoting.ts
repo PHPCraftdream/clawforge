@@ -6,7 +6,9 @@
 
 import { randomBytes } from "node:crypto";
 import { shellQuote } from "../../core/io/shell.ts";
-import type { ExecOptions, ExecResult } from "./exec.ts";
+import { UserError } from "../../core/io/log.ts";
+import { command } from "../../core/io/invocation/advice.ts";
+import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
 
 /** The two name markers of the tooling's own temp-sibling staging families: a private write
  *  stages `<path>.clawforge-private-<hex>`, a publish stages `<path>.clawforge-publish-<hex>`.
@@ -144,6 +146,78 @@ export async function existsVia(
 
   const detail = result.stderr.trim() === "" ? verdict : result.stderr.trim();
   throw new Error(`${cannotCheckMessage(path)} (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
+}
+
+
+// The target-read contract (S3.4), beside the probe it is built on: reading and enumerating
+// on the target distinguish THREE answers — present (a value), absent (the target answered:
+// no such file/dir), unknown (the target could not answer: unreachable, unreadable, timeout).
+// "unknown" is never read as "absent/empty" here: it throws, and the error carries Advice (a
+// next step the operator can actually run), so every surface renders the same remedy. Callers
+// use these helpers instead of ad-hoc try/catch around transport.readFile/exists/listFiles.
+
+
+/** Present with a value, or a definite "the target answered: not there". */
+export type TargetRead<T> =
+  | { readonly kind: "absent" }
+  | { readonly kind: "present"; readonly value: T };
+
+/** A target that could not answer, thrown — never returned as a default. A UserError that
+ *  already carries advice (TransportUnreachableError, LocalTargetUnsupportedError) travels
+ *  as-is; anything else is wrapped so the remedy rides along. */
+export class TargetReadUnknownError extends UserError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, {
+      ...(options?.cause === undefined ? {} : { cause: options.cause }),
+      advice: [command("status", { note: "reports whether the target answers at all" })],
+    });
+    this.name = "TargetReadUnknownError";
+  }
+}
+
+function unknownAnswer(message: string, error: unknown): unknown {
+  // The contract's Advice guarantee: an unknown answer ALWAYS carries a next step — also
+  // when a UserError arrives that was built without one (TransportUnreachableError's
+  // nextAction is optional).
+  if (error instanceof UserError && error.advice.length > 0) return error;
+  return new TargetReadUnknownError(`${message}: ${(error as Error).message}`, { cause: error });
+}
+
+/** exists(), with the unknown answer thrown instead of guessed: a transport that cannot
+ *  stat never reads as "not there". */
+export async function probeExists(transport: Transport, path: string): Promise<boolean> {
+  try {
+    return await transport.exists(path);
+  } catch (error) {
+    throw unknownAnswer(`could not check whether ${path} exists on the target`, error);
+  }
+}
+
+/** Reads a target file, distinguishing absent from unknown. An exists()-probe first (it, not
+ *  `cat`'s exit status, distinguishes a missing path from an unreadable one), then the read;
+ *  a read that still fails is unknown and throws. */
+export async function readIfExists(transport: Transport, path: string): Promise<TargetRead<string>> {
+  if (!(await probeExists(transport, path))) return { kind: "absent" };
+  try {
+    return { kind: "present", value: await transport.readFile(path) };
+  } catch (error) {
+    throw unknownAnswer(`could not read ${path} on the target`, error);
+  }
+}
+
+/** Lists a target directory, all three outcomes: a non-empty listing is present; an empty one
+ *  is told apart by the probe (transports answer [] for a missing directory, so the listing
+ *  alone cannot tell it from an empty directory): not there is absent, there is present and
+ *  empty; a target that cannot answer throws. */
+export async function listIfExists(transport: Transport, dir: string): Promise<TargetRead<string[]>> {
+  let listed: string[];
+  try {
+    listed = await transport.listFiles(dir);
+  } catch (error) {
+    throw unknownAnswer(`could not list ${dir} on the target`, error);
+  }
+  if (listed.length > 0) return { kind: "present", value: listed };
+  return (await probeExists(transport, dir)) ? { kind: "present", value: listed } : { kind: "absent" };
 }
 
 /** The third answer the probe must never be read as "absent": the check itself could not run. */

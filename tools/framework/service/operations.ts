@@ -11,7 +11,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Context } from "../core/context.ts";
-import { LocalTargetUnsupportedError, TransportUnreachableError } from "../runtime/transport/transport.ts";
+import { listIfExists, probeExists, readIfExists } from "../runtime/transport/transport.ts";
 
 /** Four outcomes, not three-collapsed-into-one: "skipped" can mean "never this command's
  *  job" (advisory), "never got the chance" (an earlier step failed), or "nobody
@@ -151,7 +151,11 @@ export class Journal {
  *  nothing to go back to, better than an empty file `rollback` would later restore over a working one. */
 export async function snapshotConfig(ctx: Context, operationId: string): Promise<string | undefined> {
   const live = `${ctx.settings.dataDir}/config/openclaw.json`;
-  try { if (!(await ctx.transport.exists(live))) return undefined; } catch { return undefined; }
+  // The target-read contract (S3.4): present / absent / unknown. Only a target that ANSWERED
+  // may read as "no snapshot"; an unreachable one throws (with Advice) — a rollback that
+  // silently skips its recovery point is worse than a refusal.
+  const liveRead = await readIfExists(ctx.transport, live);
+  if (liveRead.kind === "absent") return undefined;
 
   const destination = `${operationsDir(ctx)}/${operationId}.openclaw.json`;
   // A recovery point must be private from the first byte. A transport without the secure
@@ -161,9 +165,8 @@ export async function snapshotConfig(ctx: Context, operationId: string): Promise
   // Keep every check that doesn't create the destination outside the writer's failure path
   // — an unreadable source or pre-existing collision must never clean up a file we don't own.
   try { await ctx.transport.mkdirp(operationsDir(ctx)); } catch { return undefined; }
-  try { if (await ctx.transport.exists(destination)) return undefined; } catch { return undefined; }
-  let content: string;
-  try { content = await ctx.transport.readFile(live); } catch { return undefined; }
+  if (await probeExists(ctx.transport, destination)) return undefined;
+  const content = liveRead.value;
   try {
     // Built-in secure writers create exclusively, use 0600 from the first byte, and clean
     // their own temporary/partial file when writing fails.
@@ -176,25 +179,16 @@ export async function snapshotConfig(ctx: Context, operationId: string): Promise
   }
 }
 
-/** The journal's questions need the target: a transport that never reached it is rethrown,
- *  never read as "nothing recorded" (rf6-fix33). */
-function rethrowUnreachable(error: unknown): unknown {
-  if (error instanceof TransportUnreachableError || error instanceof LocalTargetUnsupportedError) return error;
-  return undefined;
-}
-
 /** Every recorded operation, newest first. Ids begin with the command and carry a sortable
  *  timestamp, so the file names alone give the order — no need to read each one to sort. */
 export async function listOperations(ctx: Context): Promise<string[]> {
-  // A missing directory is the ordinary "nothing recorded yet" — both transports answer []
-  // for one, so it never reaches the handler; an unreachable target does, and is refused.
-  const files = (await Promise.all([operationsDir(ctx), ...legacyOperationsDirs(ctx)].map((directory) =>
-    ctx.transport.listFiles(directory).catch((error: unknown) => {
-      const unreachable = rethrowUnreachable(error);
-      if (unreachable !== undefined) throw unreachable;
-      return [] as string[];
-    }),
-  ))).flat();
+  // The target-read contract (S3.4): a directory the target answers "not there" is the
+  // ordinary "nothing recorded yet" (old answer, unchanged); a target that cannot answer —
+  // unreachable, unreadable, timed out — refuses with Advice, never as an empty history.
+  const files = (await Promise.all([operationsDir(ctx), ...legacyOperationsDirs(ctx)].map(async (directory) => {
+    const listed = await listIfExists(ctx.transport, directory);
+    return listed.kind === "absent" ? [] as string[] : listed.value;
+  }))).flat();
   return [...new Set(files)]
     // The configuration snapshots live in the same directory and end in .json too; they are
     // named "<id>.openclaw.json", which is not an operation id.
@@ -206,14 +200,12 @@ export async function listOperations(ctx: Context): Promise<string[]> {
 
 export async function readOperation(ctx: Context, id: string): Promise<OperationRecord | undefined> {
   for (const path of [operationFile(ctx, id), ...legacyOperationsDirs(ctx).map((directory) => `${directory}/${id}.json`)]) {
-    try { return JSON.parse(await ctx.transport.readFile(path)) as OperationRecord; }
-    catch (error) {
-      // A file that is not there is the ordinary "not recorded here"; a target that was
-      // never reached is not an answer at all.
-      const unreachable = rethrowUnreachable(error);
-      if (unreachable !== undefined) throw unreachable;
-      /* try the legacy location before giving up */
-    }
+    const read = await readIfExists(ctx.transport, path);
+    // A file that is not there is the ordinary "not recorded here"; a target that cannot
+    // answer the read refuses with Advice (contract S3.4), never as "not recorded".
+    if (read.kind === "absent") continue;
+    try { return JSON.parse(read.value) as OperationRecord; }
+    catch { /* a record we cannot parse stays "not recorded here" (reading rule unchanged) */ }
   }
   return undefined;
 }

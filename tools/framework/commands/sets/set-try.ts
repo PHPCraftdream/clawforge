@@ -10,12 +10,13 @@ import { mkdir, writeFile, rm, readFile, cp } from "node:fs/promises";
 import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
-import { log, info, warn, die, maskSecrets, registerSecret } from "#src/core/io/log.ts";
+import { log, info, warn, die, maskSecrets, registerSecret, UserError } from "#src/core/io/log.ts";
 import { format, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride, composeProjectName } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
+import { readIfExists } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { mountPoints } from "#src/runtime/mounts.ts";
 import { useSetSource, clearSetSource, setSourceDir } from "#src/set/artifacts/source.ts";
@@ -189,15 +190,20 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   const liveSecretsPath = secretsFileOnTarget(ctx);
   let liveSecrets: string | undefined;
   try {
-    liveSecrets = await ctx.transport.readFile(liveSecretsPath);
+    // The read contract (S3.4): absent is "no live secrets yet" (as before); unknown
+    // refuses with Advice instead of the old plain-text die that stripped it.
+    const liveRead = await readIfExists(ctx.transport, liveSecretsPath);
+    if (liveRead.kind === "present") liveSecrets = liveRead.value;
   } catch (readFailure) {
-    // exists() distinguishes a missing path from an unreadable one on every transport.
-    const absent = await ctx.transport.exists(liveSecretsPath).then((present) => !present, () => false);
-    if (!absent) {
-      // The die below leaves before the outer finally runs: staging goes by hand first.
-      await rm(staging, { recursive: true, force: true }).catch(() => {});
-      die(`cannot read live secrets from the target; set try was not started (${maskSecrets(readFailure instanceof Error ? readFailure.message : String(readFailure))})`);
-    }
+    // The throw leaves before the outer finally runs: staging goes by hand first.
+    await rm(staging, { recursive: true, force: true }).catch(() => {});
+    // Registered values must not travel in the refusal text: the masked message keeps the
+    // read contract's Advice and the original failure as its cause.
+    const advice = (readFailure as { advice?: readonly never[] }).advice;
+    throw new UserError(maskSecrets(readFailure instanceof Error ? readFailure.message : String(readFailure)), {
+      cause: readFailure,
+      ...(advice === undefined ? {} : { advice: advice as never }),
+    });
   }
   // Registered so a transport error that echoes one of these values is masked when the
   // failure is reported — including the read failure right below.

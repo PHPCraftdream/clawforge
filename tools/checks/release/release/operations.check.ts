@@ -9,7 +9,7 @@ import { operations } from "#framework/commands/orchestration/operations.ts";
 import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LocalTransport } from "#framework/runtime/transport/transport.ts";
+import { LocalTransport, TargetReadUnknownError } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -22,7 +22,8 @@ function stubContext(seed: Record<string, string> = {}) {
     transport: {
       async mkdirp(): Promise<void> {},
       async exists(path: string): Promise<boolean> {
-        return files.has(path);
+        // a directory with children exists (the listing reads probe it first now)
+        return files.has(path) || [...files.keys()].some((key) => key.startsWith(path + "/"));
       },
       async readFile(path: string): Promise<string> {
         const content = files.get(path);
@@ -194,13 +195,19 @@ function stubContext(seed: Record<string, string> = {}) {
         if (path === destination) throw new Error("temporary stat failure");
         return files.has(path);
       },
-      async readFile(): Promise<string> { throw new Error("source read failure"); },
+      async readFile(path: string): Promise<string> { return files.get(path)!; },
       async mkdirp(): Promise<void> {},
       async writePrivateFile(): Promise<void> { throw new Error("must not write"); },
       async remove(path: string): Promise<void> { files.delete(path); },
     },
   } as unknown as Context;
-  check("a destination check failure is not claimed", await snapshotConfig(ctx, "existing"), undefined);
+  // The target-read contract (S3.4): a destination check the target could not answer is an
+  // unknown, thrown with Advice — never read as "no snapshot".
+  let thrown: unknown;
+  try { await snapshotConfig(ctx, "existing"); } catch (error) { thrown = error; }
+  check("a destination check failure is not read as no snapshot", thrown instanceof TargetReadUnknownError, true);
+  check("...naming the path it could not answer about", (thrown as Error).message.includes(destination), true);
+  check("...with a runnable next step as advice", JSON.stringify((thrown as { advice?: readonly unknown[] }).advice).includes("status"), true);
   check("a destination check failure does not erase existing data", files.get(destination), "do not erase");
 }
 
@@ -220,7 +227,11 @@ function stubContext(seed: Record<string, string> = {}) {
       async remove(path: string): Promise<void> { files.delete(path); },
     },
   } as unknown as Context;
-  check("a source read failure is not claimed", await snapshotConfig(ctx, "read-failure"), undefined);
+  // Same contract for the source: the live read is unknown, not "nothing to copy".
+  let sourceThrown: unknown;
+  try { await snapshotConfig(ctx, "read-failure"); } catch (error) { sourceThrown = error; }
+  check("a source read failure is not read as no snapshot", sourceThrown instanceof TargetReadUnknownError, true);
+  check("...naming the source it could not read", (sourceThrown as Error).message.includes("openclaw.json"), true);
   check("a source read failure does not erase an existing path", files.get(destination), "keep this snapshot");
 }
 

@@ -12,13 +12,13 @@ import { ConfirmationRequiredError, UnknownArgumentError } from "#src/core/comma
 import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInput, type CallShape } from "#src/core/command/parse.ts";
 import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
-import { maskSecrets, UserError } from "#src/core/io/log.ts";
+import { maskSecrets, UserError, CommandFailedError } from "#src/core/io/log.ts";
 import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { emit, machineWritesCount, stdoutBytesWritten } from "#src/core/io/output.ts";
 import { useApplicationRecipesDir, envFile } from "#src/runtime/deployment.ts";
 import { createTransport, type Transport } from "#src/runtime/transport/transport.ts";
 import { clearRecipesDir } from "#src/service/recipe.ts";
-import { ensureEnvironment } from "#src/integration/provision.ts";
+import { ensureEnvironment, provisioningWrote } from "#src/integration/provision.ts";
 
 /** How and by whom a command is run. */
 export interface CommandIo {
@@ -28,6 +28,7 @@ export interface CommandIo {
   /** Checks' seam, the way ContextOptions.transport is: stands in for the transport both
    *  createContext and the deployment scope would otherwise build. */
   readonly transport?: Transport;
+  readonly observe?: (stage: Stage) => void;
 }
 
 /** Where a call stopped: parse → confirm → prepare → environment → context → run. */
@@ -39,6 +40,9 @@ export interface Execution {
   readonly stage: Stage;
   readonly error?: unknown;
   readonly facts?: CallFacts;
+  readonly reachedRun: boolean;
+  readonly environmentWrote?: boolean;
+  readonly exitCode?: number;
 }
 
 /** The deployment scope `needs: "deployment"` commands run on: the local view plus the
@@ -138,7 +142,10 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
   // Terminal `--json` failure contract: a command invoked with its own declared --json flag
   // that fails still prints a machine-readable answer, unless it already printed (or
   // streamed) something of its own. Never for an unknown-argument error — that is reported as such.
+  let environmentWrote = false;
   const failed = (stage: Stage, error: unknown, facts?: CallFacts, shape?: EffectShape, action?: string, jsonGiven?: boolean): Execution => {
+    io.observe?.(stage);
+    environmentWrote ||= provisioningWrote(error);
     if (io.surface === "terminal" && !(error instanceof UnknownArgumentError)
       && declaresJsonFlag(command, shape, action)
       && (jsonGiven ?? false)
@@ -155,7 +162,7 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
         }),
       }, null, 2)}\n`);
     }
-    return { stage, error, ...(facts === undefined ? {} : { facts }) };
+    return { stage, error, reachedRun: stage === "run", ...(stage === "run" && error instanceof CommandFailedError ? { exitCode: error.exitCode } : {}), ...(environmentWrote ? { environmentWrote: true } : {}), ...(facts === undefined ? {} : { facts }) };
   };
 
   if (entry !== undefined) {
@@ -164,15 +171,14 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
     try {
       call = input.kind === "argv" ? parseCall(shape, input.argv, name) : bindNamed(shape, input, name, { confirmed: io.confirmed === true });
     } catch (error) {
-      // shape stays out of declaresJsonFlag here: before the call parses there is no chosen
-      // action, so the flat command declaration is the contract's original gate. A named
-      // call has no terminal --json contract, so surface "mcp" regardless.
       return failed("parse", error, undefined, undefined, undefined, input.kind === "argv" ? jsonTokenGiven(shape, input.argv) : false);
     }
     const facts = callFacts(shape, call);
+    io.observe?.("parse");
     if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {
       return failed("confirm", new ConfirmationRequiredError(name), facts, shape, call.action, call.given.includes("json"));
     }
+    io.observe?.("confirm");
     const data = specData(entry);
     const phases = data.kind === "single" ? data : data.actions[call.action!];
     let plan: unknown;
@@ -184,11 +190,13 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
     } catch (error) {
       return failed("prepare", error, facts, shape, call.action, call.given.includes("json"));
     }
+    io.observe?.("prepare");
     try {
-      if (data.kind === "single" && data.preparesEnvironment && facts.effect !== "read") await ensureEnvironment();
+      if (data.kind === "single" && data.preparesEnvironment && facts.effect !== "read") environmentWrote = (await ensureEnvironment()).wrote;
     } catch (error) {
       return failed("environment", error, facts, shape, call.action, call.given.includes("json"));
     }
+    io.observe?.("environment");
     let on: Context | DeploymentScope;
     try {
       on = data.kind === "single" && data.needs === "deployment"
@@ -197,12 +205,13 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
     } catch (error) {
       return failed("context", error, facts, shape, call.action, call.given.includes("json"));
     }
+    io.observe?.("run");
     try {
       await (phases.run as (on: unknown, plan: unknown) => Promise<void>)(on, plan);
     } catch (error) {
       return failed("run", error, facts, shape, call.action, call.given.includes("json"));
     }
-    return { stage: "run", facts };
+    return { stage: "run", facts, reachedRun: true, ...(environmentWrote ? { environmentWrote: true } : {}) };
   }
 
   // Zero legacy commands ship today; a named call reaching one is an invariant breach, not
@@ -218,23 +227,26 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
   } catch (error) {
     return failed("prepare", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
+  io.observe?.("prepare");
   try {
     // Only a mutating call prepares: legacyPreparesEnvironment also refuses argv the
     // command's own parser would reject, before anything is written.
-    if (legacyPreparesEnvironment(command, [...argv])) await ensureEnvironment();
+    if (legacyPreparesEnvironment(command, [...argv])) environmentWrote = (await ensureEnvironment()).wrote;
   } catch (error) {
     return failed("environment", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
+  io.observe?.("environment");
   let ctx: Context;
   try {
     ctx = await createContext(contextOptions(app, io));
   } catch (error) {
     return failed("context", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
+  io.observe?.("run");
   try {
     await command.run(ctx, [...argv]);
   } catch (error) {
     return failed("run", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
-  return { stage: "run", facts };
+  return { stage: "run", facts, reachedRun: true, ...(environmentWrote ? { environmentWrote: true } : {}) };
 }

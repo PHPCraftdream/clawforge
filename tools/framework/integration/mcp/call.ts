@@ -7,6 +7,7 @@ import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { effectProfile, tokenize } from "../../core/command/index.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
+import type { Execution } from "../../core/command/execute.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
 import { renderAdvice } from "../../core/io/invocation/render.ts";
 import type { Declared, StructuredResult, ToolStep } from "./schema.ts";
@@ -17,16 +18,16 @@ function isWarning(problem: unknown): boolean {
 
 /** The stages before `run`: a refusal there changed nothing. An unknown or omitted stage is
  *  not on this list, so it keeps the conservative answer (the command's own facts). */
-export const PRE_RUN_STAGES: ReadonlySet<string> = new Set(["parse", "confirm", "environment", "context", "prepare"]);
+export const PRE_RUN_STAGES: ReadonlySet<string> = new Set(["parse", "confirm", "prepare"]);
 
-/** The envelope's `changed`. With the pipeline's facts: the command's own changedWhen first
- *  (a legacy command), then `read` → false, else the document's boolean, else true. Without
- *  them (a direct call), the old declaration-only rule. */
-function changedFact(command: Declared, fields: { changed?: unknown }, args: string[], facts?: CallFacts, error?: unknown, stage?: string): boolean {
-  if (error !== undefined && stage !== undefined && PRE_RUN_STAGES.has(stage)) return false;
-  if (facts !== undefined) {
-    if (facts.changed !== undefined) return facts.changed;
-    if (facts.effect === "read") return false;
+function changedFact(command: Declared, fields: { changed?: unknown }, args: string[], execution?: Execution): boolean {
+  if (execution !== undefined) {
+    if (execution.stage === "parse" || execution.stage === "confirm" || execution.stage === "prepare") return false;
+    if (execution.stage === "environment" || execution.stage === "context") return execution.environmentWrote === true;
+    if (execution.facts !== undefined) {
+      if (execution.facts.changed !== undefined) return execution.facts.changed;
+      if (execution.facts.effect === "read") return false;
+    }
     return typeof fields.changed === "boolean" ? fields.changed : true;
   }
   return command.changedWhen?.(args) ?? (command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true));
@@ -121,7 +122,7 @@ export function structuredResult(command: Declared, output: string, operationId:
     operationId: commandOperationId,
     // A read-only command changes nothing by declaration. Anything else defaults to
     // "changed" when unsaid: an unneeded re-check costs less than a skipped one that was needed.
-    changed: changedFact(command, fields, args, facts),
+    changed: facts === undefined ? changedFact(command, fields, args) : changedFact(command, fields, args, { stage: "run", reachedRun: true, facts }),
     healthy: typeof fields.healthy === "boolean" ? fields.healthy : undefined,
     problems,
     warnings: problems.filter(isWarning),
@@ -137,16 +138,16 @@ export function structuredResult(command: Declared, output: string, operationId:
  *  returned bare, since the tool declares one outputSchema for all its actions. A text
  *  action's envelope stays silent where a structured one speaks — no healthy, no problems,
  *  no nextActions — a gap can be seen, a guess cannot be trusted. */
-export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined, error?: unknown, stage?: string): StructuredResult {
-  const structured = structuredResult(command, machineOutput ?? output, operationId, args, facts, lookup);
-  if (structured !== undefined) return { ...structured, changed: changedFact(command, structured.result !== null && typeof structured.result === "object" ? structured.result as { changed?: unknown } : {}, args, facts, error, stage) };
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], execution?: Execution, lookup?: (name: string) => Declared | undefined, error?: unknown): StructuredResult {
+  const structured = structuredResult(command, machineOutput ?? output, operationId, args, execution?.facts, lookup);
+  if (structured !== undefined) return { ...structured, changed: changedFact(command, structured.result !== null && typeof structured.result === "object" ? structured.result as { changed?: unknown } : {}, args, execution) };
   // A refusal that never emitted a document still carries its remedy (rf6-fix30): the thrown
   // UserError's advice becomes nextActions/nextSteps, so an MCP client sees the same next
   // step the console's arrow line spells.
   const advice = error instanceof UserError ? error.advice : [];
   return {
     operationId,
-    changed: changedFact(command, {}, args, facts, error, stage),
+    changed: changedFact(command, {}, args, execution),
     problems: [],
     warnings: [],
     nextActions: [...new Set(advice.map((entry) => maskSecrets(renderAdvice(entry))))],

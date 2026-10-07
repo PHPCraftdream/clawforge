@@ -22,7 +22,7 @@ import { commandRegistry, renderHelp, type CommandRegistry, type GateCommand } f
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
-import { executeCommand, type Execution } from "../../core/command/execute.ts";
+import { executeCommand, type Execution, type CommandIo } from "../../core/command/execute.ts";
 import { type CallInput } from "../../core/command/parse.ts";
 import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { gateConfirmationRefusal, maskStructuredOutput, maskStructuredResult, toolEnvelope } from "./call.ts";
@@ -87,6 +87,7 @@ async function captureRun(
   name: string,
   input: CallInput,
   confirmed: boolean,
+  io?: Pick<CommandIo, "transport" | "observe">,
 ): Promise<{ output: string; machineOutput?: string; failure?: string; execution: Execution }> {
   const chunks: string[] = [];
   const emitted: string[] = [];
@@ -96,7 +97,7 @@ async function captureRun(
       chunks.push(chunk);
     },
     async () => {
-      const execution = await executeCommand(app, name, input, { surface: "mcp", confirmed });
+      const execution = await executeCommand(app, name, input, { surface: "mcp", confirmed, ...io });
       if (execution.error === undefined) {
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, execution };
       }
@@ -276,6 +277,7 @@ async function handleAppToolCall(
   command: AppCommand,
   args: Record<string, unknown>,
   lookup: (name: string) => Declared | undefined,
+  io?: Pick<CommandIo, "transport" | "observe">,
 ): Promise<void> {
   // A declared body binds by name through the console's own binder. A command without a
   // body — a stub server's run-replaced command, a hand-written AppCommand — still parses
@@ -292,7 +294,7 @@ async function handleAppToolCall(
   try {
     const confirmed = args.confirm === true;
     const { output, machineOutput, failure, execution } = await captureRun(
-      app, name, legacy ? { kind: "argv", argv: argv! } : { kind: "named", args }, confirmed,
+      app, name, legacy ? { kind: "argv", argv: argv! } : { kind: "named", args }, confirmed, io,
     );
 
     // A parse or confirmation refusal answers like a validate refusal: a bare tool error with
@@ -314,7 +316,7 @@ async function handleAppToolCall(
     const structured = command.structured === true
       // the envelope's argv is legacy provenance only (a spec command's changedFact reads
       // the pipeline facts, never argv)
-      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, legacy ? argv! : [], execution.facts, lookup, execution.error, execution.stage)
+      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, legacy ? argv! : [], execution, lookup, execution.error)
       : undefined;
     // Redaction is not an error-path courtesy: a successful diagnostic prints the same
     // logs, hook output and machine JSON a failure would have, so registered values are
@@ -363,6 +365,7 @@ async function handleToolsCall(
   gateHelp: string[],
   lookup: (name: string) => Declared | undefined,
   registry: CommandRegistry,
+  io?: Pick<CommandIo, "transport" | "observe">,
 ): Promise<void> {
   const params = request.params ?? {};
   // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
@@ -385,10 +388,10 @@ async function handleToolsCall(
   }
 
   const [, command] = entry;
-  await handleAppToolCall(request.id, app, name, command, args, lookup);
+  await handleAppToolCall(request.id, app, name, command, args, lookup, io);
 }
 
-export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = []): Promise<void> {
+export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = [], io?: Pick<CommandIo, "transport" | "observe">): Promise<void> {
   const tools = mcpCommands(app);
   // Presented as one list: a client sees what the deployment can do, not which layer
   // dispatches what. Kept apart here only because they are invoked differently — a gate
@@ -467,7 +470,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           .then(() => {
             // Cancelled while still queued: never start it.
             if (id !== undefined && cancelledIds.delete(id)) return undefined;
-            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp, lookup, registry);
+            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp, lookup, registry, io);
           })
           .catch((error) => {
             // handleToolsCall answers its own failures; this only guards a throw from

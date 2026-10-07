@@ -23,43 +23,64 @@ export function generateGatewayToken(): string {
 
 /** Creates .env on first run, with this deployment's own paths and port rather than the
  *  template's — a copied template would put two deployments on the same data directory. */
-async function ensureEnvFile(): Promise<void> {
+async function ensureEnvFile(): Promise<boolean> {
   const exists = await access(envFile()).then(
     () => true,
     () => false,
   );
   if (exists) {
     await protectPrivateFile(envFile());
-    return;
+    return false;
   }
 
   log(`creating ${envFile()}`);
   try {
     await createPrivateFile(envFile(), await deploymentEnv(deploymentName()));
+    return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     await protectPrivateFile(envFile());
+    return false;
   }
 }
 
 /** Generates the gateway token once and keeps it: regenerating would break every client
  *  that already stored it. */
-async function ensureToken(): Promise<string> {
+async function ensureToken(): Promise<{ token: string; wrote: boolean }> {
   const content = await readFile(envFile(), "utf8");
   const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN");
-  if (current !== undefined && current.trim() !== "") return current.trim();
+  if (current !== undefined && current.trim() !== "") return { token: current.trim(), wrote: false };
 
   log("generating a gateway token");
   const token = generateGatewayToken();
-  await replacePrivateFile(envFile(), upsertEnvLine(content, "OPENCLAW_GATEWAY_TOKEN", token));
-  return token;
+  try {
+    await replacePrivateFile(envFile(), upsertEnvLine(content, "OPENCLAW_GATEWAY_TOKEN", token));
+  } catch (error) {
+    let persisted = false;
+    try {
+      persisted = readEnvValue(await readFile(envFile(), "utf8"), "OPENCLAW_GATEWAY_TOKEN")?.trim() === token;
+    } catch { /* retain the original persistence error */ }
+    if (persisted && error !== null && typeof error === "object") provisioningWrites.set(error, true);
+    throw error;
+  }
+  return { token, wrote: true };
 }
 
 /** Makes the deployment's environment file complete enough to build a context from.
  *  Idempotent: an existing file keeps its values, including the token. */
-export async function ensureEnvironment(): Promise<string> {
-  await ensureEnvFile();
-  const token = await ensureToken();
-  registerSecret(token);
-  return token;
+export async function ensureEnvironment(): Promise<{ token: string; wrote: boolean }> {
+  const fileWrote = await ensureEnvFile();
+  try {
+    const ensured = await ensureToken();
+    registerSecret(ensured.token);
+    return { token: ensured.token, wrote: fileWrote || ensured.wrote };
+  } catch (error) {
+    if (fileWrote && error !== null && typeof error === "object") provisioningWrites.set(error, true);
+    throw error;
+  }
+}
+
+const provisioningWrites = new WeakMap<object, boolean>();
+export function provisioningWrote(error: unknown): boolean {
+  return error !== null && typeof error === "object" && provisioningWrites.get(error) === true;
 }

@@ -7,6 +7,9 @@ import { UserError } from "#framework/core/io/log.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { executeCommand, type Execution } from "#framework/core/command/execute.ts";
+import { commandBody, materializeCommands } from "#framework/core/command/index.ts";
+import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
 
 {
   // The structured remedies: a document that carries `next` advice answers with the tool
@@ -46,12 +49,34 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   const destroy = { summary: "s", structured: true };
   const facts = { effect: "destroy" as const };
   const refusal = new UserError("refused");
-  const changedAt = (stage: string | undefined): boolean => toolEnvelope(destroy, "", undefined, "op-stage", [], facts, undefined, refusal, stage).changed;
-  check("the pre-run stages are the five the pipeline has before run", [...PRE_RUN_STAGES].sort(), ["confirm", "context", "environment", "parse", "prepare"]);
+  const changedAt = (stage: string | undefined, reachedRun = stage === "run", executionFacts = facts): boolean => toolEnvelope(destroy, "", undefined, "op-stage", [], stage === undefined ? undefined : { stage: stage as Execution["stage"], reachedRun, facts: executionFacts }, undefined, refusal).changed;
+  check("the pre-run stages are parse, confirm and prepare", [...PRE_RUN_STAGES].sort(), ["confirm", "parse", "prepare"]);
+  check("a mutating command refused before run reports changed: false", changedAt("prepare"), false);
+  check("environment failure without a completed write reports unchanged", changedAt("environment"), false);
+  check("context failure without a completed write reports unchanged", changedAt("context"), false);
+  check("environment failure after a completed write reports changed", toolEnvelope(destroy, "", undefined, "op-stage", [], { stage: "environment", reachedRun: false, environmentWrote: true, facts }, undefined, refusal).changed, true);
+  check("context failure after a completed write reports changed", toolEnvelope(destroy, "", undefined, "op-stage", [], { stage: "context", reachedRun: false, environmentWrote: true, facts }, undefined, refusal).changed, true);
   for (const stage of PRE_RUN_STAGES) check(`a refusal at ${stage} reports changed: false`, changedAt(stage), false);
-  check("a refusal at run keeps changed: true", changedAt("run"), true);
+  check("run refusal follows run entry even without contradictory reachedRun data", changedAt("run", false), true);
+  check("a refusal at run after run was reached keeps changed: true", changedAt("run", true), true);
   check("a refusal with no stage keeps changed: true", changedAt(undefined), true);
   check("a refusal with an unknown stage keeps changed: true", changedAt("somewhere-else"), true);
+}
+
+{
+  // The run-entry fact is the PIPELINE's, not a type-level one: a run that reached its
+  // body reports reachedRun, a parse refusal never does.
+  const fixture = await createDeploymentFixture();
+  try {
+    const probe = materializeCommands({ probe: { summary: "probe", group: "change" as const, structured: true, ...commandBody({ effect: "change", arguments: [], needs: "target", run: async () => {} }) } }).probe!;
+    const app = { name: "fixture", description: "envelope probe", commands: { probe } };
+    const okRun = await executeCommand(app, "probe", { kind: "named", args: { confirm: true } }, { surface: "mcp", transport: fixture.transport() });
+    check("a run that reached its body reports reachedRun", okRun.stage === "run" && okRun.reachedRun === true, true);
+    const refused = await executeCommand(app, "probe", { kind: "named", args: { __unknown: true } }, { surface: "mcp", transport: fixture.transport() });
+    check("a parse refusal reports reachedRun false", refused.stage === "parse" && refused.reachedRun === false, true);
+  } finally {
+    await fixture.dispose();
+  }
 }
 
 finish("mcp-envelope");

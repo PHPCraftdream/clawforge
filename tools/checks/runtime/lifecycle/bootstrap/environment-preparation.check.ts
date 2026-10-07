@@ -145,7 +145,7 @@ await withFreshDeployment(async (dir) => {
   const path = resolve(dir, ".env");
   await writeFile(path, "OC_DATA_DIR=/srv/x/data\nexport OPENCLAW_GATEWAY_TOKEN=abc123 # my token\n", "utf8");
   const token = await ensureEnvironment();
-  check("an exported token with an inline comment is recognized, not regenerated", token, "abc123");
+  check("an exported token with an inline comment is recognized, not regenerated", token.token, "abc123");
   const content = await readFile(path, "utf8");
   check("no second token line is appended", (content.match(/OPENCLAW_GATEWAY_TOKEN/g) ?? []).length, 1);
   check("the rest of the file is untouched", content.includes("OC_DATA_DIR=/srv/x/data"), true);
@@ -155,7 +155,7 @@ await withFreshDeployment(async (dir) => {
   const path = resolve(dir, ".env");
   await writeFile(path, "OC_DATA_DIR=/srv/x/data\nOPENCLAW_GATEWAY_TOKEN='abc123'\n", "utf8");
   const token = await ensureEnvironment();
-  check("a single-quoted token value is returned unquoted", token, "abc123");
+  check("a single-quoted token value is returned unquoted", token.token, "abc123");
 });
 
 await withFreshDeployment(async (dir) => {
@@ -164,7 +164,7 @@ await withFreshDeployment(async (dir) => {
   // (anchored `^...$/m`, no export-awareness) missed.
   await writeFile(path, "OC_DATA_DIR=/srv/x/data\r\nexport OPENCLAW_GATEWAY_TOKEN=real-token-0123456789\r\n", "utf8");
   const token = await ensureEnvironment();
-  check("CRLF: the exported token survives untouched", token, "real-token-0123456789");
+  check("CRLF: the exported token survives untouched", token.token, "real-token-0123456789");
   const content = await readFile(path, "utf8");
   check("CRLF: no second token line is appended", (content.match(/OPENCLAW_GATEWAY_TOKEN/g) ?? []).length, 1);
 });
@@ -179,14 +179,15 @@ await withFreshDeployment(async (dir) => {
     "utf8",
   );
   const token = await ensureEnvironment();
-  check("duplicate keys: the last line wins, the same way parseEnv reads the file everywhere else", token, "real-second");
+  check("duplicate keys: the last line wins, the same way parseEnv reads the file everywhere else", token.token, "real-second");
 });
 
 await withFreshDeployment(async (dir) => {
   // No .env at all: ensureEnvironment must still create one and generate a token — the
   // fresh-deployment flow U1's fix must not break.
   const token = await ensureEnvironment();
-  check("a brand-new deployment still gets a generated token", token.length > 0, true);
+  check("a brand-new deployment still gets a generated token", token.token.length > 0, true);
+  check("it reports the provisioning write", token.wrote, true);
   check("and a .env file on disk", await exists(resolve(dir, ".env")), true);
 });
 

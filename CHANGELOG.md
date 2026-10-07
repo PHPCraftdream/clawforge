@@ -6,6 +6,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* An MCP call of a mutating command refused before it ran reports changed: false.
 * MCP tool calls bind arguments by name with the console's own binder: an unknown action is refused as such, a positional never lands in another action's slot (`<name> applies to ...`), and the first refusal is reported in the console's words instead of a list.
 * MCP gate and help tool calls report the first refusal only, where they used to join every problem into one sentence.
 * `restore`, `push`, `verify` and `deploy` refuse a positional that begins with `-` even after `--` on the console, like the MCP surface already did.

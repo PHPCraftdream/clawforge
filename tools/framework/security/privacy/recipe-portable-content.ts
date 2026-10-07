@@ -24,15 +24,37 @@ export const SENSITIVE_RECIPE_NAME = /(^|[\\/])(?:\.env(?:\..*)?|secrets(?:[\\/]
 
 /** The declared privateFiles of one recipe directory, an honest empty list when there's no
  *  manifest at all. Otherwise as strict as declaredPrivateFiles: unreadable/invalid throws. */
-export async function declaredPortablePrivateFiles(recipeDirectory: string): Promise<string[]> {
-  try {
-    await access(resolve(recipeDirectory, "recipe.json"));
-  } catch (error) {
-    // No manifest, no declaration: agent/MCP bundles carry no recipe.json.
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
+export async function declaredPortablePrivateFiles(recipeDirectory: string, readRecipeManifest?: (path: string) => Promise<Buffer | undefined>): Promise<string[]> {
+  const manifest = resolve(recipeDirectory, "recipe.json");
+  let raw: string;
+  if (readRecipeManifest !== undefined) {
+    const bytes = await readRecipeManifest(manifest).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw new Error(`could not read ${manifest}: ${(error as Error).message}`);
+    });
+    if (bytes === undefined) return [];
+    raw = bytes.toString("utf8");
+  } else {
+    try {
+      await access(manifest);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    return declaredPrivateFiles(recipeDirectory);
   }
-  return declaredPrivateFiles(recipeDirectory);
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch (error) { throw new Error(`could not parse ${manifest}: ${(error as Error).message}`); }
+  if (parsed === null || typeof parsed !== "object") throw new Error(`${manifest} must contain an object`);
+  const declared = (parsed as { privateFiles?: unknown }).privateFiles;
+  if (declared === undefined) return [];
+  if (!Array.isArray(declared)) throw new Error(`${manifest}: privateFiles must be an array of recipe-relative paths`);
+  return declared.map((entry) => {
+    if (typeof entry !== "string" || entry === "") throw new Error(`${manifest}: privateFiles entries must be non-empty strings`);
+    if (entry.includes("\\")) throw new Error(`${manifest}: privateFiles entries are /-separated paths relative to the recipe directory: ${entry}`);
+    if (entry.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) throw new Error(`${manifest}: privateFiles entries must stay inside the recipe directory: ${entry}`);
+    return entry;
+  });
 }
 
 /** The ONE path-boundary matcher over a privateFiles declaration. Literal matching only —
@@ -56,7 +78,7 @@ export function excludesPortablePath(relativePath: string, declared: readonly st
  *  declaration can't be dodged via an alias; one already on the walk path is refused. */
 export async function collectPortableRecipeFiles(
   recipeDirectory: string,
-  options: { walkRoot?: string; excludeTop?: string } = {},
+  options: { walkRoot?: string; excludeTop?: string; requiredFiles?: readonly string[]; readRecipeManifest?: (path: string) => Promise<Buffer | undefined> } = {},
 ): Promise<{ files: string[]; excluded: { path: string; reason: string }[] }> {
   const walkRoot = options.walkRoot ?? recipeDirectory;
   const realRoot = await realpath(recipeDirectory);
@@ -65,8 +87,9 @@ export async function collectPortableRecipeFiles(
   const state: PortableWalkState = {
     recipeDirectory,
     realRoot,
-    declared: await declaredPortablePrivateFiles(recipeDirectory),
+    declared: await declaredPortablePrivateFiles(recipeDirectory, options.readRecipeManifest),
     excludeTop: options.excludeTop,
+    requiredFiles: options.requiredFiles ?? [],
     files: [],
     excluded: [],
   };
@@ -115,6 +138,7 @@ interface PortableWalkState {
   readonly realRoot: string;
   readonly declared: readonly string[];
   readonly excludeTop: string | undefined;
+  readonly requiredFiles: readonly string[];
   readonly files: string[];
   readonly excluded: { path: string; reason: string }[];
 }
@@ -181,6 +205,10 @@ async function visitPortableEntry(
     );
   }
 
+  if (entry.isDirectory() && state.requiredFiles.includes(recipeRelative)) {
+    state.files.push(relativePath);
+    return;
+  }
   if (entry.isSymbolicLink()) {
     const stats = await stat(real);
     if (stats.isDirectory()) await walkPortableSubdirectory(state, full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);

@@ -6,6 +6,9 @@
 // is worse than no finding.
 
 import { validateSet, cronProblem, INVALID_JSON_NOTE, addingFix } from "#framework/set/ownership/validate.ts";
+import { collectPortableContent, portableContent } from "#framework/set/content.ts";
+import { declarationContent } from "#framework/set/content.ts";
+import type { PortableContent } from "#framework/set/content.ts";
 import { readName } from "#framework/core/values/names.ts";
 import { defaultSetName, collectManifest, buildSet, blockingFindingsMessage, blockingWarningsSummary } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -85,6 +88,27 @@ function codes(problems: readonly { code: string }[]): string[] {
   return problems.map((entry) => entry.code).sort();
 }
 
+/** An in-memory model: the declaration is whatever `raw` says, no recipe content parsed — what checkFiles: false judges over. */
+function contentFor(manifest: SetManifest, raw = "[]"): PortableContent {
+  return {
+    inventory: [],
+    declaration: declarationContent(resolve(baseDeployment, "config", "desired-state.json"), raw),
+    parsed: { recipes: {} },
+    manifest,
+    diagnostics: [],
+  };
+}
+
+/** The real model over a real tree: the builder walks the deployment's recipes once. */
+async function treeContent(deployment: string, manifest: SetManifest): Promise<PortableContent> {
+  const base = await collectPortableContent({
+    recipeRoot: resolve(deployment, "recipes"),
+    declarationPath: resolve(deployment, "config", "desired-state.json"),
+    recipes: Object.keys(manifest.recipes).sort(),
+  });
+  return portableContent(base, manifest);
+}
+
 // A deployment of its own, selected before the first case rather than inherited from
 // whichever check file happened to run before this one in the same process: validateSet()
 // reads desiredStateFile() from the active deployment, so without this the cases below read
@@ -97,13 +121,13 @@ useDeployment(baseDeployment);
 
 // --- a coherent set is silent -----------------------------------------------------------
 
-check("a coherent set produces no findings", codes(await validateSet(coherent())), []);
+check("a coherent set produces no findings", codes(await validateSet(contentFor(coherent()))), []);
 
 // --- references resolve --------------------------------------------------------------------
 
 {
   const problems = await validateSet(
-    coherent({ acceptance: { demo: [{ kind: "agent_has_tools", agent: "someone-else", server: "demo-server" }] } }),
+    contentFor(coherent({ acceptance: { demo: [{ kind: "agent_has_tools", agent: "someone-else", server: "demo-server" }] } })),
   );
   check("an acceptance check naming an undeclared agent is a finding", codes(problems), ["SET_REFERENCE_BROKEN"]);
   check("naming the agent it could not find", problems[0]?.detail.includes("someone-else"), true);
@@ -111,13 +135,13 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
 
 {
   const problems = await validateSet(
-    coherent({ acceptance: { demo: [{ kind: "mcp_responds", server: "not-a-server" }] } }),
+    contentFor(coherent({ acceptance: { demo: [{ kind: "mcp_responds", server: "not-a-server" }] } })),
   );
   check("an undeclared MCP server is a finding too", codes(problems), ["SET_REFERENCE_BROKEN"]);
 }
 
 {
-  const problems = await validateSet(coherent({ acceptance: { absent: [{ kind: "mcp_responds" }] } }));
+  const problems = await validateSet(contentFor(coherent({ acceptance: { absent: [{ kind: "mcp_responds" }] } })));
   check("acceptance for a recipe the set does not contain is a finding", codes(problems), ["SET_REFERENCE_BROKEN"]);
 }
 
@@ -125,20 +149,19 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
 
 {
   const problems = await validateSet(
-    coherent({ recipes: { demo: { checksum: HASH, files: { "server.ts": HASH }, agentChecksum: HASH, agentFiles: {}, agent: { ...agent, cronSchedule: "every tuesday" } } } }),
+    contentFor(coherent({ recipes: { demo: { checksum: HASH, files: { "server.ts": HASH }, agentChecksum: HASH, agentFiles: {}, agent: { ...agent, cronSchedule: "every tuesday" } } } })),
   );
   check("a schedule that is not five fields is a finding", codes(problems), ["SET_SCHEDULE_INVALID"]);
 }
 
 {
   const problems = await validateSet(
-    coherent({ recipes: { demo: { checksum: HASH, files: { "server.ts": HASH }, agentChecksum: HASH, agentFiles: {}, agent: { ...agent, cronSchedule: "17 3 * * mon" } } } }),
+    contentFor(coherent({ recipes: { demo: { checksum: HASH, files: { "server.ts": HASH }, agentChecksum: HASH, agentFiles: {}, agent: { ...agent, cronSchedule: "17 3 * * mon" } } } })),
   );
   check("a field that is not a schedule term is a finding", codes(problems), ["SET_SCHEDULE_INVALID"]);
 }
 
-// The line is drawn at "clearly not a schedule". These pass, and that is not the same claim
-// as "will run when its author meant" — the gateway is what actually parses them.
+// The line is drawn at "clearly not a schedule"; these pass, but that is not "will run when its author meant".
 check("a plain schedule is accepted", cronProblem("17 3 * * *"), undefined);
 check("steps and ranges are accepted", cronProblem("*/5 0-6 1,15 * *"), undefined);
 check("a five-field expression of nonsense is refused", cronProblem("a b c d e") !== undefined, true);
@@ -147,7 +170,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
 
 {
   const problems = await validateSet(
-    coherent({ recipes: { demo: { checksum: HASH, files: {}, agentChecksum: HASH, agentFiles: { "AGENTS.md": HASH }, agent } } }),
+    contentFor(coherent({ recipes: { demo: { checksum: HASH, files: {}, agentChecksum: HASH, agentFiles: { "AGENTS.md": HASH }, agent } } })),
   );
   check("an agent declared over no served content is a finding", codes(problems), ["SET_RECIPE_INCOMPLETE"]);
 }
@@ -165,7 +188,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
     useDeployment(deployment);
 
-    const missingServer = await validateSet(withoutFiles("server.ts"), { checkFiles: true });
+    const missingServer = await validateSet(await treeContent(deployment, withoutFiles("server.ts")), { checkFiles: true });
     check("a recipe declaring an agent but no server.ts is a finding", codes(missingServer).includes("SET_RECIPE_INCOMPLETE"), true);
 
     // The false positive this rule started with, found by running it against a real
@@ -180,22 +203,29 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
       acceptance: {},
     } as never);
     await mkdir(resolve(deployment, "recipes", "svc"), { recursive: true });
-    // A definition the recipe loader accepts: the rule under test is "no server.ts needed",
-    // not "any recipe.json content passes" (parse quality has its own check below).
+    // A definition the recipe loader accepts: the rule is "no server.ts needed", not "any recipe.json passes".
     await writeFile(resolve(deployment, "recipes", "svc", "recipe.json"), JSON.stringify({ description: "demo service" }));
-    check("a service recipe with no agent needs no server.ts", codes(await validateSet(serviceOnly, { checkFiles: true })), []);
+    check("a service recipe with no agent needs no server.ts", codes(await validateSet(await treeContent(deployment, serviceOnly), { checkFiles: true })), []);
 
     await writeFile(resolve(deployment, "recipes", "demo", "server.ts"), "// server\n");
-    const missingAgentConfig = await validateSet(withoutFiles("agent/config.json"), { checkFiles: true });
+    const missingAgentConfig = await validateSet(await treeContent(deployment, withoutFiles("agent/config.json")), { checkFiles: true });
     check("a declared agent with no agent/config.json is a finding", missingAgentConfig.some((entry) => entry.detail.includes("agent/config.json")), true);
 
     await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
     await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), JSON.stringify(agent));
-    check("and a complete tree is silent again", codes(await validateSet(coherent(), { checkFiles: true })), []);
+    check("and a complete tree is silent again", codes(await validateSet(await treeContent(deployment, coherent()), { checkFiles: true })), []);
 
-    // The same manifest without the file check must stay silent throughout — that is what
-    // makes an artifact validatable anywhere.
-    check("the artifact path never looks at the tree", codes(await validateSet(coherent())), []);
+    // A carried agent/config.json that does not parse as an agent declaration: the model
+    // carries the parse failure, the validator reports it — if the builder dropped it, a
+    // broken bundle would validate clean.
+    await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), JSON.stringify({ agentId: 42 }));
+    const badAgentConfig = await validateSet(await treeContent(deployment, coherent()), { checkFiles: true });
+    const recipeInvalid = "SET_RECIPE_INVALID";
+    check("a malformed agent/config.json is a finding the model carries", codes(badAgentConfig), [recipeInvalid]);
+    check("the finding names the file it came from", badAgentConfig[0]?.detail.includes("agent/config.json"), true);
+
+    // The same manifest without the file check must stay silent throughout.
+    check("the artifact path never looks at the tree", codes(await validateSet(contentFor(coherent()))), []);
   } finally {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(baseDeployment);
@@ -216,7 +246,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify({ gateway: { mode: "local" } }));
     useDeployment(deployment);
 
-    const problems = await validateSet(coherent());
+    const problems = await validateSet(contentFor(coherent(), JSON.stringify({ gateway: { mode: "local" } })));
     check("an object instead of an operations list is a finding", codes(problems), ["SET_DECLARATION_INVALID"]);
     check("and it names the file", problems[0]?.detail.includes("desired-state.json"), true);
     check("it is blocking", problems[0]?.severity, "blocking");
@@ -241,7 +271,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     await writeFile(resolve(deployment, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"loc');
     useDeployment(deployment);
 
-    const problems = await validateSet(coherent());
+    const problems = await validateSet(contentFor(coherent(), '[{"path":"gateway.mode","value":"loc'));
     check("a truncated declaration is a finding, not a clean validation", codes(problems), ["SET_DECLARATION_INVALID"]);
     check("the finding names the file", problems[0]?.detail.includes("desired-state.json"), true);
     check("and says it is the JSON that is wrong", problems[0]?.detail.includes(INVALID_JSON_NOTE), true);
@@ -290,10 +320,10 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     await rm(resolve(deployment, "config", "deployment.lock.json"), { force: true });
 
     // validate: the tag travels into requires.image and the validator reports it.
-    const { manifest } = await collectManifest(buildCtx.settings.image, readName("set", "demo"), { tolerateUnpinnedImage: true });
+    const { manifest, content } = await collectManifest(buildCtx.settings.image, readName("set", "demo"), { tolerateUnpinnedImage: true });
     check("validate builds the manifest despite an unpinned image", Object.keys(manifest.recipes).length > 0, true);
     check("the unpinned tag is kept in requires.image", manifest.requires.image.includes(":extended-stable"), true);
-    const problems = await validateSet(manifest, { checkFiles: true });
+    const problems = await validateSet(content, { checkFiles: true });
     check("an unpinned image is reported as a finding, not a refusal", codes(problems).includes("SET_IMAGE_UNPINNED"), true);
     const pinned = problem("SET_IMAGE_UNPINNED", "");
     check("the finding is blocking like the inspection table says", pinned.severity, "blocking");
@@ -535,34 +565,34 @@ check("leading digits and punctuation are stripped rather than smuggled through"
 
     // The tree files exist, so only the definition's content can still be wrong.
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{not json");
-    let problems = await validateSet(coherent(), { checkFiles: true });
+    let problems = await validateSet(await treeContent(deployment, coherent()), { checkFiles: true });
     check("a recipe.json that is not JSON is a finding", codes(problems), ["SET_RECIPE_INVALID"]);
     check("the finding is the loader's, naming the file", problems[0]?.detail.includes("recipes/demo/recipe.json"), true);
-    const remedy = problems[0]?.next as CommandAdvice | undefined;
+    const remedy = (problems[0] ?? { next: undefined }).next as CommandAdvice | undefined;
     check("the remedy is set validate again, naming the file to fix", [remedy?.kind, remedy?.kind === "clawforge" ? remedy.argv.join("/") : "", remedy?.note?.includes("recipes/demo/recipe.json")], ["clawforge", "set/validate", true]);
 
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{}");
-    problems = await validateSet(coherent(), { checkFiles: true });
+    problems = await validateSet(await treeContent(deployment, coherent()), { checkFiles: true });
     check("a recipe.json missing a required field is a finding too", codes(problems), ["SET_RECIPE_INVALID"]);
     check("with the loader's own reason", problems[0]?.detail.includes(missingDescriptionDetail("demo")), true);
 
     // A valid definition leaves the recipe silent again.
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), JSON.stringify({ description: "demo" }));
-    check("a recipe.json the loader accepts stays silent", codes(await validateSet(coherent(), { checkFiles: true })), []);
+    check("a recipe.json the loader accepts stays silent", codes(await validateSet(await treeContent(deployment, coherent()), { checkFiles: true })), []);
 
     // Each completeness gap gets the advice that closes THAT gap, not one recipe.json-or-
     // server.ts line for all five.
-    const missingServer = await validateSet(withoutFiles("server.ts"), { checkFiles: true });
+    const missingServer = await validateSet(await treeContent(deployment, withoutFiles("server.ts")), { checkFiles: true });
     const missingServerAdvice = (missingServer[0] ?? { next: undefined }).next as CommandAdvice | undefined;
     check("an agent recipe without server.ts is advised to add server.ts", missingServerAdvice?.note, afterNote(addingFix("server.ts", "demo")));
     check("and not to add recipe.json, which would not fix it", missingServerAdvice?.note === SET_RECIPE_DIR_NOTE, false);
 
-    const missingConfig = await validateSet(withoutFiles("agent/config.json"), { checkFiles: true });
+    const missingConfig = await validateSet(await treeContent(deployment, withoutFiles("agent/config.json")), { checkFiles: true });
     check("a missing agent/config.json is advised by name", missingConfig.some((entry) => (entry.next as CommandAdvice).note === afterNote(addingFix("agent/config.json", "demo"))), true);
 
     await rm(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
     await rm(resolve(deployment, "recipes", "demo"), { recursive: true });
-    const missingDir = await validateSet(coherent(), { checkFiles: true });
+    const missingDir = await validateSet(await treeContent(deployment, coherent()), { checkFiles: true });
     check("a missing recipe directory points at the tree and a rebuild", missingDir[0]?.nextAction.startsWith("./clawforge set build"), true);
     check("and names the directory", missingDir[0]?.nextAction.includes("recipes/demo"), true);
   } finally {
@@ -643,6 +673,17 @@ check("leading digits and punctuation are stripped rather than smuggled through"
   } finally {
     await removeBuildDeployment(deployment);
   }
+}
+
+// --- the validator reads the declaration from the model, not the ambient deployment --------
+//
+// S3.2: declaredConfig judges content.declaration. If it ever reaches for
+// desiredStateFile() again, this case goes quiet — the ambient deployment here holds a
+// valid "[]" while the model carries a declaration of the wrong shape.
+{
+  const problems = await validateSet(contentFor(coherent(), JSON.stringify({ gateway: { mode: "local" } })));
+  const declarationInvalid = "SET_DECLARATION_INVALID";
+  check("the declaration is read from the model, not the ambient deployment", codes(problems), [declarationInvalid]);
 }
 
 await rm(baseDeployment, { recursive: true, force: true });

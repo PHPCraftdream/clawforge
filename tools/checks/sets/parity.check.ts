@@ -13,6 +13,7 @@
 import { access, rename, rm, writeFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadSet, validateLoadedSet, collectManifest, ArtifactIntegrityError } from "#framework/set/load.ts";
+import { collectPortableContent, portableContent } from "#framework/set/content.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withArtifactInspected, unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
@@ -85,7 +86,18 @@ async function runVariant(variant: Variant): Promise<void> {
 
     let treeProblems: Problem[];
     if (crafted !== undefined) {
-      treeProblems = await validateLoadedSet({ source: { kind: "tree" }, manifest: crafted, id: "tree-side" });
+      // A crafted manifest skips the collector, so the tree side is judged over the model the
+      // real builder would have produced for this same (mutated) tree — the declaration and
+      // recipe files read once, attached to the crafted manifest.
+      const content = portableContent(
+        await collectPortableContent({
+          recipeRoot: resolve(deployment, "recipes"),
+          declarationPath: resolve(deployment, "config", "desired-state.json"),
+          recipes: Object.keys(crafted.recipes).sort(),
+        }),
+        crafted,
+      );
+      treeProblems = await validateLoadedSet({ source: { kind: "tree" }, manifest: crafted, id: "tree-side", content, lock: undefined, preRead: new Map() });
     } else {
       treeProblems = await validateLoadedSet(
         await loadSet({ kind: "tree" }, { name: "demo-set", declaredImage: IMAGE, tolerateUnpinnedImage: true, reportInvalidDeclaration: true }),

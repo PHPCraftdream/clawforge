@@ -7,28 +7,18 @@
 // Deliberately NOT attempted: whether the pinned image's OpenClaw supports what the
 // recipes use (needs the image; `apply` compares versions against the live instance); full
 // cron semantics (rejects what is clearly not a schedule — "not rejected" is not "valid").
+//
+// S3.2: validation runs over the portable content model (set/content.ts) — pure, no global paths.
 
-import { readFile } from "node:fs/promises";
-import { access } from "node:fs/promises";
-import { resolve } from "node:path";
-import { parseRecipeDefinition } from "#src/service/recipe.ts";
-import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
-import { readLock } from "#src/commands/management/lock.ts";
-import { readAcceptanceFile, readAgentFile } from "#src/set/recipe-files.ts";
-import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition, recipeInvalidName } from "#src/set/advice.ts";
+import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidName } from "#src/set/advice.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
+import type { PortableContent } from "#src/set/content.ts";
+import type { DeploymentLock } from "#src/commands/management/lock.ts";
 import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { safeName } from "#src/core/values/names.ts";
-
-async function exists(path: string): Promise<boolean> {
-  return access(path).then(
-    () => true,
-    () => false,
-  );
-}
 
 /** Deliberately shallow: `*`, `*\/N`, a number, a range, a list of those — rejects what is
  *  plainly not a schedule, passes everything that looks like one. Ranges aren't checked
@@ -76,57 +66,43 @@ export function desiredStateShapeError(value: unknown): string | undefined {
   return undefined;
 }
 
-/** Reads the desired state as declared, for the secret references inside it. A missing or
+/** The declaration as the model read it, for the secret references inside it. A missing or
  *  empty declaration is a finding, not a legitimate empty one: the tree validator must give
  *  the same answer an artifact carrying no declaration would (parity), and a deployment with
  *  no declaration at all must not read as coherent. Everything else unreadable is a finding
  *  too — checksum verification only proves an artifact's bytes match the manifest, never
- *  that they parse. */
-async function declaredConfig(problems: Problem[]): Promise<unknown> {
-  // Resolved outside the try: desiredStateFile() throws when no deployment is selected at
-  // all — a wiring error in the caller, not a finding about a set.
-  const path = desiredStateFile();
-
-  let raw: string;
-  try {
-    raw = await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      problems.push(
-        problem("SET_DECLARATION_INVALID", `${path} is missing or empty — a set without its config declaration would install an unconfigured instance`),
-      );
-      return [];
-    }
+ *  that they parse. The builder read the bytes; this only judges them. */
+function declaredConfig(content: PortableContent, problems: Problem[]): readonly unknown[] {
+  const declared = content.declaration;
+  if (declared.readError !== undefined) {
     problems.push(
-      problem("SET_DECLARATION_INVALID", `${path} could not be read: ${(error as Error).message}`),
+      problem("SET_DECLARATION_INVALID", declared.readError.missing
+        ? `${declared.label} is missing or empty — a set without its config declaration would install an unconfigured instance`
+        : `${declared.label} could not be read: ${declared.readError.message}`),
     );
     return [];
   }
-  if (raw.trim() === "") {
+  if (declared.empty) {
     problems.push(
-      problem("SET_DECLARATION_INVALID", `${path} is missing or empty — a set without its config declaration would install an unconfigured instance`),
+      problem("SET_DECLARATION_INVALID", `${declared.label} is missing or empty — a set without its config declaration would install an unconfigured instance`),
     );
     return [];
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
+  if (declared.parseError !== undefined) {
     problems.push(
-      problem("SET_DECLARATION_INVALID", `${path} ${INVALID_JSON_NOTE}: ${(error as Error).message}`),
+      problem("SET_DECLARATION_INVALID", `${declared.label} ${INVALID_JSON_NOTE}: ${declared.parseError}`),
     );
     return [];
   }
-  const shapeError = desiredStateShapeError(parsed);
-  if (shapeError !== undefined) {
+  if (declared.shapeError !== undefined) {
     problems.push(
-      problem("SET_DECLARATION_INVALID", `${path}: ${shapeError}`),
+      problem("SET_DECLARATION_INVALID", `${declared.label}: ${declared.shapeError}`),
     );
     return [];
   }
   // collectSecretRefs walks a config OBJECT; the declaration is a list of path/value
-  // pairs, so the values are what it has to be shown.
-  return (parsed as { path: string; value?: unknown }[]).map((entry) => entry.value);
+  // pairs, so the values are what it has to be shown. The model carried the parse.
+  return declared.values ?? [];
 }
 
 /** The ONE grammar rule for recipe folder names, run by both load paths (validateSet runs
@@ -142,7 +118,7 @@ export function recipeNameProblem(name: string): Problem | undefined {
   }
 }
 
-async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Promise<void> {
+async function checkImagePinned(manifest: SetManifest, lock: DeploymentLock | undefined, problems: Problem[]): Promise<void> {
   // Grammar before pinning: only the image module's own parser decides what a reference is.
   if (tryParse(manifest.requires.image) === undefined) {
     problems.push(problem("SET_IMAGE_INVALID", invalidImageReference(manifest.requires.image)));
@@ -152,14 +128,14 @@ async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Pro
   // One advice, shared with set build (set/advice.ts's imagePinAdvice): decided from the lock's
   // content, never from the file's existence — a committed lock travels in git, so it does
   // not imply a deployed instance.
-  const advice = imagePinAdvice(manifest.requires.image, await readLock());
+  const advice = imagePinAdvice(manifest.requires.image, lock);
   problems.push(problem("SET_IMAGE_UNPINNED", advice.detail, advice.next));
 }
 
-/** The file checks run only where the files actually are: a working tree, or an unpacked
- *  artifact's staging directory (recipesDir() points into it). A packed artifact carries
- *  files as checksums — looking for those paths on this machine would flag a valid artifact. */
-async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, problems: Problem[]): Promise<void> {
+/** The file checks run over the model's parsed content, never the disk. A packed artifact
+ *  carries files as checksums — looking for those paths on this machine would flag a valid artifact. */
+async function checkRecipesComplete(content: PortableContent, checkFiles: boolean, problems: Problem[]): Promise<void> {
+  const manifest = content.manifest;
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const declaresAgent = recipe.agent !== undefined;
     // The remedies are the advice owners in set/advice.ts — one wording per gap, shared
@@ -172,15 +148,15 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
     if (invalidName !== undefined) problems.push(invalidName);
 
     if (checkFiles) {
-      const dir = resolve(recipesDir(), name);
-      if (!(await exists(dir))) {
+      const parsed = content.parsed.recipes[name];
+      if (parsed === undefined || !parsed.dirExists) {
         // An unpacked artifact has a directory only where the manifest lists files in it.
         // A recipe that carries no portable content unpacks to nothing — and the tree it
         // was built from answers for that (the dir-exists branch below), so the artifact
         // must give the same answer, not a weaker one (R32-05: the tree reported three
         // blocking recipes, its own artifact one).
         if (declaresAgent || Object.keys(recipe.files).length > 0) {
-          problems.push(recipeMissingDir(name, `recipe "${name}" is declared but ${dir} does not exist`));
+          problems.push(recipeMissingDir(name, `recipe "${name}" is declared but ${parsed?.dir ?? name} does not exist`));
         } else {
           problems.push(recipeMissingDir(name, `recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
         }
@@ -201,23 +177,6 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
       }
       if (declaresAgent && !carried("agent/config.json")) {
         problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no agent/config.json`, addingFix("agent/config.json", name)));
-      }
-      // The JSON files the set declares, read once by the loader's own step: a malformed
-      // one is the same finding whichever path loaded the set.
-      const agentFile = carried("agent/config.json") ? await readAgentFile(resolve(dir, "agent", "config.json"), name) : undefined;
-      if (agentFile?.ok === false) problems.push(recipeInvalidDefinition(name, agentFile.reason, "agent/config.json"));
-      const acceptanceFile = carried("acceptance.json") ? await readAcceptanceFile(resolve(dir, "acceptance.json"), name) : undefined;
-      if (acceptanceFile?.ok === false) problems.push(recipeInvalidDefinition(name, acceptanceFile.reason, "acceptance.json"));
-      // Parse the definition with the loader recipe list and recipe install use, so a
-      // recipe.json `recipe list` calls broken is a finding here too instead of failing
-      // only mid-apply on the target (R33-08). The loader's own message names the file.
-      const definitionPath = resolve(dir, "recipe.json");
-      if (carried("recipe.json") && await exists(definitionPath)) {
-        try {
-          parseRecipeDefinition(name, await readFile(definitionPath, "utf8"));
-        } catch (error) {
-          problems.push(recipeInvalidDefinition(name, (error as Error).message));
-        }
       }
     }
 
@@ -279,9 +238,9 @@ function checkSchedulesValid(manifest: SetManifest, problems: Problem[]): void {
 /** The gateway resolves SecretRefs at startup and reports a missing one only in its log, as
  *  a crash loop. A set that references a variable it does not require is that failure,
  *  declared in advance. */
-async function checkSecretsDeclared(manifest: SetManifest, problems: Problem[]): Promise<void> {
+function checkSecretsDeclared(manifest: SetManifest, content: PortableContent, problems: Problem[]): void {
   const declaredSecrets = new Set(manifest.secrets);
-  for (const ref of collectSecretRefs(await declaredConfig(problems))) {
+  for (const ref of collectSecretRefs(declaredConfig(content, problems))) {
     if (!declaredSecrets.has(ref.name)) {
       problems.push(
         problem("SET_SECRET_UNDECLARED", `the declaration references ${ref.name} (${ref.usedBy}) but the set does not require it by name`),
@@ -290,15 +249,21 @@ async function checkSecretsDeclared(manifest: SetManifest, problems: Problem[]):
   }
 }
 
-/** Every finding a set can produce without a gateway. Takes the manifest rather than a
- *  directory: `set build` already collected the tree into one, and validating a built
- *  artifact must answer exactly as validating the tree it came from. */
-export async function validateSet(manifest: SetManifest, options: { checkFiles?: boolean } = {}): Promise<Problem[]> {
+/** Every finding a set can produce without a gateway. Takes the portable content model
+ *  built once per source (set/content.ts), rather than a directory: `set build` already
+ *  collected the tree into one, and validating a built artifact must answer exactly as
+ *  validating the tree it came from. Reads nothing from the filesystem and no global
+ *  path — the load mode can never change which findings exist. The lock facts arrive as
+ *  an explicit argument (read once at load); content problems travel as the model's
+ *  diagnostics. */
+export async function validateSet(content: PortableContent, options: { checkFiles?: boolean; lock?: DeploymentLock } = {}): Promise<Problem[]> {
+  const manifest = content.manifest;
   const problems: Problem[] = [];
-  await checkImagePinned(manifest, problems);
-  await checkRecipesComplete(manifest, options.checkFiles === true, problems);
+  await checkImagePinned(manifest, options.lock, problems);
+  await checkRecipesComplete(content, options.checkFiles === true, problems);
+  problems.push(...content.diagnostics);
   checkReferencesResolve(manifest, problems);
   checkSchedulesValid(manifest, problems);
-  await checkSecretsDeclared(manifest, problems);
+  checkSecretsDeclared(manifest, content, problems);
   return problems;
 }

@@ -21,18 +21,19 @@ import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from
 import { runLocalTar } from "#src/set/artifacts/tar.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { recipeNames } from "#src/service/recipe.ts";
-import { desiredStateShapeError, validateSet } from "#src/set/ownership/validate.ts";
-import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
+import { validateSet } from "#src/set/ownership/validate.ts";
+import { checksumOf, checksumOfFileMap } from "#src/service/checksums.ts";
 import { frameworkVersion, readLock } from "#src/commands/management/lock.ts";
-import type { AgentConfig } from "#src/commands/management/provision-agent/declaration.ts";
+import type { DeploymentLock } from "#src/commands/management/lock.ts";
 import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, buildSetManifest, canonicalJson, setManifestId } from "./artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "./artifacts/model.ts";
 import { assertNoSecretValues, localSecretValues } from "#src/commands/sets/set-secrets-guard.ts";
 import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { imagePinAdvice } from "./advice.ts";
-import { acceptanceLabel, agentConfigLabel, readAcceptanceFile, readAgentFile } from "./recipe-files.ts";
-import { withSetSource } from "./artifacts/source.ts";
+import { acceptanceLabel, agentConfigLabel, parseAcceptanceChecks, parseAgentDeclaration } from "./recipe-files.ts";
+import { collectPortableContent, portableContent } from "#src/set/content.ts";
+import type { PortableContent, PortableContentBase } from "#src/set/content.ts";
 import type { Problem } from "#src/service/inspection.ts";
 
 /** Where a set is loaded from: the working tree, or a packed artifact. */
@@ -68,7 +69,15 @@ export class ArtifactCoherenceError extends Error {
 export interface LoadedSet {
   readonly source: SetSource;
   readonly manifest: SetManifest;
+  /** The content model built once from the source: one inventory walk, declaration and
+   *  parsed recipes. Validation runs over this, never the disk (S3.2). */
+  readonly content: PortableContent;
   readonly id: string;
+  /** Lock facts for the validator, read once at load. */
+  readonly lock: DeploymentLock | undefined;
+  /** Artifact only: the recipe file bytes verification parsed, absolute path → utf8 text
+   *  plus its checksum — the builder reuses them instead of re-reading. */
+  readonly preRead: ReadonlyMap<string, Buffer>;
   /** Artifact only: where it was unpacked. The caller removes it when done. */
   readonly staging?: string;
   /** Tree only: where the tree's sources live, for the packer. */
@@ -101,6 +110,15 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
     // No template yet — `secrets --template` writes one.
   }
   return names;
+}
+
+/** Lock facts for the validator, read once at load; absent when unreadable. */
+async function loadLock(): Promise<DeploymentLock | undefined> {
+  try {
+    return await readLock();
+  } catch {
+    return undefined;
+  }
 }
 
 /** The image the set pins, as a digest — a tag moves, the digest is what was proven.
@@ -145,28 +163,6 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
   );
 }
 
-/** The recipe's parsed agent declaration, read with provision-agent's own parser, so a set
- *  and provisioning can't disagree on defaults. A malformed file is the validator's finding
- *  (undefined here) when the caller reports, a refusal naming file and recipe otherwise. */
-async function agentDeclaration(recipe: string, report: boolean): Promise<AgentConfig | undefined> {
-  const declared = await readAgentFile(resolve(recipesDir(), recipe, "agent", "config.json"), recipe);
-  if (declared === undefined) {
-    die(`recipe "${recipe}" has an agent/ bundle without agent/config.json — provision-agent requires it`);
-  }
-  if (declared.ok) return declared.value;
-  if (!report) die(declared.reason);
-  return undefined;
-}
-
-/** The recipe's acceptance checks; a malformed file follows the same rule as agentDeclaration. */
-async function acceptanceChecks(recipe: string, report: boolean): Promise<AcceptanceCheck[] | undefined> {
-  const declared = await readAcceptanceFile(resolve(recipesDir(), recipe, "acceptance.json"), recipe);
-  if (declared === undefined) return undefined;
-  if (declared.ok) return declared.value;
-  if (!report) die(declared.reason);
-  return undefined;
-}
-
 /** The manifest a build would write, without writing anything. `set validate` asks exactly
  *  the question `set build` answers, through the same loader (loadSet), rather than risking
  *  two collectors drifting apart. */
@@ -179,6 +175,7 @@ export async function collectManifest(
   recipeRoot: string;
   desiredStateSource: string;
   manifest: SetManifest;
+  content: PortableContent;
 }> {
   // The name becomes a file name under sets/ before buildSetManifest validates it.
   readName("set", setName);
@@ -188,65 +185,82 @@ export async function collectManifest(
   const recipeRoot = recipesDir();
   const desiredStateSource = desiredStateFile();
 
-  // Required, same refusal apply-config makes: a set without it installs an unconfigured instance.
-  // With reportInvalidDeclaration, an unreadable/unparsable declaration is left to the
-  // validator's own reporting (declaredConfig, SET_DECLARATION_INVALID) — the same answer an
-  // artifact carrying the same bytes gets — instead of a build-only refusal.
-  let desiredStateRaw: string;
-  let desiredState: unknown;
-  try {
-    desiredStateRaw = await readFile(desiredStateFile(), "utf8");
-  } catch {
-    // A missing declaration is reported by the validator (SET_DECLARATION_INVALID: missing or
-    // empty), never read as an empty one; build refuses it as before.
-    if (options.reportInvalidDeclaration !== true) {
-      die(`${desiredStateFile()} not found — a set without its config declaration would install an unconfigured instance`);
-    }
-    desiredStateRaw = "";
-    desiredState = [];
-  }
-  if (desiredState === undefined) {
-    try {
-      desiredState = JSON.parse(desiredStateRaw);
-    } catch (error) {
-      if (options.reportInvalidDeclaration !== true) die(`${desiredStateFile()} is not valid JSON: ${(error as Error).message}`);
-      desiredState = [];
-    }
-  }
-  // Valid JSON of the wrong shape must be reported (or refused) here, not surface later when
-  // applyConfig chokes on it.
-  const shapeError = desiredStateShapeError(desiredState);
-  if (shapeError !== undefined) {
-    if (options.reportInvalidDeclaration !== true) die(`${desiredStateFile()} is not a valid desired-state declaration: ${shapeError}`);
-    desiredState = [];
-  }
+  // ONE build pass over the tree: the model reads everything once; the gates below answer
+  // from it, in the same order and with the same texts as before.
+  let framework: string | undefined;
+  const base = await collectPortableContent({
+    recipeRoot,
+    declarationPath: desiredStateSource,
+    recipes: () => recipeNames(),
+    afterRecipe: async (_name, parsed, diagnostics) => {
+      if (parsed.walkError !== undefined && options.reportInvalidDeclaration !== true) die(parsed.walkError);
+      if (options.reportInvalidDeclaration !== true) {
+        const acceptanceProblem = diagnostics.find((entry) => entry.detail.includes("acceptance.json"));
+        if (acceptanceProblem !== undefined) die(acceptanceProblem.detail);
+        const agentProblem = diagnostics.find((entry) => entry.detail.includes("agent/config.json"));
+        if (agentProblem !== undefined) die(agentProblem.detail);
+      }
+    },
+    afterDeclaration: async (declaration) => {
+      const report = options.reportInvalidDeclaration === true;
+      // Empty text historically reaches JSON.parse and refuses as invalid JSON in build mode.
+      if (declaration.readError !== undefined && !report) {
+        die(`${desiredStateFile()} not found — a set without its config declaration would install an unconfigured instance`);
+      }
+      if (declaration.parseError !== undefined && !report) die(`${desiredStateFile()} is not valid JSON: ${declaration.parseError}`);
+      if (declaration.empty && !report) {
+        try { JSON.parse(declaration.raw ?? ""); } catch (error) { die(`${desiredStateFile()} is not valid JSON: ${(error as Error).message}`); }
+      }
+      if (declaration.shapeError !== undefined && !report) die(`${desiredStateFile()} is not a valid desired-state declaration: ${declaration.shapeError}`);
+      const resolvedFramework = await frameworkVersion();
+      if (resolvedFramework === undefined) {
+        die("cannot determine the framework version — a set that does not pin one would install on any framework");
+      }
+      framework = resolvedFramework;
+    },
+  });
 
-  const framework = await frameworkVersion();
-  if (framework === undefined) {
-    die("cannot determine the framework version — a set that does not pin one would install on any framework");
-  }
+  // Required declaration and framework gates execute in the builder callback, before recipe walking.
+  // The callback assigns this for buildSetManifest after content collection.
+  if (framework === undefined) die("cannot determine the framework version — a set that does not pin one would install on any framework");
 
-  // Every recipe: served content (mirror, everything except agent/), agent bundle recorded
-  // separately (a prompt edit shouldn't touch served content), and acceptance checks
-  // exactly as `accept` reads them.
-  const files: Record<string, string> = { [DESIRED_STATE_PATH]: checksumOf(desiredStateRaw) };
+  const desiredState = base.declaration.parseError === undefined && !base.declaration.empty && base.declaration.shapeError === undefined ? base.declaration.parsed : [];
+
+  const desiredStateChecksum = base.inventory.find((file) => file.path === DESIRED_STATE_PATH)?.checksum ?? checksumOf("");
+  const files: Record<string, string> = { [DESIRED_STATE_PATH]: desiredStateChecksum };
   const recipes: Record<string, SetRecipe> = {};
   const acceptance: Record<string, readonly AcceptanceCheck[]> = {};
   const report = options.reportInvalidDeclaration === true;
-  for (const recipe of await recipeNames()) {
-    const dir = resolve(recipesDir(), recipe);
-    const served = await recipeFileChecksums(dir);
-    const agentFiles = await agentBundleChecksums(dir);
+  for (const recipe of Object.keys(base.parsed.recipes)) {
+    // Served content and the agent bundle split on the portable `agent/` prefix, exactly
+    // as the two checksum walks used to key them.
+    const served: Record<string, string> = {};
+    const agentFiles: Record<string, string> = {};
+    for (const file of base.inventory) {
+      const prefix = `recipes/${recipe}/`;
+      if (!file.path.startsWith(prefix)) continue;
+      const rel = file.path.slice(prefix.length);
+      if (rel.startsWith("agent/")) agentFiles[rel.slice("agent/".length)] = file.checksum;
+      else served[rel] = file.checksum;
+    }
     for (const [rel, sum] of Object.entries(served)) files[`recipes/${recipe}/${rel}`] = sum;
     for (const [rel, sum] of Object.entries(agentFiles)) files[`recipes/${recipe}/agent/${rel}`] = sum;
-    // Only files the portable walk carried reach the manifest: a privateFiles entry is
-    // excluded there, so its acceptance checks are not collected either.
+    // Only files the walk carried reach the manifest: a privateFiles entry is excluded
+    // there, so its acceptance checks are not collected either.
+    const parsed = base.parsed.recipes[recipe];
+    // Only files the walk carried reach the manifest: a privateFiles entry is excluded there.
     const acceptancePath = acceptanceLabel(recipe);
-    if (files[acceptancePath] !== undefined) {
-      const checks = await acceptanceChecks(recipe, report);
-      if (checks !== undefined) acceptance[recipe] = checks;
+    const diagnostic = base.diagnostics.find((entry) => entry.detail.includes(`recipe "${recipe}"`) && entry.detail.includes("acceptance.json"));
+    if (base.inventory.some((file) => file.path === acceptancePath) && parsed.acceptance === undefined && diagnostic !== undefined && !report) die(diagnostic.detail);
+    if (base.inventory.some((file) => file.path === acceptancePath) && parsed.acceptance !== undefined) {
+      acceptance[recipe] = parsed.acceptance;
     }
-    const agent = agentFiles["config.json"] === undefined ? undefined : await agentDeclaration(recipe, report);
+    const agent = agentFiles["config.json"] === undefined ? undefined : parsed.agent;
+    if (agentFiles["config.json"] !== undefined && agent === undefined) {
+      const agentDiagnostic = base.diagnostics.find((entry) => entry.detail.includes(`recipe "${recipe}"`) && entry.detail.includes("agent/config.json"));
+      if (agentDiagnostic !== undefined && !report) die(agentDiagnostic.detail);
+      if (agentDiagnostic === undefined && !report) die(`recipe "${recipe}" has an agent/ bundle without agent/config.json — provision-agent requires it`);
+    }
     recipes[recipe] = {
       checksum: checksumOfFileMap(served),
       files: served,
@@ -268,7 +282,7 @@ export async function collectManifest(
 
   assertNoSecretValues(manifest, await localSecretValues());
 
-  return { root, recipeRoot, desiredStateSource, manifest };
+  return { root, recipeRoot, desiredStateSource, manifest, content: portableContent(base, manifest) };
 }
 
 /** Loads a set from either source. An artifact goes integrity → unpack → the same file
@@ -292,13 +306,20 @@ async function loadTree(options: SetLoadOptions): Promise<LoadedSet> {
     manifest: collected.manifest,
     id: setManifestId(collected.manifest),
     tree: { root: collected.root, recipeRoot: collected.recipeRoot, desiredStateSource: collected.desiredStateSource },
+    content: collected.content,
+    lock: await loadLock(),
+    preRead: new Map(),
   };
 }
 
-/** What verification established about an artifact. */
+/** What verification established about an artifact, plus the bytes of the recipe files it
+ *  parsed — the builder reuses them instead of re-reading. */
 export interface VerifiedArtifact {
   readonly manifest: SetManifest;
   readonly id: string;
+  /** Absolute path → utf8 text and its checksum. Both sides hash the same utf8 text
+   *  (checksumOf takes string | Uint8Array), so the checksums agree. */
+  readonly preRead: ReadonlyMap<string, Buffer>;
 }
 
 interface ArchiveEntry {
@@ -421,23 +442,30 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
   const files = entries.filter((entry) => entry.type === "file").map((entry) => entry.path).filter((path) => path !== "set.json").sort();
   const claimed = Object.keys(manifest.files).sort();
   if (JSON.stringify(files) !== JSON.stringify(claimed)) throw new Error("artifact contents disagree with the manifest file inventory");
+  const preRead = new Map<string, Buffer>();
+  const bytesFor = async (abs: string): Promise<Buffer | undefined> => {
+    const cached = preRead.get(abs);
+    if (cached !== undefined) return cached;
+    try { const bytes = await readFile(abs); preRead.set(abs, bytes); return bytes; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+  };
   for (const path of claimed) {
-    const actual = await readFile(resolve(staging, ...path.split("/")));
-    if (checksumOf(actual) !== manifest.files[path]) throw new Error(`artifact content checksum mismatch: ${path}`);
+    const abs = resolve(staging, ...path.split("/"));
+    const actual = await bytesFor(abs);
+    if (actual === undefined || checksumOf(actual) !== manifest.files[path]) throw new Error(`artifact content checksum mismatch: ${path}`);
   }
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     if (recipe.agent !== undefined) {
-      // A declared agent whose config.json is absent from the inventory is a completeness
-      // finding — the tree validator reports the same about the same content (parity), not
-      // an integrity error. The parsed-file comparison below IS archive-vs-manifest.
-      // A file that does not parse is not a disagreement the archive can be blamed for: the
-      // validator reports it (SET_RECIPE_INVALID), the same as for the tree.
       const configPath = agentConfigLabel(name);
       if (manifest.files[configPath] !== undefined) {
-        const declared = await readAgentFile(resolve(staging, configPath), name);
+        const configAbs = resolve(staging, configPath);
+        const bytes = await bytesFor(configAbs);
+        const text = bytes?.toString("utf8");
+        const declared = text === undefined ? undefined : await parseAgentDeclaration(text, name);
         if (declared?.ok === true && canonicalJson(declared.value) !== canonicalJson(recipe.agent)) {
           throw new Error(`recipe ${name} agent declaration disagrees with its file`);
         }
+        // bytes are already in the verification cache.
       }
     } else if (Object.keys(recipe.agentFiles ?? {}).length > 0 && manifest.files[agentConfigLabel(name)] !== undefined) {
       // config.json carried yet no declaration is incoherent; config.json itself held back by
@@ -448,13 +476,17 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
     // the archive alike — nothing to compare, never an integrity error (parity with the tree).
     const acceptancePath = acceptanceLabel(name);
     if (manifest.files[acceptancePath] !== undefined) {
-      const fromFile = await readAcceptanceFile(resolve(staging, acceptancePath), name);
+      const abs = resolve(staging, acceptancePath);
+      const bytes = await bytesFor(abs);
+      const text = bytes?.toString("utf8");
+      const fromFile = text === undefined ? undefined : await parseAcceptanceChecks(text, name);
       if (fromFile?.ok !== false && canonicalJson(fromFile?.value ?? []) !== canonicalJson(manifest.acceptance[name] ?? [])) {
         throw new Error(`recipe ${name} acceptance disagrees with its file`);
       }
+      // bytes are already in the verification cache.
     }
   }
-  return { manifest, id: setManifestId(manifest) };
+  return { manifest, id: setManifestId(manifest), preRead };
 }
 
 /** One line for the install-time refusal: each failing code once with a count when it repeats,
@@ -470,23 +502,31 @@ export function coherenceSummary(problems: readonly Problem[]): string {
 async function loadArtifact(path: string): Promise<LoadedSet> {
   const staging = await mkdtemp(join(tmpdir(), "clawforge-set-load-"));
   let verified: VerifiedArtifact;
+  let base: PortableContentBase;
+  // One staging lifetime: verify first (integrity), then build the model over the unpacked
+  // bytes — integrity already gated them (archive vs manifest, byte checksums). Only a
+  // verifyArtifact failure is an integrity claim; a builder failure is rethrown as-is.
+  let fromVerify = true;
   try {
     verified = await verifyArtifact(path, staging);
+    fromVerify = false;
+    base = await collectPortableContent({
+      recipeRoot: join(staging, "recipes"),
+      declarationPath: join(staging, "config", "desired-state.json"),
+      recipes: Object.keys(verified.manifest.recipes).sort(),
+      preRead: verified.preRead,
+    });
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
-    throw new ArtifactIntegrityError(path, error);
+    throw fromVerify ? new ArtifactIntegrityError(path, error) : error;
   }
-  return { source: { kind: "artifact", path }, manifest: verified.manifest, id: verified.id, staging };
+  return { source: { kind: "artifact", path }, manifest: verified.manifest, id: verified.id, staging, content: portableContent(base, verified.manifest), lock: await loadLock(), preRead: verified.preRead };
 }
 
-/** Every finding a loaded set produces, without a Context — computed from the loaded content
- *  whichever way it was loaded: the load mode decides whether integrity problems throw, never
- *  whether body findings exist. For an artifact this runs the tree validator against the
- *  unpacked staging, so both paths answer with the same engine over the same files. The
- *  caller must keep the staging directory of an artifact load alive until this returns. */
+/** Every finding a loaded set produces, without a Context — runs the validator over the
+ *  model built at load time, the same engine over the same bytes for a tree and an
+ *  artifact; no global source switch (S3.2). The staging of an artifact load is only
+ *  needed while the model is built, so the caller may remove it after load as before. */
 export async function validateLoadedSet(loaded: LoadedSet): Promise<Problem[]> {
-  if (loaded.source.kind === "tree") return validateSet(loaded.manifest, { checkFiles: true });
-  const staging = loaded.staging;
-  if (staging === undefined) die("internal: loading an artifact carries no staging directory");
-  return withSetSource(staging, () => validateSet(loaded.manifest, { checkFiles: true }));
+  return validateSet(loaded.content, { checkFiles: true, lock: loaded.lock });
 }

@@ -237,7 +237,7 @@ export async function unpackArtifactVerified(artifact: string): Promise<{ stagin
   const loaded = await loadArtifactSet(artifact);
   const staging = loaded.staging;
   if (staging === undefined) die("internal: loading an artifact carries no staging directory");
-  return { staging, verified: { manifest: loaded.manifest, id: loaded.id } };
+  return { staging, verified: { manifest: loaded.manifest, id: loaded.id, preRead: loaded.preRead } };
 }
 
 export async function unpackArtifact(artifact: string): Promise<string> {
@@ -283,7 +283,7 @@ export async function withArtifactInspected<T>(
     // The caller's own failures (a blocking report, a diff that throws) propagate unwrapped:
     // wrapping them blames the artifact being read — in a nested `set diff`, the good one —
     // and turns validate's "N blocking finding(s)" into integrity wording (R33-03).
-    return await body(staging, { manifest: loaded.manifest, id: loaded.id }, problems);
+    return await body(staging, { manifest: loaded.manifest, id: loaded.id, preRead: loaded.preRead }, problems);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }

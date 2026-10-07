@@ -11,14 +11,25 @@ import { join, relative, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { initApp, ALREADY_EXISTS, ALREADY_INITIALISED, NOT_EXIST, NEEDS_ESM, NOT_VALID_JSON, noSaveInstall } from "#framework/integration/deployment/init.ts";
 import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore, ROOT_OWNED } from "#framework/integration/deployment/deployment-template.ts";
-import { commandLine, renderAdvice, shimInvocation } from "#framework/core/io/invocation/render.ts";
-import type { Invocation } from "#framework/core/io/invocation/index.ts";
+import { commandLine, renderAdvice, renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
+import { frameFacts, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { frameFromInvocation } from "#framework/core/io/invocation/frame.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+
+/** The checkout-refusal row as the entry renders it: a frame whose paste directory is the
+ *  checkout root the sentence directs to, with this process's host facts — the run's
+ *  path-bearing program is the verbatim launch now, so the re-rooted row spells the
+ *  checkout's own shim and, under [cmd, pwsh], carries the bash note. */
+function renderAdviceAtOwnRoot(): string {
+  const root = "/fake-checkout";
+  const frame = frameFromInvocation({ program: "../../clawforge", mode: "checkout", audience: "terminal" }, { ...frameFacts(), cwd: root, places: { checkoutRoot: root } });
+  return renderFrameAdvice(command(["new-app", "<name>"], { at: "checkout-root" }), frame);
+}
 
 async function run(root: string): Promise<string | undefined> {
   let message: string | undefined;
@@ -531,7 +542,12 @@ async function gatewayPortOf(root: string): Promise<number> {
     // the shim at its root — whatever the cwd, compared whole so neither the bare global
     // command nor a cwd-relative path can sneak in.
     const lines = plain(refused).split(String.fromCharCode(10)).map((line) => line.trim()).filter((line) => line.startsWith("→"));
-    const fromRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
+    // The same rendering the refusal row gets: the run's own path-bearing program is the
+    // verbatim launch now (launchOf's no-facts rows), so the re-rooted row spells the
+    // checkout's shim and — under [cmd, pwsh] — carries the bash note. The frame is built
+    // with the same host facts and a paste directory at the checkout root, where the row
+    // pastes.
+    const fromRoot = renderAdviceAtOwnRoot();
     // The checkout's own copy already spells the shim at the root, so the bash row is
     // dropped and the takeover note is the second line.
     check("init inside a checkout refuses with the checkout advice", lines.length, 2);
@@ -577,7 +593,7 @@ async function gatewayPortOf(root: string): Promise<number> {
     const up = relative(resolve(nested), decision.checkout!).split(sep).join("/");
     const refusing: Invocation = { program: `${up}/clawforge`, mode: "checkout", audience: "terminal" };
     const [row] = decision.refusals[0]!.advice;
-    const atRoot = renderAdvice(command(["new-app", "<name>"]), shimInvocation());
+    const atRoot = renderAdviceAtOwnRoot();
     check("the row spells the gate from the checkout root the sentence names", renderAdvice(row, refusing), atRoot);
     checkTrue("the bash row is dropped when the re-rooted row 1 already is the shim", decision.refusals[0]!.advice.length === 1);
     checkTrue("no row spells a path out of the checkout root", !renderAdvice(row, refusing).includes(".."));

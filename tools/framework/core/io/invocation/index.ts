@@ -1,11 +1,12 @@
 // How this process was invoked, for the commands its messages tell a user to run: the
-// monorepo gate and the committed shim use the checkout spelling (SHIM_PROGRAM, render.ts);
+// monorepo gate and the committed shim use the checkout spelling (SHIM_PROGRAM, frame.ts);
 // the system-wide command is plain `clawforge`, where the checkout spelling does not even
-// run in cmd.exe or PowerShell. Entry points set it once, from the environment or their
-// own default, before any command runs; the value is read everywhere through the
-// accessors, never re-derived from strings.
+// run in cmd.exe or PowerShell. Entry points set the frame once, from the environment or
+// their own constructors (frame.ts), before any command runs; the value is read everywhere
+// through the accessors, never re-derived from strings.
 
-import { SHIM_PROGRAM } from "./render.ts";
+import { SHIM_PROGRAM } from "./frame.ts";
+import { frameFromInvocation, handoverOf, type Frame, type HostPlatform } from "./frame.ts";
 
 /** The invocation travels to child gate processes as versioned JSON (see serializeInvocation). */
 export const INVOCATION_ENV = "CLAWFORGE_INVOCATION";
@@ -36,10 +37,43 @@ export interface Invocation {
 }
 
 let current: Invocation | undefined;
+let installed: Frame | undefined;
 
-/** Set once per process, at the entry, before any command runs. */
+/** The host facts of this process, as the frame constructors want them. msys is false:
+ *  the quoting decision and the bash fallback must not depend on the environment a run
+ *  inherits (the checks and the golden pin it; MSYSTEM's inheritance is unreliable on
+ *  Windows anyway — design risk 3). A producer may pass its own fact instead. */
+export function frameFacts(): { host: HostPlatform; msys: boolean; cwd: string } {
+  return {
+    host: process.platform === "win32" ? "win32" : "posix",
+    msys: false,
+    cwd: process.cwd(),
+  };
+}
+
+/** Installs a frame built through frame.ts's constructors: the entry's one install. The
+ *  v1 Invocation children read is derived from it (handoverOf). */
+export function installFrame(frame: Frame): void {
+  installed = frame;
+  current = handoverOf(frame);
+}
+
+/** The frame this run is, derived from the invocation when only that was set. */
+export function currentFrame(): Frame {
+  return installed ??= frameFromInvocation(invocation(), frameFacts());
+}
+
+/** The frame an Invocation stands for, without installing it: renderers read the frame of
+ *  the invocation they are handed, never the process-global one. */
+export function frameOf(on: Invocation): Frame {
+  return frameFromInvocation(on, frameFacts());
+}
+
+/** The invocation a frame is read back from, for entries that hold a hand-over: the frame
+ *  is derived from its spelling, and the value is stored as handed. */
 export function setInvocation(value: Invocation): void {
   current = value;
+  installed = frameFromInvocation(value, frameFacts());
 }
 
 export function invocation(): Invocation {

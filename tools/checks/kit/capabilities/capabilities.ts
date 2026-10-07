@@ -1,5 +1,5 @@
 // Host capabilities a check file's `// check:requires <cap>[, <cap>...]` header can name
-// (discover.ts parses the marker; run.ts decides whether to start the file). Each capability
+// (run.ts's discover half parses the marker; run.ts decides whether to start the file). Each capability
 // is a real, checkable fact about THIS host, probed lazily — only when some selected check
 // actually requires it — and cached for the run: a capability is asked about at most once.
 //

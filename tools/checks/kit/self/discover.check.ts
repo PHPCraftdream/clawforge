@@ -2,8 +2,7 @@
 // host capability it cannot run without with `// check:requires <cap>[, <cap>...]`.
 
 import { check, finish } from "#checks/kit/harness.ts";
-import { discoverChecks, parseRequires, splitExclusive } from "#checks/kit/discover.ts";
-import { runChecks } from "#checks/kit/run.ts";
+import { discoverChecks, parseRequires, runChecks, splitExclusive } from "#checks/kit/run.ts";
 import { appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";

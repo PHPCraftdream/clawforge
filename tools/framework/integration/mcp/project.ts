@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
 import { warn } from "../../core/io/log.ts";
 import { INVOCATION_VERSION } from "../../core/io/invocation/index.ts";
+import { SHIM_PROGRAM, spell, type Launch } from "../../core/io/invocation/frame.ts";
 
 export type McpClient = "claude" | "codex" | "both";
 export type DeploymentMode = "installed" | "monorepo";
@@ -16,6 +17,13 @@ export const CLAWFORGE_CONTROL_MCP_NAME = "clawforge-control";
 /** Filename of the committed launcher, written next to app.ts by new-app, init and
  *  mcp-setup. No secrets, no machine paths — safe to commit (unlike .mcp.json/.codex/). */
 export const MCP_LAUNCHER_FILENAME = "mcp-launch.mjs";
+
+// The monorepo launcher's launch, shape only (design §4.1): the checkout gate two levels
+// above the apps/<name> directory the launcher is committed into. The program spelling is
+// the frame's, not this file's — one source, so the emitted text stays byte-identical.
+const LAUNCHER_ROOT = "/clawforge-mcp-launcher";
+const LAUNCHER_LAUNCH: Launch = { kind: "checkout-shim", root: LAUNCHER_ROOT };
+const MONOREPO_LAUNCHER_PROGRAM = spell(LAUNCHER_LAUNCH, "posix", "posix", `${LAUNCHER_ROOT}/apps/demo`) ?? SHIM_PROGRAM;
 
 /** Runs this monorepo checkout's own source gate, two levels above the deployment. */
 const MONOREPO_LAUNCHER = `// ClawForge MCP launcher: committed next to app.ts. Runs this monorepo checkout's own
@@ -34,8 +42,8 @@ const entry = resolve(root, "../../tools/clawforge.ts");
 process.chdir(root);
 // Hints must resolve from this directory: the shim is two levels up. Both variables: new
 // frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
-process.env.CLAWFORGE_INVOCATION = JSON.stringify({ version: ${INVOCATION_VERSION}, program: "../../clawforge", mode: "checkout", app: { name: basename(root), selectedBy: "flag" }, audience: "mcp" });
-process.env.CLAWFORGE_INVOKED_AS = "../../clawforge --app " + basename(root);
+process.env.CLAWFORGE_INVOCATION = JSON.stringify({ version: ${INVOCATION_VERSION}, program: "${MONOREPO_LAUNCHER_PROGRAM}", mode: "checkout", app: { name: basename(root), selectedBy: "flag" }, audience: "mcp" });
+process.env.CLAWFORGE_INVOKED_AS = "${MONOREPO_LAUNCHER_PROGRAM} --app " + basename(root);
 process.argv = [process.argv[0], entry, "--app", basename(root), action];
 await import(pathToFileURL(entry).href);
 `;

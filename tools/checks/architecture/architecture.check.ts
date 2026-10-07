@@ -26,6 +26,7 @@ import { commandRegistry } from "#framework/integration/gate.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specData, specOf } from "#framework/core/command/index.ts";
 import { measureProseHeld } from "./prose-held.ts";
+import { runFrameLaw } from "#checks/surfaces/frame-law-counter.ts";
 import { CONTROLS } from "#checks/controls/controls.ts";
 import { importedFrameworkSymbols, scanOwnProduct, SCANNER_SELF_CHECKS } from "./own-product.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
@@ -67,6 +68,7 @@ interface Baseline {
   readonly adhocSkips: { readonly comment: string; readonly total: number; readonly exempt: Record<string, ExemptLines> };
   readonly rawArgvScans: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly ownProductExpectations: PerFileMetric;
+  readonly frameLawViolations: { readonly comment: string; readonly violations: Record<string, string>; readonly total: number };
 }
 
 const root = monorepoRoot;
@@ -673,5 +675,15 @@ for (const file of checkFiles) {
 report(perFileRatchet("ownProductExpectations", baseline.ownProductExpectations.files, ownAfter));
 report(ratchet("ownProductExpectations.total", baseline.ownProductExpectations.total, ownTotal, [], []));
 for (const line of ownExempt) process.stderr.write(`    ownProductExpectations exempt: ${line}` + String.fromCharCode(10));
+
+// 11. Frame-law violations — stage 7 S1.2a (invariant I12): the law's own measurement,
+// re-run here so the architecture table sees the same number the law check enforces. The
+// law check (surfaces/frame-law.check.ts) owns the decreasing-only contract with per-key
+// reasons; this ratchet compares the measured total to the recorded total so an unrecorded
+// change shows up in THIS table too. The counter is pure (no baseline read, no harness),
+// and its imports (render + resolvers + the producer registry) only ADD registrations
+// (useGateCommands, the surface registry) — no process-global the earlier measurements
+// above depend on is disturbed, so it runs in-process with the rest.
+report(ratchet("frameLawViolations", baseline.frameLawViolations.total, runFrameLaw().violations.size));
 
 finish("architecture ratchet");

@@ -16,7 +16,7 @@ import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { FROM_CHECKOUT_ROOT, IN_BASH_NOTE, handoverArgv, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { IN_BASH_NOTE, FROM_CHECKOUT_ROOT, handoverArgv, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { CHECKOUT_ROOT_NOTE, DISPATCHER_COMMANDS } from "#framework/integration/gate.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
@@ -29,7 +29,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { APP_CONFLICT_FROM_ROOT } from "#framework/entry/delegate.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, toolFormCell, type InvocationColumn } from "#checks/golden/advice.ts";
 import { entryDecisionRefusals, gateInlineNoteAdvice, installedFrameRefusals, placeNamingRefusals } from "#checks/golden/matrix.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 const APP_FLAG = "--app";
 const FULL_SELECTION = new Set(["flag", "env", "sole"]);
@@ -60,8 +60,24 @@ function expectedApp(advice: CommandAdvice, on: Invocation, gateWords: ReadonlyS
 /** The line without its trailing note, so the token split below reads the command only.
  *  A paste-conflict row's note is the renderer's own (rf6-fix33), not the advice's, so it
  *  is stripped whatever the advice carries. */
+/** The renderer-appended note suffixes a cell may carry: the advice's own, the paste-
+ *  conflict note (rf6-fix33) and the bash-shim fallback note (O1, S1.2a), alone or — the
+ *  two renderer notes together — comma-joined. Stripping keeps the token split reading
+ *  command words only. */
+const NOTE_ATOMS = [CWD_CONFLICT_NOTE, IN_BASH_NOTE];
+const NOTE_SUFFIXES: readonly string[] = [
+  ...NOTE_ATOMS.map((atom) => `  (${atom})`),
+  `  (${NOTE_ATOMS.join(", ")})`,
+];
 function withoutNote(line: string, advice: CommandAdvice): string {
-  const suffixes = advice.note === undefined ? [`  (${CWD_CONFLICT_NOTE})`] : [`  (${advice.note})`, `  (${advice.note})  (${CWD_CONFLICT_NOTE})`];
+  const suffixes = advice.note === undefined
+    ? NOTE_SUFFIXES
+    : [
+        `  (${advice.note})`,
+        `  (${advice.note})  (${CWD_CONFLICT_NOTE})`,
+        `  (${advice.note})  (${IN_BASH_NOTE})`,
+        ...NOTE_SUFFIXES.map((suffix) => `  (${advice.note})${suffix}`),
+      ];
   for (const suffix of suffixes) if (line.endsWith(suffix)) return line.slice(0, -suffix.length);
   return line;
 }
@@ -85,6 +101,14 @@ const toolByName = new Map<string, Declared>([
 ]);
 const toolByNameEquivalent = (name: string): Declared | undefined => toolByName.get(name);
 
+/** The rendered line split into COMMAND WORDS: a quoted word — the matrix now carries a
+ *  verbatim column whose program needs quoting — is one word, unquoted, so the opener and
+ *  argv comparisons read what would actually be typed, not the quote marks. */
+const WORD = /(?:'[^']*'|"[^"]*"|\S+)/g;
+const commandWords = (line: string): readonly string[] =>
+  (line.match(WORD) ?? []).map((word) =>
+    (word.startsWith("'") && word.endsWith("'")) || (word.startsWith('"') && word.endsWith('"')) ? word.slice(1, -1) : word);
+
 /** P1 — `--app`: between the program and the command word sits exactly one `--app <name>` or
  *  none, and the name is the rule's. */
 for (const { label, advice } of ADVICE_ROWS) {
@@ -92,7 +116,7 @@ for (const { label, advice } of ADVICE_ROWS) {
   for (const column of MATRIX_COLUMNS) {
     if (!("invocation" in column)) continue;
     const where = `${label} under ${column.label}`;
-    const words = withoutNote(renderAdvice(advice, column.invocation), advice).split(" ");
+    const words = commandWords(withoutNote(renderAdvice(advice, column.invocation), advice));
     // A checkout-root row re-roots the program by design (rf6-fix30): the sentence names
     // the checkout root, so the opener is the root spelling, not the column cwd spelling.
     const rooted = advice.at === "checkout-root";
@@ -115,7 +139,7 @@ for (const { label, advice } of ADVICE_ROWS) {
 const SHIM_SPELLING = "./clawforge";
 const SINGLE_QUOTE = "'";
 const bareColumns = MATRIX_COLUMNS.filter((column) => "invocation" in column && column.invocation.program === "clawforge");
-checkTrue("the matrix has bare-program columns", bareColumns.length === 2);
+checkTrue("the matrix has bare-program columns", bareColumns.length === 3);
 for (const { label, advice } of ADVICE_ROWS) {
   for (const column of bareColumns) {
     if (!("invocation" in column)) continue;
@@ -215,13 +239,23 @@ check("renderAdvice single-quotes a shell-active word under the bare program", r
 
 /** The program itself quotes by the same rule (review R9-A R9-4): a hand-set
  *  CLAWFORGE_INVOCATION whose program carries a space must render a line that pastes.
- *  A path spelling gets the POSIX quoting the program's own slashes select. */
+ *  A path spelling is the verbatim launch now, so the rule is the frame's shells':
+ *  POSIX single quotes on a POSIX host, the common double quotes under cmd/pwsh. */
 const SPACED_PROGRAM: Invocation = { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" };
-check(
-  "a spaced program renders quoted under a path spelling",
-  renderAdvice(command(["status"]), SPACED_PROGRAM),
-  `'<programs dir>/clawforge' status`,
-);
+await requires("posix-host", "the spaced program's POSIX quoting", () => {
+  check(
+    "a spaced program renders single-quoted under a path spelling on posix",
+    renderAdvice(command(["status"]), SPACED_PROGRAM),
+    `'<programs dir>/clawforge' status`,
+  );
+});
+await requires("windows-host", "the spaced program's cmd/pwsh quoting", () => {
+  check(
+    "a spaced program renders double-quoted under a path spelling on windows",
+    renderAdvice(command(["status"]), SPACED_PROGRAM),
+    `"<programs dir>/clawforge" status`,
+  );
+});
 /** The three shipped spellings are safe words and must stay byte-identical — the npm bin
  *  wrapper's backslashes included, which POSIX quoting would mangle. */
 const WRAPPER_PROGRAM: Invocation = { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" };
@@ -278,11 +312,20 @@ check(
 const FLAGGED_DEMO: Invocation = { program: "../../clawforge", mode: "checkout", audience: "mcp", app: { name: "demo", selectedBy: "flag" } };
 setInvocation(PATH_SPELLING);
 check("a {clawforge ...} token renders under the invocation it is given", renderProse("run {clawforge up}", FLAGGED_DEMO).split(" "), ["run", "../../clawforge", "--app", "demo", "up"]);
-check(
-  "the {clawforge} program token is quoted like the advice program",
-  renderProse("run {clawforge}", { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" }),
-  "run '<programs dir>/clawforge'",
-);
+await requires("posix-host", "the spaced program's POSIX quoting in prose", () => {
+  check(
+    "the {clawforge} program token is quoted like the advice program on posix",
+    renderProse("run {clawforge}", { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" }),
+    "run '<programs dir>/clawforge'",
+  );
+});
+await requires("windows-host", "the spaced program's cmd/pwsh quoting in prose", () => {
+  check(
+    "the {clawforge} program token is quoted like the advice program on windows",
+    renderProse("run {clawforge}", { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" }),
+    'run "<programs dir>/clawforge"',
+  );
+});
 check("a plain program stays bare in the {clawforge} token", renderProse("run {clawforge}", BARE_PROGRAM).split(" "), ["run", "clawforge"]);
 
 /** P3 — a `shell` line is byte for byte what the advice carries, note included, under every
@@ -489,10 +532,11 @@ const checkPlaceRow = (label: string, advice: Advice): void => {
   }
   for (const column of PLACE_COLUMNS) {
     const rendered = renderAdvice(advice, column.invocation);
-    // A paste-conflict row carries the renderer's own note (rf6-fix33); the command words
-    // are read without it.
-    const noteSuffix = `  (${CWD_CONFLICT_NOTE})`;
-    const cell = rendered.endsWith(noteSuffix) ? rendered.slice(0, -noteSuffix.length) : rendered;
+    // A paste-conflict row carries the renderer's own note (rf6-fix33) and a re-rooted
+    // bash-shim fallback carries the bash note (O1); the command words are read without
+    // either.
+    let cell = rendered;
+    for (const suffix of NOTE_SUFFIXES) if (cell.endsWith(suffix)) cell = cell.slice(0, -suffix.length);
     const root = renderProgram({ ...column.invocation, program: column.rootProgram });
     check(`${label}: spells the checkout root's program for its column`, cell.split(" ")[0], root);
     // After the program and its one optional `--app <name>` pair, what remains must be a

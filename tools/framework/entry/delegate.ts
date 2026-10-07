@@ -15,8 +15,9 @@ import { INVOCATION_ENV, invocation, serializeInvocation, type Invocation } from
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { checkoutRootProgram, renderArgument, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
-import { IN_BASH_NOTE, nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
+import { renderArgument, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
+import { IN_BASH_NOTE, rootedProgram } from "../core/io/invocation/frame.ts";
+import { nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -65,7 +66,7 @@ export function appConflictRefusal(decision: { readonly typed: string; readonly 
   // The frame arrives from the caller (bin.ts's one source, rf6-fix33): the bash row's
   // drop decision and the typed name's quoting spell it, no process-global read.
   const advice: Advice[] = [command([], { app: decision.typed, at: "checkout-root" })];
-  if (checkoutRootProgram(frame.program) !== SHIM_PROGRAM) {
+  if (rootedProgram(frame) !== SHIM_PROGRAM) {
     advice.push(shellLine("posix", renderAdvice(command([], { app: decision.typed }), shimInvocation()), { note: IN_BASH_NOTE }));
   }
   return new UserError(

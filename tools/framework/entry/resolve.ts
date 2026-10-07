@@ -13,7 +13,9 @@ import type { Invocation, InvocationApp } from "../core/io/invocation/index.ts";
 import type { CommandArgument } from "../core/app.ts";
 import { manual } from "../core/io/invocation/advice.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { checkoutRootProgram, CWD_RESOLVING_PROGRAMS, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
+import { CWD_RESOLVING_PROGRAMS, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
+import { IN_BASH_NOTE, rootedProgram } from "../core/io/invocation/frame.ts";
+export { IN_BASH_NOTE };
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
 import { tokenize } from "../core/command/parse.ts";
@@ -45,7 +47,6 @@ export interface FsProbe {
  *  prints instead of restating it. */
 export const ALREADY_HOLDS_APP = "already holds app.ts";
 export const NOTHING_TO_INSTALL_NOTE = "nothing to install";
-export const IN_BASH_NOTE = "in bash";
 export const NOT_INITIALISED_NOTE = "has not been initialised as an OpenClaw deployment yet";
 export const FROM_CHECKOUT_ROOT = "run the gate from its root";
 export const CANNOT_LOAD = "cannot load";
@@ -471,7 +472,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
     // the copy this run is (the at mark re-roots it in the renderer); row 2 is the bash
     // shim's own spelling, dropped when row 1 already is it.
     const advice: Advice[] = [command(["new-app", "<name>"], { at: "checkout-root" })];
-    if (checkoutRootProgram(frame.program) !== SHIM_PROGRAM) {
+    if (rootedProgram(frame) !== SHIM_PROGRAM) {
       advice.push(shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: IN_BASH_NOTE }));
     }
     if (reusable) {
@@ -547,7 +548,7 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
         new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
             command([], { at: "checkout-root" }),
-            ...(checkoutRootProgram(frame.program) === SHIM_PROGRAM
+            ...(rootedProgram(frame) === SHIM_PROGRAM
               ? []
               : [shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: IN_BASH_NOTE })]),
           ],

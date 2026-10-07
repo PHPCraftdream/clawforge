@@ -50,10 +50,10 @@ export const CONTROLS: readonly ControlDecl[] = [
     note: "advice naming another deployment must keep its own --app, not the current selection's",
     product: "tools/framework/core/io/invocation/render.ts",
     search: `  if (advice.app !== undefined) {
-    parts.push("--app", renderArgument(advice.app, frame.program));
+    parts.push("--app", quote(advice.app));
   } else if (`,
     replace: `  if (advice.app !== undefined && false) {
-    parts.push("--app", renderArgument(advice.app, frame.program));
+    parts.push("--app", quote(advice.app));
   } else if (`,
     check: "tools/checks/surfaces/advice-matrix.check.ts",
     fragment: "--app names the rule's deployment",
@@ -281,5 +281,25 @@ export const CONTROLS: readonly ControlDecl[] = [
     replace: `raw[0] === "-Z" || /\\s`,
     check: "tools/checks/foundation/core/command/pipeline/property.check.ts",
     fragment: "deploy: <target>",
+  },
+  {
+    id: "C30",
+    finding: "S1.2a-D1",
+    note: "the checkout-root transition re-roots by the KIND of launch; deciding by a slash in the program spelling puts npm's Windows bin wrapper at the checkout root, where it does not exist",
+    product: "tools/framework/core/io/invocation/render.ts",
+    search: `  let program = handed;`,
+    replace: `  let program = handed.includes("/") ? handed : SHIM_PROGRAM;`,
+    check: "tools/checks/surfaces/frame-law.check.ts",
+    fragment: "defaultLaunch: local package (win32) | ",
+  },
+  {
+    id: "C31",
+    finding: "S1.2a-quoting",
+    note: "argument quoting follows the frame's shells (double-quote rule for a frame that pastes into cmd.exe and PowerShell); collapsing both frames onto the POSIX single-quote rule breaks the pasted words in cmd",
+    product: "tools/framework/core/io/invocation/render.ts",
+    search: `  const quote = (word: string): string => (posixOnly ? posixArgument(word) : shellArgument(word));`,
+    replace: `  const quote = (word: string): string => posixArgument(word);`,
+    check: "tools/checks/surfaces/frame-law.check.ts",
+    fragment: "law: quoting round-trip",
   },
 ];

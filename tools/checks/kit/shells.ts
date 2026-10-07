@@ -1,0 +1,216 @@
+// Pure in-memory tokenization model for the three shells ClawForge spells lines for
+// (stage-7 S1.2a, moved from S1.6 per O6). It answers "what words does a paste of this
+// line yield in this shell" without a shell — so paste-shape reasoning (e.g. the
+// renderer's `cd <path> && cmd` prefix) can be asserted in checks, not guessed.
+
+import type { Shell } from "#framework/core/io/invocation/advice.ts";
+
+export type { Shell };
+
+/** A line shaped like the renderer's paste: a leading `cd <path> &&` (posix) plus the
+ *  command words that follow. `cd` is absent when the line has no such prefix. */
+export interface PastedLine {
+  readonly cd?: string;
+  readonly words: string[];
+}
+
+const SHELL_SPACES = "\u0020\t\n\r";
+
+/** Splits a posix line on top-level `&&` and tokenizes the final segment: a paste of
+ *  `cd p && cmd` into bash only *executes* cmd's words after cd has run. cmd/pwsh
+ *  have no `&&` chaining here, so the whole line is one segment. */
+export function tokenizeLine(line: string, shell: Shell): string[] {
+  if (shell === "posix") {
+    const segments = splitTopLevelAnd(line);
+    return tokenizePosix(segments[segments.length - 1]);
+  }
+  return shell === "cmd" ? tokenizeCmd(line) : tokenizePwsh(line);
+}
+
+/** Recognizes the renderer's paste shape: under posix, a leading `cd <path> &&` lifts the
+ *  cd-path out and tokenizes the remainder; any other line (or shell) yields just words. */
+export function parsePaste(line: string, shell: Shell): PastedLine {
+  if (shell === "posix") {
+    const segments = splitTopLevelAnd(line);
+    if (segments.length > 1) {
+      const head = tokenizePosix(segments[0]);
+      if (head.length === 2 && head[0] === "cd") {
+        return { cd: head[1], words: tokenizePosix(segments[segments.length - 1]) };
+      }
+    }
+  }
+  return { words: tokenizeLine(line, shell) };
+}
+
+/** Splits on `&&` only when it sits outside quotes/escapes — a quoted "&&" is a word, not
+ *  a chain. The `&&` check lives after the quote branches, so a split only happens with no
+ *  quote open (choice a): a quoted `&&` is a word, and an open quote spanning `&&` means
+ *  bash sees one segment — the line stays whole and is tokenized as such. Empty segments
+ *  (line starts with `&&`) are dropped, matching bash. */
+function splitTopLevelAnd(line: string): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | undefined;
+  let escaped = false;
+  for (const char of line) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+    } else if (quote !== undefined) {
+      if (char === "\\") {
+        escaped = true;
+        current += char;
+      } else if (char === quote) {
+        quote = undefined;
+        current += char; // keep the closing quote: segments are re-tokenized verbatim
+      } else current += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      current += char;
+    } else if (char === "\\") {
+      escaped = true;
+      current += char;
+    } else if (current.trimEnd().endsWith("&") && char === "&") {
+      current = current.trimEnd().slice(0, -1);
+      if (current.trim() !== "") segments.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  if (current.trim() !== "") segments.push(current.trim());
+  return segments.length > 0 ? segments : [line.trim()];
+}
+
+/** bash-like words: single quotes are literal, double quotes literal except that a
+ *  backslash still escapes, a backslash outside quotes escapes the next char (including a
+ *  quote or space). An unterminated quote runs to end-of-line and folds the rest into the
+ *  last word — the model does not error, it models what a shell actually receives. */
+function tokenizePosix(line: string): string[] {
+  const words: string[] = [];
+  let word = "";
+  let quote: string | undefined;
+  let escaped = false;
+  let started = false;
+  const flush = () => {
+    if (started) words.push(word);
+    word = "";
+    started = false;
+  };
+  for (const char of line) {
+    if (escaped) {
+      word += char;
+      escaped = false;
+    } else if (quote === "'") {
+      if (char === "'") quote = undefined;
+      else word += char;
+    } else if (quote === '"') {
+      if (char === '"') quote = undefined;
+      else if (char === "\\") escaped = true;
+      else word += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      started = true;
+    } else if (char === "\\") {
+      escaped = true;
+      started = true;
+    } else if (SHELL_SPACES.includes(char)) {
+      flush();
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  flush();
+  return words;
+}
+
+/** cmd words: double quotes toggle (no single-quote quoting — they are ordinary chars),
+ *  `^` escapes the next char, and the metacharacters & | < > end a word like a space does
+ *  (the redirection/chaining itself is not modeled). `%VAR%` is left verbatim: expansion
+ *  happens inside cmd.exe, and the model's job is word boundaries, not values. An
+ *  unterminated quote folds the rest of the line into the last word. */
+function tokenizeCmd(line: string): string[] {
+  const words: string[] = [];
+  let word = "";
+  let quoted = false;
+  let escaped = false;
+  let started = false;
+  const flush = () => {
+    if (started) words.push(word);
+    word = "";
+    started = false;
+  };
+  for (const char of line) {
+    if (escaped) {
+      word += char;
+      escaped = false;
+    } else if (char === "^") {
+      escaped = true;
+      started = true;
+    } else if (char === '"') {
+      quoted = !quoted;
+      started = true;
+    } else if (!quoted && (SHELL_SPACES.includes(char) || char === "&" || char === "|" || char === "<" || char === ">")) {
+      flush();
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  flush();
+  return words;
+}
+
+/** pwsh words: single quotes fully literal, double quotes literal but `$name` /
+ *  `$env:name` sequences are kept as one unbroken run — expansion happens in pwsh at run
+ *  time, so the model records the reference, not a value. A backtick escapes the next
+ *  char (including a quote or space). An unterminated quote folds the rest of the line
+ *  into the last word. */
+function tokenizePwsh(line: string): string[] {
+  const words: string[] = [];
+  let word = "";
+  let quote: string | undefined;
+  let escaped = false;
+  let started = false;
+  const flush = () => {
+    if (started) words.push(word);
+    word = "";
+    started = false;
+  };
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (escaped) {
+      word += char;
+      escaped = false;
+    } else if (quote === "'") {
+      // pwsh single quotes are fully literal: a backtick is data, and '' is an escaped quote.
+      if (char === "'" && line[index + 1] === "'") {
+        word += "'";
+        index += 1;
+      } else if (char === "'") quote = undefined;
+      else word += char;
+    } else if (char === "`" && quote === undefined) {
+      // Backtick escaping only applies outside quotes; inside double quotes it escapes below.
+      escaped = true;
+      started = true;
+    } else if (quote === '"') {
+      if (char === "`") escaped = true;
+      else if (char === '"') quote = undefined;
+      else {
+        word += char;
+        if (char === "$") escaped = true; // keep the whole $name run inside the word
+      }
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      started = true;
+    } else if (SHELL_SPACES.includes(char)) {
+      flush();
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  flush();
+  return words;
+}

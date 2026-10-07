@@ -6,7 +6,8 @@
 // regenerating the expected file.
 
 import { command, manual, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderFrameAdvice, SHIM_PROGRAM, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import type { Frame } from "#framework/core/io/invocation/frame.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -17,6 +18,7 @@ import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
 import { versionGateCommand } from "#framework/integration/version.ts";
 import { entryRefusalAdvice, gateInlineNoteAdvice } from "./matrix.ts";
+import { FRAME_PRODUCERS } from "./frames.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
 import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
@@ -139,14 +141,18 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   ...gateInlineNoteAdvice(),
 ];
 
-/** One matrix column: the invocation every row renders under, and — pinned as a literal,
- *  not computed with checkoutRootProgram — the program the checkout-root rows must open
- *  with for this column (rf6-fix33): the bare system-wide name keeps running from the
- *  root, every other spelling is the checkout's own committed shim there. */
+/** One matrix column: the invocation every row renders under, the producer frame that
+ *  invocation now comes FROM (the producer registry is the source of the columns — when
+ *  set, the cell renders through the frame itself, the renderer's real input), and —
+ *  pinned as a literal, not computed with checkoutRootProgram — the program the
+ *  checkout-root rows must open with for this column (rf6-fix33): the bare system-wide
+ *  name keeps running from the root, every other spelling is the checkout's own committed
+ *  shim there. */
 export interface InvocationColumn {
   readonly label: string;
   readonly invocation: Invocation;
   readonly rootProgram: string;
+  readonly frame?: Frame;
 }
 
 /** The tool-form column: the MCP `ToolStep` view of a clawforge advice (design 1.4), which
@@ -170,27 +176,16 @@ export function toolFormCell(advice: Advice): string {
 }
 
 /** The invocations an entry can name, in the order the snapshot renders them (design 4.2):
- *  the checkout root and every way a deployment is selected, the installed command and its
- *  two hand-overs, and the MCP launcher's two-levels-up spelling. */
+ *  one column per frame producer (the registry IS the column set — every way a producer
+ *  can start the process), then the tool form. The root program derives from each frame's
+ *  own launch kind (the rootedLaunch rule, rf6-fix33). */
 export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
-  { label: "checkout default (openclaw/default)", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "default" }, audience: "terminal" } },
-  { label: "--app openclaw", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "openclaw", selectedBy: "flag" }, audience: "terminal" } },
-  { label: "OC_APP=staging", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "staging", selectedBy: "env" }, audience: "terminal" } },
-  { label: "--app demo", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
-  { label: "OC_APP=demo", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "env" }, audience: "terminal" } },
-  { label: "sole demo", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" } },
-  { label: "cwd app1", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", app: { name: "app1", selectedBy: "cwd" }, audience: "terminal" } },
-  { label: "gateway, no app yet", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" } },
-  { label: "global (clawforge)", rootProgram: "clawforge", invocation: { program: "clawforge", mode: "installed", audience: "terminal" } },
-  { label: "global, handed to the checkout gate with --app demo", rootProgram: "clawforge", invocation: { program: "clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" } },
-  { label: "shim init (./clawforge, installed)", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "installed", audience: "terminal" } },
-  // entry/root.ts is the only writer of local-package: the committed shim spelling on POSIX,
-  // npm's bin wrapper on Windows, where the bash-only shim does not run (WINDOWS_BIN_PROGRAM).
-  { label: "local package", rootProgram: SHIM_PROGRAM, invocation: { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" } },
-  // The wrapper does not exist at the checkout root (rf6-fix33): the root's own entry is
-  // the committed shim, so that is the pinned opener for this column too.
-  { label: "local package (win32)", rootProgram: SHIM_PROGRAM, invocation: { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" } },
-  { label: "checkout MCP launcher (../../clawforge, demo/flag)", rootProgram: SHIM_PROGRAM, invocation: { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" } },
+  ...FRAME_PRODUCERS.map((producer): InvocationColumn => ({
+    label: producer.label,
+    invocation: producer.invocation,
+    rootProgram: producer.frame.launch.kind === "system" ? "clawforge" : SHIM_PROGRAM,
+    frame: producer.frame,
+  })),
   { label: TOOL_FORM_LABEL, cell: TOOL_FORM_CELL },
 ];
 
@@ -201,7 +196,10 @@ const CHECKOUT_ROOT: Invocation = { program: SHIM_PROGRAM, mode: "checkout", aud
 function renderCell(advice: Advice, column: MatrixColumn): string {
   if (!("invocation" in column)) return toolFormCell(advice);
   setInvocation(column.invocation);
-  return renderAdvice(advice);
+  // The frame is the renderer's real input: when the column carries its producer's frame,
+  // the cell renders through it — the launch, shells, cwd and places decide, not the
+  // invocation's string spelling.
+  return column.frame === undefined ? renderAdvice(advice) : renderFrameAdvice(advice, column.frame);
 }
 
 /** The whole matrix as deterministic text; golden.check.ts compares it byte for byte with

@@ -18,7 +18,8 @@ import { pathToFileURL } from "node:url";
 import { log, info, die } from "../../core/io/log.ts";
 import { command } from "../../core/io/invocation/advice.ts";
 import { invocation } from "../../core/io/invocation/index.ts";
-import { checkoutRootProgram, commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
+import { commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
+import { rootedProgram } from "../../core/io/invocation/frame.ts";
 import { appsRootFor, monorepoRoot, parseEnv } from "../../core/env.ts";
 import { newName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
@@ -96,7 +97,7 @@ export function gitInitAdvice(name: string): string {
   // One frame for the whole sentence — the checkout root, where the cd lands and the gate
   // resolves: the lock names the new deployment and spells this copy's program from there.
   const lock = renderAdvice(command(["lock"], { app: name }), {
-    program: checkoutRootProgram(invocation().program),
+    program: rootedProgram(invocation()),
     mode: "checkout",
     audience: "terminal",
   });

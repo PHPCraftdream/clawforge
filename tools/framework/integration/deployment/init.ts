@@ -12,7 +12,7 @@
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
 import { frameworkPackage, frameworkRoot } from "../../core/env.ts";
-import { INVOCATION_VERSION } from "../../core/io/invocation/index.ts";
+import { handoverJson, spell, type Launch } from "../../core/io/invocation/frame.ts";
 import { renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
 import { command } from "../../core/io/invocation/advice.ts";
 import { commandLine, SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
@@ -63,14 +63,21 @@ const DESIRED_STATE = `[
 // Bash-only, same as this monorepo's own; Windows users can use npm's
 // generated node_modules/.bin/clawforge.cmd or .ps1 instead. Without a local install it
 // hands over to a system-wide `clawforge`.
+// The shim's own hand-over, spelled by the frame constructors (design §4.1): the
+// deployment shim the committed shim names, and its v1 JSON — one source, so the emitted
+// text stays byte-identical with every other writer's (decision O7).
+const SHIM_LAUNCH: Launch = { kind: "deployment-shim", root: "" };
+const SHIM_HANDOVER = handoverJson(SHIM_LAUNCH, "terminal");
+const SHIM_SPELLING = spell(SHIM_LAUNCH, "posix", "posix", undefined) ?? SHIM_PROGRAM;
+
 export const SHIM = `#!/usr/bin/env bash
 # Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
 # without typing a package path or npx by hand.
 set -Eeuo pipefail
 # Hints in the CLI say "./clawforge" for this entry, "clawforge" for the system-wide command.
 # Both variables: new frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
-export CLAWFORGE_INVOCATION='{"version":${INVOCATION_VERSION},"program":"./clawforge","mode":"checkout","audience":"terminal"}'
-export CLAWFORGE_INVOKED_AS=./clawforge
+export CLAWFORGE_INVOCATION='${SHIM_HANDOVER}'
+export CLAWFORGE_INVOKED_AS=${SHIM_SPELLING}
 DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 node_bin=""
 for candidate in node node.exe /usr/local/bin/node "/c/Program Files/nodejs/node.exe" "/mnt/c/Program Files/nodejs/node.exe"; do

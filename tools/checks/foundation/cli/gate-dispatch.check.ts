@@ -7,7 +7,7 @@
 //     used to be the only answer no matter what argv[0] actually was;
 //   - a checkout holding exactly one deployment is used automatically when neither --app nor
 //     OC_APP named a (missing) one (tested as a pure decision, never through the real apps/);
-//   - `check`'s own substring filter (selectChecks in tools/checks/kit/discover.ts) is the same kind
+//   - `check`'s own substring filter (selectChecks in tools/checks/kit/run.ts) is the same kind
 //     of pure boundary, covered here rather than in a new file (foundation/cli/ is already at
 //     the 7-entries-per-directory limit — see CONTRIBUTING.md, "Source layout");
 //   - --version/-v/version answer from an empty directory, with no deployment resolved at all
@@ -44,7 +44,7 @@ import { GROUP_HEADINGS } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { command, manual } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
-import { selectChecks } from "#checks/kit/discover.ts";
+import { selectChecks } from "#checks/kit/run.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";

@@ -27,8 +27,8 @@ import { helpEntryLine } from "./framework/core/io/help-render.ts";
 import type { ArgumentSpec } from "./framework/core/command/spec.ts";
 import { reportError, info, UserError } from "./framework/core/io/log.ts";
 import { command } from "./framework/core/io/invocation/advice.ts";
-import { SHIM_PROGRAM } from "./framework/core/io/invocation/render.ts";
-import { invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
+import { checkoutGateFrame } from "./framework/core/io/invocation/frame.ts";
+import { frameFacts, installFrame, invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
 import { useGateCommands } from "./framework/core/io/invocation/render.ts";
 import { monorepoRoot, appsRootFor } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
@@ -47,9 +47,13 @@ import { resolve as pathResolve } from "node:path";
 resolveFrameworkFromSources();
 
 // A hand-over from the system-wide command or a launcher names itself; otherwise this is
-// the checkout's committed gate script.
+// the checkout's committed gate script — its own frame, built once (frame.ts).
 const handedOver = takeInvocationFromEnv();
-setInvocation(handedOver ?? { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
+if (handedOver === undefined) {
+  installFrame(checkoutGateFrame(monorepoRoot, frameFacts()));
+} else {
+  setInvocation(handedOver);
+}
 const argv = normalizeVersionAlias(process.argv.slice(2));
 
 // The gate's own commands, one list from entry/registry.ts — the declared check/new-app/

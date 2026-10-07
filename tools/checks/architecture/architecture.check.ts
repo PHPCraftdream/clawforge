@@ -6,7 +6,8 @@
 // same commit as the change that reduced it, so a decrease is never silently lost.
 //
 // Per-file counts are stored for the location-based metrics (dotClawforgeLiterals,
-// imageStringOps, prosePins) so a failure names the files that grew.
+// imageStringOps, prosePins) so a failure names the files that grew; the two stage-7 S2.5
+// plain counts live in ./command-layer/kind-casts.ts alongside their counters.
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
@@ -26,6 +27,7 @@ import { commandRegistry } from "#framework/integration/gate.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specData, specOf } from "#framework/core/command/index.ts";
 import { measureProseHeld } from "./prose-held.ts";
+import { grammarCallsInRun, kindCastsOutsideValues, stage7S25Boundaries } from "./command-layer/kind-casts.ts";
 import { runFrameLaw } from "#checks/surfaces/frame-law-counter.ts";
 import { CONTROLS } from "#checks/controls/controls.ts";
 import { importedFrameworkSymbols, scanOwnProduct, SCANNER_SELF_CHECKS } from "./own-product.ts";
@@ -73,6 +75,8 @@ interface Baseline {
   readonly frameReads: { readonly comment: string; readonly total: number };
   readonly frameInstalls: PerFileMetric;
   readonly modeDeciders: PerFileMetric;
+  readonly kindCastsOutsideValues: { readonly comment: string; readonly total: number };
+  readonly grammarCallsInRun: { readonly comment: string; readonly total: number };
 }
 
 const root = monorepoRoot;
@@ -512,7 +516,6 @@ for (const file of checkFiles) {
 report(ratchet("proseHeld", baseline.proseHeld.total, proseHeldCount, [], []));
 for (const [file, count] of Object.entries(proseHeldLines)) process.stderr.write(`    proseHeld: ${count} in ${file}` + String.fromCharCode(10));
 
-
 // 7. Retired symbols — stage 5 (rf5-completion C1): names the command registry made
 // structural that must not reappear anywhere under tools/ outside this check's own directory
 // (excluded so the guard can name them here). A new occurrence fails the build.
@@ -689,7 +692,9 @@ for (const line of ownExempt) process.stderr.write(`    ownProductExpectations e
 // (useGateCommands, the surface registry) — no process-global the earlier measurements
 // above depend on is disturbed, so it runs in-process with the rest.
 report(ratchet("frameLawViolations", baseline.frameLawViolations.total, runFrameLaw().violations.size));
-
 await runFrameRatchets(root, frameworkFiles, rel, baseline);
+// 12–15. Counters in ./command-layer/kind-casts.ts: brand casts, grammar in run bodies, S2.5 layer boundaries. Expect 0.
+const s25 = { kindCastsOutsideValues: await kindCastsOutsideValues(), grammarCallsInRun: await grammarCallsInRun(), ...(await stage7S25Boundaries()) };
+for (const [name, actual] of Object.entries(s25)) report(ratchet(name, (baseline as unknown as Record<string, { readonly total: number }>)[name].total, actual, [], []));
 
 finish("architecture ratchet");

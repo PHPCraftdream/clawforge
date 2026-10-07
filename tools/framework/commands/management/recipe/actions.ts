@@ -2,7 +2,7 @@
 // recipe() picks the action, gates it through the instance lock, then calls runRecipeAction
 // here to dispatch to one of these.
 
-import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
@@ -16,7 +16,13 @@ import {
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
 import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
-import { createName, readName } from "#src/core/values/names.ts";
+import type { RecipeName } from "#src/core/values/names.ts";
+import type { LocalRecipeSource, RecipeRef } from "#src/core/values/plan.ts";
+
+/** A recipe proven to exist: the reader grammar's name for actions that mint one (`new`),
+ *  the pipeline-resolved RecipeRef for every action that addresses an existing recipe
+ *  (S2.5). Both are string brands, so the runs need no cast. */
+type ExistingRecipe = RecipeName | RecipeRef;
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
 import { importHookModule } from "./hook-runtime.ts";
@@ -26,8 +32,8 @@ import { importHookModule } from "./hook-runtime.ts";
  *  verify is deliberately not among them: it runs with the same Context prepare.ts gets,
  *  which may mutate the target, so the framework can't know a given hook is read-only. */
 
-async function stackFor(ctx: Context, name: string) {
-  const recipe = await loadRecipe(readName("recipe", name));
+async function stackFor(ctx: Context, name: ExistingRecipe) {
+  const recipe = await loadRecipe(name);
   return { recipe, stack: recipeStack(ctx, name, recipe.definitionPath) };
 }
 
@@ -199,30 +205,24 @@ export function importNameOf(source: string, newName: string | undefined): strin
   return newName ?? basename(resolve(source));
 }
 
-export async function runImportAction(name: string, newNameArg: string | undefined): Promise<void> {
-  const source = resolve(name);
-  const importedName = importNameOf(name, newNameArg);
-  createName("recipe", importedName);
-  try { await access(resolve(source, "recipe.json")); } catch { die(`recipe source has no recipe.json: ${source}`); }
+export async function runImportAction(source: LocalRecipeSource, name: RecipeName): Promise<void> {
+  // The source's recipe.json and the destination's absence are the prepare stage's own
+  // facts (the kinds' resolve and the action's prepare) — run starts at the copy itself.
+  const sourcePath = resolve(source.path);
+  const importedName = name;
   const destination = resolve(recipesDirectory(), importedName);
-  try {
-    await access(destination);
-    die(`recipe "${importedName}" already exists at ${destination}`);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
   // Same symlink resolution and containment as set build and the provision-agent mirror
   // (security/recipe-portable-content.ts), so import can't copy a link the other two refuse.
-  const { files, excluded } = await collectPortableRecipeFiles(source).catch((error: unknown) =>
+  const { files, excluded } = await collectPortableRecipeFiles(sourcePath).catch((error: unknown) =>
     die(error instanceof Error ? error.message : String(error)),
   );
   for (const rel of files) {
     const target = resolve(destination, ...rel.split("/"));
     await mkdir(dirname(target), { recursive: true });
-    await copyFile(resolve(source, ...rel.split("/")), target);
+    await copyFile(resolve(sourcePath, ...rel.split("/")), target);
   }
   log(`imported recipe "${importedName}"`);
-  info(`source: ${source}`);
+  info(`source: ${sourcePath}`);
   info(`destination: ${destination}`);
   if (excluded.length > 0) {
     const shown = excluded.slice(0, SKIPPED_SUMMARY_LIMIT).map((entry) => `${entry.path} (${entry.reason})`);
@@ -284,15 +284,9 @@ export async function verify(): Promise<{ ok: boolean }> {
 `;
 }
 
-export async function runNewAction(name: string, withHooks: boolean): Promise<void> {
-  createName("recipe", name);
+export async function runNewAction(name: RecipeName, withHooks: boolean): Promise<void> {
+  // The name's grammar and the destination's absence are parse/prepare facts (S2.5).
   const destination = resolve(recipesDirectory(), name);
-  try {
-    await access(destination);
-    die(`recipe "${name}" already exists at ${destination}`);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
   await mkdir(destination, { recursive: true });
   await writeFile(resolve(destination, "recipe.json"), `${JSON.stringify({ description: `TODO: describe what ${name} deploys` }, null, 2)}\n`, "utf8");
   await writeFile(resolve(destination, "compose.yml"), NEW_RECIPE_COMPOSE, "utf8");
@@ -306,17 +300,17 @@ export async function runNewAction(name: string, withHooks: boolean): Promise<vo
   if (withHooks) info("prepare.ts and verify.ts are commented stubs — uncomment and edit before they run");
 }
 
-export async function runVerifyAction(ctx: Context, name: string): Promise<void> {
+export async function runVerifyAction(ctx: Context, name: ExistingRecipe): Promise<void> {
   const { recipe: spec } = await stackFor(ctx, name);
   await runRecipeHook(ctx, spec, "verify");
 }
 
-export async function runOnboardAction(ctx: Context, name: string): Promise<void> {
+export async function runOnboardAction(ctx: Context, name: ExistingRecipe): Promise<void> {
   const { recipe: spec } = await stackFor(ctx, name);
   await runRecipeHook(ctx, spec, "onboard");
 }
 
-export async function runDiagnoseAction(ctx: Context, name: string, tail: number | undefined): Promise<void> {
+export async function runDiagnoseAction(ctx: Context, name: ExistingRecipe, tail: number | undefined): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
   const running = await stack.isRunning();
   // Every service in the recipe's compose project, not just one — a multi-container recipe
@@ -353,7 +347,7 @@ export async function runDiagnoseAction(ctx: Context, name: string, tail: number
  *  missing declared variables) plus whether the stack is already running — nothing is built,
  *  started or written. Does not cover: build output, compose's own readiness probing, or the
  *  prepare/afterStart hooks' side effects — those only run for a real install. */
-export async function runInstallDryRun(ctx: Context, name: string, forceDisabled: boolean): Promise<void> {
+export async function runInstallDryRun(ctx: Context, name: ExistingRecipe, forceDisabled: boolean): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
   const refusals: string[] = [];
 
@@ -397,7 +391,7 @@ export async function runInstallDryRun(ctx: Context, name: string, forceDisabled
 /** `--dry-run`: whether the stack is running and what --volumes would additionally remove —
  *  nothing is stopped or removed. Does not cover whether the recipe's own containers hold
  *  state outside its declared compose volumes. */
-export async function runRemoveDryRun(ctx: Context, name: string, removeVolumes: boolean): Promise<void> {
+export async function runRemoveDryRun(ctx: Context, name: ExistingRecipe, removeVolumes: boolean): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   const running = await stack.isRunning();
   const report = { ok: true, changed: false, dryRun: true, recipe: name, running, wouldRemoveVolumes: removeVolumes };
@@ -412,7 +406,7 @@ export async function runRemoveDryRun(ctx: Context, name: string, removeVolumes:
   info("does not cover: state the recipe's containers hold outside its declared compose volumes");
 }
 
-export async function runInstallAction(ctx: Context, name: string, forceDisabled: boolean): Promise<void> {
+export async function runInstallAction(ctx: Context, name: ExistingRecipe, forceDisabled: boolean): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
 
   // Kept in the repository but switched off: refuse rather than start an expensive
@@ -476,19 +470,19 @@ export async function runInstallAction(ctx: Context, name: string, forceDisabled
   info("it restarts automatically: restart policy unless-stopped");
 }
 
-export async function runRemoveAction(ctx: Context, name: string, removeVolumes: boolean): Promise<void> {
+export async function runRemoveAction(ctx: Context, name: ExistingRecipe, removeVolumes: boolean): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   await stack.down(removeVolumes);
   log(`${name} removed${removeVolumes ? " (including volumes)" : ""}`);
 }
 
-export async function runStatusAction(ctx: Context, name: string): Promise<void> {
+export async function runStatusAction(ctx: Context, name: ExistingRecipe): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   await stack.status();
   info((await stack.isRunning()) ? "running" : "not running");
 }
 
-export async function runLogsAction(ctx: Context, name: string, tail: number | undefined): Promise<void> {
+export async function runLogsAction(ctx: Context, name: ExistingRecipe, tail: number | undefined): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   // Following runs until interrupted, which only an attended terminal can do. Same choice
   // as instance/logs.ts's logs.

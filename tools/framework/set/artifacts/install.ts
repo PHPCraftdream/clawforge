@@ -10,7 +10,7 @@ import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { die, log } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
+import type { LocalArtifact } from "#src/core/values/plan.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { readName } from "#src/core/values/names.ts";
 import { problem } from "#src/service/inspection.ts";
@@ -177,9 +177,21 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
   await writeFileAtomic(ctx, installedSetFile(ctx), `${JSON.stringify(record, null, 2)}\n`);
 }
 
+/** An artifact path the pipeline already resolved (the plan's LocalArtifact) or a raw path
+ *  a non-argument caller holds (the rollback cache, the checks) — the functions take either,
+ *  so a plan-carried artifact passes through unwrapped and no brand is minted outside
+ *  core/values. Precision (stage 7 S2.5): the plan's arguments always carry a minted
+ *  LocalArtifact; raw strings are accepted ONLY for non-argument callers (rollback cache,
+ *  checks). The union does NOT make raw paths impossible here — acceptance is a
+ *  convenience for those callers, not a guarantee. */
+export type ArtifactPath = LocalArtifact | string;
+
+const pathOf = (artifact: ArtifactPath): string => typeof artifact === "string" ? artifact : artifact.path;
+
 /** Keeps a validated artifact in the deployment so rollback does not depend on its original
  *  path still existing. The copy is complete before apply is allowed to mutate the target. */
-export async function storeArtifactForRollback(artifact: string, verified: VerifiedArtifact): Promise<string> {
+export async function storeArtifactForRollback(artifact: ArtifactPath, verified: VerifiedArtifact): Promise<string> {
+  const path = pathOf(artifact);
   readName("set", verified.manifest.name);
   if (!isSetId(verified.id)) throw new Error("refusing to store an artifact with an invalid content id");
   const directory = resolve(deploymentDir(), "sets");
@@ -193,10 +205,10 @@ export async function storeArtifactForRollback(artifact: string, verified: Verif
   }
   const temporary = resolve(directory, `.clawforge-artifact-${randomBytes(8).toString("hex")}.tmp`);
   try {
-    await copyFile(artifact, temporary);
+    await copyFile(path, temporary);
     await withUnpackedArtifact(temporary, async (_staging, copied) => {
       if (copied.id !== verified.id) throw new Error("artifact changed before it could be stored for rollback");
-    }, `storing a rollback copy of ${artifact}`);
+    }, `storing a rollback copy of ${path}`);
     await renameOverPrivateFile(temporary, destination);
   } finally {
     await rm(temporary, { force: true });
@@ -233,30 +245,15 @@ async function loadArtifactSet(artifact: string): Promise<LoadedSet> {
   }
 }
 
-export async function unpackArtifactVerified(artifact: string): Promise<{ staging: string; verified: VerifiedArtifact }> {
-  const loaded = await loadArtifactSet(artifact);
+export async function unpackArtifactVerified(artifact: ArtifactPath): Promise<{ staging: string; verified: VerifiedArtifact }> {
+  const loaded = await loadArtifactSet(pathOf(artifact));
   const staging = loaded.staging;
   if (staging === undefined) die("internal: loading an artifact carries no staging directory");
   return { staging, verified: { manifest: loaded.manifest, id: loaded.id, preRead: loaded.preRead } };
 }
 
-export async function unpackArtifact(artifact: string): Promise<string> {
+export async function unpackArtifact(artifact: ArtifactPath): Promise<string> {
   return (await unpackArtifactVerified(artifact)).staging;
-}
-
-/** The refusal text for a --set artifact path the local filesystem does not have; shared
- *  with the prepare-stage fact check (core/command/local-facts.ts), so both surfaces and
- *  both stages answer with one sentence. */
-export function missingArtifactMessage(path: string): string {
-  return `${path} not found — build one with ${commandLine("set build")}, or pass the path to an existing set artifact`;
-}
-
-/** The prepare-stage refusal for a --set artifact path the local filesystem does not have:
- * the command dies before the context is built, so an unreachable target cannot mask it. */
-export async function refuseMissingArtifact(path: string, exists: (path: string) => Promise<boolean>): Promise<void> {
-  if (!(await exists(path))) {
-    die(missingArtifactMessage(path));
-  }
 }
 
 /** Read-only unpack for inspection — validate --set and set diff. Integrity still refuses
@@ -264,7 +261,7 @@ export async function refuseMissingArtifact(path: string, exists: (path: string)
  *  dying inside the gate, so the caller reports them through its own report/JSON path and
  *  an MCP client sees the problems rather than "error, no problems" (R32-05). */
 export async function withArtifactInspected<T>(
-  artifact: string,
+  artifact: ArtifactPath,
   body: (staging: string, verified: VerifiedArtifact, problems: readonly Problem[]) => Promise<T>,
 ): Promise<T> {
   // Read-only load: integrity-only — a corrupt archive refuses (typed as
@@ -272,8 +269,9 @@ export async function withArtifactInspected<T>(
   // unpacked staging and handed to the caller instead of dying in the gate, so the caller
   // reports them through its own report/JSON path and an MCP client sees the problems
   // rather than "error, no problems" (R32-05).
-  const loaded = await loadSet({ kind: "artifact", path: artifact }).catch((error: unknown) => {
-    if (error instanceof ArtifactIntegrityError) die(`${artifact} ${INVALID_ARTIFACT}: ${(error as Error).message}`);
+  const path = pathOf(artifact);
+  const loaded = await loadSet({ kind: "artifact", path }).catch((error: unknown) => {
+    if (error instanceof ArtifactIntegrityError) die(`${path} ${INVALID_ARTIFACT}: ${(error as Error).message}`);
     throw error;
   });
   const staging = loaded.staging;
@@ -344,9 +342,9 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
  *  The line after verification is the caller's: validate reads an artifact it will not install,
  *  so the default note is "checking" — pass "installing from …" where the caller installs. */
 export async function withUnpackedArtifact<T>(
-  artifact: string,
+  artifact: ArtifactPath,
   body: (staging: string, verified: VerifiedArtifact) => Promise<T>,
-  note = `checking ${artifact}`,
+  note = `checking ${pathOf(artifact)}`,
 ): Promise<T> {
   const { staging, verified } = await unpackArtifactVerified(artifact);
   log(note);

@@ -128,4 +128,29 @@ for (const kase of CASES) {
   check(`${kase.name}: the target was never contacted`, contacts, []);
 }
 
+// --- the missing-artifact fact is prepare's, ahead of any .env/secrets read (S2.5) ----------
+
+// localFile's resolve owns the fact: a missing artifact on try/diff/validate stops at the
+// prepare stage with the producer's own text and ZERO contacts — the fixture transport
+// throws on any contact, and a run-stage .env/secrets read would surface as one.
+const MISSING = "no-such-artifact.tar.gz";
+// The check's own independent spelling of the artifact fact's sentence (plan.ts's
+// missingArtifactRefusal is NOT referenced); tokens split on single spaces, the rendered
+// command line kept as the one token the sentence carries.
+const missingArtifactSentence = ["no-such-artifact.tar.gz", "not", "found", "—", "build", "one", "with", "./clawforge set build,", "or", "pass", "the", "path", "to", "an", "existing", "set", "artifact"].join(" ");
+for (const [name, argv, blamed] of [
+  ["set try --set with a missing artifact", ["try", "--set", MISSING], "set"],
+  ["set diff --from/--to with missing artifacts", ["diff", "--from", MISSING, "--to", MISSING], "from"],
+  ["set diff with missing positional artifacts", ["diff", MISSING, MISSING], "artifacts"],
+  ["set validate --set with a missing artifact", ["validate", "--set", MISSING], "set"],
+] as const) {
+  const { transport, contacts } = recordingTransport();
+  const execution = await executeCommand(app, "set", { kind: "argv", argv: [...argv] }, { surface: "mcp", confirmed: true, transport });
+  check(`${name} stops at the prepare stage`, execution.stage, "prepare");
+  checkTrue(`${name} is refused as an argument error`, execution.error instanceof ArgumentError);
+  check(`${name} names its argument`, (execution.error as ArgumentError).argument, blamed);
+    checkTrue(`${name} carries the artifact fact's own text`, (execution.error as Error).message === missingArtifactSentence);
+  check(`${name}: the target was never contacted`, contacts, []);
+}
+
 finish("set command spec");

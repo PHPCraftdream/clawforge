@@ -2,6 +2,9 @@
 
 import { UserError } from "#src/core/io/log.ts";
 
+export const ARGUMENT_ERROR_TOKEN: unique symbol = Symbol("clawforge.argument-error");
+
+
 /** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most
  *  common way to mistype a name — "statsu" for "status") costs one edit, not the two a
  *  plain Levenshtein distance would charge it. */
@@ -47,13 +50,24 @@ export function closestCommand(input: string, candidates: readonly string[]): st
 }
 
 /** A refusal of one argument; `argument` is its declared name, so a caller reads the
- *  structure rather than the prose. */
+ *  structure rather than the prose. The constructor demands the command layer's private
+ *  token: only the binder, prepare's refuse/derive and the pipeline mint one (stage 7
+ *  S2.5) — the class stays exported for instanceof. */
 export class ArgumentError extends UserError {
   name = "ArgumentError";
   readonly argument: string | undefined;
-  constructor(message: string, argument?: string) {
+  constructor(token: typeof ARGUMENT_ERROR_TOKEN, message: string, argument?: string) {
     super(message);
     this.argument = argument;
+  }
+}
+
+/** An ArgumentError that escaped from a `run` phase (stage 7 S2.5: a run cannot build one,
+ *  so this is an invariant breach): the pipeline raises this instead, text preserved. */
+export class LateArgumentError extends ArgumentError {
+  name = "LateArgumentError";
+  constructor(original: ArgumentError) {
+    super(ARGUMENT_ERROR_TOKEN, original.message, original.argument);
   }
 }
 
@@ -61,6 +75,9 @@ export class ArgumentError extends UserError {
  *  dispatcher (entry/cli.ts) can point at that command's own --help. */
 export class UnknownArgumentError extends ArgumentError {
   name = "UnknownArgumentError";
+  constructor(message: string, argument?: string) {
+    super(ARGUMENT_ERROR_TOKEN, message, argument);
+  }
 }
 
 export const UNKNOWN_ARGUMENT = "unknown argument";
@@ -82,6 +99,9 @@ export function dieUnknownArgument(token: string, suggestion?: string): never {
 /** An unknown sub-action word; an UnknownArgumentError so entry/cli.ts adds the --help pointer. */
 export class UnknownActionError extends UnknownArgumentError {
   name = "UnknownActionError";
+  constructor(message: string, argument?: string) {
+    super(message, argument);
+  }
 }
 
 /** Refuses an unknown sub-action with `message` plus a did-you-mean guess from `choices`. */

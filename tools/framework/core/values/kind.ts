@@ -5,6 +5,7 @@
 // already wrote (I14 — see the `hostId` decision).
 
 import type { ValueParser } from "./value.ts";
+import type { LocalScope } from "#src/core/command/spec.ts";
 
 export type KindName = "choice" | "count" | "port" | "pattern" | "duration" | "interval" | "since" | "name" | "id" | "positive" | "receipt" | "checksum" | "hostId" | "sshDestination" | "commandName" | "absolutePath" | "localFile" | "localDirectory" | "recipeRef" | "image" | "text";
 
@@ -16,10 +17,14 @@ export interface InvalidSample {
   readonly why: string;
 }
 
-export interface ValueKind<T> extends ValueParser<T> {
+export interface ValueKind<T, R = T> extends ValueParser<T> {
   readonly kind: KindName;
   /** "choice" only: the closed list the binder refuses against before `parse` is reached. */
   readonly choices?: readonly string[];
   /** The generator of refused values; every `parse`-stage entry must be refused by `parse`. */
   readonly invalid: readonly InvalidSample[];
+  /** The local fact the pipeline settles at the prepare stage (S2.5): a refusal becomes an
+   *  ArgumentError naming the argument, and the resolved value is the branded R. Method
+   *  syntax keeps the kind covariant in T (a ValueKind<string> stays a ValueKind<unknown>). */
+  resolve?(value: T, local: LocalScope): Promise<R>;
 }

@@ -8,7 +8,7 @@
 
 import type { AppCommand, AppDefinition } from "#src/core/app.ts";
 import { callFacts, callFactsFor, legacyPreparesEnvironment, type CallFacts, type EffectShape } from "#src/core/command/effect.ts";
-import { ConfirmationRequiredError, UnknownArgumentError } from "#src/core/command/errors.ts";
+import { ArgumentError, ConfirmationRequiredError, LateArgumentError, UnknownArgumentError } from "#src/core/command/errors.ts";
 import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInput, type CallShape } from "#src/core/command/parse.ts";
 import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
@@ -209,7 +209,10 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
     try {
       await (phases.run as (on: unknown, plan: unknown) => Promise<void>)(on, plan);
     } catch (error) {
-      return failed("run", error, facts, shape, call.action, call.given.includes("json"));
+      // A run phase cannot build an ArgumentError (the token is private to core/command) —
+      // one reaching here escaped through a nested runOnContext: an invariant breach, raised
+      // as the LateArgumentError, text preserved, stage still "run".
+      return failed("run", error instanceof ArgumentError && !(error instanceof LateArgumentError) ? new LateArgumentError(error) : error, facts, shape, call.action, call.given.includes("json"));
     }
     return { stage: "run", facts, reachedRun: true, ...(environmentWrote ? { environmentWrote: true } : {}) };
   }
@@ -246,7 +249,7 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
   try {
     await command.run(ctx, [...argv]);
   } catch (error) {
-    return failed("run", error, facts, undefined, undefined, legacyJsonGiven(command, argv));
+    return failed("run", error instanceof ArgumentError && !(error instanceof LateArgumentError) ? new LateArgumentError(error) : error, facts, undefined, undefined, legacyJsonGiven(command, argv));
   }
   return { stage: "run", facts, reachedRun: true, ...(environmentWrote ? { environmentWrote: true } : {}) };
 }

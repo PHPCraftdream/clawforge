@@ -7,7 +7,6 @@ import type { Context } from "#src/core/context.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
 import { answeredProbe, sudoFor, sudoForRead } from "#src/runtime/datadir.ts";
-import { ArgumentError } from "#src/core/command/errors.ts";
 import { commandBody, type ArgumentSpec, type Values } from "#src/core/command/spec.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import * as kinds from "#src/core/values/kinds.ts";
@@ -216,7 +215,7 @@ export const DESTROY = commandBody({
     if (values.yes === true) {
       const confirmName = values["confirm-name"] ?? "";
       if (confirmName !== deploymentName()) {
-        throw new ArgumentError(confirmNameMismatch(confirmName), "confirm-name");
+        call.refuse("confirm-name", confirmNameMismatch(confirmName));
       }
       return { ...values, confirmName };
     }

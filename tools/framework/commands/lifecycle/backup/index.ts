@@ -38,9 +38,8 @@ import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { BackupPurpose } from "#src/core/app.ts";
 import {
-  multiActionBody, defineAction, type ArgumentSpec, type ParsedCall, type Values,
+  multiActionBody, defineAction, type ArgumentSpec, type PrepareCall, type Values,
 } from "#src/core/command/spec.ts";
-import { ArgumentError } from "#src/core/command/errors.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
@@ -89,12 +88,12 @@ interface BackupCreatePlan {
 
 /** The plan for a create: the profile decision and the native/full refusal (an arguments-and-
  *  values refusal, so it happens in prepare — before requireBootstrapped and the lock). */
-function createPlan(call: ParsedCall<BackupCreateValues>): BackupCreatePlan {
+function createPlan(call: PrepareCall<BackupCreateValues>): BackupCreatePlan {
   const values = call.values;
   const last = call.given.filter((name) => name === "profile" || PROFILE_BY_FLAG.has(name)).at(-1);
   const profile = last === undefined ? undefined : last === "profile" ? values.profile : PROFILE_BY_FLAG.get(last);
   if (values.native === true && (profile ?? "full") !== "full") {
-    throw new ArgumentError("--native only supports the full profile — migrate/share stay on the framework's own tar path", "native");
+    call.refuse("native", "--native only supports the full profile — migrate/share stay on the framework's own tar path");
   }
   return { options: { hot: values.hot === true, native: values.native === true, profile }, dryRun: values["dry-run"] === true };
 }

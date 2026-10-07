@@ -6,17 +6,21 @@
 import { parseInterval, sinceValue } from "#src/core/values/durations.ts";
 import { nameValue, newNameValue, countValue, portValue, regexValue, ValueError, type ValueParser } from "#src/core/values/value.ts";
 import type { NameKind, NameOf, RecipeName } from "#src/core/values/names.ts";
+import type { LocalScope } from "#src/core/command/spec.ts";
 import type { InvalidSample, KindName, ValueKind } from "#src/core/values/kind.ts";
+import { checksum as checksumOf, localArtifact, localRecipeSource, missingArtifactRefusal, missingRecipeRefusal, missingRecipeSourceRefusal, operationId as operationIdOf, recipeRef as recipeRefOf, type Checksum, type LocalArtifact, type LocalRecipeSource, type OperationId, type RecipeRef } from "#src/core/values/plan.ts";
 import { parse as parseImageRef, type ImageRef } from "#src/runtime/docker/image-ref.ts";
 import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
 import { UserError } from "#src/core/io/log.ts";
+import { stat } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
 
 const takesNot = (expected: string) => (raw: string): string => `takes ${expected}, not "${raw}"`;
 
-function kindOf<T>(kind: KindName, parser: ValueParser<T>, invalid: readonly InvalidSample[], extra?: { choices?: readonly string[] }): ValueKind<T> {
+function kindOf<T, R = T>(kind: KindName, parser: ValueParser<T>, invalid: readonly InvalidSample[], extra?: { choices?: readonly string[]; resolve?: (value: T, local: LocalScope) => Promise<R> }): ValueKind<T, R> {
   // invalidExample restates invalid[0]: the sweep and the parser's own self-description
   // must never name different refusals.
-  return { kind, ...parser, invalidExample: invalid[0]?.raw ?? parser.invalidExample, ...extra, invalid };
+  return { kind, ...parser, invalidExample: invalid[0]?.raw ?? parser.invalidExample, ...extra, invalid } as ValueKind<T, R>;
 }
 
 /** A closed list. The binder refuses via `choices` before `parse` runs; this `parse` is
@@ -191,9 +195,9 @@ export function id(kind: string, example: string): ValueKind<string> {
 
 /** 64 lowercase hex characters (Q6). The caller's voice supplies `expected` and the
  *  refusal, so `apply --expect` and `set receipts --set-id` keep their own sentences. */
-export function checksum(format: "hex64", options: { expected: string; invalid(raw: string): string; example: string }): ValueKind<string> {
+export function checksum(format: "hex64", options: { expected: string; invalid(raw: string): string; example: string }): ValueKind<string, Checksum> {
   if (format !== "hex64") throw new Error(`unknown checksum format: ${format}`);
-  return kindOf("checksum", {
+  return kindOf<string, Checksum>("checksum", {
     expected: options.expected,
     example: options.example,
     invalidExample: "zz",
@@ -204,7 +208,16 @@ export function checksum(format: "hex64", options: { expected: string; invalid(r
   }, [
     { raw: "zz", stage: "parse", why: "not hexadecimal" },
     { raw: "", stage: "parse", why: "empty" },
-  ]);
+  ], {
+    resolve: async (value) => checksumOf(value),
+  });
+}
+
+/** `operations <id>`, `rollback --operation`: the id grammar for a recorded operation id —
+ *  the plan carries it branded (OperationId), and the record's existence stays the run's
+ *  target fact (design §5.2). */
+export function operationId(example: string): ValueKind<string, OperationId> {
+  return { ...id("operation", example), resolve: async (value) => operationIdOf(value) };
 }
 
 /** `set receipts --receipt`: receipt.ts's own grammar — lowercase first character, no more
@@ -309,13 +322,18 @@ export function absolutePath(): ValueKind<string> {
   ]);
 }
 
-/** A local file, named now and proven to exist in prepare (S2.5 owns the resolve). */
-export function localFile(reason: string, example = "x"): ValueKind<string> {
-  return kindOf("localFile", nonEmptyGrammar(reason, example), [
+/** A local file, named now and proven to exist as a regular file at the prepare stage
+ *  (S2.5): the refusal is the artifact fact's own text, byte-identical. */
+export function localFile(reason: string, example = "x"): ValueKind<string, LocalArtifact> {
+  return kindOf<string, LocalArtifact>("localFile", nonEmptyGrammar(reason, example), [
     { raw: "", stage: "parse", why: "empty" },
-    // The sweep does not exercise prepare samples until S2.5 wires the resolve stage in.
     { raw: "absent.tar", stage: "prepare", why: "missing file" },
-  ]);
+  ], {
+    resolve: async (value, local) => {
+      if (!(await local.exists(value)) || !(await stat(value)).isFile()) throw new UserError(missingArtifactRefusal(value));
+      return localArtifact(value);
+    },
+  });
 }
 
 function nonEmptyGrammar(expected: string, example = "x"): ValueParser<string> {
@@ -330,19 +348,33 @@ function nonEmptyGrammar(expected: string, example = "x"): ValueParser<string> {
   };
 }
 
-export function localDirectory(reason: string, example = "recipes/local"): ValueKind<string> {
-  return kindOf("localDirectory", nonEmptyGrammar(reason, example), [
+export function localDirectory(reason: string, example = "recipes/local"): ValueKind<string, LocalRecipeSource> {
+  return kindOf<string, LocalRecipeSource>("localDirectory", nonEmptyGrammar(reason, example), [
     { raw: "", stage: "parse", why: "empty" },
     { raw: "absent-source", stage: "prepare", why: "missing directory" },
-  ]);
+  ], {
+    resolve: async (value, local) => {
+      if (!(await local.exists(resolvePath(value, "recipe.json")))) throw new UserError(missingRecipeSourceRefusal(value));
+      return localRecipeSource(value);
+    },
+  });
 }
 
-/** A recipe name on the reader grammar; existence in the current source stays with run. */
-export function recipeRef(): ValueKind<RecipeName> {
-  return kindOf("recipeRef", nameValue<"recipe">("recipe"), [
+/** A recipe name on the reader grammar; existence in the current source is the prepare-stage
+ *  resolve (S2.5) — the recipe fact's own text, byte-identical. The recipes directory is
+ *  dynamically imported: service/recipe reaches wide, and kinds.ts loads at declaration time. */
+export function recipeRef(): ValueKind<RecipeName, RecipeRef> {
+  return kindOf<RecipeName, RecipeRef>("recipeRef", nameValue("recipe"), [
     { raw: "Bad_Name", stage: "parse", why: "upper case and underscore" },
     { raw: "", stage: "parse", why: "empty" },
-  ]);
+    { raw: "absent-recipe", stage: "prepare", why: "missing recipe" },
+  ], {
+    resolve: async (value, local) => {
+      const { recipesDirectory } = await import("#src/service/recipe.ts");
+      if (!(await local.exists(resolvePath(recipesDirectory(), value, "recipe.json")))) throw new UserError(missingRecipeRefusal(value));
+      return recipeRefOf(value);
+    },
+  });
 }
 
 /** An image reference (`upgrade --image`): the image-ref grammar, whose split already

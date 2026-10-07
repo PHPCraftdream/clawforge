@@ -722,7 +722,7 @@
     "total": 21
   },
   "ownProductExpectations": {
-    "comment": "stage 7 S0.5 (independent expectations, invariant I11): check()/assert.* assertions whose EXPECTED operand and ACTUAL operand share a symbol imported from tools/framework — one product mutation moves both sides. A predicate argument nested in the actual operand (.includes/.startsWith/.endsWith/.match) counts as the expected role. Initial baseline = the measured state after converting the round 18/19 offender sites to literal expectations (schedule crontab read/update/confirm refusals, host probe evidence and --choices, destroy --confirm-name mismatch, lock reinstall advice, recover-env refusals, system-install unknown-command/no-save lines). Exempt: a file a registered negative control covers (C1-C8, C9, C11), a line marked `// control: <id>`. The baseline was first recorded at 301 with the initial scanner. The measurement was then completed (derived locals, template interpolations, combined imports) and the converted sites moved to token-array assertions; the recorded total is now 391 (was 301) — a measurement widening of the new ratchet, not growth. A file absent from `files` must not gain one. S3.2: the 11 sites in set-validate.check.ts became control-exempt when controls C80-C82 registered that check file (exemption is per FILE — architecture.check.ts's CONTROLLED_FILES), so the recorded total is 380 (was 391); a recorded decrease, not growth. C83 registers set-validate-image.check.ts, adding a file exemption for 2 sites (not stronger expectations), so the measured total is 378 (was 380). S1.4: control C127 registers completion-behaviour.check.ts, adding a file exemption for its 3 sites (not stronger expectations), so the measured total is 375 (was 378).",
+    "comment": "stage 7 S0.5 (independent expectations, invariant I11): check()/assert.* assertions whose EXPECTED operand and ACTUAL operand share a symbol imported from tools/framework — one product mutation moves both sides. A predicate argument nested in the actual operand (.includes/.startsWith/.endsWith/.match) counts as the expected role. Initial baseline = the measured state after converting the round 18/19 offender sites to literal expectations (schedule crontab read/update/confirm refusals, host probe evidence and --choices, destroy --confirm-name mismatch, lock reinstall advice, recover-env refusals, system-install unknown-command/no-save lines). Exempt: a file a registered negative control covers (C1-C8, C9, C11), a line marked `// control: <id>`. The baseline was first recorded at 301 with the initial scanner. The measurement was then completed (derived locals, template interpolations, combined imports) and the converted sites moved to token-array assertions; the recorded total is now 391 (was 301) — a measurement widening of the new ratchet, not growth. A file absent from `files` must not gain one. S3.2: the 11 sites in set-validate.check.ts became control-exempt when controls C80-C82 registered that check file (exemption is per FILE — architecture.check.ts's CONTROLLED_FILES), so the recorded total is 380 (was 391); a recorded decrease, not growth. C83 registers set-validate-image.check.ts, adding a file exemption for 2 sites (not stronger expectations), so the measured total is 378 (was 380). S1.4: control C127 registers completion-behaviour.check.ts, adding a file exemption for its 3 sites (not stronger expectations), so the measured total is 375 (was 378). Stage 7 S2.5: the one site in set-command.check.ts became a structural assertion with the local-facts-of-arguments migration so the recorded total is 374 (was 375); a recorded decrease, not growth.",
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 4,
       "tools/checks/foundation/cli/gate-commands.check.ts": 15,
@@ -732,7 +732,7 @@
       "tools/checks/foundation/core/app-mounts-output.check.ts": 1,
       "tools/checks/foundation/core/archive.check.ts": 4,
       "tools/checks/foundation/core/command/completion/completion-behaviour.check.ts": 0,
-      "tools/checks/foundation/core/command/pipeline/property-gates.check.ts": 2,
+      "tools/checks/foundation/core/command/pipeline/property/property-gates.check.ts": 2,
       "tools/checks/foundation/core/command/spec/parse.check.ts": 4,
       "tools/checks/integration/agent/provision-agent.check.ts": 1,
       "tools/checks/integration/apps/invocation-hints.check.ts": 13,
@@ -744,7 +744,7 @@
       "tools/checks/integration/mcp/mcp-project.check.ts": 1,
       "tools/checks/integration/mcp/openclaw-cli.check.ts": 5,
       "tools/checks/integration/mcp/transport-listing.check.ts": 11,
-      "tools/checks/integration/recipe/recipe-lifecycle-hooks.check.ts": 11,
+      "tools/checks/integration/recipe/hooks/recipe-lifecycle-hooks.check.ts": 11,
       "tools/checks/release/release/lock.check.ts": 21,
       "tools/checks/release/release/operations.check.ts": 3,
       "tools/checks/release/release/system-install.check.ts": 31,
@@ -797,10 +797,9 @@
       "tools/checks/sets/lifecycle/set-rollback.check.ts": 2,
       "tools/checks/sets/lifecycle/set-try.check.ts": 1,
       "tools/checks/sets/parity.check.ts": 3,
-      "tools/checks/sets/set-command.check.ts": 1,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 375
+    "total": 374
   },
   "frameReads": {
     "comment": "stage 7 S1.3 (design docs/internal/refactor-stage7-frame-design.md §8): occurrences of invocation()/currentFrame() in product code outside the exempt modules core/io/invocation/**, core/io/help-render.ts, core/io/log.ts. Scan scope: tools/framework/**/*.ts plus tools/clawforge.ts. Measured at the S1.3 resolver refactor: 0 — the reads the design lists as pre-S1.3 (entry/resolve.ts, entry/delegate.ts, entry/bin.ts, integration/deployment/scaffold.ts, tools/clawforge.ts) are gone; the only remaining raw reads are the exempt ones (help-render.ts: 2 invocation() default arguments; invocation/{index,render,prose}.ts). Shrink-only at target 0: any occurrence fails.",
@@ -820,6 +819,26 @@
       "tools/framework/core/io/invocation/frame.ts": 1
     },
     "total": 1
+  },
+  "kindCastsOutsideValues": {
+    "comment": "stage 7 S2.5: casts minting the value brands (as RecipeName/LocalArtifact/LocalRecipeSource/RecipeRef/Checksum/OperationId/OwnedObjectName/SetName/StoreName/AgentName/DeploymentName) in tools/framework/** outside tools/framework/core/values/** — the values module owns every mint; run bodies receive already-minted branded names. Comments are stripped before counting. Growth fails",
+    "total": 0
+  },
+  "grammarCallsInRun": {
+    "comment": "stage 7 S2.5: calls of readName(/safeName(/nameValue(/createName(/imageRefValue.parse( inside tools/framework/commands/** run bodies, outside argument declarations and prepare phases (which are outside run bodies by construction). Measured by the shared counter in grammar-in-run.ts — the SAME measurement grammar-in-run.check.ts enforces with zero tolerance; this ratchet only records it, shrink-only. 0 after S2.5",
+    "total": 0
+  },
+  "argumentErrorTokenOutside": {
+    "comment": "stage 7 S2.5: files under tools/framework/** OUTSIDE tools/framework/core/command/** whose comment-stripped source references ARGUMENT_ERROR_TOKEN (the private token in core/command/errors.ts; only the command layer's own modules build ArgumentErrors). Counted by the shared counter in kind-casts.ts; expected 0. Deep imports from hostile code remain possible in TS — the ratchet pins the codebase, not the type system.",
+    "total": 0
+  },
+  "preparedOutsideCommand": {
+    "comment": "stage 7 S2.5: files under tools/framework/** OUTSIDE tools/framework/core/command/** whose comment-stripped source calls prepared( — the prepare-phase internal, no longer leaked by the core/command/index.ts barrel (its spec re-export is explicit). Counted by the shared counter in kind-casts.ts; expected 0. Deep imports of spec.ts from hostile code remain possible in TS — the ratchet pins the codebase, not the type system.",
+    "total": 0
+  },
+  "planMintImportOutside": {
+    "comment": "stage 7 S2.5: files under tools/framework/** OUTSIDE tools/framework/core/values/** and tools/framework/core/command/** with a RUNTIME (non-`import type`) import statement referencing core/values/plan.ts, i.e. reaching the brand mints (spec.ts's refusal-text-helper import stays legal; type-only imports are erased so never reach the mints; tools/checks are NOT scanned — checks legitimately import the refusal helpers). Counted by the shared counter in kind-casts.ts; expected 0. Deep imports from hostile code remain possible in TS — the ratchet pins the codebase, not the type system.",
+    "total": 0
   },
   "frameLawViolations": {
     "comment": "stage 7 S1.2b (O4): hints spelled from a subdirectory spell the entry relative to the frame cwd, so the relative-spelling group (2250+ recorded here) collapses; keys whose case now reaches the next defect carry the next mechanism's reason (deployment drift / resolver refusal) — same key, progressed case, no new keys. stage 7 S1.2a frame law (invariant I12, design §7.1, decision O6), re-measured after the law was widened (item 3/6 of refactor-stage7 frame chunks): the law now iterates EVERY clawforge-kind advice row (not 7 selected rows) × every producer × its shells (install/prose/quoting rows paste in all three shells), renders through the producer frame (no setInvocation/frameOf), fills <placeholder> words, resolves the pasted program against the frame cwd, and drives the SELECTION_CASES sweep through resolveCheckoutEntry. MEASUREMENT CORRECTION, not growth: the old total (103) was measured on the 7-row law and misattributed model-defect entries (e.g. quoting drifts caused by rendering under the real host frame instead of the producer frame); the new measurement records the truthful per-case mechanisms. MECHANISM GROUPS and the step that owns each — S1.2b relative spelling (the handed/shim program is spelled from the checkout root whatever directory the frame stands in: 2250 keys, e.g. \"checkout gate shim (cwd: docs) | command: status | posix\"; plus npm bin backslash spelling pasted in POSIX: 57, e.g. \"defaultLaunch: local package (win32) | help prose: restart up | posix\"; plus npm-bin re-root fallback note pasted non-posix: 4, e.g. \"defaultLaunch: local package (win32) | explicit app: status | cmd\") — S1.3 resolver/adapter (hand-set verbatim programs name no resolvable entry: 445, e.g. \"manual verbatim (bare word) | command: status | posix\"; resolver refusals for rows naming deployments/commands the gate layout lacks: 14+12 run + 16 spawned-gate, e.g. \"defaultLaunch: global install | deploy: remote bootstrap command | posix\"; gate commands not carrying the handed deployment: 3, e.g. \"checkout gate, handed over by the monorepo MCP launcher | refusal: init inside a ClawForge checkout | posix\"; the selection sweep: 4, keys prefixed \"selection\") — S1.4 renderer shell-field (quoting/spelling round-trip drift: 77, e.g. \"checkout gate shim (cwd: checkout root) | law: quoting round-trip | cmd\") — S1.6 real-shell verification owns emptying this baseline. Ratchet: DECREASING-ONLY — a new key, a total above the recorded, or a changed reason at a recorded key fails; a decrease must lower the total in the same commit. Exact reconciliation: three retired keys were removed (two not-initialised installed refusals and the EMPTY OC_APP selection record). S1.4 removed the renderer shell-field group (77 at recording): the law renders each paste shell through forShell, so quoting matches the pasted shell, and the cwd-conflict case names the other deployment with --project-root (O2). S1.4 second pass: the shell-named fallback note (item 5, D6/O1) moved 12 completion-pwsh install keys onto the fallback-note mechanism (5 new, 7 reasons replaced) — total 1615 -> 1620. S1.4 second pass: the law renders the producer's original frame again (only shell-named rows re-render per shell); the quoting-round-trip keys return with their original reasons. The case-4 producer \"system-wide inside apps/demo (cwd selection)\" joins the law (O2): its only new key is its own quoting-round-trip | cmd entry (the owned cmd-tokenizer drift, one per producer), and the 5 completion-pwsh fallback-note keys stay — the item-5 render still emits the note and they still measure.",

@@ -24,6 +24,7 @@ import { recordInstalledSet, unpackArtifactVerified } from "#src/set/artifacts/i
 // From its own module, not set.ts: set.ts reads SET_TRY_ARGUMENTS at load, so importing it
 // back here is a cycle that fails with a TDZ error when set-try is the entry.
 import { localSecretValues } from "./set-secrets-guard.ts";
+import type { LocalArtifact } from "#src/core/values/plan.ts";
 import * as kinds from "#src/core/values/kinds.ts";
 import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
@@ -39,12 +40,16 @@ import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
-import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
+import { defineAction, type ArgumentSpec } from "#src/core/command/index.ts";
 
 export * from "./set-try-env.ts";
 
+// The same kind object prepare derives through, so the plan carries the resolve's
+// LocalArtifact: a missing artifact is refused at prepare, before the .env/secrets reads.
+const SET_ARTIFACT = kinds.localFile("a set artifact path");
+
 export const SET_TRY_ARGUMENTS = [
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", required: true, value: kinds.localFile("a set artifact path") },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", required: true, value: SET_ARTIFACT },
   {
     name: "with-model",
     summary: "include acceptance checks that call the model",
@@ -96,7 +101,9 @@ export interface TryTeardownResult {
   readonly error?: unknown;
 }
 
-/** Parsed inputs for an isolated set trial. */
+/** Parsed inputs for an isolated set trial. The run-level entry keeps the resolved path:
+ *  the action's plan carries the LocalArtifact (prepare's artifact fact), and the run
+ *  adapts it to the path the trial engine unpacks. */
 export interface SetTryOptions {
   readonly artifact: string;
   readonly withModel: boolean;
@@ -104,10 +111,15 @@ export interface SetTryOptions {
   readonly jsonOnly: boolean;
 }
 
-/** The artifact and explicit execution options. */
-function tryPlan(values: Values<typeof SET_TRY_ARGUMENTS>): SetTryOptions {
-  return { artifact: values.set, withModel: values["with-model"], keep: values.keep, jsonOnly: values.json };
+/** The action's plan: the artifact already proven present at prepare. */
+interface SetTryPlan {
+  readonly artifact: LocalArtifact;
+  readonly withModel: boolean;
+  readonly keep: boolean;
+  readonly jsonOnly: boolean;
 }
+
+/** The artifact and explicit execution options. */
 
 /** Stops and removes only the resources owned by a try. Callbacks are injectable so the
  * lifecycle contract can be tested without Docker. */
@@ -498,7 +510,13 @@ export const SET_TRY = defineAction({
   summary: "Try a set in a throwaway instance",
   effect: "destroy",
   arguments: SET_TRY_ARGUMENTS,
-  localFacts: [{ argument: "set", fact: "artifact" }],
-  prepare: ({ values }) => tryPlan(values),
-  run: (ctx, options) => runSetTry(ctx, options),
+  prepare: async (call) => ({
+    // The resolved set artifact arrives in the plan's own key slot (S2.5): a missing
+    // artifact is refused by the kind's resolve, before the .env/secrets reads.
+    artifact: call.values.set,
+    withModel: call.values["with-model"],
+    keep: call.values.keep,
+    jsonOnly: call.values.json,
+  } satisfies SetTryPlan),
+  run: (ctx, plan) => runSetTry(ctx, { ...plan, artifact: plan.artifact.path }),
 });

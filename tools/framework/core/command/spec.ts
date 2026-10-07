@@ -7,7 +7,6 @@
 
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { commandLine } from "#src/core/io/invocation/render.ts";
 import type { AppCommand, CommandArgument, CommandGroup } from "#src/core/app.ts";
 import { argumentsView } from "#src/core/command/view.ts";
 import { parseCall, type CallShape } from "#src/core/command/parse.ts";
@@ -18,6 +17,10 @@ import { deploymentDir, deploymentName, envFile } from "#src/runtime/deployment.
 import type { Transport } from "#src/runtime/transport/transport.ts";
 import type { ValueParser } from "#src/core/values/value.ts";
 import type { ValueKind } from "#src/core/values/kind.ts";
+import { missingRecipeRefusal, missingRecipeSourceRefusal } from "#src/core/values/plan.ts";
+import { ARGUMENT_ERROR_TOKEN, ArgumentError, LateArgumentError } from "#src/core/command/errors.ts";
+import { joinClause, labelOf } from "#src/core/command/parse.ts";
+import { ValueError } from "#src/core/values/value.ts";
 import { UserError } from "#src/core/io/log.ts";
 
 /** What a call does to state: read < change < destroy. */
@@ -51,7 +54,7 @@ export interface ValueSpec<K extends "option" | "positional", N extends string =
   /** The declared value kind — the one grammar, example and invalid generator (stage 7 S2.4:
    *  the legacy `parse`/`choices` bridges are gone; a grammar-less value argument is refused
    *  at load with `kind-missing`). */
-  readonly value: ValueKind<T>;
+  readonly value: ValueKind<T, unknown>;
 }
 
 export interface VariadicSpec<N extends string = string> extends ArgumentBase<N> {
@@ -63,7 +66,7 @@ export interface VariadicSpec<N extends string = string> extends ArgumentBase<N>
   /** Exact number of values the variadic takes; absent: any number. */
   readonly count?: number;
   /** The declared element kind. */
-  readonly value: ValueKind<string>;
+  readonly value: ValueKind<string, unknown>;
 }
 
 export type ArgumentSpec = FlagSpec | ValueSpec<"option"> | ValueSpec<"positional"> | VariadicSpec;
@@ -78,8 +81,10 @@ export type ArgumentRule<N extends string = string> =
   // each group is given whole or not at all; at most one group; with `required`: exactly one
   | { rule: "oneOf"; groups: readonly (readonly N[])[]; required?: true; reason?: string };
 
-/** Local facts are checked here; declarations only name them. */
-export type LocalFact = "artifact" | "recipe" | "recipe-source" | "agent-bundle" | "acceptance";
+/** Local facts are checked here; declarations only name them. The artifact/recipe/
+ *  recipe-source facts live on the value kinds' resolve (stage 7 S2.5) and are no longer
+ *  declared facts. */
+export type LocalFact = "recipe" | "recipe-source" | "agent-bundle" | "acceptance";
 
 export interface LocalFactSpec {
   readonly argument: string;
@@ -89,9 +94,10 @@ export interface LocalFactSpec {
 
 export function localFactRefusal(fact: LocalFact, value: string): string {
   switch (fact) {
-    case "artifact": return `${value} not found — build one with ${commandLine("set build")}, or pass the path to an existing set artifact`;
-    case "recipe": return `recipe "${value}" not found — expected recipes/${value}/recipe.json`;
-    case "recipe-source": return `recipe source has no recipe.json: ${resolve(value)}`;
+    // The migrated texts live in core/values/plan.ts (byte-identical; the kinds' resolve
+    // raises the same sentences).
+    case "recipe": return missingRecipeRefusal(value);
+    case "recipe-source": return missingRecipeSourceRefusal(value);
     case "agent-bundle": return `recipe "${value}" has no agent bundle — expected recipes/${value}/agent/config.json`;
     case "acceptance": return `recipe "${value}" declares no acceptance checks (recipes/${value}/acceptance.json)`;
   }
@@ -104,11 +110,6 @@ export async function refuseMissingLocalFacts(facts: readonly LocalFactSpec[] | 
     const named = Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry !== "")
       : typeof value === "string" && value !== "" ? [value] : [];
     for (const entry of named) {
-      if (fact === "artifact") {
-        const { refuseMissingArtifact } = await import("#src/set/artifacts/install.ts");
-        await refuseMissingArtifact(entry, local.exists);
-        continue;
-      }
       const { recipesDirectory } = await import("#src/service/recipe.ts");
       const path = fact === "recipe" ? resolve(recipesDirectory(), entry, "recipe.json")
         : fact === "recipe-source" ? resolve(resolve(entry), "recipe.json")
@@ -120,7 +121,9 @@ export async function refuseMissingLocalFacts(facts: readonly LocalFactSpec[] | 
 }
 
 type ValueOf<A> = A extends { kind: "flag" } ? boolean
+  : A extends { kind: "variadic"; value: ValueKind<infer _T, infer R> } ? readonly R[]
   : A extends { kind: "variadic" } ? readonly string[]
+  : A extends { value: ValueKind<infer _T, infer R> } ? R
   : A extends { value: ValueParser<infer T> } ? T : string;
 type Absent<A> = A extends { kind: "flag" | "variadic" } | { required: true } ? never : undefined;
 
@@ -150,12 +153,29 @@ export interface DeploymentScope extends LocalScope {
   transport(): Promise<Transport>;
 }
 
+/** The stamp on a plan the pipeline built: `run` never sees an unprepared plan. */
+declare const PREPARED: unique symbol;
+export type Prepared<P> = P & { readonly [PREPARED]: true };
+/** The pipeline's only Prepared constructor. */
+export function prepared<P>(plan: P): Prepared<P> {
+  return plan as Prepared<P>;
+}
+
+/** What `prepare` receives: the parsed call with every resolve-bearing value already
+ *  resolved through the pipeline (the branded R in the kind's own key slot) plus the two
+ *  voice-owned tools — `refuse` raises an ArgumentError naming the argument; `derive` parses
+ *  `raw` with the kind and resolves it, for the few values prepare mints itself. */
+export interface PrepareCall<V> extends ParsedCall<V> {
+  refuse(argument: keyof V & string, clause: string): never;
+  derive<T, R = T>(argument: keyof V & string, kind: ValueKind<T, R>, raw: string): Promise<R>;
+}
+
 type On<N extends Needs> = N extends "deployment" ? DeploymentScope : Context;
 
 interface Phases<V, P, N extends Needs> {
   /** Refusals that need only the arguments and local files; absent: the plan is `call.values`. */
-  readonly prepare?: (call: ParsedCall<V>, local: LocalScope) => P | Promise<P>;
-  readonly run: (on: On<N>, plan: P) => Promise<void>;
+  readonly prepare?: (call: PrepareCall<V>, local: LocalScope) => P | Promise<P>;
+  readonly run: (on: On<N>, plan: Prepared<P>) => Promise<void>;
 }
 
 export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Needs> extends Phases<Values<A>, P, N> {
@@ -191,7 +211,7 @@ export interface ActionSpec<A extends readonly ArgumentSpec[], P> extends Phases
 export const COMMAND_SPEC: unique symbol = Symbol("clawforge.command-spec");
 
 interface PhaseData {
-  readonly prepare?: (call: ParsedCall<Record<string, unknown>>, local: LocalScope) => unknown;
+  readonly prepare?: (call: PrepareCall<Record<string, unknown>>, local: LocalScope) => unknown;
   readonly run: (on: never, plan: never) => Promise<void>;
 }
 interface ActionData extends PhaseData {
@@ -424,27 +444,90 @@ function deploymentScopeOn(ctx: Context): DeploymentScope {
   return { ...localScope(), service: serviceOf(ctx), transport: async () => ctx.transport };
 }
 
-/** The one prepare path: the declared local-tree facts, then the command's own prepare. The
- *  pipeline and runOnContext both enter here, so no caller reaches `run` without the
- *  missing-local-facts refusal. The fact checker stays in this module and loads artifact/recipe
- *  helpers only when needed, avoiding eager cycles. */
-export async function preparedPlan(phases: PhaseData & { readonly localFacts?: readonly LocalFactSpec[] }, call: ParsedCall<Record<string, unknown>>): Promise<unknown> {
-  if (phases.localFacts !== undefined && phases.localFacts.length > 0) {
-    const { refuseMissingLocalFacts } = await import("#src/core/command/spec.ts");
-    await refuseMissingLocalFacts(phases.localFacts, call.values, localScope());
+/** The wrapper every resolve goes through: a local-fact refusal (a UserError from the kind)
+ *  becomes an ArgumentError naming the argument; anything else is a bug and stays itself. */
+async function resolveValue(kind: ValueKind<never, never>, value: string, local: LocalScope, argument: string): Promise<unknown> {
+  try {
+    return await kind.resolve!(value as never, local);
+  } catch (error) {
+    if (!(error instanceof UserError)) throw error;
+    throw new ArgumentError(ARGUMENT_ERROR_TOKEN, error.message, argument);
   }
-  return phases.prepare === undefined ? call.values : await phases.prepare(call, localScope());
+}
+
+function prepareCallOf(call: ParsedCall<Record<string, unknown>>, byName: ReadonlyMap<string, ArgumentSpec>, local: LocalScope): PrepareCall<Record<string, unknown>> {
+  return {
+    ...call,
+    refuse: (argument, clause) => {
+      throw new ArgumentError(ARGUMENT_ERROR_TOKEN, clause, argument);
+    },
+    derive: async (argument, kind, raw) => {
+      let value: unknown;
+      try {
+        value = kind.parse(raw);
+      } catch (error) {
+        if (!(error instanceof ValueError)) throw error;
+        const spec = byName.get(argument);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, spec === undefined ? error.clause : joinClause(labelOf(spec), error.clause), argument);
+      }
+      if (kind.resolve === undefined) return value;
+      return resolveValue(kind as ValueKind<never, never>, value as string, local, argument);
+    },
+  } as PrepareCall<Record<string, unknown>>;
+}
+
+/** The one prepare path: each bound value whose kind carries a `resolve` is resolved first —
+ *  a refusal is an ArgumentError naming the argument — then the local-tree facts the kinds do
+ *  not cover (an `unless` that is given skips both), then the command's own prepare with a
+ *  PrepareCall. The identity plan is wrapped as Prepared. The pipeline and runOnContext both
+ *  enter here, so no caller reaches `run` without the argument's local fact settled. */
+export async function preparedPlan(phases: PhaseData & { readonly arguments?: readonly ArgumentSpec[]; readonly localFacts?: readonly LocalFactSpec[] }, call: ParsedCall<Record<string, unknown>>): Promise<unknown> {
+  const local = localScope();
+  const byName = new Map((phases.arguments ?? []).map((argument) => [argument.name, argument]));
+  // An `unless` given means the fact does not apply — the kind's resolve must skip it too
+  // (accept's <recipe> names one inside the --set artifact, not one on this machine).
+  const skipped = new Set((phases.localFacts ?? [])
+    .filter((fact) => fact.unless !== undefined && call.values[fact.unless] !== undefined && call.values[fact.unless] !== false)
+    .map((fact) => fact.argument));
+  // Resolve every bound value whose kind carries a `resolve` into the plan's own key slots
+  // (variadic element-wise), then hand the RESOLVED map to both the local-tree facts pass
+  // and prepare / the identity plan — the plan prepare and `run` see is the resolved one.
+  const resolved: Record<string, unknown> = { ...call.values };
+  for (const [name, raw] of Object.entries(call.values)) {
+    if (skipped.has(name)) continue;
+    const spec = byName.get(name);
+    if (spec === undefined || spec.kind === "flag" || spec.value?.resolve === undefined) continue;
+    const kind = spec.value as ValueKind<never, never>;
+    if (Array.isArray(raw)) {
+      resolved[name] = await Promise.all(raw.map((entry) =>
+        typeof entry === "string" && entry !== "" ? resolveValue(kind, entry, local, name) : entry));
+    } else if (typeof raw === "string" && raw !== "") {
+      resolved[name] = await resolveValue(kind, raw, local, name);
+    }
+  }
+  if (phases.localFacts !== undefined && phases.localFacts.length > 0) {
+    await refuseMissingLocalFacts(phases.localFacts, resolved, local);
+  }
+  const settled = { ...call, values: resolved };
+  return prepared(phases.prepare === undefined ? resolved : await phases.prepare(prepareCallOf(settled, byName, local), local));
 }
 
 /** Parse, prepare, run — on a context the caller already has: no environment preparation,
- *  no confirmation, no --json contract, exactly like calling the command's function directly. */
+ *  no confirmation, no --json contract, exactly like calling the command's function directly.
+ *  An ArgumentError escaping `run` (it cannot be built there) is raised as the invariant's
+ *  own LateArgumentError, text preserved. */
 export async function runOnContext(body: CommandBody, ctx: Context, args: readonly string[], command = ""): Promise<void> {
   const data = specData(body);
   const call = parseCall(specShape(body), args, command);
   const phases = data.kind === "single" ? data : data.actions[call.action!];
   const plan = await preparedPlan(phases, call);
   const on = data.kind === "single" && data.needs === "deployment" ? deploymentScopeOn(ctx) : ctx;
-  await (phases.run as (on: unknown, plan: unknown) => Promise<void>)(on, plan);
+  try {
+    await (phases.run as (on: unknown, plan: unknown) => Promise<void>)(on, plan);
+  } catch (error) {
+    if (error instanceof ArgumentError && !(error instanceof LateArgumentError)) throw new LateArgumentError(error);
+    throw error;
+  }
 }
 
 // --- materialization -------------------------------------------------------------------------------

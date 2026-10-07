@@ -23,10 +23,15 @@ import { apply } from "./apply.ts";
 import type { OperationRecord } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
-import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import { commandBody, runOnContext, type Values } from "#src/core/command/index.ts";
 import { LOCK_TAKEOVER_ARGUMENTS } from "#src/commands/interface/groups/shared-arguments.ts";
 import * as kinds from "#src/core/values/kinds.ts";
+import type { OperationId } from "#src/core/values/plan.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
+
+// The same kind object prepare derives through, so the plan carries the branded OperationId;
+// the record's existence is the run's target fact (design §5.2).
+const OPERATION_ID = kinds.operationId("20260101000000000-apply-ab12cd");
 
 export const ROLLBACK_ARGUMENTS = [
   {
@@ -35,7 +40,7 @@ export const ROLLBACK_ARGUMENTS = [
     description: "Operation id to undo (default: the most recent one with a snapshot)",
     kind: "option",
     valueName: "id",
-    value: kinds.id("operation", "20260101000000000-apply-ab12cd"),
+    value: OPERATION_ID,
   },
   { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
   // A flag, not `--set <artifact>`: rollback names no artifact of its own, it reinstalls
@@ -84,23 +89,20 @@ interface RollbackOptions {
   readonly breakLock: boolean;
   readonly breakForeignLockHost?: string;
   readonly restartAfter: boolean;
-  readonly operation?: string;
+  readonly operation?: OperationId;
   readonly applyArgs: string[];
 }
 
 /** Every rollback argument mapped before reading or changing instance state; the
- *  cross-flag refusal is the declaration's rule now, enforced by the parser. */
-function rollbackOptions(values: {
-  operation?: string; "no-restart": boolean; "previous-set": boolean;
-  json: boolean; "dry-run": boolean; "break-lock": boolean; "break-foreign-lock"?: string;
-}): RollbackOptions {
+ *  cross-flag refusal is the declaration's rule now, enforced by the parser. The operation
+ *  id arrives branded: prepare derived it through the declared kind. */
+function rollbackOptions(values: Values<typeof ROLLBACK_ARGUMENTS>, operation: OperationId | undefined): RollbackOptions {
   const previousSet = values["previous-set"];
   const jsonOnly = values.json;
   const dryRun = values["dry-run"];
   const breakLock = values["break-lock"];
   const breakForeignLockHost = values["break-foreign-lock"];
   const restartAfter = values["no-restart"] !== true;
-  const operation = values.operation;
 
   const applyArgs: string[] = [];
   if (jsonOnly) applyArgs.push("--json");
@@ -121,7 +123,10 @@ export const ROLLBACK = commandBody({
       return `rolls back the whole set through ${commandLine("apply")} — --operation and --no-restart belong to the single-file path only`;
     },
   }],
-  prepare: ({ values }) => rollbackOptions(values as Parameters<typeof rollbackOptions>[0]),
+  prepare: async (call) =>
+    // The branded operation id arrives resolved: the pipeline resolved it through the
+    // declared kind (S2.5).
+    rollbackOptions(call.values, call.values.operation),
   run: (ctx, plan) => rollbackRun(ctx, plan),
 });
 

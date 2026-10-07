@@ -12,9 +12,14 @@ import type { Context } from "#src/core/context.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import * as kinds from "#src/core/values/kinds.ts";
+import type { OperationId } from "#src/core/values/plan.ts";
+
+// The same kind object prepare derives through, so the plan carries the branded OperationId;
+// the record's existence is the run's target fact, refused where it is judged (design §5.2).
+const OPERATION_ID = kinds.operationId("20260101000000000-apply-ab12cd");
 
 export const OPERATIONS_ARGUMENTS = [
-  { name: "id", description: "Operation id to show in full", kind: "positional", value: kinds.id("operation", "20260101000000000-apply-ab12cd") },
+  { name: "id", description: "Operation id to show in full", kind: "positional", value: OPERATION_ID },
   {
     name: "limit",
     summary: "How many recent operations to list",
@@ -26,9 +31,23 @@ export const OPERATIONS_ARGUMENTS = [
   { name: "json", description: "Emit the record, or the list, as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
+/** What the run needs, decided from the arguments alone in the prepare stage. */
+interface OperationsPlan {
+  readonly id?: OperationId;
+  readonly limit?: number;
+  readonly json: boolean;
+}
+
 export const OPERATIONS = commandBody({
   effect: "read",
   arguments: OPERATIONS_ARGUMENTS,
+  prepare: async (call) => ({
+    // The branded operation id arrives resolved: the pipeline resolved it through the
+    // declared kind (S2.5); the record's existence stays the run's target fact.
+    id: call.values.id,
+    limit: call.values.limit,
+    json: call.values.json,
+  } satisfies OperationsPlan),
   async run(ctx, plan) {
     const jsonOnly = plan.json;
     const limit = plan.limit;

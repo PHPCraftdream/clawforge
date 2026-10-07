@@ -32,6 +32,7 @@ import { gatherInspection } from "./inspect/gather.ts";
 import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
 import { runSecurityAudit, type SecurityFinding, type SecurityAuditReport } from "#src/security/audit.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
+import type { LocalArtifact, RecipeRef } from "#src/core/values/plan.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
 export const DID_NOT_PASS = "acceptance check(s) did not pass";
@@ -356,10 +357,11 @@ export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCh
   }
 }
 
-//** Everything the run needs, decided from the arguments alone in the prepare stage. */
+//** Everything the run needs, decided from the arguments alone in the prepare stage. The
+// recipe and the --set artifact arrive resolved (the kinds' own existence proofs, S2.5). */
 interface AcceptPlan {
-  readonly recipe?: string;
-  readonly set?: string;
+  readonly recipe?: RecipeRef;
+  readonly set?: LocalArtifact;
   readonly withModel: boolean;
   readonly json: boolean;
 }
@@ -368,9 +370,9 @@ export const ACCEPT = commandBody({
   effect: "change",
   arguments: ACCEPT_ARGUMENTS,
   localFacts: [
-    // With --set, the recipe names one inside the artifact, not one on this machine.
+    // With --set, the recipe names one inside the artifact, not one on this machine. The
+    // artifact/recipe existence facts themselves live on the value kinds' resolve (S2.5).
     { argument: "recipe", fact: "acceptance", unless: "set" },
-    { argument: "set", fact: "artifact" },
   ],
   prepare: async ({ values }) => {
     return {
@@ -405,7 +407,7 @@ interface AcceptanceRunTotals {
   readonly couldNotCheck: number;
 }
 
-async function runAcceptanceChecks(ctx: Context, recipes: string[], withModel: boolean): Promise<AcceptanceRunTotals> {
+async function runAcceptanceChecks(ctx: Context, recipes: string[], withModel: boolean, checksByRecipe: ReadonlyMap<string, AcceptanceCheck[]>): Promise<AcceptanceRunTotals> {
   const report: Record<string, AcceptanceResult[]> = {};
   let passed = 0;
   let failed = 0;
@@ -413,7 +415,7 @@ async function runAcceptanceChecks(ctx: Context, recipes: string[], withModel: b
   let couldNotCheck = 0;
 
   for (const recipe of recipes) {
-    const checks = await loadChecks(recipe);
+    const checks = checksByRecipe.get(recipe);
     if (checks === undefined) die(`recipe "${recipe}" declares no acceptance checks (recipes/${recipe}/acceptance.json)`);
 
     const results: AcceptanceResult[] = [];
@@ -546,13 +548,23 @@ async function acceptFromSource(ctx: Context, plan: AcceptPlan, verified?: Verif
     die("no recipe declares acceptance checks — add recipes/<name>/acceptance.json");
   }
 
+  // Q5 pre-pass: every content refusal over the selected recipes (membership in the --set
+  // artifact's manifest, the acceptance.json fact) fires HERE, before the first ctx contact —
+  // the observeRuntime/gatherInspection block below never runs before a local refusal.
+  const checksByRecipe = new Map<string, AcceptanceCheck[]>();
+  for (const recipe of recipes) {
+    const checks = await loadChecks(recipe);
+    if (checks === undefined) die(`recipe "${recipe}" declares no acceptance checks (recipes/${recipe}/acceptance.json)`);
+    checksByRecipe.set(recipe, checks);
+  }
+
   const before = verified === undefined ? undefined : await observeRuntime(ctx, verified.manifest);
   let matchedBefore = false;
   if (verified !== undefined) {
     try { matchedBefore = isHealthy(await gatherInspection(ctx)); } catch { /* Unverified binding. */ }
   }
 
-  const totals = await runAcceptanceChecks(ctx, recipes, withModel);
+  const totals = await runAcceptanceChecks(ctx, recipes, withModel, checksByRecipe);
   const { answer: baseAnswer, security, securityBlocking } = await buildAcceptanceReport(ctx, totals);
   const answer = verified !== undefined && before !== undefined
     ? await attachAcceptanceReceipt(ctx, verified, before, matchedBefore, startedAt, withModel, recipes, totals.report, baseAnswer, security, jsonOnly)

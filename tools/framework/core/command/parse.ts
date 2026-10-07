@@ -4,8 +4,8 @@
 
 import type { CommandArgument } from "#src/core/app.ts";
 import {
-  ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument, UnknownActionError,
-  UnknownArgumentError,
+  ARGUMENT_ERROR_TOKEN, ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument,
+  UnknownActionError, UnknownArgumentError,
 } from "#src/core/command/errors.ts";
 import type { ArgumentRule, ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
 import { scopeByAction } from "#src/core/command/view.ts";
@@ -117,7 +117,7 @@ export function enforceRules(
       const given = rule.with.map((name) => isGiven(byName.get(name), values));
       const satisfied = rule.any === true ? given.some((entry) => entry) : given.every((entry) => entry);
       if (!satisfied) {
-        throw new ArgumentError(ruleText(rule, declared, context), rule.name);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, ruleText(rule, declared, context), rule.name);
       }
       continue;
     }
@@ -125,23 +125,23 @@ export function enforceRules(
       if (!isGiven(byName.get(rule.name), values)) continue;
       const other = rule.with.find((name) => isGiven(byName.get(name), values));
       if (other !== undefined) {
-        throw new ArgumentError(ruleText(rule, declared, context, { case: "mix", incomplete: [other] }), rule.name);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, ruleText(rule, declared, context, { case: "mix", incomplete: [other] }), rule.name);
       }
       continue;
     }
     const touched = rule.groups.filter((group) => group.some((name) => isGiven(byName.get(name), values)));
     if (touched.length > 1) {
-      throw new ArgumentError(ruleText(rule, declared, context, { case: "mix" }), touched[1].find((name) => isGiven(byName.get(name), values))!);
+      throw new ArgumentError(ARGUMENT_ERROR_TOKEN, ruleText(rule, declared, context, { case: "mix" }), touched[1].find((name) => isGiven(byName.get(name), values))!);
     }
     if (touched.length === 1) {
       const group = touched[0];
       if (!group.every((name) => isGiven(byName.get(name), values))) {
-        throw new ArgumentError(ruleText(rule, declared, context, { case: "incomplete", incomplete: group }), group.find((name) => !isGiven(byName.get(name), values))!);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, ruleText(rule, declared, context, { case: "incomplete", incomplete: group }), group.find((name) => !isGiven(byName.get(name), values))!);
       }
       continue;
     }
     if (rule.required === true) {
-      throw new ArgumentError(ruleText(rule, declared, context, { case: "empty" }), rule.groups[0][0]);
+      throw new ArgumentError(ARGUMENT_ERROR_TOKEN, ruleText(rule, declared, context, { case: "empty" }), rule.groups[0][0]);
     }
   }
 }
@@ -306,12 +306,12 @@ function scan(
         // A flag carries no value — "=value" on one is a mistake worth naming.
         if (inlineValue !== undefined) {
           if (lenient) continue;
-          throw new ArgumentError(`--${argument.name} is a flag and takes no value`, argument.name);
+          throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `--${argument.name} is a flag and takes no value`, argument.name);
         }
         entries.push({ argument, value: true });
         continue;
       }
-      if (seenOptions.has(argument.name) && !lenient) throw new ArgumentError(`--${argument.name} given more than once`, argument.name);
+      if (seenOptions.has(argument.name) && !lenient) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `--${argument.name} given more than once`, argument.name);
       seenOptions.add(argument.name);
       if (inlineValue !== undefined) {
         entries.push({ argument, value: inlineValue });
@@ -322,7 +322,7 @@ function scan(
         pending = argument;
         continue;
       }
-      if (value === undefined || (!lenient && isDeclaredLongFlag(value, named))) throw new ArgumentError(`--${argument.name} needs a value`, argument.name);
+      if (value === undefined || (!lenient && isDeclaredLongFlag(value, named))) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `--${argument.name} needs a value`, argument.name);
       entries.push({ argument, value });
       index += 1;
       continue;
@@ -370,7 +370,7 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
   return toParsedArgs(tokenize(declared, argv, scope).entries);
 }
 
-function labelOf(argument: ArgumentSpec): string {
+export function labelOf(argument: ArgumentSpec): string {
   return argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`;
 }
 
@@ -381,7 +381,7 @@ export function choicesRefusal(argument: ArgumentSpec, choices: readonly string[
   return `${labelOf(argument)} takes one of ${choices.join(", ")}, not "${value}"`;
 }
 
-function joinClause(label: string, clause: string): string {
+export function joinClause(label: string, clause: string): string {
   return clause.startsWith(":") ? `${label}${clause}` : `${label} ${clause}`;
 }
 
@@ -395,14 +395,14 @@ function convert(argument: ValueSpec<"option"> | ValueSpec<"positional">, raw: s
   if (kind !== undefined) {
     if (kind.choices !== undefined) {
       // Today's order and wording: empty is "needs a value", an outsider the choices refusal.
-      if (raw === "") throw new ArgumentError(`${label} needs a value`, argument.name);
-      if (!kind.choices.includes(raw)) throw new ArgumentError(choicesRefusal(argument, kind.choices, raw), argument.name);
+      if (raw === "") throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `${label} needs a value`, argument.name);
+      if (!kind.choices.includes(raw)) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, choicesRefusal(argument, kind.choices, raw), argument.name);
       return raw;
     }
     try {
       return kind.parse(raw);
     } catch (error) {
-      if (error instanceof ValueError) throw new ArgumentError(joinClause(label, error.clause), argument.name);
+      if (error instanceof ValueError) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, joinClause(label, error.clause), argument.name);
       throw error;
     }
   }
@@ -411,13 +411,13 @@ function convert(argument: ValueSpec<"option"> | ValueSpec<"positional">, raw: s
     try {
       return legacy.parse.parse(raw);
     } catch (error) {
-      if (error instanceof ValueError) throw new ArgumentError(joinClause(label, error.clause), argument.name);
+      if (error instanceof ValueError) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, joinClause(label, error.clause), argument.name);
       throw error;
     }
   }
-  if (raw === "") throw new ArgumentError(`${label} needs a value`, argument.name);
+  if (raw === "") throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `${label} needs a value`, argument.name);
   if (legacy.choices !== undefined && !legacy.choices.includes(raw)) {
-    throw new ArgumentError(choicesRefusal(argument, legacy.choices, raw), argument.name);
+    throw new ArgumentError(ARGUMENT_ERROR_TOKEN, choicesRefusal(argument, legacy.choices, raw), argument.name);
   }
   return raw;
 }
@@ -453,7 +453,7 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
     // An empty variadic is "not given" — its absence is a rule's or a required argument's
     // to refuse, not the count's.
     if (taken > 0 && taken !== argument.count) {
-      throw new ArgumentError(`<${argument.name}…> takes exactly ${argument.count} values, not ${taken}`, argument.name);
+      throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `<${argument.name}…> takes exactly ${argument.count} values, not ${taken}`, argument.name);
     }
   }
   const prefix = [context.command, context.action].filter((part) => part !== undefined && part !== "").join(" ");
@@ -461,7 +461,7 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
     if (argument.kind === "flag" || argument.required !== true) continue;
     const absent = argument.kind === "variadic" ? (values[argument.name] as string[]).length === 0 : values[argument.name] === undefined;
     if (!absent) continue;
-    throw new ArgumentError(requiredArgumentRefusal(argument, prefix), argument.name);
+    throw new ArgumentError(ARGUMENT_ERROR_TOKEN, requiredArgumentRefusal(argument, prefix), argument.name);
   }
   return values;
 }
@@ -487,7 +487,7 @@ function refuseToken(refuse: Readonly<Record<string, string>> | undefined, token
   if (refuse === undefined) return;
   const eq = token.indexOf("=");
   const name = token.startsWith("--") && eq !== -1 ? token.slice(0, eq) : token;
-  if (Object.hasOwn(refuse, name)) throw new ArgumentError(refuse[name], name.replace(/^-+/, ""));
+  if (Object.hasOwn(refuse, name)) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, refuse[name], name.replace(/^-+/, ""));
 }
 
 // The normalized call form (stage 7 S2.2): ONE selection of the action — or of the single
@@ -573,7 +573,7 @@ export function selectAction(shape: CallShape, input: CallInput, command = ""): 
   if (input.kind === "named") {
     const word = input.args.action;
     if (word !== undefined && word !== "" && typeof word !== "string") {
-      throw new ArgumentError(`action takes a string`, "action");
+      throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `action takes a string`, "action");
     }
     if (typeof word === "string" && word !== "") {
       if (!known.has(word)) dieUnknownAction(word, unknownActionMessage(word, names), names, "action");
@@ -632,7 +632,7 @@ export function bindNamed(
       const sibling = chosen.siblings.find((candidate) => candidate.name === name);
       if (sibling !== undefined) {
         const label = sibling.kind === "positional" ? `<${name}>` : `--${name}`;
-        throw new ArgumentError(argumentScopeRefusal(sibling, action ?? "", label)!, name);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, argumentScopeRefusal(sibling, action ?? "", label)!, name);
       }
       // A positional of another action: the siblings list carries only flags and options
       // (scopeByAction), so its owners are derived from the shape's own action slices here.
@@ -642,12 +642,12 @@ export function bindNamed(
       if (owners.length > 0) {
         const foreign = Object.values(shape.actions!).flatMap((unit) => unit.arguments ?? []).find((candidate) => candidate.name === name)!;
         const label = foreign.kind === "positional" ? `<${name}>` : `--${name}`;
-        throw new ArgumentError(appliesToMessage(label, owners, action ?? ""), name);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, appliesToMessage(label, owners, action ?? ""), name);
       }
       throw new UnknownArgumentError(`unknown argument: ${name}`, name);
     }
     if (argument.kind === "flag") {
-      if (typeof value !== "boolean") throw new ArgumentError(`${name} takes true or false`, name);
+      if (typeof value !== "boolean") throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `${name} takes true or false`, name);
       // false is "not given" — the same absence the tokenizer's argv form produces.
       if (!value) continue;
       recorded.set(name, { argument, value: true });
@@ -655,12 +655,12 @@ export function bindNamed(
     }
     if (argument.kind === "variadic") {
       if (!(Array.isArray(value) && value.every((element) => typeof element === "string" && element !== ""))) {
-        throw new ArgumentError(`${name} takes a list of non-empty strings`, name);
+        throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `${name} takes a list of non-empty strings`, name);
       }
       recorded.set(name, { argument, value: true, values: value });
       continue;
     }
-    if (typeof value !== "string") throw new ArgumentError(`${name} takes a string`, name);
+    if (typeof value !== "string") throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `${name} takes a string`, name);
     if (value === "") continue;
     recorded.set(name, { argument, value });
   }

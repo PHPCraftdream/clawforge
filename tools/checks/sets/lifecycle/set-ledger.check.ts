@@ -430,6 +430,8 @@ function inspectionWith(problems: Problem[]): Inspection {
   const recipeRoot = await mkdtemp(join(tmpdir(), "clawforge-ledger-preflight-"));
   try {
     await mkdir(join(recipeRoot, "recipes", "demo", "agent"), { recursive: true });
+    // recipeRef's resolve (stage 7 S2.5) refuses a recipe without its recipe.json.
+    await writeFile(join(recipeRoot, "recipes", "demo", "recipe.json"), JSON.stringify({ description: "preflight recipe" }));
     await writeFile(join(recipeRoot, "recipes", "demo", "server.ts"), "export const server = 'demo';\n");
     await writeFile(join(recipeRoot, "recipes", "demo", "agent", "config.json"), JSON.stringify({ agentId: "preflight-agent", mcpServerName: "preflight-mcp" }));
     await writeFile(join(recipeRoot, "recipes", "demo", "agent", "INTRO.md"), "# preflight\n");

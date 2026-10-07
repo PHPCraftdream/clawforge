@@ -9,6 +9,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { accept, runCheck, requiresModel, summarize, acceptanceSpecError } from "#framework/commands/orchestration/accept.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
+import type { SetManifest } from "#framework/set/artifacts/model.ts";
+import { packArtifact } from "#checks/sets/pack.ts";
+import { createDeploymentFixture, type DeploymentFixture } from "#checks/kit/deployment-fixture.ts";
 import type { AcceptanceCheck } from "#framework/commands/orchestration/accept.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
@@ -72,6 +79,20 @@ function toolsListed(names: string[]) {
 
 function toolAnswered(text: string) {
   return { 1: { result: {} }, 2: { result: { content: [{ type: "text", text }] } } };
+}
+
+/** Runs `accept` on the fixture's recording transport: one sweep-style case, with the stage,
+ *  the error and the transport's contact log. */
+async function runOnFixture(deployment: DeploymentFixture, argv: string[]) {
+  const transport = deployment.transport();
+  const app = { name: "accept-fixture", description: "fixture", commands: openclawCommands };
+  const outcome = await withOutputSink(() => {}, () =>
+    executeCommand(app, "accept", { kind: "argv", argv }, { surface: "terminal", transport, confirmed: true }),
+  ).then(
+    (value) => ({ stage: value.stage as string, error: value.error as unknown }),
+    (error: unknown) => ({ stage: "no-stage", error }),
+  );
+  return { ...outcome, contacts: deployment.contacts() };
 }
 
 async function run(answers: Answers, declared: AcceptanceCheck) {
@@ -315,6 +336,65 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(resolve(monorepoRoot, "apps", "example app"));
   }
+}
+
+// --- Q5 / NC-S2-accept-order: a content refusal over the --set artifact precedes every
+// target contact -------------------------------------------------------------------------
+//
+// acceptFromSource used to observe the runtime and gather the inspection BEFORE loadChecks
+// died on the local content — a recipe missing from the artifact (or without an
+// acceptance.json) cost a trip to the target before refusing. The pre-pass of loadChecks
+// over ALL selected recipes now runs first: the refusal must fire with ZERO contacts, and a
+// recipe the artifact DOES carry must reach the checks (and contact the target).
+
+{
+  const deployment = await createDeploymentFixture();
+  const acceptance = JSON.stringify({ checks: [{ kind: "mcp_responds", tools: [] }] });
+  const recipeJson = '{"description":"fixture recipe"}\n';
+  const artifact = async (withAcceptance: boolean): Promise<string> => {
+    const tree = join(deployment.root, `accept-order-${withAcceptance ? "with" : "without"}`);
+    await mkdir(join(tree, "recipes", "local"), { recursive: true });
+    await mkdir(join(tree, "config"), { recursive: true });
+    await writeFile(join(tree, "recipes", "local", "recipe.json"), recipeJson);
+    await writeFile(join(tree, "config", "desired-state.json"), "[]");
+    if (withAcceptance) await writeFile(join(tree, "recipes", "local", "acceptance.json"), acceptance);
+    const files: Record<string, string> = {
+      "config/desired-state.json": checksumOf("[]"),
+      "recipes/local/recipe.json": checksumOf(recipeJson),
+      ...(withAcceptance ? { "recipes/local/acceptance.json": checksumOf(acceptance) } : {}),
+    };
+    const recipeFiles: Record<string, string> = {
+      "recipe.json": checksumOf(recipeJson),
+      ...(withAcceptance ? { "acceptance.json": checksumOf(acceptance) } : {}),
+    };
+    const manifest: SetManifest = {
+      version: 1,
+      name: "accept-order",
+      requires: { framework: "0.1.0", image: `image@sha256:${"a".repeat(64)}` },
+      files,
+      recipes: { local: { checksum: checksumOfFileMap(recipeFiles), files: recipeFiles } },
+      secrets: [],
+      acceptance: withAcceptance ? { local: [{ kind: "mcp_responds", tools: [] }] } : {},
+    };
+    const out = join(deployment.root, `accept-order-${withAcceptance ? "with" : "without"}.tar.gz`);
+    await packArtifact(tree, manifest, out);
+    return out;
+  };
+  // The check's own independent spelling of the acceptance fact's sentence (spec.ts's
+  // localFactRefusal is NOT referenced); tokens split on single spaces, punctuation
+  // tokens kept verbatim.
+  const noAcceptanceSentence = ["recipe", "\"local\"", "declares", "no", "acceptance", "checks", "(recipes/local/acceptance.json)"].join(" ");
+
+  const refused = await runOnFixture(deployment, ["--set", await artifact(false), "local"]);
+  checkTrue("a recipe missing from the artifact refuses at the run stage", refused.stage === "run");
+  check("the refusal is the acceptance-fact's own text", (refused.error as Error | undefined)?.message, noAcceptanceSentence);
+  checkTrue("and it fires with ZERO target contacts (the Q5 guard)", refused.contacts.length === 0);
+
+  const carried = await runOnFixture(deployment, ["--set", await artifact(true), "local"]);
+  checkTrue("accept --set with the recipe's acceptance.json reaches the run stage", carried.stage === "run");
+  checkTrue("accept --set with the recipe's acceptance.json contacts the target", carried.contacts.length > 0);
+
+  await deployment.dispose();
 }
 
 finish("acceptance");

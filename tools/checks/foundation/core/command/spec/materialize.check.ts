@@ -26,10 +26,10 @@ const SINGLE = commandBody({
   effect: "change",
   arguments: ARGS,
   rules: [{ rule: "conflicts", name: "dry-run", with: ["wipe"] }],
-  prepare: ({ values }) => {
+  prepare: (call) => {
     calls.push("prepare");
-    if (values.n === 13) throw new ArgumentError("unlucky", "n");
-    return { doubled: (values.n ?? 0) * 2 };
+    if (call.values.n === 13) call.refuse("n", "unlucky");
+    return { doubled: (call.values.n ?? 0) * 2 };
   },
   run: async (_on, plan) => {
     calls.push(`run ${plan.doubled}`);

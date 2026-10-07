@@ -13,10 +13,15 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { bindNamed } from "#framework/core/command/parse.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 import { specShape } from "#framework/core/command/spec.ts";
 import type { Stage } from "#framework/core/command/execute.ts";
 
-const moduleUrl = (name: string): string => pathToFileURL(join(process.cwd(), "tools", "framework", name)).href;
+// Resolve against the monorepo root, not process.cwd(): the check is invoked from tools/,
+// where cwd-relative "tools/..." paths would double the segment and the child's imports
+// would fail with ERR_MODULE_NOT_FOUND before any CALL_STAGE line.
+const moduleUrl = (name: string): string => pathToFileURL(join(monorepoRoot, "tools", "framework", name)).href;
+const checkUrl = (name: string): string => pathToFileURL(join(monorepoRoot, "tools", "checks", name)).href;
 
 export interface ChangedInventoryUnit {
   readonly label: string;
@@ -37,9 +42,17 @@ export interface ChangedInventoryUnit {
   readonly preparesEnvironment: boolean;
 }
 
-const example = (arg: ArgumentSpec): unknown => arg.kind === "flag" ? true : arg.value.example;
+// Stage 7 S2.5: a resolve-bearing kind's example is not enough — the pipeline resolves it at
+// prepare, so an inventory probe needs a value whose local fact HOLDS (a file that exists).
+const example = (arg: ArgumentSpec, root?: string): unknown => {
+  if (arg.kind === "flag") return true;
+  const kind = arg.value;
+  if (kind?.kind === "localFile" && root !== undefined) return join(root, "app.ts");
+  if (kind?.kind === "localDirectory" && root !== undefined) return join(root, "recipes", "local");
+  return kind?.example;
+};
 
-function buildArgs(command: string, args: readonly ArgumentSpec[], rules: readonly ArgumentRule[], target?: ArgumentSpec & { kind: "flag" }, sliceAction?: string): Record<string, unknown> {
+function buildArgs(command: string, args: readonly ArgumentSpec[], rules: readonly ArgumentRule[], target: ArgumentSpec & { kind: "flag" } | undefined, sliceAction: string | undefined, root: string | undefined): Record<string, unknown> {
   const available = (arg: ArgumentSpec): boolean => {
     if (!sliceAction) return true;
     const body = specOf(openclawCommands[command]!);
@@ -66,11 +79,11 @@ function buildArgs(command: string, args: readonly ArgumentSpec[], rules: readon
   for (const rule of rules) if (rule.rule === "conflicts" && chosen.has(rule.name)) for (const name of rule.with) chosen.delete(name);
   if (target && available(target)) chosen.add(target.name);
   const result: Record<string, unknown> = {};
-  for (const arg of args) if (available(arg) && chosen.has(arg.name)) result[arg.name] = arg.kind === "flag" ? true : arg.kind === "variadic" ? Array.from({ length: arg.count ?? 1 }, () => example(arg)) : example(arg);
+  for (const arg of args) if (available(arg) && chosen.has(arg.name)) result[arg.name] = arg.kind === "flag" ? true : arg.kind === "variadic" ? Array.from({ length: arg.count ?? 1 }, () => example(arg, root)) : example(arg, root);
   return result;
 }
 
-export function buildChangedInventory(): readonly ChangedInventoryUnit[] {
+export function buildChangedInventory(root?: string): readonly ChangedInventoryUnit[] {
   const units: ChangedInventoryUnit[] = [];
   for (const [command, declaration] of Object.entries(openclawCommands)) {
     const body = specOf(declaration);
@@ -82,7 +95,7 @@ export function buildChangedInventory(): readonly ChangedInventoryUnit[] {
       if (slice.effect !== "read") targets.push({ effect: slice.effect });
       for (const arg of slice.args) if (arg.kind === "flag" && arg.effect !== undefined && arg.effect !== "read") targets.push({ effect: arg.effect, flag: arg });
       for (const target of targets) {
-        const args = buildArgs(command, slice.args, slice.rules, target.flag, slice.action);
+        const args = buildArgs(command, slice.args, slice.rules, target.flag, slice.action, root);
         try { bindNamed(specShape(body), { kind: "named", ...(slice.action ? { action: slice.action } : {}), args: { ...(slice.action ? { ...args, action: slice.action } : args), ...(target.effect === "destroy" ? { confirm: true } : {}) } }, command, { confirmed: true }); }
         catch (error) { throw new Error(`cannot build ${slice.label} ${target.effect} variant`, { cause: error }); }
         units.push({ label: `${slice.label}${target.flag ? ` [--${target.flag.name}]` : " [base effect]"}`, command, ...(slice.action ? { action: slice.action } : {}), effect: target.effect, args, sliceArguments: slice.args, sliceRules: slice.rules, baseEffect: slice.effect, needs: data.kind === "single" ? data.needs : "target", preparesEnvironment: data.kind === "single" ? data.preparesEnvironment : false });
@@ -101,14 +114,14 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment.ts"))});
     const { commandBody, materializeCommands } = await import(${JSON.stringify(moduleUrl("core/command/spec.ts"))});
     const { UserError } = await import(${JSON.stringify(moduleUrl("core/io/log.ts"))});
-    const { buildChangedInventory } = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), "tools/checks/integration/mcp/dispatch/changed-inventory.ts")).href)});
-    const { createDeploymentFixture } = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), "tools/checks/kit/deployment-fixture.ts")).href)});
-    const { useLinuxHost } = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), "tools/checks/foundation/hygiene/linux-host.ts")).href)});
+    const { buildChangedInventory } = await import(${JSON.stringify(checkUrl("integration/mcp/dispatch/changed-inventory.ts"))});
+    const { createDeploymentFixture } = await import(${JSON.stringify(checkUrl("kit/deployment-fixture.ts"))});
+    const { useLinuxHost } = await import(${JSON.stringify(checkUrl("foundation/hygiene/linux-host.ts"))});
     await useLinuxHost();
     const fixture = await createDeploymentFixture();
     try {
       await useDeployment(fixture.root);
-      const units = buildChangedInventory();
+      const units = buildChangedInventory(process.env.FIXTURE_ROOT);
     const mode = process.env.CASE_MODE;
     const selected = mode === "confirm" ? units.filter((unit) => unit.effect === "destroy") : units;
     const commands = materializeCommands(Object.fromEntries(selected.map((unit, index) => {
@@ -144,14 +157,14 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
     process.stderr.write("FIXTURE_CONTACTS " + JSON.stringify(fixture.contacts()) + "\\n");
     } finally { await fixture.dispose(); }
   `;
-  const units = buildChangedInventory();
+  const units = buildChangedInventory(options.fixture.root);
   const rows: Array<{ mode: string; expected: number; stages: Map<number, Stage>; responses: Array<{ id: number; result?: Record<string, unknown> }>; stderr: string }> = [];
   let failures = 0;
   for (const mode of ["parse", "confirm", "prepare", "context", "run"]) {
     const selected = mode === "confirm" ? units.filter((unit) => unit.effect === "destroy") : units;
     const requests = selected.map((unit, index) => ({ jsonrpc: "2.0", id: index + 1, method: "tools/call", params: { name: `probe-${index}`, arguments: { ...unit.args, confirm: mode !== "confirm", ...(mode === "parse" ? { __unknown: true } : {}) } } }));
     const result = await runProcess(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
-      cwd: process.cwd(), env: { ...process.env, CASE_MODE: mode },
+      cwd: process.cwd(), env: { ...process.env, CASE_MODE: mode, FIXTURE_ROOT: options.fixture.root },
       input: requests.map((request) => JSON.stringify(request) + "\n").join(""), timeoutMs: 60_000,
     });
     if (result.code !== 0 || result.timedOut) failures++;

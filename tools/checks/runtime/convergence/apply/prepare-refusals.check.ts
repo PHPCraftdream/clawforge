@@ -13,6 +13,7 @@ import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { setInvocation } from "#framework/core/io/invocation/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
+import { missingArtifactRefusal } from "#framework/core/values/plan.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const UNREACHABLE = "prepare-refusals: no target is reachable here";
@@ -86,15 +87,36 @@ for (const argv of [["--previous-set", "--operation", "apply-1"], ["--previous-s
 
 for (const [name, argv, argument] of [
   ["apply", ["--expect", ""], "expect"],
+  ["apply", ["--expect", "zz"], "expect"],
   ["plan", ["--set", ""], "set"],
   ["operations", ["--limit", "0"], "limit"],
   ["operations", ["--limit", "abc"], "limit"],
+  ["operations", ["../x"], "id"],
   ["rollback", ["--operation", "-x"], "operation"],
 ] as const) {
   const { stage, error, contacts } = await refusal(name, [...argv]);
   check(`${name} ${argv.join(" ")} stops at the parse stage`, stage, "parse");
   checkTrue(`${name} ${argv.join(" ")} is refused as an argument error`, error instanceof ArgumentError);
   check(`${name} ${argv.join(" ")} names the argument`, (error as ArgumentError).argument, argument);
+  check(`${name} ${argv.join(" ")} never contacts the target`, contacts, []);
+}
+
+// --- prepare-stage refusals: the resolved local facts ---------------------------------------------
+
+// The artifact fact is localFile's resolve (S2.5): a missing --set stops at prepare with
+// the producer's own text and zero contacts. The operation-id kind resolves to the branded
+// OperationId without a local fact — a well-formed but unrecorded id is the run's target
+// fact, so only the artifact cases are pinned here.
+const MISSING_ARTIFACT = "no-such-artifact.tar.gz";
+for (const [name, argv, argument] of [
+  ["apply", ["--set", MISSING_ARTIFACT], "set"],
+  ["plan", ["--set", MISSING_ARTIFACT], "set"],
+] as const) {
+  const { stage, error, contacts } = await refusal(name, [...argv]);
+  check(`${name} ${argv.join(" ")} stops at the prepare stage`, stage, "prepare");
+  checkTrue(`${name} ${argv.join(" ")} is refused as an argument error`, error instanceof ArgumentError);
+  check(`${name} ${argv.join(" ")} names the argument`, (error as ArgumentError).argument, argument);
+  check(`${name} ${argv.join(" ")} carries the artifact fact's own text`, (error as Error).message, missingArtifactRefusal(MISSING_ARTIFACT));
   check(`${name} ${argv.join(" ")} never contacts the target`, contacts, []);
 }
 

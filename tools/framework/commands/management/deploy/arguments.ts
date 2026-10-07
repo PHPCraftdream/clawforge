@@ -4,12 +4,12 @@
 import { die } from "#src/core/io/log.ts";
 import { renderAdvice, shimInvocation } from "#src/core/io/invocation/render.ts";
 import { command, shellLine } from "#src/core/io/invocation/advice.ts";
-import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
-import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
+import { monorepoRoot, isMonorepoCheckout, DEFAULT_REMOTE_PATH } from "#src/core/env.ts";
+import { deploymentDir, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
 import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
 import { isAbsolute, relative, sep, win32 } from "node:path";
-import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values, LocalScope } from "#src/core/command/index.ts";
 import * as kinds from "#src/core/values/kinds.ts";
 
 export const DEPLOY_ARGUMENTS = [
@@ -65,10 +65,12 @@ export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<
   return root;
 }
 
-/** Maps the local recipe root to the remote deployment without escaping its directory. */
-export function remoteRecipesPath(remoteApp: string): string {
+/** Maps the local recipe root to the remote deployment without escaping its directory:
+ *  the remote-relative part only — the caller joins it under its own remote app path.
+ *  The refusals are local facts, so the prepare stage raises them (stage 7 S2.5). */
+export function recipesRelocation(): string {
   const setting = applicationRecipesSetting();
-  if (setting === undefined) return `${remoteApp}/recipes`;
+  if (setting === undefined) return "recipes";
 
   if (isAbsolute(setting) || win32.isAbsolute(setting)) {
     die(
@@ -101,7 +103,7 @@ export function remoteRecipesPath(remoteApp: string): string {
         "Keep recipes outside secrets/, data/, backups/, snapshots/ and .env.",
     );
   }
-  return `${remoteApp}/${remoteRelative}`;
+  return remoteRelative;
 }
 
 /** Everything deploy() derives from the bound arguments before any tool check, connection
@@ -120,21 +122,24 @@ export interface DeployPlan {
   remoteRecipes: string;
 }
 
-export function resolveDeployArguments(ctx: Context, values: Values<typeof DEPLOY_ARGUMENTS>): DeployPlan {
-  const target = values.target as string;
-  const requestedPath = values.path as string | undefined;
-  // An empty --path is caught below by validatedRemoteRoot(), which already names the
-  // value and reason — no separate check needed here.
-  let remotePath = requestedPath === undefined ? ctx.settings.remotePath : requestedPath;
+export function resolveDeployArguments(ctx: Context, prepared: DeployPrepared): DeployPlan {
+  const { target, sourceRoot: _sourceRoot, name: _name, recipesRelative: _recipesRelative, ...values } = prepared;
+  const requestedPath = values.path;
+  // The path the run actually uses is the layered one: --path over ctx.settings.remotePath
+  // (app settings layered under .env in buildSettings). Prepare validated the .env default
+  // and carries its normalized result; when the layered value is those same bytes the
+  // prepared value is reused, and only a different layered value is validated here — the
+  // kind and the two validations between them judge every distinct path exactly once
+  // (stage 7 S2.5).
+  const requested = requestedPath ?? ctx.settings.remotePath;
+  const remotePath = requested === prepared.remotePathValidated
+    ? prepared.remotePathValidated
+    : validatedRemoteRoot(requested);
   const runBootstrap = values["no-bootstrap"] !== true;
   const adopt = values.adopt === true;
   const dryRun = values["dry-run"] === true;
   const jsonOnly = values.json === true;
 
-  // The destination of a --delete mirror gets its local examination before anything
-  // remote runs — no connection, no mkdir, no rsync. The marker protocol asks the remote
-  // half of the same question.
-  remotePath = validatedRemoteRoot(remotePath);
   // Later commands (watch install) read OC_REMOTE_PATH, not --path.
   const remotePathNote = requestedPath !== undefined && requestedPath !== ctx.settings.remotePath
     ? `--path ${remotePath} differs from OC_REMOTE_PATH (${ctx.settings.remotePath}) in this deployment's ` +
@@ -142,10 +147,42 @@ export function resolveDeployArguments(ctx: Context, values: Values<typeof DEPLO
       "read it, not --path."
     : undefined;
 
-  const name = deploymentName();
+  const name = prepared.name;
   const remoteApp = `${remotePath}/apps/${name}`;
-  // Resolved before checking tools, connecting, or writing anything remotely.
-  const remoteRecipes = remoteRecipesPath(remoteApp);
+  // Derived at the prepare stage, where its refusals are local facts.
+  const remoteRecipes = `${remoteApp}/${prepared.recipesRelative}`;
 
   return { target, remotePath, remotePathNote, runBootstrap, adopt, dryRun, jsonOnly, name, remoteApp, remoteRecipes };
+}
+
+/** The local facts the prepare stage derives and the plan carries into run (stage 7 S2.5):
+ *  the mirrored checkout, this deployment's name, and where its recipes relocate remotely.
+ *  Each can refuse — the checkout sentence, the remote-root sentence, the recipesDir
+ *  sentences — and every one of those refusals is a local fact, so they are raised in
+ *  prepare, before any Context, environment preparation or target contact. */
+export interface DeployLocalFacts {
+  sourceRoot: string;
+  name: string;
+  recipesRelative: string;
+  /** The .env-default side of the remote path, as validatedRemoteRoot normalized it. When
+   *  the run path's layered value (--path or ctx.settings.remotePath) is these same bytes,
+   *  run reuses this value instead of validating again. */
+  remotePathValidated: string;
+}
+
+/** Derives the local facts, in the run path's former order so a refusal arrives exactly as
+ *  it did — only one stage earlier. The remote-root sentence is judged against the .env
+ *  default when no --path was given (the kind refuses a given --path at parse), so a bad
+ *  OC_REMOTE_PATH in .env is still refused, now at prepare; the normalized result is
+ *  carried so run only re-validates a layered path that differs from it. The plan is
+ *  the bound values plus the derived facts. */
+export type DeployPrepared = Values<typeof DEPLOY_ARGUMENTS> & DeployLocalFacts;
+
+export async function deriveDeployLocalFacts(values: Values<typeof DEPLOY_ARGUMENTS>, local: LocalScope): Promise<DeployPrepared> {
+  const env = await local.env();
+  const sourceRoot = await frameworkSourceRoot();
+  const remotePathValidated = validatedRemoteRoot(values.path ?? env?.["OC_REMOTE_PATH"] ?? DEFAULT_REMOTE_PATH);
+  const name = local.deployment().name;
+  const recipesRelative = recipesRelocation();
+  return { ...values, sourceRoot, name, recipesRelative, remotePathValidated };
 }

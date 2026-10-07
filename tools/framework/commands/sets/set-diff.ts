@@ -14,8 +14,9 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
-import type { ArgumentSpec } from "#src/core/command/index.ts";
+import type { PrepareCall, ArgumentSpec, Values } from "#src/core/command/index.ts";
 import * as kinds from "#src/core/values/kinds.ts";
+import type { LocalArtifact } from "#src/core/values/plan.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =
@@ -304,6 +305,10 @@ async function desiredState(staging: string): Promise<unknown> {
   return readJson(resolve(staging, "config", "desired-state.json"));
 }
 
+// The artifacts: the same kind object prepare derives through, so the plan carries the
+// resolve's LocalArtifact for both spellings (--from/--to and the two positionals).
+const ARTIFACT = kinds.localFile("a set artifact path");
+
 export const SET_DIFF_ARGUMENTS = [
   {
     name: "from",
@@ -311,7 +316,7 @@ export const SET_DIFF_ARGUMENTS = [
     summary: "original artifact",
     description: "With diff: original artifact",
     valueName: "artifact",
-    value: kinds.localFile("a set artifact path"),
+    value: ARTIFACT,
   },
   {
     name: "to",
@@ -319,13 +324,24 @@ export const SET_DIFF_ARGUMENTS = [
     summary: "replacement artifact",
     description: "With diff: replacement artifact",
     valueName: "artifact",
-    value: kinds.localFile("a set artifact path"),
+    value: ARTIFACT,
   },
   { name: "json", summary: "Emit JSON", kind: "flag", description: "Emit JSON" },
-  { name: "artifacts", kind: "variadic", count: 2, description: "Two positional artifacts", value: kinds.localFile("a set artifact path") },
+  { name: "artifacts", kind: "variadic", count: 2, description: "Two positional artifacts", value: ARTIFACT },
 ] as const satisfies readonly ArgumentSpec[];
 
-export interface SetDiffPlan { readonly from: string; readonly to: string; readonly json: boolean }
+export interface SetDiffPlan { readonly from: LocalArtifact; readonly to: LocalArtifact; readonly json: boolean }
+
+/** The oneOf rule guarantees one whole spelling; the pipeline resolved BOTH spellings' bound
+ *  arguments through the kind (S2.5), so prepare only picks the resolved pair — a missing
+ *  artifact is refused by the kind's resolve, before any target contact (design §5.2). */
+export async function diffPrepare(call: PrepareCall<Values<typeof SET_DIFF_ARGUMENTS>>): Promise<SetDiffPlan> {
+  const { values: v } = call;
+  const from = v.from ?? v.artifacts[0];
+  const to = v.to ?? v.artifacts[1];
+  if (from === undefined || to === undefined) call.refuse("from", "needs a value");
+  return { from, to, json: v.json };
+}
 
 function humanChange(change: SetDiffChange): string {
   const target = `${change.scope}${change.field === undefined ? "" : `.${change.field}`}`;

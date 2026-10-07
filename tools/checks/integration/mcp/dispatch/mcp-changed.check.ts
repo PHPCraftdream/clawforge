@@ -6,10 +6,14 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Stage } from "#framework/core/command/execute.ts";
 import { buildChangedInventory, runChangedInventory } from "#checks/integration/mcp/dispatch/changed-inventory.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 
 const fixture = await createDeploymentFixture();
 const tally = stageTally();
-const moduleUrl = (name: string): string => pathToFileURL(join(process.cwd(), "tools", "framework", name)).href;
+// Resolve against the monorepo root, not process.cwd(): the check is invoked from tools/,
+// where cwd-relative "tools/..." would double the segment and the child's imports would
+// fail with ERR_MODULE_NOT_FOUND before any PIPELINE_STAGE line.
+const moduleUrl = (name: string): string => pathToFileURL(join(monorepoRoot, "tools", "framework", name)).href;
 const script = `
   const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server.ts"))});
   const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment.ts"))});

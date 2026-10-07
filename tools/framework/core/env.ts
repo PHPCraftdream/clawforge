@@ -430,6 +430,10 @@ function assertSafeSiblingDir(name: "OC_BACKUP_DIR" | "OC_SNAPSHOT_DIR", directo
 
 export const DATA_DIR_UNSET = "OC_DATA_DIR is not set in .env";
 
+/** deploy's default remote root, shared with its prepare stage so the kind-refused --path
+ *  and the .env default are judged against the same sentence (stage 7 S2.5). */
+export const DEFAULT_REMOTE_PATH = "/opt/openclaw";
+
 export function toSettings(env: Env): Settings {
   const dataDir = env.OC_DATA_DIR;
   if (!dataDir) die(DATA_DIR_UNSET);
@@ -460,7 +464,7 @@ export function toSettings(env: Env): Settings {
     location: env.OC_TARGET_LOCATION ?? "auto",
     wslDistro: env.OC_WSL_DISTRO ?? DEFAULT_WSL_DISTRO,
     sshHost: env.OC_SSH_HOST ?? "",
-    remotePath: env.OC_REMOTE_PATH ?? "/opt/openclaw",
+    remotePath: env.OC_REMOTE_PATH ?? DEFAULT_REMOTE_PATH,
   };
 }
 

@@ -36,9 +36,14 @@ import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import * as kinds from "#src/core/values/kinds.ts";
+import type { Checksum, LocalArtifact } from "#src/core/values/plan.ts";
+
+// The --set artifact: the same kind object prepare derives through, so the plan carries the
+// resolve's LocalArtifact and the run never sees an unresolved path.
+const SET_ARTIFACT = kinds.localFile("a set artifact path");
 
 export const APPLY_ARGUMENTS = [
-  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact", value: kinds.localFile("a set artifact path") },
+  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
   { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum", value: kinds.checksum("hex64", { expected: "a declaration checksum", invalid: () => "takes a declaration checksum — 64 hexadecimal digits", example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }) },
   { name: "dry-run", description: "Show the steps without running any of them", kind: "flag", effect: "read" },
   ...LOCK_TAKEOVER_ARGUMENTS,
@@ -153,8 +158,8 @@ export class TargetChangedError extends Error {
 
 /** Everything the run needs, decided from the arguments alone in the prepare stage. */
 interface ApplyPlan {
-  readonly set?: string;
-  readonly expect?: string;
+  readonly set?: LocalArtifact;
+  readonly expect?: Checksum;
   readonly dryRun: boolean;
   readonly json: boolean;
   readonly takeover: { readonly breakLock: boolean; readonly breakForeignLockHost?: string };
@@ -163,16 +168,15 @@ interface ApplyPlan {
 export const APPLY = commandBody({
   effect: "destroy",
   arguments: APPLY_ARGUMENTS,
-  localFacts: [{ argument: "set", fact: "artifact" }],
-  prepare: async ({ values }) => {
-    return {
-      set: values.set,
-      expect: values.expect,
-      dryRun: values["dry-run"],
-      json: values.json,
-      takeover: takeoverOf(values),
-    } satisfies ApplyPlan;
-  },
+  prepare: async (call) => ({
+    // The resolved set artifact and checksum arrive in the plan's own key slots: the
+    // pipeline resolved each bound value through its declared kind (S2.5).
+    set: call.values.set,
+    expect: call.values.expect,
+    dryRun: call.values["dry-run"],
+    json: call.values.json,
+    takeover: takeoverOf(call.values),
+  } satisfies ApplyPlan),
   run: (ctx, plan) => applyPlan(ctx, plan),
 });
 
@@ -193,7 +197,7 @@ async function applyPlan(ctx: Context, plan: ApplyPlan): Promise<void> {
 }
 
 /** The --set flow once the artifact is unpacked and its recipe files are the active source. */
-async function applySetArtifact(ctx: Context, plan: ApplyPlan, artifact: string, verified: VerifiedArtifact): Promise<void> {
+async function applySetArtifact(ctx: Context, plan: ApplyPlan, artifact: LocalArtifact, verified: VerifiedArtifact): Promise<void> {
   if (plan.dryRun) {
     await applyFromSource(ctx, plan);
     return;
@@ -317,7 +321,7 @@ async function refuseUnmetRequirements(ctx: Context, verified: VerifiedArtifact,
 async function installSetUnderLock(
   ctx: Context,
   plan: ApplyPlan,
-  artifact: string,
+  artifact: LocalArtifact,
   verified: VerifiedArtifact,
   framework: string | undefined,
   operationId: string,
@@ -416,7 +420,7 @@ export function refuseUnreliableCliRead(plan: Pick<Plan, "problems">): void {
 
 /** The declaration a caller planned against, if it named one. Checked before any step runs:
  *  the value of the refusal is entirely in it happening first. */
-function refuseStaleDeclaration(expected: string | undefined, plan: Plan): void {
+function refuseStaleDeclaration(expected: Checksum | undefined, plan: Plan): void {
   if (expected !== undefined && expected !== plan.declarationChecksum) {
     die(
       "the declaration changed after that plan was computed — the steps in it were chosen " +

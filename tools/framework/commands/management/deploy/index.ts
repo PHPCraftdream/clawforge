@@ -17,15 +17,13 @@ import { log, info } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
-import type { Values } from "#src/core/command/index.ts";
-import type { DeployPlan } from "./arguments.ts";
-import { frameworkSourceRoot, resolveDeployArguments, DEPLOY_ARGUMENTS } from "./arguments.ts";
-import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
+import type { DeployPlan, DeployPrepared } from "./arguments.ts";
+import { deriveDeployLocalFacts, resolveDeployArguments, DEPLOY_ARGUMENTS } from "./arguments.ts";
 import { assertDeployable } from "./refusals.ts";
 import { checkServerReady, prepareRemoteRoot } from "./server.ts";
 import { syncTrees, bootstrapAndReport, bootstrapRemoteLine } from "./sync.ts";
 
-export { DEPLOY_ARGUMENTS, frameworkSourceRoot, remoteRecipesPath } from "./arguments.ts";
+export { DEPLOY_ARGUMENTS, frameworkSourceRoot, recipesRelocation } from "./arguments.ts";
 export { runRemote } from "./server.ts";
 export {
   collectSensitiveCheckoutNames,
@@ -39,7 +37,7 @@ export {
  *  runs BEFORE its first mutation — nothing past that runs, since preparing the remote root
  *  is itself a write. Doesn't cover whether the root is safe for --delete or the exact
  *  file-level diff rsync would produce. */
-async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan): Promise<void> {
+async function deployDryRun(ctx: Context, plan: DeployPlan): Promise<void> {
   await checkServerReady(ctx, plan.target);
 
   const report = {
@@ -79,14 +77,13 @@ async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan):
 export const DEPLOY = commandBody({
   effect: "destroy",
   arguments: DEPLOY_ARGUMENTS,
-  // An explicitly given --path is refused here, in the prepare stage: the refusal is an
-  // argument fact, and at run an unreachable target would report instead of it.
-  prepare: ({ values }) => {
-    if (values.path !== undefined) validatedRemoteRoot(values.path);
-    return values;
-  },
-  async run(ctx, values) {
-    await runDeployCommand(ctx, values as Values<typeof DEPLOY_ARGUMENTS>);
+  // The local facts — checkout, deployment name, recipes relocation, and the remote root —
+  // are derived and refused here, in the prepare stage (stage 7 S2.5): every one of their
+  // refusals is an argument/local fact, and at run an unreachable target would report
+  // instead of them. Run re-derives nothing and never re-validates the remote root.
+  prepare: ({ values }, local) => deriveDeployLocalFacts(values, local),
+  async run(ctx, prepared) {
+    await runDeployCommand(ctx, prepared as DeployPrepared);
   },
 });
 
@@ -94,21 +91,19 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   await runOnContext(DEPLOY, ctx, args);
 }
 
-async function runDeployCommand(ctx: Context, values: Values<typeof DEPLOY_ARGUMENTS>): Promise<void> {
-  // Before the arguments: no set of them makes this command work in the wrong mode.
-  const sourceRoot = await frameworkSourceRoot();
+async function runDeployCommand(ctx: Context, prepared: DeployPrepared): Promise<void> {
+  // Every local fact was already derived (and refused) in prepare; run only plans.
+  const plan = resolveDeployArguments(ctx, prepared);
 
-  const plan = resolveDeployArguments(ctx, values);
+  await assertDeployable(prepared.sourceRoot);
 
-  await assertDeployable(sourceRoot);
-
-  if (plan.dryRun) return deployDryRun(ctx, sourceRoot, plan);
+  if (plan.dryRun) return deployDryRun(ctx, plan);
 
   if (plan.jsonOnly) {
     let caught: unknown;
     await withOutputSink(() => {}, async () => {
       try {
-        await runDeploy(ctx, sourceRoot, plan);
+        await runDeploy(ctx, prepared.sourceRoot, plan);
       } catch (error) {
         caught = error;
       }
@@ -128,7 +123,7 @@ async function runDeployCommand(ctx: Context, values: Values<typeof DEPLOY_ARGUM
     return;
   }
 
-  await runDeploy(ctx, sourceRoot, plan);
+  await runDeploy(ctx, prepared.sourceRoot, plan);
 }
 
 async function runDeploy(ctx: Context, sourceRoot: string, plan: DeployPlan): Promise<void> {

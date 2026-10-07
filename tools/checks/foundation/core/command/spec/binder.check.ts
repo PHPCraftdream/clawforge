@@ -24,9 +24,11 @@ import { toolArguments } from "#framework/integration/mcp/call.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import {
   app, captureApp, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidSamplesOf, runCase, runNamed, stages, units,
-} from "../pipeline/property-sweep.ts";
+} from "../pipeline/property/property-sweep.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
-import type { CapturedCall, Unit } from "../pipeline/property-sweep.ts";
+import type { CapturedCall, Unit } from "../pipeline/property/property-sweep.ts";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 
@@ -67,6 +69,20 @@ function controlArgvWithout(unit: Unit, omit: ReadonlySet<string>): string[] {
   ];
 }
 
+// S2.5: recipe new/import refuse an existing destination at prepare, and a run-stage call
+// really creates it in the fixture's temp root — so the console twin (and any later run of
+// the same unit) would hit the already-exists refusal while the first surface reached run.
+// The check's fix is fixture state, not names: the parity rows compare bound VALUES across
+// surfaces, so the create operands must stay identical — instead, clear the created recipe
+// directory after every run so each run of the unit starts from fresh fixture state.
+const freshensCreate = (unit: Unit): boolean =>
+  unit.command === "recipe" && (unit.action === "new" || unit.action === "import");
+function freshen(unit: Unit): void {
+  if (!freshensCreate(unit)) return;
+  rmSync(join(fixture.root, "recipes", unit.action === "new" ? "control-new" : "control-import"),
+    { recursive: true, force: true });
+}
+
 const wordsOf = (message: string): readonly string[] => message.split(" ");
 const hasEvery = (words: readonly string[], tokens: readonly string[]): boolean =>
   tokens.every((token) => words.includes(token));
@@ -87,6 +103,7 @@ const shapeOf = (command: string): ReturnType<typeof specShape> | undefined => {
 // console twin stops at the same stage.
 for (const unit of units) {
   const named = await runNamed(unit.command, namedControlArgs(unit), app, { confirmed: true });
+  freshen(unit);
   stages.control(`${unit.label}: named control reaches run`, named.execution.stage);
   // A run-stage control legitimately reads the target through the recording transport —
   // the zero-contact claim is the refusal rows' (property.check's own convention).
@@ -95,13 +112,16 @@ for (const unit of units) {
   }
   if (named.execution.stage === "run") {
     const terminal = await runCase(unit.command, controlArgv(unit), "terminal");
+    freshen(unit);
     check(`${unit.label}: the console control reaches the same stage`, terminal.execution.stage, named.execution.stage);
     // The same control call on both paths, each against its OWN capture app (a run may call
     // further commands, so entries are never matched by order across paths).
     const argvCaptured: CapturedCall[] = [];
     const namedCaptured: CapturedCall[] = [];
     await runCase(unit.command, controlArgv(unit), "terminal", captureApp(argvCaptured));
+    freshen(unit);
     await runNamed(unit.command, namedControlArgs(unit), captureApp(namedCaptured));
+    freshen(unit);
     const argvEntry = argvCaptured.find((entry) => entry.command === unit.command);
     const namedEntry = namedCaptured.find((entry) => entry.command === unit.command);
     checkTrue(`${unit.label}: the capture saw both bound calls`, argvEntry !== undefined && namedEntry !== undefined);
@@ -361,7 +381,9 @@ for (const unit of units) {
   const count = (variadic as { count?: number }).count ?? 1;
   const tail = Array.from({ length: count }, () => exampleOf(variadic));
   const named = await runNamed(unit.command, { ...namedControlArgs(unit), [variadic.name]: tail }, app, { confirmed: true });
+  freshen(unit);
   const terminal = await runCase(unit.command, [...controlArgv(unit), ...tail], "terminal");
+  freshen(unit);
   cases += 1;
   stages.case(`${unit.label} + <${variadic.name}…>`, named.execution.stage, named.execution.error);
   check(`${unit.label}: <${variadic.name}…> as a JSON array reads like the argv tail`, named.execution.stage, terminal.execution.stage);
@@ -385,7 +407,9 @@ for (const unit of units) {
     const argvCaptured: CapturedCall[] = [];
     const namedCaptured: CapturedCall[] = [];
     await runCase(unit.command, [...controlArgvWithout(unit, conflicting), ...tail], "terminal", captureApp(argvCaptured));
+    freshen(unit);
     await runNamed(unit.command, { ...captureArgs, [variadic.name]: tail }, captureApp(namedCaptured));
+    freshen(unit);
     const argvEntry = argvCaptured.find((entry) => entry.command === unit.command);
     const namedEntry = namedCaptured.find((entry) => entry.command === unit.command);
     checkTrue(`${unit.label}: the variadic capture saw both bound calls`, argvEntry !== undefined && namedEntry !== undefined);

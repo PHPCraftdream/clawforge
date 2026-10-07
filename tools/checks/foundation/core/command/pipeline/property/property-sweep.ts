@@ -42,7 +42,8 @@ export const app: AppDefinition = { name: "property-fixture", description: "fixt
  *  pipeline ACTUALLY passed to run (values, action, given) between the console's argv and an
  *  MCP named call. Per command, exactly this is substituted: effect forced to "read" (no
  *  confirm gate), prepare replaced by a pass-through, run replaced by a recorder, refuse
- *  tokens kept, localFacts dropped, and needs left undeclared — it defaults to "target", but
+ *  tokens kept, localFacts and value-kind resolve steps dropped (a resolve reads local facts,
+ *  e.g. an artifact path must exist), and needs left undeclared — it defaults to "target", but
  *  the recording transport is only consulted if a fact probes it, and since localFacts are
  *  dropped no command ever does. Arguments and rules are kept verbatim; the parse/bind
  *  machinery is the product's own. */
@@ -52,6 +53,15 @@ export interface CapturedCall {
   readonly values: Record<string, unknown>;
   readonly given: readonly string[];
 }
+// The argument without its kind's resolve step (the parse/bind grammar is kept).
+const unresolved = (args: readonly unknown[] | undefined): unknown[] => (args ?? []).map((arg) => {
+  const value = (arg as { value?: { resolve?: unknown } }).value;
+  if (value?.resolve === undefined) return arg;
+  const kind: Record<string, unknown> = { ...value };
+  delete kind.resolve;
+  return { ...(arg as object), value: kind };
+});
+
 export function captureApp(captured: CapturedCall[]): AppDefinition {
   const record = (command: string, action: string | undefined, plan: ParsedCall<Record<string, unknown>>): void => {
     captured.push({ command, ...(action === undefined ? {} : { action }), values: plan.values, given: plan.given });
@@ -66,7 +76,7 @@ export function captureApp(captured: CapturedCall[]): AppDefinition {
       ? materializeCommands({
           [name]: {
             ...commandBody({
-              effect: "read", arguments: data.arguments as never, rules: data.rules as never, refuse: data.refuse,
+              effect: "read", arguments: unresolved(data.arguments) as never, rules: data.rules as never, refuse: data.refuse,
               prepare: (call) => call,
               run: async (_on, plan) => record(name, undefined, plan as never),
             }),
@@ -78,7 +88,7 @@ export function captureApp(captured: CapturedCall[]): AppDefinition {
             ...multiActionBody({
               effect: "read", action: data.action,
               actions: Object.fromEntries(Object.entries(data.actions).map(([action, spec]) => [action, defineAction({
-                summary: action, effect: "read", arguments: (spec.arguments ?? []) as never, rules: spec.rules as never, refuse: spec.refuse,
+                summary: action, effect: "read", arguments: unresolved(spec.arguments) as never, rules: spec.rules as never, refuse: spec.refuse,
                 prepare: (call) => call,
                 run: async (_on, plan) => record(name, action, plan as never),
               })])),
@@ -156,6 +166,12 @@ export function invalidSamplesOf(argument: ArgumentSpec): readonly string[] {
   return argument.value.invalid.filter((sample) => sample.stage === "parse").map((sample) => sample.raw);
 }
 
+/** Every prepare-stage sample: the value the kind's own resolve refuses (S2.5). */
+export function prepareSamplesOf(argument: ArgumentSpec): readonly string[] {
+  if (argument.kind === "flag") return [];
+  return argument.value.invalid.filter((sample) => sample.stage === "prepare").map((sample) => sample.raw);
+}
+
 export async function runCase(command: string, argv: string[], surface: "terminal" | "mcp", on: AppDefinition = app, options: { confirmed?: boolean } = {}) {
   const transport = fixture.transport();
   let output = "";
@@ -200,15 +216,39 @@ export function controlValues(unit: Unit): readonly { readonly argument: Argumen
   for (const rule of unit.rules) {
     if (rule.rule === "requires" && chosen.has(rule.name) && !rule.with.some((name) => chosen.has(name))) chosen.delete(rule.name);
   }
+  // The two create-actions refuse an existing destination at prepare (S2.5), so a control
+  // named like the fixture's own recipe would stop there: their create slots carry names
+  // the fixture does not have, and the guarded run really creates them in the temp root.
+  // The two create-actions refuse an existing destination at prepare (S2.5), so a control
+  // named like the fixture's own recipe would stop there: their create slots carry names
+  // the fixture does not have, and the guarded run really creates them in the temp root.
+  const createOperandOf = (argument: ArgumentSpec): string | undefined =>
+    unit.command === "recipe" && unit.action === "new" && argument.name === "name" ? "control-new"
+      : unit.command === "recipe" && unit.action === "import" && argument.name === "new-name" ? "control-import" : undefined;
   return unit.args
     .filter((argument) => chosen.has(argument.name) && (argument.kind === "option" || argument.kind === "positional" || (argument.kind === "variadic" && argument.required === true)))
-    .map((argument) => ({ argument, value: argument.kind === "variadic" ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => exampleOf(argument)) : exampleOf(argument) }));
+    .map((argument) => ({
+      argument,
+      value: argument.kind === "variadic"
+        ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => resolveControlValueOf(argument))
+        : createOperandOf(argument) ?? resolveControlValueOf(argument),
+    }));
 }
 
 // The value a fact-bearing control argument carries: the fixture makes each real enough to
 // pass prepare, so the control reaches the guarded run where the fact is judged for content.
 export function controlValueOf(fact: LocalFact): string {
-  if (fact === "artifact") return controlArtifact;
+  // The artifact fact moved onto localFile's resolve (S2.5); what remains declared names
+  // recipe trees or files under them.
   if (fact === "recipe-source") return join(fixture.root, "recipes", "local");
   return "local";
+}
+
+/** The control operand a resolve-capable kind needs: a value whose local fact HOLDS (the
+ *  example would not — the resolve refuses it at prepare), so the control reaches run. */
+export function resolveControlValueOf(argument: ArgumentSpec): string {
+  const kind = argument.kind === "flag" ? undefined : argument.value;
+  if (kind?.kind === "localFile") return controlArtifact;
+  if (kind?.kind === "localDirectory") return join(fixture.root, "recipes", "local");
+  return exampleOf(argument);
 }

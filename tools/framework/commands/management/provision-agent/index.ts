@@ -16,13 +16,14 @@
 // (mirroring, agent/MCP server/cron job create-replace-remove), this file (command +
 // re-exports — the single import point other modules use).
 
-import { log, info, die } from "#src/core/io/log.ts";
+import { log, info, die, UserError } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
-import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/index.ts";
 import * as kinds from "#src/core/values/kinds.ts";
+import type { RecipeRef } from "#src/core/values/plan.ts";
 import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";
@@ -54,13 +55,45 @@ export const PROVISION_AGENT_ARGUMENTS = [
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
+/** The plan `prepare` builds: the recipe proven to exist (the kind's resolve) and its agent
+ *  bundle loaded from the local tree — `run` never reads the local recipe tree before the
+ *  target is needed (S2.5). */
+interface ProvisionAgentPlan {
+  readonly breakLock: boolean;
+  readonly breakForeignLock: string | undefined;
+  readonly json: boolean;
+  readonly recipe: RecipeRef;
+  readonly bundle: RecipeAgentBundle;
+}
+
 /** The command body; provisionAgent(ctx, args) stays for callers that already hold a Context. */
 export const PROVISION_AGENT = commandBody({
   effect: "change",
   arguments: PROVISION_AGENT_ARGUMENTS,
-  localFacts: [{ argument: "recipe", fact: "agent-bundle" }],
-  async run(ctx, values) {
-    await runProvisionAgent(ctx, values as Values<typeof PROVISION_AGENT_ARGUMENTS>);
+  // The recipe arrives resolved (the kind's own existence proof, S2.5); the agent bundle is
+  // still a local fact owned by the prepare stage: loadRecipeAgentBundle runs before any
+  // target contact, and its refusals become ArgumentError naming <recipe>.
+  prepare: async (call) => {
+    const recipe = call.values.recipe;
+    let bundle: RecipeAgentBundle;
+    try {
+      bundle = await loadRecipeAgentBundle(recipe, true);
+    } catch (error) {
+      // die()'s UserErrors are the bundle fact's own refusals (texts byte-identical); anything
+      // else is a bug and stays itself.
+      if (error instanceof UserError) call.refuse("recipe", error.message);
+      throw error;
+    }
+    return {
+      breakLock: call.values["break-lock"] === true,
+      breakForeignLock: call.values["break-foreign-lock"],
+      json: call.values.json === true,
+      recipe,
+      bundle,
+    } satisfies ProvisionAgentPlan;
+  },
+  async run(ctx, plan) {
+    await runProvisionAgent(ctx, plan);
   },
 });
 
@@ -68,14 +101,8 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
   await runOnContext(PROVISION_AGENT, ctx, args);
 }
 
-async function runProvisionAgent(ctx: Context, values: Values<typeof PROVISION_AGENT_ARGUMENTS>): Promise<void> {
-  const breakLock = values["break-lock"] === true;
-  const breakForeignLockHost = values["break-foreign-lock"];
-  const jsonOnly = values.json === true;
-  const recipeName = values.recipe;
-
-  // Local first: a typo in the recipe name must not cost a trip to the target.
-  const bundle = await loadRecipeAgentBundle(recipeName, true);
+async function runProvisionAgent(ctx: Context, plan: ProvisionAgentPlan): Promise<void> {
+  const { breakLock, breakForeignLock: breakForeignLockHost, json: jsonOnly, recipe: recipeName, bundle } = plan;
 
   await requireBootstrapped(ctx);
   if (!(await ctx.runtime.isRunning())) die(`the gateway is not running. Start it with ${commandLine("up")}`);

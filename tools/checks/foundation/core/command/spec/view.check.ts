@@ -7,6 +7,7 @@ import type { CommandArgument } from "#framework/core/app.ts";
 import { argumentsView, specData, specOf, specShape, bindNamed, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import * as kinds from "#framework/core/values/kinds.ts";
+import { missingArtifactRefusal } from "#framework/core/values/plan.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
@@ -28,6 +29,9 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
     }
   };
 
+  // The refusal with its error-name label stripped (stage 7 S2.5: the resolve refusal at prepare).
+  const refusalAfterLabel = async (argv: string[]): Promise<string> => (await outcome(argv)).slice("ArgumentError: ".length);
+
   check(
     "set build --set is refused at parse, naming the actions that take it",
     (await outcome(["build", "--set", "x.tar.gz"])).includes("--set applies to `validate`, `try`, not `build`"),
@@ -37,8 +41,10 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   check("set validate --kind is refused at parse", (await outcome(["validate", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
   check("set forget --json is refused at parse", (await outcome(["forget", "--json"])).includes("--json applies to `build`"), true);
   check(
-    "set validate --set still reaches the artifact reader — the parser accepted it",
-    (await outcome(["validate", "--set", "missing.tar.gz"])).startsWith("UserError:"),
+    // Stage 7 S2.5: the missing artifact is the localFile kind's resolve refusal at prepare,
+    // an ArgumentError naming the argument — no longer run's artifact reader.
+    "set validate --set is refused at prepare by the kind resolve — the parser accepted it",
+    (await refusalAfterLabel(["validate", "--set", "missing.tar.gz"])) === missingArtifactRefusal("missing.tar.gz"),
     true,
   );
   check(

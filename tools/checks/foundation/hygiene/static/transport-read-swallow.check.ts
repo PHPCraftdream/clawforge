@@ -266,7 +266,7 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/lifecycle/backup/index.ts",
-    line: 379,
+    line: 378,
     reason:
       "cleanup compensation: the catch collects the error into compensationErrors reported alongside the failure in flight - never discarded",
   },

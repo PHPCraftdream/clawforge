@@ -18,6 +18,7 @@ import {
 } from "#src/core/command/index.ts";
 import type { ArgumentSpec } from "#src/core/command/index.ts";
 import type { Context } from "#src/core/context.ts";
+import type { RecipeRef } from "#src/core/values/plan.ts";
 import { log, info, warn } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -47,7 +48,7 @@ import {
   runVerifyAction,
 } from "./actions.ts";
 import { INVALID_MANIFEST } from "./lifecycle.ts";
-import { createName, readName } from "#src/core/values/names.ts";
+import { readName } from "#src/core/values/names.ts";
 import { importNameOf } from "./actions.ts";
 
 function describe(recipe: Recipe): void {
@@ -202,15 +203,21 @@ export const RECIPE = multiActionBody({
         value: kinds.name("recipe", "create"),
       }],
       // Repository-side only: no target, no lock — either works before bootstrap has
-      // prepared the lock home.
-      localFacts: [{ argument: "name", fact: "recipe-source" }],
-      prepare: ({ values }) => {
-        // The name it lands under is minted: refused here, before any context is built,
-        // instead of mid-copy — the same words the run's own check keeps.
-        createName("recipe", importNameOf(values.name, values["new-name"]));
-        return values;
+      // prepared the lock home. The name it lands under is minted here, refused before
+      // any context is built, in the binder's own voice.
+      prepare: async (call, local) => {
+        // The source directory arrives resolved (the kind's own recipe.json proof, S2.5);
+        // the name it lands under has no resolve — it is minted here, refused before any
+        // context is built, in the binder's own voice.
+        const source = call.values.name;
+        const name = await call.derive("name", kinds.name("recipe", "create"), importNameOf(call.values.name.path, call.values["new-name"]));
+        const destination = resolve(recipesDirectory(), name);
+        if (await local.exists(destination)) {
+          call.refuse("name", `recipe "${name}" already exists at ${destination}`);
+        }
+        return { source, name };
       },
-      run: (_ctx, values) => runImportAction(values.name, values["new-name"]),
+      run: (_ctx, plan) => runImportAction(plan.source, plan.name),
     }),
     new: defineAction({
       summary: "Scaffold a recipes/<name>/ skeleton",
@@ -220,30 +227,35 @@ export const RECIPE = multiActionBody({
         description: "With new: add commented prepare.ts/verify.ts stubs",
         kind: "flag",
       }],
-      // Repository-side only, like import.
-      run: (_ctx, values) => runNewAction(values.name, values["with-hooks"] === true),
+      // Repository-side only, like import: the name is minted at parse and the destination
+      // existence is judged here, before any context is built.
+      prepare: async (call, local) => {
+        const name = call.values.name;
+        const destination = resolve(recipesDirectory(), name);
+        if (await local.exists(destination)) {
+          call.refuse("name", `recipe "${name}" already exists at ${destination}`);
+        }
+        return { name, withHooks: call.values["with-hooks"] === true };
+      },
+      run: (_ctx, plan) => runNewAction(plan.name, plan.withHooks),
     }),
     verify: defineAction({
       summary: "Run the recipe's verify.ts hook",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "verify", values, () => runVerifyAction(ctx, values.name)),
     }),
     onboard: defineAction({
       summary: "Run the recipe's onboard.ts hook",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "onboard", values, () => runOnboardAction(ctx, values.name)),
     }),
     diagnose: defineAction({
       summary: "Bundle stack, logs and verify hook into a report",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS],
       run: (ctx, values) => runLocked(ctx, "diagnose", values, () => runDiagnoseAction(ctx, values.name, values.tail)),
     }),
     install: defineAction({
       summary: "Build a recipe from source and start it",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, {
         name: "force-disabled",
         summary: "build a recipe marked disabled",
@@ -259,7 +271,6 @@ export const RECIPE = multiActionBody({
     }),
     remove: defineAction({
       summary: "Stop and remove a recipe's stack",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       arguments: [NAME_ARGUMENT, {
         name: "volumes",
         summary: "delete its volumes too",
@@ -275,14 +286,12 @@ export const RECIPE = multiActionBody({
     }),
     status: defineAction({
       summary: "Show the recipe stack's compose status",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       effect: "read",
       arguments: [NAME_ARGUMENT],
       run: (ctx, values) => runStatusAction(ctx, values.name),
     }),
     logs: defineAction({
       summary: "Read a recipe stack's logs",
-      localFacts: [{ argument: "name", fact: "recipe" }],
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
       run: (ctx, values) => runLogsAction(ctx, values.name, values.tail),
@@ -296,14 +305,13 @@ export const RECIPE = multiActionBody({
 async function runLocked(
   ctx: Context,
   action: string,
-  values: { readonly name: string } & Parameters<typeof takeoverOf>[0],
+  values: { readonly name: RecipeRef } & Parameters<typeof takeoverOf>[0],
   body: () => Promise<void>,
   gate = true,
 ): Promise<void> {
   const name = values.name;
-  // R32-08 class: resolve the recipe purely locally before the lock or any transport call,
-  // so a typo dies here instead of as a lock failure or an unreachable-target error.
-  await loadRecipe(readName("recipe", name));
+  // The recipe's existence is the recipeRef kind's own prepare-stage resolve (S2.5): a
+  // typo dies there, before the lock or any transport call — no re-validation here.
   if (!gate) return body();
   await guardedWith(ctx, `recipe ${action} ${name}`, takeoverOf(values), body);
 }

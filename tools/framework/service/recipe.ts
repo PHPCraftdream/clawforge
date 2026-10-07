@@ -18,6 +18,7 @@ import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { readName, safeName, type RecipeName } from "../core/values/names.ts";
+import type { RecipeRef } from "../core/values/plan.ts";
 import { die } from "../core/io/log.ts";
 import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
 import type { Context } from "../core/context.ts";
@@ -272,7 +273,9 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   return parsed;
 }
 
-export async function loadRecipe(name: RecipeName): Promise<Recipe> {
+/** The name arrives either as the reader grammar's brand or as the pipeline-resolved
+ *  RecipeRef (S2.5) — both are string brands over the same recipe name. */
+export async function loadRecipe(name: RecipeName | RecipeRef): Promise<Recipe> {
   // The name arrives from the command line and becomes both a path and a compose project.
   readName("recipe", name);
   const directory = resolve(recipesDirectory(), name);

@@ -20,7 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main, runApp } from "#framework/entry/cli.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
-import { commandBody, defineAction, materializeCommands, multiActionBody, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { commandBody, defineAction, materializeCommands, multiActionBody, parseCall, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { choice } from "#framework/core/values/kinds.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { PORT_RANGE } from "#framework/core/values/value.ts";
@@ -431,10 +432,16 @@ function unreachableContext(): { ctx: Context; runtimeContacts: string[] } {
 }
 
 // The parser's own refusals name their argument, structurally — bind turns a bad value into
-// an ArgumentError carrying the argument's declared name (I9: structure, not prose).
+// an ArgumentError carrying the argument's declared name (I9: structure, not prose). Captured
+// from a real refusal: the constructor's token is private to core/command.
 {
-  const error = new ArgumentError("--tail takes a number of lines, not \"abc\"", "tail");
-  check("an ArgumentError names its argument", error.argument, "tail");
+  let error: ArgumentError | undefined;
+  try {
+    parseCall({ arguments: [{ name: "tail", kind: "option", valueName: "n", value: choice(["full", "migrate"]), description: "d" }] }, ["--tail", "abc"]);
+  } catch (caught) {
+    error = caught as ArgumentError;
+  }
+  checkTrue("an ArgumentError names its argument", error instanceof ArgumentError && error.argument === "tail");
 }
 
 } finally {

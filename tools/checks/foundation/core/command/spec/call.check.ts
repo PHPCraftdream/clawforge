@@ -19,7 +19,7 @@ import { specOf, specData } from "#framework/core/command/spec.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { exampleOf, fixture, runCase, runNamed, stages } from "#checks/foundation/core/command/pipeline/property-sweep.ts";
+import { exampleOf, fixture, runCase, runNamed, stages } from "#checks/foundation/core/command/pipeline/property/property-sweep.ts";
 import type { ArgumentSpec, CallShape } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 

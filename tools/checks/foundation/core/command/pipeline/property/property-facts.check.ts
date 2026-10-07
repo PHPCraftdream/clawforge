@@ -5,16 +5,28 @@
 // fixture (its own process, its own fixture root).
 
 import { join } from "node:path";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import type { Context } from "#framework/core/context.ts";
 import { localFactRefusal, type LocalFact } from "#framework/core/command/spec.ts";
+import { ArgumentError, specData, specOf } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { app, controlValues, exampleOf, factsOf, fixture, runCase, stages, units } from "./property-sweep.ts";
 
 {
-  const missingValue = (fact: LocalFact, argument: string): string => fact === "artifact" ? join(fixture.root, `missing-${argument}-artifact.tar.gz`) : fact === "recipe-source" ? join(fixture.root, `missing-${argument}-source`) : `missing-${argument}-recipe`;
+  const missingValue = (fact: LocalFact, argument: string): string => fact === "recipe-source" ? join(fixture.root, `missing-${argument}-source`) : `missing-${argument}-recipe`;
   const touched = new Proxy({}, { get: () => { throw new Error("context touched before the facts were refused"); } }) as unknown as Context;
+  // The recipeRef resolve (S2.5) now refuses a missing recipe.json before the deeper facts —
+  // a case for acceptance/agent-bundle gets an existing recipe.json, so the deeper file is
+  // what is missing.
+  for (const unit of units) {
+    for (const declared of factsOf(unit)) {
+      if (declared.fact !== "acceptance" && declared.fact !== "agent-bundle") continue;
+      const dir = join(fixture.root, "recipes", `missing-${declared.argument}-recipe`);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "recipe.json"), '{"description":"x"}\n');
+    }
+  }
   let factCases = 0;
   const factCoverage = new Set<string>();
   for (const unit of units) {
@@ -44,7 +56,6 @@ import { app, controlValues, exampleOf, factsOf, fixture, runCase, stages, units
         if (!want.has(argument.name) && !base.has(argument.name)) continue;
         const factual = want.has(argument.name);
         const value = factual ? (argument.name === declared.argument ? missing : counterpart(argument.name)) : exampleOf(argument);
-        if (factual && argument.name !== declared.argument && declared.fact === "artifact") await writeFile(value, "fixture artifact");
         if (argument.name === declared.argument) refused = value;
         const given = argument.kind === "variadic" ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => value) : value;
         values[argument.name] = given;
@@ -70,14 +81,50 @@ import { app, controlValues, exampleOf, factsOf, fixture, runCase, stages, units
       factCases += 1;
     }
   }
-  const REQUIRED_FACTS: readonly string[] = [
-    "set validate:set:artifact", "set diff:artifacts:artifact", "set diff:from:artifact", "set diff:to:artifact",
-    "accept:recipe:acceptance", "accept:set:artifact", "provision-agent:recipe:agent-bundle", "recipe import:name:recipe-source",
-    "recipe verify:name:recipe", "recipe onboard:name:recipe", "recipe diagnose:name:recipe", "recipe install:name:recipe",
-    "recipe remove:name:recipe", "set try:set:artifact", "plan:set:artifact", "apply:set:artifact" ];
+  // The artifact/recipe/recipe-source facts moved onto the value kinds' resolve (stage 7
+  // S2.5) — their refusals are exercised by property.check.ts's prepare-stage sweep, derived
+  // from the kinds' own prepare samples. What remains declared is pinned here.
+  const REQUIRED_FACTS: readonly string[] = ["accept:recipe:acceptance"];
   const observedFacts = new Set(units.flatMap((unit) => factsOf(unit).map((entry) => `${unit.label}:${entry.argument}:${entry.fact}`)));
   for (const required of REQUIRED_FACTS) check(`missing-fact coverage includes ${required}`, observedFacts.has(required), true);
+  let migrated = 0;
+  for (const unit of units) {
+    for (const argument of unit.args) {
+      if (argument.kind === "flag") continue;
+      const kind = argument.value;
+      if (kind === undefined || !["localFile", "localDirectory", "recipeRef"].includes(kind.kind)) continue;
+      migrated += 1;
+      checkTrue(`${unit.label}:${argument.name}: the kind owns the local fact`, kind.resolve !== undefined && kind.invalid.some((sample) => sample.stage === "prepare"));
+    }
+  }
+  checkTrue("migrated fact-bearing arguments exist", migrated > 0);
   for (const surface of ["console", "MCP", "direct-run"] as const) check(`missing-fact cases exercise ${surface} independently`, factCoverage.has(surface), true);
+}
+
+{
+  // S2.5, Group 2: the agent-bundle fact is provision-agent's own prepare now — the plan run
+  // receives the loaded bundle, and the localFacts loop above no longer sees it. The class is
+  // pinned directly: a recipe whose agent/ bundle is missing stops at prepare with the
+  // producer's own text, ZERO target contacts, on both surfaces; a recipe with a bundle
+  // reaches run (and there contacts the target).
+  const data = specData(specOf(openclawCommands["provision-agent"]!)!);
+  checkTrue("provision-agent: the agent-bundle fact lives in its own prepare", data.kind === "single" && data.prepare !== undefined && data.localFacts === undefined);
+  const bare = join(fixture.root, "recipes", "no-agent-bundle");
+  await mkdir(bare, { recursive: true });
+  await writeFile(join(bare, "recipe.json"), '{"description":"x"}\n');
+  const expected = localFactRefusal("agent-bundle", "no-agent-bundle");
+  for (const surface of ["terminal", "mcp"] as const) {
+    const outcome = await runCase("provision-agent", ["no-agent-bundle"], surface, app, surface === "mcp" ? { confirmed: true } : {});
+    stages.case(`provision-agent <no-agent-bundle> (${surface})`, outcome.execution.stage, outcome.execution.error);
+    check(`provision-agent <no-agent-bundle>: ${surface} stops at prepare`, outcome.execution.stage, "prepare");
+    checkTrue(`provision-agent <no-agent-bundle>: ${surface} error is an ArgumentError`, outcome.execution.error instanceof ArgumentError);
+    check(`provision-agent <no-agent-bundle>: ${surface} error names the argument`, (outcome.execution.error as ArgumentError).argument, "recipe");
+    check(`provision-agent <no-agent-bundle>: ${surface} refusal is the producer's text`, (outcome.execution.error as Error | undefined)?.message, expected);
+    check(`provision-agent <no-agent-bundle>: ${surface} makes no target contact`, outcome.contacts, []);
+  }
+  const valid = await runCase("provision-agent", ["local"], "terminal");
+  stages.control("provision-agent <local>: a recipe with an agent bundle reaches run", valid.execution.stage);
+  checkTrue("provision-agent <local>: the guarded run contacts the target", valid.contacts.length > 0);
 }
 await fixture.dispose();
 stages.print("pipeline: property — local facts are refused at prepare");

@@ -22,9 +22,15 @@ export function tokensOf(source: string): Token[] {
  *  innermost visible declaration of its name is a spaced string const/let; an inner
  *  const/let/parameter shadows the outer one inside its own scope (a function's parameters
  *  and body share one scope; an expression-bodied arrow's scope ends with the expression),
- *  and a use in a nested scope sees outer declarations written later. */
+ *  and a use in a nested scope sees outer declarations written later. A use lexically inside
+ *  the declaring scope but before its const/let is a TDZ read and does not count — the
+ *  token-order requirement applies only to that direct same-scope case; a use inside a nested
+ *  function body declared earlier is valid and still sees the outer const. */
 export function measureProseHeld(source: string): number {
   const t = tokensOf(source);
+  // token indices that begin a source line: a newline sits between the previous token and this one
+  const lineStart = new Set<number>();
+  for (let k = 1; k < t.length; k += 1) if (source.slice(t[k - 1]!.at, t[k]!.at).includes("\n")) lineStart.add(k);
   const allSpaced = new Set<string>();
   interface Binding { spaced: boolean; at: number }
   interface Scope { parent: Scope | undefined; held: Map<string, Binding> }
@@ -32,6 +38,8 @@ export function measureProseHeld(source: string): number {
   const uses: Array<{ name: string; at: number; from: Scope }> = [];
   const checkGroups: Array<Array<{ name: string; at: number; from: Scope }>> = [];
   let count = 0;
+  // d.at < at applies only when resolving in the declaring scope directly (a use there before
+  // the const is a TDZ read and counts 0); a nested scope resolves in declaration order instead.
   const visible = (name: string, at: number, from: Scope): boolean => { for (let s: Scope | undefined = from; s !== undefined; s = s.parent) { const d = s.held.get(name); if (d !== undefined) return d.spaced && (s !== from || d.at < at); } return false; };
   const close = (start: number, o: string, c: string): number => {
     let depth = 0;
@@ -40,6 +48,38 @@ export function measureProseHeld(source: string): number {
       else if (t[i]?.kind === "p" && t[i]?.text === c && --depth === 0) return i;
     }
     return t.length;
+  };
+  // a return-type annotation sits between ")" and the body: skip one balanced type with a real
+  // balanced walk over (), <>, [], {} - generics, arrays, object types, unions and function
+  // types all nest, so the type is never skipped by regex over raw source. Stops at the first
+  // depth-0 "{" or "=>" that is NOT part of the type: a "{" whose balanced close is followed
+  // by |, &, [, { or => is an object type inside the annotation, otherwise it is the body; a
+  // "=>" directly after a balanced "(...)" opened inside the type is a function-type arrow.
+  // Returns the body-start token index, or -1 when the annotation is malformed.
+  const skipType = (start: number): number => {
+    let depth = 0;
+    let typeParenClose = -1;
+    for (let j = start; j < t.length; j += 1) {
+      const tx = t[j]?.text;
+      if (tx === "{" && depth === 0) {
+        // only a "{" where a type may start (annotation start, after | & or a function-type =>)
+        const prev = t[j - 1]?.text;
+        const typeStart = j === start || prev === "|" || prev === "&" || (prev === ">" && t[j - 2]?.text === "=");
+        const bodyClose = close(j, "{", "}");
+        const after = t[bodyClose + 1]?.text;
+        const typeFollows = typeStart && (after === "|" || after === "&" || after === "[" || after === "{" ||
+          (after === "=" && t[bodyClose + 2]?.text === ">"));
+        if (typeFollows) { j = bodyClose; }
+        else return j;
+      }
+      else if (tx === "=" && t[j + 1]?.text === ">" && depth === 0 && j - 1 === typeParenClose) { typeParenClose = -1; }
+      else if (tx === "=" && t[j + 1]?.text === ">" && depth === 0) return j;
+      else if (tx === "(" && depth === 0) { const pc = close(j, "(", ")"); typeParenClose = pc; j = pc; }
+      else if (tx === ">") { if (depth > 0) depth -= 1; }
+      else if (tx !== undefined && "<([{".includes(tx)) depth += 1;
+      else if (tx !== undefined && ")]}" .includes(tx)) { if (depth === 0) return -1; depth -= 1; }
+    }
+    return -1;
   };
   const args = (start: number, end: number): Array<[number, number]> => {
     const result: Array<[number, number]> = []; let begin = start; let p = 0; let b = 0; let c = 0;
@@ -59,7 +99,11 @@ export function measureProseHeld(source: string): number {
     }
     return names;
   };
-  // end of an expression-bodied arrow body: the first `,` or `;` at relative depth 0, or a bracket closing past the body's start
+  // end of an expression-bodied arrow body: the first `,` or `;` at relative depth 0, a bracket
+  // closing past the body's start, or - ASI (documented simplification) - a newline in front of
+  // a statement-starting token (identifier/keyword or literal) when the previous token cannot
+  // continue the expression (is not an operator, opening bracket, comma or dot); without this
+  // the parameter scope leaks over the next statement under automatic semicolon insertion.
   const expressionEnd = (start: number, end: number): number => {
     let depth = 0;
     for (let k = start; k < end; k += 1) {
@@ -68,6 +112,11 @@ export function measureProseHeld(source: string): number {
         if ("([{".includes(x.text)) depth += 1;
         else if (")]}".includes(x.text)) { if (depth === 0) return k; depth -= 1; }
         else if ((x.text === "," || x.text === ";") && depth === 0) return k;
+      }
+      if (depth === 0 && k > start && lineStart.has(k) && x?.kind !== "p") {
+        const prev = t[k - 1];
+        const prevContinues = prev?.kind === "p" && !")]}".includes(prev.text);
+        if (!prevContinues) return k;
       }
     }
     return end;
@@ -86,11 +135,14 @@ export function measureProseHeld(source: string): number {
       // an expression body gets it for the expression's extent only
       if (tok?.kind === "p" && tok.text === "(") {
         const pe = close(i, "(", ")");
-        const arrow = t[pe + 1]?.text === "=" && t[pe + 2]?.text === ">";
+        // a return-type annotation may sit between ")" and the body ("{" or "=>"): skip it
+        let after = pe + 1;
+        if (t[after]?.text === ":") { const j = skipType(after + 1); if (j >= 0) after = j; }
+        const arrow = t[after]?.text === "=" && t[after + 1]?.text === ">";
         const isFn = t[i - 1]?.text === "function" || (t[i - 1]?.kind === "id" && t[i - 2]?.text === "function");
         if (arrow || isFn) {
           const names = paramNames(i + 1, pe);
-          const body = arrow ? pe + 3 : pe + 1;
+          const body = arrow ? after + 2 : after;
           if (t[body]?.text === "{") {
             const e = close(body, "{", "}");
             const inner: Scope = { parent: scope, held: new Map() };

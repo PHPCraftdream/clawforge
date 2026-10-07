@@ -40,5 +40,36 @@ check("scope: an unrelated function's held const does not leak into another scop
 check("scope: a use inside a function of an outer const declared later counts (hoisting)", held(`function f() { s.includes(pin); }\nconst pin = "held phrase";\ns.includes(pin);`), 2);
 check("a parameter shadows the outer held name", held(`const pin = "held phrase";\nfunction f(pin) { s.includes(pin); }\ns.includes(pin);`), 1);
 check("an arrow parameter shadows the outer held name", held(`const pin = "held phrase";\nconst f = (pin) => s.includes(pin);`), 0);
+check("a function parameter stays in scope with a return-type annotation", held(`const pin = "held phrase";
+function f(pin: string): void { s.includes(pin); }`), 0);
+check("a parenthesized arrow parameter stays in scope with a return-type annotation", held(`const pin = "held phrase";
+const f = (pin: string): boolean => s.includes(pin);`), 0);
+check("a generic return type is skipped as a balanced type, not by regex", held(`const pin = "held phrase";
+function f(pin: string): Map<string, Array<{ q: number }>> { s.includes(pin); return new Map(); }`), 0);
+check("an object return type followed by the body block resolves both braces", held(`const pin = "held phrase";
+function f(pin: string): { a: string } { s.includes(pin); return { a: "x" }; }`), 0);
+check("an object return type followed by an arrow body scopes the parameter", held(`const pin = "held phrase";
+const f = (pin: string): { a: boolean } => ({ a: s.includes(pin) });`), 0);
+check("a function-type return type's own arrow is not the body delimiter", held(`const pin = "held phrase";
+function f(pin: string): () => boolean { s.includes(pin); return () => true; }`), 0);
+check("an object return type followed by a union resolves the body block", held(`const pin = "held phrase";
+function f(pin: string): { a: 1 } | undefined { s.includes(pin); return undefined; }`), 0);
+check("nested object braces inside a return type balance", held(`const pin = "held phrase";
+function f(pin: string): { a: { b: string } } { s.includes(pin); return { a: "x" }; }`), 0);
+check("a scalar return type's body followed by a block is walked, not skipped as a type", held(`const pin = "held phrase";
+function f(): void { s.includes(pin); }
+{ const other = 1; }`), 1);
+check("an object return type's body followed by a block is walked", held(`const pin = "held phrase";
+function f(): { a: string } { s.includes(pin); return { a: "x" }; }
+{ const other = 1; }`), 1);
+check("ASI: an expression-bodied arrow's scope ends before the next statement", held(`const pin = "held phrase";
+const f = pin => s.includes(pin)
+s.includes(pin);`), 1);
+check("ASI: a newline whose previous token continues the expression does not end the body", held(`const pin = "held phrase";
+const f = pin =>
+  s.includes(pin);`), 0);
+check("TDZ: a use in a nested function body declared before the const still counts (vs the direct-use case above)", held(`function f() { s.includes(pin); }
+const pin = "held phrase";
+s.includes(pin);`), 2);
 
 finish("architecture self: prose-held scanner");

@@ -642,4 +642,30 @@ export const CONTROLS: readonly ControlDecl[] = [
     check: "tools/checks/foundation/core/command/completion/completion-behaviour.check.ts",
     fragment: "the pwsh Install header's note rides after the whole line",
   },
+  {
+    id: "C152",
+    finding: "rf7-tails-Z item 1",
+    note: "function/arrow parameters stay in scope across a return-type annotation: deleting the balanced-type skip makes the scanner treat the annotated body as a plain block (or take the return-type identifier as a parameter), so the table's return-type cases fail",
+    product: "tools/checks/architecture/prose-held.ts",
+    search: `        // a return-type annotation may sit between ")" and the body ("{" or "=>"): skip it
+        let after = pe + 1;
+        if (t[after]?.text === ":") { const j = skipType(after + 1); if (j >= 0) after = j; }`,
+    replace: `        const after = pe + 1;`,
+    check: "tools/checks/architecture/self/prose-held.check.ts",
+    fragment: "a function parameter stays in scope with a return-type annotation",
+  },
+  {
+    id: "C153",
+    finding: "rf7-tails-Z item 2",
+    note: "the transport-read guard accepts a catch only when EVERY path terminates (throw/die or the typed read outcome): restoring the old any-throw-anywhere acceptance re-validates conditional rethrows with a swallowing else path, failing the table case naming it",
+    product: "tools/checks/foundation/hygiene/static/transport-read-swallow-rules.ts",
+    search: `export function handlerSwallows(handler: string): boolean {
+  return !safePaths(handler);
+}`,
+    replace: `export function handlerSwallows(handler: string): boolean {
+  return !new RegExp("\\\\bthrow\\\\b|\\\\bdie\\\\s*\\\\(").test(handler);
+}`,
+    check: "tools/checks/foundation/hygiene/static/transport-read-swallow.check.ts",
+    fragment: "a conditional rethrow with a swallowing else path is a hit",
+  },
 ];

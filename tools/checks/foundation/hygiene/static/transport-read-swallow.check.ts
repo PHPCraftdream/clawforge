@@ -104,9 +104,44 @@ const SELF_CASES: SelfCase[] = [
     hits: [],
   },
   {
-    name: "catch naming the narrow escape types is fine",
+    name: "a conditional rethrow with a swallowing else path is a hit",
     source: "try { return await ctx.transport.exists(path); } catch (error) { if (error instanceof TransportUnreachableError) throw error; return false; }",
+    hits: ["1:ctx.transport.exists(:try"],
+  },
+  {
+    name: "a conditional rethrow whose other path throws TargetReadUnknownError is fine",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { if (fallback()) throw error; throw new TargetReadUnknownError(path, error); }",
     hits: [],
+  },
+  {
+    name: "a conditional rethrow whose other path returns the typed read outcome is fine",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { if (fallback()) throw error; return readIfExists(ctx.transport, path); }",
+    hits: [],
+  },
+  {
+    name: "if/else where both branches throw is fine",
+    source: "try { return await ctx.transport.exists(path); } catch (error) { if (retryable(error)) { throw error; } else { throw new TargetReadUnknownError(path, error); } }",
+    hits: [],
+  },
+  {
+    name: "a nested conditional rethrow whose inner fall-through path swallows is a hit",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { if (x) { if (y) throw error; } else { throw error; } }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "a nested if/else that throws on every path is fine",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { if (a) { if (b) { throw error; } else { throw new TargetReadUnknownError(path, error); } } else { throw error; } }",
+    hits: [],
+  },
+  {
+    name: "a returned expression that is only partly the typed outcome is a hit",
+    source: "try { return await ctx.transport.readFile(path); } catch (error) { return y ? readIfExists(ctx.transport, path) : undefined; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "a promise .catch whose conditional rethrow swallows the other path is a hit",
+    source: "const raw = await ctx.transport.readFile(path).catch((error) => { if (fatal(error)) throw error; return \"\"; });",
+    hits: ["1:ctx.transport.readFile(:promise"],
   },
   {
     name: "die() in the handler is fine",
@@ -114,9 +149,9 @@ const SELF_CASES: SelfCase[] = [
     hits: [],
   },
   {
-    name: "a bound, rethrowing error is kept (sudo fallback)",
+    name: "a conditional rethrow whose other path returns a non-read value is a hit",
     source: "try { return await ctx.transport.readFile(path); } catch (error) { if (fallback()) throw error; return sudo(path); }",
-    hits: [],
+    hits: ["1:ctx.transport.readFile(:try"],
   },
   {
     name: "a write call is out of scope",
@@ -242,6 +277,48 @@ const ALLOW: readonly AllowEntry[] = [
       "a port-probe tool that cannot even launch falls through to the next probe tool (ss, then netstat) and the function finally answers 'unavailable' - a visible gap, never a silent port claim",
   },
   {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 127,
+    reason:
+      "nearestExistingAncestor: an unknown exists() answer is treated as absent - the walk stops and the candidate is returned as if it were the nearest existing ancestor; the operator then sees only the downstream probe's line (the writable line may be 'ok'), with no sign existence was never established. Lost here: the unknown-vs-absent distinction"
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 152,
+    reason:
+      "targetUserIdentity: a non-unreachable failure becomes undefined, so readyLine prints the path-only 'sudo install -d <path>' hint instead of the owner/group form - a correct but generic hint; the operator is never told the identity probe failed. Lost here: the cause and the ownership facts"
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 195,
+    reason:
+      "dockerProbe: a non-unreachable exec failure becomes fail('docker is not on PATH on the target', advice); the operator sees the named failure and fix guidance. Lost here: the underlying transport error - the message asserts 'not on PATH' without the cause"
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 218,
+    reason:
+      "composeProbe: a non-unreachable exec failure becomes fail('could not run docker compose version on the target', advice); the operator sees the failure and install guidance. Lost here: the underlying transport error cause"
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 269,
+    reason:
+      "diskProbe: a non-unreachable df failure becomes warn('could not run df -Pk <path> on the target', advice); the operator sees the degraded warning with advice, and bootstrap continues. Lost here: the error cause, and free space stays unknown"
+  },
+  {
+    file: "tools/framework/commands/lifecycle/bootstrap/prereqs.ts",
+    line: 374,
+    reason:
+      "gnuUserlandProbe: a non-unreachable sh failure becomes fail('no POSIX sh on the target', advice); the operator sees the failure and install guidance. Lost here: the underlying transport error cause",
+  },
+  {
+    file: "tools/framework/service/secrets.ts",
+    line: 312,
+    reason:
+      "readTargetSecrets: the catch retries the read through the sudo prefix (sudoForRead); when the retry succeeds the operator sees normal secret statuses and the first failure is discarded with no trace - only when no prefix exists does the original error rethrow. Lost here: any sign of the first failed read on the success path",
+  },
+  {
     file: "tools/framework/commands/lifecycle/restore/index.ts",
     line: 476,
     reason:
@@ -300,7 +377,11 @@ check(
   stale.map((entry) => `${entry.file}:${entry.line}: ${entry.reason.slice(0, 60)}...`),
   [],
 );
-checkTrue("transport-read-swallow: the allow-list only shrinks (counted, now recorded)", ALLOW.length <= 14);
+// 14 -> 21 (fix33-Z): the all-path rule newly flags conditional rethrows whose other path
+// ends in fail()/warn()/a fallback read; each entry's reason states exactly what the operator
+// sees and what is lost. The widening is recorded in baseline.json (transportReadSwallowAllow).
+const recorded = JSON.parse(await readFile(resolve(repoRoot, "tools", "checks", "architecture", "baseline.json"), "utf8")) as { transportReadSwallowAllow: { readonly total: number } };
+checkTrue("transport-read-swallow: the allow-list only shrinks (counted ceiling in baseline.json)", ALLOW.length <= recorded.transportReadSwallowAllow.total);
 
 console.log(
   `transport-read-swallow: ${scanned} files scanned, ${flagged.length} swallowing catches, ${ALLOW.length} allow-listed (must shrink), ${stale.length} stale`,

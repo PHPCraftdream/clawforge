@@ -6,7 +6,8 @@ export {
   UnknownActionError, UnknownArgumentError, ArgumentError, closestCommand,
   dieUnknownAction, dieUnknownArgument, didYouMeanSuffix, unknownArgumentMessage,
 } from "#src/core/command/errors.ts";
-export * from "#src/core/command/parse.ts";
+export * from "#src/core/command/parse/index.ts";
+export * from "#src/core/command/parse/scan.ts";
 export * from "#src/core/command/view.ts";
 export * from "#src/core/command/effect.ts";
 // spec.ts's surface is re-exported EXPLICITLY (stage 7 S2.5): `export *` leaked `prepared`,

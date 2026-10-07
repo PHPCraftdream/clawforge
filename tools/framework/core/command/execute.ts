@@ -9,7 +9,7 @@
 import type { AppCommand, AppDefinition } from "#src/core/app.ts";
 import { callFacts, callFactsFor, legacyPreparesEnvironment, type CallFacts, type EffectShape } from "#src/core/command/effect.ts";
 import { ArgumentError, ConfirmationRequiredError, LateArgumentError, UnknownArgumentError } from "#src/core/command/errors.ts";
-import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInput, type CallShape } from "#src/core/command/parse.ts";
+import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInput, type CallShape } from "#src/core/command/parse/index.ts";
 import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError, CommandFailedError } from "#src/core/io/log.ts";

@@ -12,8 +12,8 @@ import { withPrivateFileRenamer } from "#framework/security/privacy/private-file
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { bindNamed } from "#framework/core/command/parse.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { bindNamed } from "#framework/core/command/parse/index.ts";
 import { specShape } from "#framework/core/command/spec.ts";
 import type { Stage } from "#framework/core/command/execute.ts";
 

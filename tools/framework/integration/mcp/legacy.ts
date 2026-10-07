@@ -3,7 +3,7 @@
 
 import { bindsAsFlag, choicesRefusal, requiredArgumentRefusal, specOf, specShape, type ArgumentSpec } from "../../core/command/index.ts";
 import type { CommandArgument } from "../../core/app.ts";
-import { argumentScopeRefusal, selectAction, type SelectedUnit } from "../../core/command/parse.ts";
+import { argumentScopeRefusal, selectAction, type SelectedUnit } from "../../core/command/parse/index.ts";
 import type { Declared } from "./schema.ts";
 
 /** Checks tool arguments against the declaration. The client's schema is a courtesy, not a

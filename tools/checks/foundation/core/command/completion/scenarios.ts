@@ -138,6 +138,7 @@ export function completionScenarios(data: CompletionData): readonly CompletionSc
   for (const command of commands) scenarios.push({ name: `${command}'s empty mid word`, words: [command, "", ""], cword: 2 });
 
   scenarios.push(...sweepScenarios(data));
+  scenarios.push(...fragmentScenarios(data));
   return scenarios;
 }
 
@@ -178,6 +179,52 @@ function sweepScenarios(data: CompletionData): CompletionScenario[] {
         const words = [command, ...sequence, ""];
         scenarios.push({ name: `sweep: ${words.slice(0, -1).join(" ")} <Tab>`, words, cword: words.length - 1 });
       }
+    }
+  }
+  return scenarios;
+}
+
+/** The design's named fragments, per command that declares the shape they exercise — derived
+ *  from the declaration, never hand-listed: an option met by a declared flag, a repeated
+ *  option, an inline value on a flag, an unknown dash token. Every one is a case where the
+ *  model and the emitted interpreters agree by construction: the interpreters swallow or skip
+ *  these tokens with the same rule the lenient scan records. */
+function fragmentScenarios(data: CompletionData): CompletionScenario[] {
+  const scenarios: CompletionScenario[] = [];
+  for (const command of data.first.keys()) {
+    const declared = data.declared.get(command) ?? [];
+    const flag = declared.find((argument) => argument.kind === "flag");
+    const option = declared.find((argument) => argument.kind === "option");
+    if (option !== undefined && flag !== undefined) {
+      const words = [command, `--${option.name}`, `--${flag.name}`, ""];
+      scenarios.push({ name: `sweep: ${command} --${option.name} --${flag.name} <Tab>`, words, cword: words.length - 1 });
+    }
+    if (option !== undefined) {
+      const optionName = `--${option.name}`;
+      const overwritten = [command, optionName, "x", optionName, "y", ""];
+      scenarios.push({ name: `sweep: ${command} ${optionName} x ${optionName} y <Tab>`, words: overwritten, cword: overwritten.length - 1 });
+      const pending = [command, optionName, optionName, ""];
+      scenarios.push({ name: `sweep: ${command} ${optionName} ${optionName} <Tab>`, words: pending, cword: pending.length - 1 });
+    }
+    if (flag !== undefined) {
+      const inline = [command, `--${flag.name}=v`, ""];
+      scenarios.push({ name: `sweep: ${command} --${flag.name}=v <Tab>`, words: inline, cword: inline.length - 1 });
+    }
+    const unknown = [command, "--bogus", ""];
+    scenarios.push({ name: `sweep: ${command} --bogus <Tab>`, words: unknown, cword: unknown.length - 1 });
+    // Two DISTINCT declared options back to back: the frozen interpreter swallows the second
+    // as the first one's value while the binder refuses it (option-missing-value) — the
+    // design-section-9 divergence family, present by construction wherever the declaration
+    // carries two or more distinct option names.
+    const optionNames = [...new Set(declared
+      .filter((argument) => argument.kind === "option")
+      .map((argument) => argument.name))];
+    if (optionNames.length >= 2) {
+      const distinct = [command, `--${optionNames[0]}`, `--${optionNames[1]}`, ""];
+      scenarios.push({
+        name: `sweep: ${command} --${optionNames[0]} --${optionNames[1]} <Tab>`,
+        words: distinct, cword: distinct.length - 1,
+      });
     }
   }
   return scenarios;

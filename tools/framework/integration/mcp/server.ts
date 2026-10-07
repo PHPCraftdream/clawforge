@@ -23,7 +23,7 @@ import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { executeCommand, type Execution, type CommandIo } from "../../core/command/execute.ts";
-import { type CallInput } from "../../core/command/parse.ts";
+import { type CallInput } from "../../core/command/parse/index.ts";
 import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { gateConfirmationRefusal, maskStructuredOutput, maskStructuredResult, toolEnvelope } from "./call.ts";
 import { validate, toArgv } from "./legacy.ts";

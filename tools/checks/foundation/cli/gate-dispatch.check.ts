@@ -37,7 +37,7 @@ import {
   APP_ORDER,
 } from "#framework/integration/gate.ts";
 import { UnknownArgumentError, unknownArgumentMessage } from "#framework/core/command/index.ts";
-import { tokenize } from "#framework/core/command/parse.ts";
+import { tokenize } from "#framework/core/command/parse/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { GROUP_HEADINGS } from "#framework/entry/cli.ts";

@@ -18,7 +18,7 @@ import { IN_BASH_NOTE, resolvesByCwd, rootedLaunch, shimFrame, type Frame, type 
 export { IN_BASH_NOTE };
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
-import { tokenize } from "../core/command/parse.ts";
+import { tokenize } from "../core/command/parse/index.ts";
 import { INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import {
   requestsShortHelp,

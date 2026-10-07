@@ -14,9 +14,10 @@
 import { info, log, reportError, UserError } from "../core/io/log.ts";
 import { command, changeDirectory, manual, type Advice } from "../core/io/invocation/advice.ts";
 import { commandLine, renderAdvice } from "../core/io/invocation/render.ts";
-import { bind, tokenize, tokenizeLenient } from "../core/command/parse.ts";
+import { bind, tokenize, tokenizeLenient, type CallShape } from "../core/command/parse/index.ts";
+import { defaultActionOf } from "../core/command/parse/scan.ts";
 import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
-import { specData, specOf } from "../core/command/spec.ts";
+import { specOf, specShape } from "../core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
 import { destructiveSymbol, effectNote, helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import { DISPATCHER_COMMANDS } from "../core/app.ts";
@@ -372,6 +373,8 @@ export interface RegistryEntry {
   readonly arguments?: readonly CommandArgument[];
   /** only a multi-action deployment command with a default action: the action a bare call runs */
   readonly defaultAction?: string;
+  /** the parse-level shape its completion reads (dispatcher entries — { arguments }) */
+  readonly shape: CallShape<CommandArgument>;
   /** only "deployment": the spec, effect, group and run */
   readonly command?: AppCommand;
   /** only "gate" */
@@ -413,10 +416,12 @@ export const CONTROL_MCP_DETAILS = [
   "by hand outside of testing.",
 ].join("\n");
 
-function defaultActionOf(command: AppCommand): { readonly defaultAction?: string } {
+function faceOf(command: AppCommand): { readonly defaultAction?: string; readonly shape: CallShape<CommandArgument> } {
   const entry = specOf(command);
-  const data = entry === undefined ? undefined : specData(entry);
-  return data?.kind === "multi" && data.defaultAction !== undefined ? { defaultAction: data.defaultAction } : {};
+  if (entry === undefined) return { shape: { arguments: command.arguments } };
+  const shape = specShape(entry);
+  const defaultAction = defaultActionOf(shape);
+  return { shape, ...(defaultAction !== undefined ? { defaultAction } : {}) };
 }
 
 /** Builds the one registry a surface reads: the deployment's commands, the gate's, and the two
@@ -448,24 +453,25 @@ export function commandRegistry(source: {
   for (const name of Object.keys(source.deployment)) claim(name, "the deployment's commands");
   for (const gate of source.gate) claim(gate.name, "a gate command");
   for (const name of DISPATCHER_COMMANDS) claim(name, "the dispatcher (reserved)");
+  const helpArgument: CommandArgument = { name: "command", kind: "positional", description: HELP_COMMAND_DESCRIPTION, parse: commandName(names, closestCommand) };
   const entries: RegistryEntry[] = [
     ...Object.entries(source.deployment).map(([name, command]): RegistryEntry => ({
       name, origin: "deployment", summary: command.summary, details: command.details,
       arguments: command.arguments, command,
-      ...defaultActionOf(command),
+      ...faceOf(command),
     })),
     ...source.gate.map((gate): RegistryEntry => ({
       name: gate.name, origin: "gate", summary: gate.summary, details: gate.details,
-      arguments: gate.arguments, gate,
+      arguments: gate.arguments, gate, shape: { arguments: gate.arguments ?? [] },
     })),
     {
       name: "control-mcp", origin: "dispatcher",
       summary: `expose ${source.appName}'s commands as MCP tools, for agents`,
-      details: CONTROL_MCP_DETAILS, arguments: [],
+      details: CONTROL_MCP_DETAILS, arguments: [], shape: { arguments: [] },
     },
     {
       name: "help", origin: "dispatcher", summary: HELP_ENTRY_SUMMARY,
-      arguments: [{ name: "command", kind: "positional", description: HELP_COMMAND_DESCRIPTION, parse: commandName(names, closestCommand) }],
+      arguments: [helpArgument], shape: { arguments: [helpArgument] },
     },
   ];
   return { entries, names, find: (name) => entries.find((entry) => entry.name === name) };

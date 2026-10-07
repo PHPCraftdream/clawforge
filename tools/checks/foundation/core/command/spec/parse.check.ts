@@ -17,7 +17,7 @@ import type { ValueKind } from "#framework/core/values/kind.ts";
 import { argumentsView } from "#framework/core/command/view.ts";
 import { commandBody, CommandDeclarationError } from "#framework/core/command/spec.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { ruleText } from "#framework/core/command/parse.ts";
+import { ruleText } from "#framework/core/command/parse/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -195,6 +195,14 @@ for (const [name, command] of Object.entries(openclawCommands)) {
   const argv = toArgv(command, values);
 
   check(`${name}: an undeclared framework flag is refused before passthrough`, parses(declared, ["--totally-undeclared-flag", ...argv]), false);
+}
+
+// --- generic parser: a dashed positional/variadic name is unknown again (HEAD parity) --------
+// Positional/variadic names spelled dashed bind nothing — merged multi-action views included.
+const dashedCases = Object.entries(openclawCommands).flatMap(([name, command]) => (command.arguments ?? []).filter((argument) => argument.kind === "positional" || argument.kind === "variadic").flatMap((argument) => [[`--${argument.name}=v`], [`--${argument.name}`, "v"]].map((attempt) => ({ name, command, attempt }))));
+for (const { name, command, attempt } of dashedCases) {
+  const declared = command.arguments ?? [], error = refusal(() => parseDeclaredArgs(declared, attempt));
+  check(`${name}: ${attempt[0]} does not bind the positional (dashed positional is refused)`, [error instanceof UnknownArgumentError, error?.message.split(" ").slice(0, 3), (error as UnknownArgumentError | undefined)?.argument], [true, ["unknown", "argument:", attempt[0]!], attempt[0]!]);
 }
 
 // --- generic parser: --opt=value, a repeated positional, and a missing option value --------

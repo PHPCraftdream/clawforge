@@ -2,9 +2,12 @@
 // (bash, zsh sharing its body verbatim, and pwsh) is this data plus the algorithm below — one
 // decision implemented more than once, with no branch on a command name in either one. The
 // table is built from the one command registry help, the MCP tool list and the docs table
-// read, so a command completes because it is declared, not because a case arm named it.
+// read, so a command completes because it is declared, not because a case arm named it. The
+// words typed so far are read by the binder's own lenient scan (scanCall) — one parser, no
+// second reading.
 
-import { selectAction, tokenizeLenient, type CallShape } from "../../core/command/parse.ts";
+import { defaultActionOf, scanCall } from "../../core/command/parse/scan.ts";
+import type { CallShape } from "../../core/command/parse/index.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import type { CommandRegistry } from "../gate.ts";
 
@@ -31,10 +34,9 @@ export interface CompletionData {
   /** `"<command> <action>"` and `"<command> *"` → candidates; `*` is the fallback for an
    *  action word that is absent or unknown, where the shell cannot tell which was meant. */
   readonly after: ReadonlyMap<string, readonly string[]>;
-  /** Each action-command's selection input as the core selector reads it: the declared
-   *  action words and the default action, nothing else — a completion asks, it does not
-   *  refuse, so the candidate code treats a selector refusal as "no action meant". */
-  readonly shapes: ReadonlyMap<string, CallShape>;
+  /** Each command's parse-level shape (from the registry entry): the action selection and the
+   *  default action the candidate code reads through scanCall/defaultActionOf. Not rendered. */
+  readonly shapes: ReadonlyMap<string, CallShape<CommandArgument>>;
   /** Pass-through commands (`verbatim: true` variadic) → their declared positional count. Once
    *  more non-flag words than that are typed, the tail is the child's literal text. */
   readonly verbatim: ReadonlyMap<string, number>;
@@ -69,7 +71,7 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
   const verbatim = new Map<string, number>();
   const verbatimFlags = new Map<string, readonly string[]>();
   const declared = new Map<string, readonly CommandArgument[]>();
-  const shapes = new Map<string, CallShape>();
+  const shapes = new Map<string, CallShape<CommandArgument>>();
   const valueOptions = new Map<string, readonly string[]>();
 
   for (const entry of registry.entries) {
@@ -80,10 +82,9 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
       verbatim.set(name, args.filter((argument) => argument.kind === "positional").length);
       verbatimFlags.set(name, args.filter((argument) => argument.kind === "flag" || argument.kind === "option").map(flagName));
     }
-    const actionArgument = args.find(
-      (argument): argument is CommandArgument & { choices: readonly string[] } =>
-        argument.kind === "positional" && argument.name === "action" && argument.choices !== undefined,
-    );
+    const shape = entry.shape;
+    shapes.set(name, shape);
+    const defaultAction = defaultActionOf(shape as CallShape);
     const flagArgs = args.filter((argument) => argument.kind === "flag" || argument.kind === "option");
     const options = args.filter((argument) => argument.kind === "option").map(flagName);
     if (options.length > 0) valueOptions.set(name, options);
@@ -96,19 +97,19 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
     for (const argument of flagArgs) {
       if (!(argument.kind === "option" && argument.choices !== undefined)) continue;
       const option = flagName(argument);
-      if (actionArgument === undefined) {
+      if (shape.actions === undefined) {
         values.push({ command: name, scope: "", option, values: argument.choices });
         continue;
       }
       // The default action (no action word typed) reads its own options at scope "".
-      if (argument.actions === undefined || (entry.defaultAction !== undefined && argument.actions.includes(entry.defaultAction))) {
+      if (argument.actions === undefined || (defaultAction !== undefined && argument.actions.includes(defaultAction))) {
         values.push({ command: name, scope: "", option, values: argument.choices });
       }
-      for (const action of argument.actions ?? actionArgument.choices) {
+      for (const action of argument.actions ?? Object.keys(shape.actions)) {
         values.push({ command: name, scope: action, option, values: argument.choices });
       }
     }
-    if (actionArgument === undefined) {
+    if (shape.actions === undefined) {
       const positional = args.find(
         (argument): argument is CommandArgument & { choices: readonly string[] } =>
           argument.kind === "positional" && argument.choices !== undefined,
@@ -127,15 +128,9 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
       after.set(`${name} *`, globalFlags);
       continue;
     }
-    const actionWords = [...actionArgument.choices].map(String).sort();
-    shapes.set(name, {
-      actions: Object.fromEntries(actionWords.map((word) => [word, { arguments: [] }])),
-      ...(entry.defaultAction !== undefined && actionWords.includes(entry.defaultAction)
-        ? { defaultAction: entry.defaultAction }
-        : {}),
-    });
+    const actionWords = Object.keys(shape.actions).sort();
     const perAction = new Map<string, readonly string[]>();
-    for (const value of actionArgument.choices) {
+    for (const value of Object.keys(shape.actions)) {
       const scoped = flagArgs.filter((argument) => argument.actions?.includes(value) === true).map(flagName);
       perAction.set(value, [...new Set([...globalFlags, ...scoped])].sort());
     }
@@ -143,9 +138,9 @@ export function completionData(registry: CommandRegistry, appFlag: boolean): Com
     // backup's bare create, recipe's bare list: the declared default action. Its flags are the
     // fallback for the no-action and unknown-action cases, where the shell cannot know which
     // action is meant.
-    const fallback = entry.defaultAction === undefined
+    const fallback = defaultAction === undefined
       ? globalFlags
-      : [...new Set([...globalFlags, ...(perAction.get(entry.defaultAction) ?? [])])].sort();
+      : [...new Set([...globalFlags, ...(perAction.get(defaultAction) ?? [])])].sort();
     first.set(name, [...new Set([...actionWords, ...fallback])].sort());
     for (const [value, flags] of perAction) after.set(`${name} ${value}`, flags);
     after.set(`${name} *`, fallback);
@@ -193,22 +188,19 @@ export function completionCandidates(
   // first dash word it does not declare, or the first word past its positionals); and a word
   // that follows an option still waiting for its value completes that value — its `choices`
   // or, with none declared, nothing. Anything else offers the command's own flags.
+  const shape = data.shapes.get(cmd);
+  if (shape === undefined) return [];
   const declared = data.declared.get(cmd) ?? [];
-  const scanned = tokenizeLenient(declared, between, data.verbatim.has(cmd));
+  // The shape's own per-action slices are the scan slices for a typed action; scanCall's
+  // fallback (still `declared`) covers the unknown/absent-action case — the design's fallback
+  // rule: a completion reads the command's ONE declaration only when no action is known.
+  const scanned = scanCall(shape, between, cmd, { verbatimTail: data.verbatim.has(cmd), fallback: declared });
   if (scanned.optionsEnded) return [];
   if (data.verbatim.has(cmd) && scanned.entries.some((entry) => entry.argument.kind === "variadic")) return [];
-  // The first word names the action — the core selector's own answer, taken leniently:
-  // a completion asks rather than refuses, so an unknown word (with no default action to
-  // fall back to) scopes nothing, exactly as a table miss used to.
-  let action = "";
-  const shape = data.shapes.get(cmd);
-  if (shape !== undefined) {
-    try {
-      action = selectAction(shape, { kind: "argv", argv: between }, cmd).selected.name ?? "";
-    } catch {
-      action = "";
-    }
-  }
+  // The first word names the action — the core selector's own answer, taken leniently by
+  // the scan itself: a refused selection is recorded, `selected.name` stays undefined, and
+  // a completion asks rather than refuses, so it scopes nothing (as a table miss used to).
+  const action = scanned.selected.name ?? "";
   if (scanned.pending !== undefined) {
     const option = `--${scanned.pending.name}`;
     return data.values.find((row) => row.command === cmd && row.scope === action && row.option === option)?.values ?? [];

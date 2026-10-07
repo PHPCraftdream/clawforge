@@ -77,6 +77,7 @@ interface Baseline {
   readonly modeDeciders: PerFileMetric;
   readonly kindCastsOutsideValues: { readonly comment: string; readonly total: number };
   readonly grammarCallsInRun: { readonly comment: string; readonly total: number };
+  readonly actionSelectionOutsideCore: { readonly comment: string; readonly total: number };
 }
 
 const root = monorepoRoot;
@@ -647,9 +648,8 @@ report(ratchet("rawArgvScans.total", baseline.rawArgvScans.total, rawScanTotal, 
 // 10. ownProductExpectations — stage 7 S0.5 (independent expectations): the EXPECTED operand
 // of a check()/assert.* must not be computed from the same tools/framework symbol the ACTUAL
 // operand uses — one product mutation would move both sides. Exempt: a file a registered
-// negative control covers (controls.ts `check` field), and a line carrying
-// `// control: <id>` for an existing control id; every exemption is printed, and a marker
-// naming an unknown control id fails here.
+// negative control covers (controls.ts `check` field), and a `// control: <id>` marker for
+// an existing control id; every exemption is printed, an unknown control id fails here.
 const CONTROL_IDS = new Set(CONTROLS.map((control) => control.id));
 const CONTROLLED_FILES = new Set(CONTROLS.map((control) => control.check));
 const ownAfter = new Map<string, number>();
@@ -683,18 +683,18 @@ report(perFileRatchet("ownProductExpectations", baseline.ownProductExpectations.
 report(ratchet("ownProductExpectations.total", baseline.ownProductExpectations.total, ownTotal, [], []));
 for (const line of ownExempt) process.stderr.write(`    ownProductExpectations exempt: ${line}` + String.fromCharCode(10));
 
-// 11. Frame-law violations — stage 7 S1.2a (invariant I12): the law's own measurement,
-// re-run here so the architecture table sees the same number the law check enforces. The
-// law check (surfaces/frame-law.check.ts) owns the decreasing-only contract with per-key
-// reasons; this ratchet compares the measured total to the recorded total so an unrecorded
-// change shows up in THIS table too. The counter is pure (no baseline read, no harness),
-// and its imports (render + resolvers + the producer registry) only ADD registrations
-// (useGateCommands, the surface registry) — no process-global the earlier measurements
-// above depend on is disturbed, so it runs in-process with the rest.
+// 11. Frame-law violations — stage 7 S1.2a (invariant I12): the law check
+// (surfaces/frame-law.check.ts) owns the decreasing-only contract with per-key reasons; this
+// ratchet re-runs the pure counter in-process (its imports only ADD registrations —
+// useGateCommands, the surface registry) so the architecture table sees the same number.
 report(ratchet("frameLawViolations", baseline.frameLawViolations.total, runFrameLaw().violations.size));
 await runFrameRatchets(root, frameworkFiles, rel, baseline);
 // 12–15. Counters in ./command-layer/kind-casts.ts: brand casts, grammar in run bodies, S2.5 layer boundaries. Expect 0.
 const s25 = { kindCastsOutsideValues: await kindCastsOutsideValues(), grammarCallsInRun: await grammarCallsInRun(), ...(await stage7S25Boundaries()) };
 for (const [name, actual] of Object.entries(s25)) report(ratchet(name, (baseline as unknown as Record<string, { readonly total: number }>)[name].total, actual, [], []));
-
+// 16. Action selection outside the owner — S2.8: a `.defaultAction` read or an `actions[...]` selection/indexing fails outside core/command (selectAction owns both).
+let actionOutsideCoreCount = 0;
+for (const full of frameworkFiles.filter((file) => !rel(file).includes("/core/command/")))
+  actionOutsideCoreCount += ((await readFile(full, "utf8")).match(new RegExp("\\.defaultAction\\b|\\.actions\\s*!?\\s*\\[", "g")) ?? []).length;
+report(ratchet("actionSelectionOutsideCore", baseline.actionSelectionOutsideCore.total, actionOutsideCoreCount, [], []));
 finish("architecture ratchet");

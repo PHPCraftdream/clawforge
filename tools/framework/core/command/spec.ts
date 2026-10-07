@@ -9,7 +9,7 @@ import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { AppCommand, CommandArgument, CommandGroup } from "#src/core/app.ts";
 import { argumentsView } from "#src/core/command/view.ts";
-import { parseCall, type CallShape } from "#src/core/command/parse.ts";
+import { parseCall, type CallShape } from "#src/core/command/parse/index.ts";
 import { shapeProfile, type EffectShape } from "#src/core/command/effect.ts";
 import { serviceOf, type Context } from "#src/core/context.ts";
 import { parseEnv, type Env } from "#src/core/env.ts";
@@ -19,7 +19,7 @@ import type { ValueParser } from "#src/core/values/value.ts";
 import type { ValueKind } from "#src/core/values/kind.ts";
 import { missingRecipeRefusal, missingRecipeSourceRefusal } from "#src/core/values/plan.ts";
 import { ARGUMENT_ERROR_TOKEN, ArgumentError, LateArgumentError } from "#src/core/command/errors.ts";
-import { joinClause, labelOf } from "#src/core/command/parse.ts";
+import { joinClause, labelOf } from "#src/core/command/parse/index.ts";
 import { ValueError } from "#src/core/values/value.ts";
 import { UserError } from "#src/core/io/log.ts";
 

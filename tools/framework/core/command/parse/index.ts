@@ -1,20 +1,22 @@
 // Argv parsing driven by a command's own declared `arguments` (core/app.ts) — the same list
 // that already drives help text and the MCP schema — so a flag the declaration knows and the
 // CLI parser does not (or the reverse) stops being possible to write by hand.
+// The stage-7 token machine (step and its strict/lenient drivers) lives in scan.ts.
 
 import type { CommandArgument } from "#src/core/app.ts";
 import {
-  ARGUMENT_ERROR_TOKEN, ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument,
+  ARGUMENT_ERROR_TOKEN, ArgumentError, dieUnknownAction,
   UnknownActionError, UnknownArgumentError,
 } from "#src/core/command/errors.ts";
 import type { ArgumentRule, ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
 import { scopeByAction } from "#src/core/command/view.ts";
 import { ValueError, type ValueParser } from "#src/core/values/value.ts";
+import { scan } from "./scan.ts";
 
 /** Only for a multi-action command (backup): the action being parsed, and the full
  *  cross-action declaration to check an unrecognized flag against before giving up on it
  *  as wholly unknown — see CommandArgument's own `actions` field. */
-interface ActionScope {
+export interface ActionScope {
   readonly action: string;
   readonly siblings: readonly CommandArgument[];
 }
@@ -167,13 +169,6 @@ export function argumentScopeRefusal(argument: ArgumentSpec | CommandArgument, a
  *  value, positional its token, variadic every remaining token in order; otherwise absent. */
 export type ParsedArgs = Record<string, string | boolean | string[] | undefined>;
 
-/** Whether `token` is `--name` or `--name=...` for a flag/option this same declaration
- *  knows — the one shape an option's value must not swallow (see tokenize). */
-function isDeclaredLongFlag(token: string, named: ReadonlyMap<string, CommandArgument>): boolean {
-  if (!token.startsWith("--")) return false;
-  const eq = token.indexOf("=");
-  return named.has(eq === -1 ? token.slice(2) : token.slice(2, eq));
-}
 
 /** One token read against a declaration: the argument it belongs to and its text (`true` for a flag). */
 export interface TokenEntry {
@@ -229,120 +224,6 @@ export interface Scanned extends Tokens {
  *  even when it is a declared flag. */
 export function tokenizeLenient(declared: readonly CommandArgument[], argv: readonly string[], verbatimTail = false): Scanned {
   return scan(declared, argv, undefined, verbatimTail, undefined, true);
-}
-
-function scan(
-  declared: readonly CommandArgument[],
-  argv: readonly string[],
-  scope: ActionScope | undefined,
-  verbatimTail: boolean,
-  refuse: Readonly<Record<string, string>> | undefined,
-  lenient: boolean,
-): Scanned {
-  let pending: CommandArgument | undefined;
-  const named = new Map<string, CommandArgument>();
-  const positionals: CommandArgument[] = [];
-  let variadic: CommandArgument | undefined;
-  for (const argument of declared) {
-    if (argument.kind === "positional") positionals.push(argument);
-    else if (argument.kind === "variadic") variadic = argument;
-    else named.set(argument.name, argument);
-  }
-
-  // True once a bare `--` was seen: the rest is positional/variadic.
-  let optionsEnded = false;
-  // True once the variadic has started in verbatim mode: the rest is its, whatever it looks like.
-  let tail = false;
-  const entries: TokenEntry[] = [];
-  const given: string[] = [];
-  const seenOptions = new Set<string>();
-  let filled = 0;
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-
-    if (tail && variadic !== undefined) {
-      entries.push({ argument: variadic, value: token });
-      continue;
-    }
-
-    if (!optionsEnded && token === "--") {
-      optionsEnded = true;
-      continue;
-    }
-
-    if (!optionsEnded) refuseToken(refuse, token);
-
-    if (!optionsEnded && bindsAsFlag(token)) {
-      // --opt=value is split before lookup so every declared option reads the same syntax.
-      let flagToken = token;
-      let inlineValue: string | undefined;
-      if (token.startsWith("--")) {
-        const eq = token.indexOf("=");
-        if (eq !== -1) {
-          flagToken = token.slice(0, eq);
-          inlineValue = token.slice(eq + 1);
-        }
-      }
-      const argument = flagToken.startsWith("--") ? named.get(flagToken.slice(2)) : undefined;
-      if (argument === undefined) {
-        if (verbatimTail && variadic !== undefined) {
-          tail = true;
-          entries.push({ argument: variadic, value: token });
-          continue;
-        }
-        if (lenient) continue;
-        const key = flagToken.startsWith("--") ? flagToken.slice(2) : undefined;
-        if (key !== undefined && scope !== undefined) {
-          const sibling = scope.siblings.find((candidate) => candidate.name === key);
-          const refusal = sibling === undefined ? undefined : argumentScopeRefusal(sibling, scope.action, `--${key}`);
-          if (refusal !== undefined) throw new UnknownArgumentError(refusal, key);
-        }
-        const suggestion = key === undefined ? undefined : closestCommand(key, [...named.keys()]);
-        dieUnknownArgument(token, suggestion === undefined ? undefined : `--${suggestion}`);
-      }
-      given.push(argument.name);
-      if (argument.kind === "flag") {
-        // A flag carries no value — "=value" on one is a mistake worth naming.
-        if (inlineValue !== undefined) {
-          if (lenient) continue;
-          throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `--${argument.name} is a flag and takes no value`, argument.name);
-        }
-        entries.push({ argument, value: true });
-        continue;
-      }
-      if (seenOptions.has(argument.name) && !lenient) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `--${argument.name} given more than once`, argument.name);
-      seenOptions.add(argument.name);
-      if (inlineValue !== undefined) {
-        entries.push({ argument, value: inlineValue });
-        continue;
-      }
-      const value = argv[index + 1];
-      if (value === undefined && lenient) {
-        pending = argument;
-        continue;
-      }
-      if (value === undefined || (!lenient && isDeclaredLongFlag(value, named))) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, `--${argument.name} needs a value`, argument.name);
-      entries.push({ argument, value });
-      index += 1;
-      continue;
-    }
-
-    if (filled < positionals.length) {
-      entries.push({ argument: positionals[filled], value: token });
-      filled += 1;
-      continue;
-    }
-    if (variadic !== undefined) {
-      if (verbatimTail) tail = true;
-      entries.push({ argument: variadic, value: token });
-      continue;
-    }
-    if (lenient) continue;
-    dieUnknownArgument(token);
-  }
-
-  return { entries, given, optionsEnded, ...(pending === undefined ? {} : { pending }) };
 }
 
 /** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens. */
@@ -472,22 +353,12 @@ export function isVerbatim(declared: readonly ArgumentSpec[]): boolean {
 }
 
 /** The parse-relevant part of a command: its arguments, or per-action arguments. */
-export interface CallShape {
-  readonly arguments?: readonly ArgumentSpec[];
+export interface CallShape<A extends CommandArgument = ArgumentSpec> {
+  readonly arguments?: readonly A[];
   readonly refuse?: Readonly<Record<string, string>>;
   readonly rules?: readonly ArgumentRule[];
-  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly ArgumentSpec[]; readonly refuse?: Readonly<Record<string, string>>; readonly rules?: readonly ArgumentRule[] }>>;
+  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly A[]; readonly refuse?: Readonly<Record<string, string>>; readonly rules?: readonly ArgumentRule[] }>>;
   readonly defaultAction?: string;
-}
-
-/** An exact token the declaration refuses with its own reason: an ArgumentError naming the
- *  token without its leading dashes. A refused `--flag` also covers its inline spelling
- *  `--flag=...`. Called by tokenize on the tokens it reads, so a value is never refused. */
-function refuseToken(refuse: Readonly<Record<string, string>> | undefined, token: string): void {
-  if (refuse === undefined) return;
-  const eq = token.indexOf("=");
-  const name = token.startsWith("--") && eq !== -1 ? token.slice(0, eq) : token;
-  if (Object.hasOwn(refuse, name)) throw new ArgumentError(ARGUMENT_ERROR_TOKEN, refuse[name], name.replace(/^-+/, ""));
 }
 
 // The normalized call form (stage 7 S2.2): ONE selection of the action — or of the single
@@ -506,10 +377,10 @@ export interface SelectedAction {
 }
 
 /** The declaration unit a call selects — never a merged view. */
-export interface SelectedUnit {
+export interface SelectedUnit<A extends CommandArgument = ArgumentSpec> {
   readonly selected: SelectedAction;
   /** The unit's own declared arguments, in declaration order. */
-  readonly slice: readonly ArgumentSpec[];
+  readonly slice: readonly A[];
   readonly rules?: readonly ArgumentRule[];
   /** Exact argv tokens the unit refuses ahead of tokenizing. */
   readonly refuse?: Readonly<Record<string, string>>;
@@ -535,7 +406,7 @@ export function needsActionMessage(command: string, names: readonly string[]): s
  *  refusal. Named: a non-empty string `action` is read like that word (`named` when known);
  *  absent, empty or not a string → the default, else the refusal — an MCP caller never
  *  silently lands in the default action's slice by misspelling the action. */
-export function selectAction(shape: CallShape, input: CallInput, command = ""): SelectedUnit {
+export function selectAction<A extends CommandArgument>(shape: CallShape<A>, input: CallInput, command = ""): SelectedUnit<A> {
   if (shape.actions === undefined) {
     return {
       selected: { name: undefined, how: "single" },
@@ -552,7 +423,7 @@ export function selectAction(shape: CallShape, input: CallInput, command = ""): 
   // Object.prototype members (constructor, toString, __proto__) as declared actions.
   const known = new Set(names);
   const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, actions[name].arguments ?? []])));
-  const chosen = (name: string, how: SelectedAction["how"], rest: readonly string[]): SelectedUnit => {
+  const chosen = (name: string, how: SelectedAction["how"], rest: readonly string[]): SelectedUnit<A> => {
     const own = actions[name];
     return {
       selected: { name, how },
@@ -563,7 +434,7 @@ export function selectAction(shape: CallShape, input: CallInput, command = ""): 
       rest,
     };
   };
-  const fallback = (): SelectedUnit | undefined =>
+  const fallback = (): SelectedUnit<A> | undefined =>
     shape.defaultAction === undefined
       ? undefined
       : chosen(shape.defaultAction, "default", input.kind === "argv" ? input.argv : []);

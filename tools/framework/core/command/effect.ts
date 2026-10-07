@@ -5,7 +5,7 @@
 // read it; a spec shape (effect on the body, an action or a flag) by the rules of the model.
 
 import type { AppCommand, CommandArgument } from "#src/core/app.ts";
-import { parseCall, parseDeclaredArgs } from "#src/core/command/parse.ts";
+import { parseCall, parseDeclaredArgs } from "#src/core/command/parse/index.ts";
 import { specOf, specShape } from "#src/core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "#src/core/command/spec.ts";
 

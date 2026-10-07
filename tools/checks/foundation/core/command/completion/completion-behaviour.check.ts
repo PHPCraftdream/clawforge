@@ -14,6 +14,11 @@ import { delimiter, join } from "node:path";
 import { completionCandidates, completionData } from "#framework/integration/completion/table.ts";
 import { makeCompletionGateCommand, renderCompletion } from "#framework/integration/completion/index.ts";
 import { APP_SKIP_PAIR, APP_VALUES_BLOCK } from "#framework/integration/completion/bash.ts";
+import { defaultActionOf, scanCall } from "#framework/core/command/parse/scan.ts";
+import type { CallShape } from "#framework/core/command/parse/index.ts";
+import type { CommandArgument } from "#framework/core/app.ts";
+import { checkDivergences, mergedReadingFor, scanContracts } from "./scan-contracts.ts";
+import { modelScenarios } from "./model-scenarios.ts";
 import { invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
@@ -39,15 +44,15 @@ const installed = completionData(registry, false);
  *  the post-filter list is the model's answer, and a script that stopped filtering hidden
  *  directories fails the differential. */
 const appNames = (): readonly string[] => ["app-one", "app-two"];
-/** The action words a command declares, read off its own `after` rows — so a word that is one
- *  command's action and another command's name (backup's `list` vs the gate's `list`) is never
- *  mistaken for a command name leaking into a command's own candidates. */
 const actionWordsOf = (command: string): string[] =>
   [...data.after.keys()]
     .filter((key) => key.startsWith(`${command} `) && key !== `${command} *`)
     .map((key) => key.slice(command.length + 1));
-
+/** The action words a command declares, read off its own `after` rows — so a word that is one
+ *  command's action and another command's name (backup's `list` vs the gate's `list`) is never
+ *  mistaken for a command name leaking into a command's own candidates. */
 const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
+const norm = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
 // --- 1. the data: structure instead of script text ------------------------------------------
 //
@@ -122,6 +127,23 @@ const STUB_JSON = '[{"name":"app-one"},{"name":"app-two"},{"name":".hidden"}]';
   const pwshText = renderCompletion("pwsh", data);
   check("bash/zsh: the lazy --app values call is parameterised by the invoked name", text.includes("${COMP_WORDS[0]}"), true);
   check("pwsh: the lazy --app values call reads the caller's tokens", pwshText.includes("$tokens[0]"), true);
+
+  // Design section 9: `valueOptions` is exact per command only while no argument name is an
+  // option in one action and a flag in another — the emitted interpreters key their mirrors
+  // on the name alone. One check over every multi-action entry, naming the offender.
+  const kindClashes: string[] = [];
+  for (const entry of registry.entries) {
+    if (entry.shape.actions === undefined) continue;
+    const kinds = new Map<string, string>();
+    for (const unit of Object.values(entry.shape.actions)) {
+      for (const argument of unit.arguments ?? []) {
+        const seen = kinds.get(argument.name);
+        if (seen !== undefined && seen !== argument.kind) kindClashes.push(`${entry.name} ${argument.name}`);
+        kinds.set(argument.name, argument.kind);
+      }
+    }
+  }
+  check("no argument name changes kind between actions", kindClashes, []);
 }
 
 {
@@ -160,97 +182,23 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
   return completionCandidates(shape, words, cword, appNames);
 }
 
-{
-  // R32-02: `clawforge sta<Tab>` used to see the command "sta"; only the words BEFORE the cursor
-  // pick the command, so a prefix typed anywhere still completes behind it.
-  check("a typed prefix at the top level still completes commands (R32-02)", at(data, ["sta"], 0).includes("status"), true);
-  check("a typed flag prefix completes --app", at(data, ["--ap"], 0).includes("--app"), true);
-  check("a typed prefix after a command completes an action word", at(data, ["backup", "l"], 1).includes("list"), true);
-  check("a typed prefix after watch completes install", at(data, ["watch", "in"], 1).includes("install"), true);
 
-  const trailing = at(data, ["backup", ""], 1);
-  check("backup's trailing space offers the action words and the create flags",
-    ["create", "install", "list", "prune-replaced", "uninstall", "--hot", "--dry-run"].every((word) => trailing.includes(word)), true);
-  check("a trailing space never offers command names",
-    data.top.filter((name) => trailing.includes(name) && !actionWordsOf("backup").includes(name)), []);
+modelScenarios(data, installed, appNames);
+// --- 2b. the lenient scan itself: the evidence the negative controls aim at -------------------
+//
+// The scanCall refusal contracts live in ./scan-contracts.ts (split out at S2.8 for the
+// 700-line layout limit); the entry they run against is derived here.
+scanContracts(registry, data, at, norm);
 
-  const afterApp = at(data, ["--app", "app-one", "backup", ""], 3);
-  check("after --app X backup still offers actions and create flags",
-    [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
-  check("--app's own value is the deployment list", [...at(data, ["--app", ""], 1)], ["app-one", "app-two"]);
-
-  // The `=` form splitLeadingAppFlag accepts on the command line too: the command after it
-  // completes, exactly as after the two-token form.
-  const afterAppEq = at(data, ["--app=app-one", "backup", ""], 2);
-  check("after --app=x backup still offers actions and create flags",
-    [afterAppEq.includes("create"), afterAppEq.includes("--hot")], [true, true]);
-
-  const afterFlag = at(data, ["backup", "--hot", ""], 2);
-  check("after backup --hot the create flags continue", [afterFlag.includes("--dry-run"), afterFlag.includes("--migrate")], [true, true]);
-  check("after backup --hot no action word is offered (backup would reject it)", afterFlag.includes("list"), false);
-
-  check("mcp-setup --client's value position offers its choices",
-    [...at(data, ["mcp-setup", "--client", ""], 2)], ["claude", "codex", "both"]);
-  const kind = at(data, ["set", "forget", "--kind", ""], 3);
-  check("set forget --kind's value position is the kind values", [...kind].sort(), ["agent", "cron-job", "mcp-server"]);
-  check("kind's value position does not offer flags", kind.includes("--kind"), false);
-  check("set try --kind's value position offers no kind values (R33-10)",
-    ["agent", "cron-job", "mcp-server"].some((value) => at(data, ["set", "try", "--kind", ""], 3).includes(value)), false);
-  check("after the value is given the command's flags return",
-    at(data, ["mcp-setup", "--client", "claude", ""], 3).includes("--rewrite-launcher"), true);
-
-  const hostPosition = at(data, ["host", ""], 1);
-  check("host's positional choices are offered at its position",
-    ["target", "engine", "local"].every((value) => hostPosition.includes(value)), true);
-  check("after host's positional flags return", at(data, ["host", "target", ""], 2).includes("--confirm-root"), true);
-  // R4-1: past a pass-through command's declared positionals the tail is the child's literal
-  // text — its own flags must not be offered where the parser would bind them as child text.
-  check("host's verbatim tail offers nothing (R4-1)", [...at(data, ["host", "target", "id", "--ro"], 4)], []);
-  check("exec's verbatim tail offers nothing (R4-1)", [...at(data, ["exec", "ls", "--raw"], 3)], []);
-  check("a declared flag before a verbatim command's positionals keeps offering its flags",
-    at(data, ["host", "--root", ""], 2).includes("--confirm-root"), true);
-  // An undeclared dash word is where the parser's verbatim mode starts the child's literal tail.
-  check("an undeclared dash word starts the verbatim tail (host --bogus)", [...at(data, ["host", "--bogus", ""], 2)], []);
-  // R5-B F5-1: a bare `--` starts the verbatim tail — the parser binds everything after it as
-  // the child's literal text, so the command's own flags must not be offered there.
-  check("a bare -- starts the verbatim tail: host's flags stop (R5-B F5-1)", [...at(data, ["host", "target", "--", ""], 3)], []);
-  check("a bare -- starts the verbatim tail: cli's flags stop", [...at(data, ["cli", "--", ""], 2)], []);
-  // R9-4: the bare `--` cutoff is not a verbatim privilege — any command's flags stop behind
-  // it, and without it they still come out.
-  check("a bare -- starts any variadic tail: check's flags stop (R9-4)", [...at(data, ["check", "--", ""], 2)], []);
-  check("a bare -- starts any variadic tail: set diff's flags stop", [...at(data, ["set", "diff", "--", ""], 3)], []);
-  // One rule after a bare `--` that is no option's value: nothing, refused or not — the word
-  // behind it (`status -- x`) and a refusal before it (`check --bogus --`) change nothing.
-  check("a bare -- followed by a refused word still offers nothing", [...at(data, ["status", "--", "x", ""], 3)], []);
-  check("a bare -- behind a refused flag offers nothing", [...at(data, ["check", "--bogus", "--", ""], 3)], []);
-  // An option still waiting for its value completes that value: its choices, or nothing.
-  check("an option with no choices offers nothing at its value (logs --grep)", [...at(data, ["logs", "--grep", ""], 2)], []);
-  check("the default action's option values are offered (backup --profile)",
-    [...at(data, ["backup", "--profile", ""], 2)].sort(), [...at(data, ["backup", "create", "--profile", ""], 3)].sort());
-  check("backup --profile's choices are not empty", at(data, ["backup", "--profile", ""], 2).length > 0, true);
-  check("an option's value is no marker or flag position (check --jobs -- offers flags)", at(data, ["check", "--jobs", "--", ""], 3).includes("--list"), true);
-  check("check's flags without -- still complete", at(data, ["check", "--j"], 1).includes("--jobs"), true);
-
-  check("help completes command names",
-    [at(data, ["help", "st"], 1).includes("status"), at(data, ["help", ""], 1).includes("backup")], [true, true]);
-  check("completion completes the shell names", at(data, ["completion", "b"], 1).includes("bash"), true);
-  check("an installed gate without --app never offers it",
-    [[...at(installed, ["--app", ""], 1)], at(installed, ["sta"], 0).includes("--app")], [[], false]);
-  check("an unknown command completes to nothing", [...at(data, ["zzz-nope-command", ""], 1)], []);
-  // A command's default action is the one its declaration names (recipe: list, backup: create),
-  // for flags and for choice-valued options: the bare call's flags complete without an action word.
-  check("recipe's bare call completes the default action's --json", [at(data, ["recipe", "--j"], 1).includes("--json"), at(data, ["recipe", "zz", ""], 2).includes("--json")], [true, true]);
-  check("recipe's explicit list still offers --json and install does not", [at(data, ["recipe", "list", ""], 2).includes("--json"), at(data, ["recipe", "install", ""], 2).includes("--json")], [true, false]);
-  check("backup's bare call still completes create's flags", at(data, ["backup", "--h"], 1).includes("--hot"), true);
-  check("upper-case words are not declared words", [at(data, ["Backup", ""], 1).length, at(data, ["backup", "LIST", ""], 2).includes("--keep"), at(data, ["logs", "--TAIL", ""], 2).includes("--help")], [0, false, true]);
-  check("watch install --int completes --interval", at(data, ["watch", "install", "--int"], 2).includes("--interval"), true);
-
-  // --app is positional and must lead the command: past a command word the command's own flags
-  // come back instead of the deployment list (R33-10).
-  const afterAppFlag = at(data, ["status", "--app", ""], 2);
-  check("--app after a command offers that command's flags, not deployments",
-    [afterAppFlag.includes("--help"), afterAppFlag.includes("app-one")], [true, false]);
-}
+// The PRE-fix interpreter reading the differentials are judged against where the design
+// documents the two shells' divergence (section 9): there the scenario is marked instead of
+// failed — held to its own pre-fix reading — and every mark must be a documented family.
+const mergedReading = mergedReadingFor(data, appNames);
+const bashDivergent: string[] = [];
+const pwshDivergent: string[] = [];
+const shellsRan: string[] = [];
+const answerSetsAgree = (left: readonly string[], right: readonly string[]): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
 
 // --- 3. the differential: the same scenarios through a real bash and a real PowerShell -------
 //
@@ -260,7 +208,6 @@ function at(shape: typeof data, words: readonly string[], cword: number): readon
 // real interpreters against one reference.
 
 const scenarios = completionScenarios(data);
-const norm = (values: readonly string[]): string[] => [...new Set(values)].sort();
 /** The model's answer for one scenario, after the filter the shells apply themselves (compgen
  *  -W … -- "$cur", `-like "$wordToComplete*"`). Both sides are normalised, because bash's compgen
  *  keeps the table's own order and pwsh's Sort-Object orders by culture: what is compared is the
@@ -270,10 +217,128 @@ function expected(scenario: CompletionScenario): string[] {
   return norm(completionCandidates(data, scenario.words, scenario.cword, appNames)).filter((value) => value.startsWith(partial));
 }
 
+/** One shell's answers, scenario by scenario: normally the model's own decision holds; where
+ *  the design documents the frozen interpreters' merging (section 9) the scenario is marked
+ *  divergent and held to its own pre-fix reading instead, and the marks are audited. */
+function assertShellAnswers(shell: string, answers: Map<string, string[]>, into: string[]): void {
+  const divergent: string[] = [];
+  for (const [index, scenario] of scenarios.entries()) {
+    const observed = norm(answers.get(String(index)) ?? []);
+    const partial = scenario.words[scenario.cword] ?? "";
+    const merged = norm(mergedReading(scenario)).filter((value) => value.startsWith(partial));
+    if (answerSetsAgree(merged, expected(scenario))) {
+      check(`${shell}: ${scenario.name} matches the model's decision`, observed, expected(scenario));
+    } else {
+      divergent.push(scenario.name);
+      check(`${shell}: ${scenario.name} — the frozen interpreter merges where the binder refuses (design section 9)`, observed, merged);
+    }
+  }
+  into.push(...divergent);
+  shellsRan.push(shell);
+  checkDivergences(shell, scenarios, divergent, data);
+}
+
 // scenarios.ts names the cursor by the word being completed's index in `words`; every driver
 // below prepends the program name, so its own cursor index is one further along.
 check("every scenario's cword is the index of its last word, the one being completed",
   scenarios.every((scenario) => scenario.cword === scenario.words.length - 1), true);
+
+// --- 2c. the oracle: the same scenarios answered off the registry, no table -------------------
+//
+// For EVERY scenario the shell differentials run, the expected candidates are derived a second
+// way: straight off the REGISTRY entry's own declaration through scanCall — no CompletionData
+// field consulted (no top, declared, shapes, values; only registry.entries, registry.names and
+// the appNames stub). The table is built from the same declarations, so a disagreement below
+// is either an oracle bug (fix the oracle, say so) or a real model/table divergence (report
+// every disagreeing scenario, never smooth it over).
+
+{
+  // The gate's own --app selector — entry/registry.ts's checkoutGate owns it (appFlag true for
+  // this checkout gate) — stepped over exactly as the model steps over it, both spellings.
+  const appFlag = true;
+  const choicesOf = (argument: CommandArgument): readonly string[] =>
+    (argument as { choices?: readonly string[] }).choices
+      ?? (argument.value as { choices?: readonly string[] } | undefined)?.choices ?? [];
+  const flagNameOf = (argument: CommandArgument): string => `--${argument.name}`;
+  const sharedFlags = (args: readonly CommandArgument[]): string[] =>
+    args.filter((argument) => (argument.kind === "flag" || argument.kind === "option") && argument.actions === undefined).map(flagNameOf);
+  const scopedFlags = (args: readonly CommandArgument[], word: string): string[] =>
+    args.filter((argument) => (argument.kind === "flag" || argument.kind === "option") && argument.actions?.includes(word) === true).map(flagNameOf);
+  /** The command's own flag row: shared flags, the default action's flags when the shape
+   *  names one, and --help. */
+  const flagRow = (args: readonly CommandArgument[], shape: CallShape<CommandArgument>): string[] => {
+    const defaultAction = defaultActionOf(shape as CallShape);
+    const defaultFlags = defaultAction !== undefined && shape.actions !== undefined && Object.hasOwn(shape.actions, defaultAction)
+      ? scopedFlags(args, defaultAction)
+      : [];
+    return [...new Set([...sharedFlags(args), ...defaultFlags, "--help"])].sort();
+  };
+  const oracle = (words: readonly string[], cword: number): readonly string[] => {
+    const scan = words.slice(0, cword);
+    let i = 0;
+    while (appFlag && (scan[i] === "--app" || scan[i]?.startsWith("--app=") === true)) i += scan[i] === "--app" ? 2 : 1;
+    if (i >= scan.length) {
+      if (scan.at(-1) === "--app") return appNames();
+      const top = [...registry.names].sort();
+      for (const entry of registry.entries) top.push(...(entry.gate?.aliases ?? []));
+      top.push("--app");
+      return top;
+    }
+    const cmd = scan[i]!;
+    const entry = registry.entries.find((candidate) => candidate.name === cmd);
+    if (entry === undefined) return [];
+    const args = entry.arguments ?? [];
+    const shape = entry.shape as CallShape<CommandArgument>;
+    const verbatimTail = args.some(
+      (argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true);
+    const between = scan.slice(i + 1);
+    if (between.length === 0) {
+      // The word being completed is the command's first positional: the action words, or a
+      // declared positional `choices` / the registry names for a commandName positional.
+      let words: readonly string[] = [];
+      if (shape.actions !== undefined) words = Object.keys(shape.actions);
+      else {
+        const positional = args.find(
+          (argument): argument is CommandArgument & { choices: readonly string[] } =>
+            argument.kind === "positional" && (argument as { choices?: readonly string[] }).choices !== undefined);
+        const offersRegistryNames = args.some(
+          (argument) => argument.kind === "positional" && (argument.parse as { kind?: string } | undefined)?.kind === "commandName");
+        words = positional?.choices ?? (offersRegistryNames ? registry.names : []);
+      }
+      return [...new Set([...words, ...flagRow(args, shape)])].sort();
+    }
+    // The model scans the SELECTED action's own slice: the oracle reads the same declaration
+    // (the entry's own shape and arguments) — no slice widening anywhere.
+    const scanned = scanCall(shape, between, cmd, { verbatimTail, fallback: args });
+    if (scanned.optionsEnded) return [];
+    if (verbatimTail && scanned.entries.some((token) => token.argument.kind === "variadic")) return [];
+    if (scanned.pending !== undefined) {
+      // The choice values the ENTRY's declaration offers here: the pending argument is found
+      // by name in the entry's own arguments, its choices carrier or its declared value
+      // kind's, scoped by the DECLARATION — offered everywhere when it names no `actions`,
+      // else at the selected action, or at scope "" only under the declared default action.
+      const pending = args.find((argument) => argument.name === scanned.pending!.name);
+      const choices = pending === undefined ? [] : choicesOf(pending);
+      if (pending === undefined || choices.length === 0) return [];
+      const action = scanned.selected.name ?? "";
+      const scope = pending.actions;
+      if (scope === undefined) return [...choices];
+      if (action !== "") return scope.includes(action) ? [...choices] : [];
+      const fallback = defaultActionOf(shape as CallShape);
+      return fallback !== undefined && scope.includes(fallback) ? [...choices] : [];
+    }
+    if (shape.actions !== undefined && Object.hasOwn(shape.actions, between[0] ?? "")) {
+      return [...new Set([...sharedFlags(args), ...scopedFlags(args, between[0]!), "--help"])].sort();
+    }
+    return flagRow(args, shape);
+  };
+  for (const scenario of scenarios) {
+    const partial = scenario.words[scenario.cword] ?? "";
+    check(`oracle: ${scenario.name} agrees with the table`,
+      norm(oracle(scenario.words, scenario.cword)).filter((value) => value.startsWith(partial)),
+      expected(scenario));
+  }
+}
 
 /** Single-quoted for bash and for PowerShell: the words are command names, action words, option
  *  names and the empty string, and a PowerShell single-quoted string is literal. */
@@ -514,9 +579,7 @@ await requires("bash", "the generated bash script, sourced by a real bash", asyn
     });
     check("bash: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
     const answers = replies(proc.stdout, " ");
-    for (const [index, scenario] of scenarios.entries()) {
-      check(`bash: ${scenario.name} matches the model's decision`, norm(answers.get(String(index)) ?? []), expected(scenario));
-    }
+    assertShellAnswers("bash", answers, bashDivergent);
     check("bash: the generated script parses (bash -n)", spawnSync("bash", ["-n", scriptPath], { timeout: 15_000 }).status, 0);
     // zsh loads this SAME completer body through bashcompinit, so the two scripts cannot drift:
     // everything from `_clawforge_lookup()` to the end is one text, byte for byte.
@@ -549,15 +612,18 @@ await requires("pwsh", "the generated pwsh script, driven by a real PowerShell",
     });
     check("pwsh: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
     const answers = replies(proc.stdout, ",");
-    for (const [index, scenario] of scenarios.entries()) {
-      check(`pwsh: ${scenario.name} matches the model's decision`, norm(answers.get(String(index)) ?? []), expected(scenario));
-    }
+    assertShellAnswers("pwsh", answers, pwshDivergent);
     check("pwsh: the checkout shim ./clawforge completes too",
       norm(answers.get("shim") ?? []).includes("status"), true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Both differentials record their divergent scenarios independently; where both shells ran,
+// the two per-shell divergence sets must name the same scenarios.
+check("bash and pwsh record the same divergent scenarios",
+  !(shellsRan.includes("bash") && shellsRan.includes("pwsh")) || answerSetsAgree(bashDivergent, pwshDivergent), true);
 
 // --- 4. interpreter invariance: two different tables, one grammar ---------------------------
 //

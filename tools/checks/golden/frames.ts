@@ -132,8 +132,15 @@ function frameOf(launch: Launch, hostPlatform: HostPlatform, msys: boolean, cwd:
  *  against the fake layout: pasted at the checkout root or under it, the committed shims'
  *  relative spelling names the checkout's own gate; pasted in the deployment directory,
  *  a shim names the deployment's own. */
+
+/** The fixture's paths are POSIX; the real adapter's roots carry this process's resolve()
+ *  spelling. Normalize here — the fixture boundary — never in product path semantics. */
+const posixPath = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:\//, "/");
+
 function fromHandover(invocation: Invocation, cwd: string, msys = false): Frame {
-  const classified = frameOf(launchFromHandover(invocation, { cwd, fs: FS, checkoutRoot: ROOT }), HOST, msys, cwd);
+  const launch = launchFromHandover(invocation, { cwd, fs: FS, checkoutRoot: ROOT });
+  const rooted = launch.kind === "checkout-shim" || launch.kind === "deployment-shim" || launch.kind === "npm-bin" ? { ...launch, root: posixPath(launch.root) } : launch;
+  const classified = frameOf(rooted, HOST, msys, cwd);
   // The hand-over's app fact rides along: the same mapping frameFromInvocation uses, so a
   // launcher generation's `--app <name>` (L1/L2) survives the frameOf assembly.
   return {

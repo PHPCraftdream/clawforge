@@ -170,6 +170,19 @@ export function renderFrameAdvice(
     if (primary === undefined) {
       note = note === undefined ? IN_BASH_NOTE : `${note}, ${IN_BASH_NOTE}`;
     }
+  } else {
+    // O4: a hint printed from a subdirectory of its launch root spells the entry relative
+    // to the frame's paste directory, one climb per level; at the root the root spelling
+    // stands byte-identical. Only a frame that knows BOTH its launch root and its paste
+    // directory re-spells — a launch read back from a hand-over (root "") or a frame
+    // without a paste directory keeps the handed spelling (the pre-frame behavior).
+    const from = frame.cwd.kind === "dir" ? frame.cwd.path : undefined;
+    const launchRoot = frame.launch.kind === "checkout-shim" || frame.launch.kind === "deployment-shim" || frame.launch.kind === "npm-bin" ? frame.launch.root : undefined;
+    if (launchRoot !== undefined && launchRoot !== "" && from !== undefined) {
+      program = spell(frame.launch, frame.shells[0], host, from)
+        ?? spell(frame.launch, "posix", host, from)
+        ?? handed;
+    }
   }
   // An install line spells its program for the shell that pastes it, not for wherever
   // this run stood: forward slashes survive bash, zsh and every PowerShell alike.

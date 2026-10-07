@@ -451,13 +451,13 @@ try {
     check(`defaultInvocation (${label}) hands over an invocation the strict reader accepts`,
       parseInvocation(serializeInvocation(value)), value);
   }
-  // A run that refused inside a DIFFERENT checkout-shaped tree names that walked-to
+  // A run that refused inside a DIFFERENT checkout-shaped tree (outside the running root: spelled absolutely, design 2.2) names that walked-to
   // checkout's gate (bin.ts passes the decision's checkout), not the running copy's.
   {
     const other = resolve(apps.root, "another-checkout");
     const value = { ...(await defaultInvocation(resolve(apps.root, "invocation-hints-probe"), undefined, other)), audience: "terminal" as const };
     check("defaultInvocation names a decided checkout that differs from the running copy's",
-      value, { program: "../another-checkout/clawforge", mode: "checkout", audience: "terminal" });
+      value, { program: `${other.replaceAll("\\", "/")}/clawforge`, mode: "checkout", audience: "terminal" });
   }
 
   // The entry re-serialises whatever invocation() holds (bin, the delegate), so every default

@@ -21,6 +21,7 @@ import {
   launchFromHandover,
   launchOf,
   pasteShells,
+  rel,
   spell,
   toCheckoutRoot,
   WINDOWS_BIN_PROGRAM,
@@ -29,9 +30,10 @@ import {
   type HostPlatform,
   type Launch,
 } from "#framework/core/io/invocation/frame.ts";
-import { renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderFrameAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { mcpLauncherContent } from "#framework/integration/mcp/project.ts";
 import { FRAME_PRODUCERS, producer } from "#checks/golden/frames.ts";
+import { tokenizeLine } from "#checks/kit/shells.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 const ROOT = "/clawforge-checkout";
@@ -219,6 +221,33 @@ check("launchOf reads a bare word as the verbatim launch", { kind: VERBATIM.kind
 for (const [shell, host] of [["posix", "posix"], ["cmd", "win32"], ["pwsh", "win32"]] as const) {
   check(`spell verbatim ${shell} on ${host} prints the program as typed`, spell(VERBATIM, shell, host, undefined), "cw");
 }
+
+// --- rel: the relative-spelling table (S1.2b, O4) ----------------------------------------------------
+
+check("rel at the root", rel(ROOT, ROOT, "posix"), ".");
+check("rel one level up", rel(DOCS, ROOT, "posix"), "..");
+check("rel two levels up", rel(DEMO, ROOT, "posix"), "../..");
+check("rel a sibling of the root subtree is absolute", rel(`${DOCS}/guide`, `${ROOT}/tools`, "posix"), `${ROOT}/tools`);
+check("rel a sibling inside the root climbs", rel(`${DEMO}/recipes`, `${ROOT}/apps`, "posix"), "../..");
+check("rel outside the root is absolute (design §2.2)", rel("/elsewhere/x", ROOT, "posix"), ROOT);
+check("rel a sibling of the root is absolute", rel(`${ROOT}/../tools`, ROOT, "posix"), ROOT);
+check("rel spells through a space", rel("/home/a b/c", "/home/a b", "posix"), "..");
+check("rel normalizes trailing slashes", rel(`${DOCS}/`, `${ROOT}/`, "posix"), "..");
+check("rel on win32 spells forward slashes", rel("C:/co/docs", "C:/co", "win32"), "..");
+check("rel on win32 crosses drives as an absolute path", rel("D:/x", "C:/co", "win32"), "C:/co");
+check("rel outside the root on win32 is absolute", rel("C:/elsewhere/x", "C:/co", "win32"), "C:/co");
+check("rel keeps a backslash as one posix component", rel("/co/a\\b", "/co", "posix"), "..");
+check("rel keeps posix semantics for a posix host on a win32 process", rel("/clawforge-checkout/docs", "/clawforge-checkout", "posix"), "..");
+check("the checkout shim spells from docs", spell(SHIM, "posix", "posix", DOCS), "../clawforge");
+check("the checkout shim spells from apps/demo", spell(SHIM, "posix", "posix", DEMO), "../../clawforge");
+check("spell npm-bin cmd (from a subdirectory)", spell(BIN, "cmd", "win32", `${APP_LOCAL}/sub`), ["..", "node_modules", ".bin", "clawforge"].join("\\"));
+const pwshSub = spell(BIN, "pwsh", "win32", `${APP_LOCAL}/sub`);
+check("spell npm-bin pwsh (from a subdirectory)", pwshSub, ["..", "node_modules", ".bin", "clawforge"].join("\\"));
+checkTrue("the pwsh subdirectory bin spelling tokenizes as one word", JSON.stringify(tokenizeLine(pwshSub ?? "", "pwsh")) === JSON.stringify([["..", "node_modules", ".bin", "clawforge"].join("\\")]));
+checkTrue("the posix shim climb tokenizes as one pwsh word", JSON.stringify(tokenizeLine("../clawforge", "pwsh")) === JSON.stringify(["../clawforge"]));
+check("a hint printed at the root keeps the root spelling", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", ROOT))), ["./clawforge", "status"]);
+check("a hint printed from docs spells ../clawforge (O4)", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", DOCS))), ["../clawforge", "status"]);
+check("a hint printed from apps/demo spells ../../clawforge (O4)", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", DEMO))), ["../../clawforge", "status"]);
 
 // --- pasteShells: the table and the constructor invariant ---------------------------------------------
 

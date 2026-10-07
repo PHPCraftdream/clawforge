@@ -5,7 +5,7 @@
 // every transition goes through them, so no module outside this one spells a program or
 // decides by its spelling. Pure data and functions: no I/O, no process globals.
 
-import { basename, dirname, relative, resolve, sep } from "node:path";
+import { basename, dirname, posix, resolve, win32 } from "node:path";
 import type { Shell } from "./advice.ts";
 import { INVOCATION_VERSION, type AppSelection, type Invocation, type InvocationAudience, type InvocationMode } from "./index.ts";
 
@@ -132,28 +132,45 @@ export function pasteShells(launch: Launch, host: Host, msys: boolean): readonly
 
 // --- spelling ------------------------------------------------------------------------------------
 
-/** `from` relative to `root`, "." when they are the same place; forward slashes throughout. */
-function rel(from: string, root: string): string {
-  const raw = relative(resolve(from), resolve(root)).split(sep).join("/");
+/** `from` relative to `root`, "." when they are the same place; forward slashes throughout.
+ *  Path semantics follow the frame's HOST platform (posix/win32), never this process's.
+ *  A paste directory outside the root spells the entry absolutely (design §2.2): the test
+ *  is whether the root reaches the paste directory without a `..`, so a sibling of the
+ *  root is outside while a child at any depth is inside. */
+export function rel(from: string, root: string, platform: HostPlatform): string {
+  if (platform === "posix") {
+    const target = posix.resolve(root);
+    const back = posix.relative(target, posix.resolve(from));
+    const inside = back === "" || (back !== ".." && !back.startsWith("../"));
+    if (!inside) return target;
+    const raw = posix.relative(posix.resolve(from), target);
+    return raw === "" ? "." : raw;
+  }
+  // A drive-less absolute root ("/co") is compared resolved, but spelled back without a
+  // drive — the process drive is this fixture/process's, not the frame's fact.
+  const target = win32.resolve(root);
+  const targetForm = /^[A-Za-z]:/.test(root) ? target.split(win32.sep).join("/") : root.replaceAll("\\", "/");
+  const back = win32.relative(target, win32.resolve(from));
+  const inside = back === "" || (back !== ".." && !back.startsWith("..\\"));
+  if (!inside) return targetForm;
+  const raw = win32.relative(win32.resolve(from), target).split(win32.sep).join("/");
   return raw === "" ? "." : raw;
 }
 
-function shimSpelling(root: string, from: string | undefined): string {
-  if (from === undefined) return SHIM_PROGRAM;
-  const path = rel(from, root);
+function shimSpelling(root: string, from: string | undefined, platform: HostPlatform): string {
+  if (from === undefined || root === "") return SHIM_PROGRAM;
+  const path = rel(from, root, platform);
   return path === "." ? SHIM_PROGRAM : `${path}/clawforge`;
 }
 
 function binSpelling(root: string, from: string | undefined, shell: Shell, host: HostPlatform): string | undefined {
   if (shell === "pwsh" && host === "posix") return undefined; // a POSIX host has no .ps1 wrapper
-  if (shell === "posix") {
-    if (from === undefined) return "node_modules/.bin/clawforge";
-    const path = rel(from, root);
-    return path === "." ? "node_modules/.bin/clawforge" : `${path}/node_modules/.bin/clawforge`;
+  if (from === undefined || root === "") {
+    return shell === "posix" ? "node_modules/.bin/clawforge" : WINDOWS_BIN_PROGRAM;
   }
-  if (from === undefined) return WINDOWS_BIN_PROGRAM;
-  const path = rel(from, root).split("/").join("\\");
-  return path === "." ? WINDOWS_BIN_PROGRAM : `${path}\\node_modules\\.bin\\clawforge`;
+  const path = rel(from, root, host);
+  if (shell === "posix") return path === "." ? "node_modules/.bin/clawforge" : `${path}/node_modules/.bin/clawforge`;
+  return path === "." ? WINDOWS_BIN_PROGRAM : `${path.split("/").join("\\")}\\node_modules\\.bin\\clawforge`;
 }
 
 /** The program as typed in `shell`, or undefined when the launch has no spelling there —
@@ -165,7 +182,7 @@ export function spell(launch: Launch, shell: Shell, host: HostPlatform, from: st
     case "verbatim": return launch.program;
     case "checkout-shim":
     case "deployment-shim":
-      return shell === "posix" ? shimSpelling(launch.root, from) : undefined;
+      return shell === "posix" ? shimSpelling(launch.root, from, host) : undefined;
     case "npm-bin":
       return binSpelling(launch.root, from, shell, host);
   }

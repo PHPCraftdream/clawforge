@@ -17,7 +17,7 @@ import { readdir, readFile, access } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { safeName } from "../core/values/names.ts";
+import { readName, safeName, type RecipeName } from "../core/values/names.ts";
 import { die } from "../core/io/log.ts";
 import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
 import type { Context } from "../core/context.ts";
@@ -272,9 +272,9 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   return parsed;
 }
 
-export async function loadRecipe(name: string): Promise<Recipe> {
+export async function loadRecipe(name: RecipeName): Promise<Recipe> {
   // The name arrives from the command line and becomes both a path and a compose project.
-  safeName("recipe", name);
+  readName("recipe", name);
   const directory = resolve(recipesDirectory(), name);
 
   let raw: string;
@@ -312,7 +312,7 @@ export async function listRecipes(): Promise<Recipe[]> {
   const recipes: Recipe[] = [];
   for (const name of entries) {
     try {
-      recipes.push(await loadRecipe(name));
+      recipes.push(await loadRecipe(readName("recipe", name)));
     } catch {
       // The listing's rule, and only the listing's: a catalogue must not break — or hide
       // working recipes — over one broken manifest. Dropped from THIS array (a caller after
@@ -341,7 +341,7 @@ export async function listBrokenRecipes(): Promise<BrokenRecipe[]> {
     const hasManifest = await access(resolve(recipesDirectory(), name, "recipe.json")).then(() => true, () => false);
     if (!hasManifest) continue;
     try {
-      await loadRecipe(name);
+      await loadRecipe(readName("recipe", name));
     } catch (error) {
       broken.push({ name, error: error instanceof Error ? error.message : String(error) });
     }

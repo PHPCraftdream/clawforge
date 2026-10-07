@@ -2,6 +2,7 @@
 // answers the same state with validate's own advice.
 
 import { validateSet } from "#framework/set/ownership/validate.ts";
+import { readName } from "#framework/core/values/names.ts";
 import { collectManifest } from "#framework/commands/sets/set.ts";
 import { FOREIGN_DIGEST } from "#framework/set/load.ts";
 import { imagePinAdvice } from "#framework/set/advice.ts";
@@ -31,7 +32,7 @@ const agent = {
  *  checks naming only what it declares. */
 function coherent(overrides: Partial<SetManifest> = {}): SetManifest {
   return buildSetManifest({
-    name: "demo",
+    name: readName("set", "demo"),
     requires: { framework: "0.1.0", image: `ghcr.io/openclaw/openclaw@sha256:${HASH}` },
     files: { "config/desired-state.json": HASH, "recipes/demo/server.ts": HASH },
     recipes: {
@@ -121,12 +122,12 @@ useDeployment(baseDeployment);
         version: 1,
         image: { reference: "old.example/old-image:stable", digest: `old.example/old-image@sha256:${"a".repeat(64)}` },
       }));
-      const { manifest } = await collectManifest(buildCtx.settings.image, "demo", { tolerateUnpinnedImage: true });
+      const { manifest } = await collectManifest(buildCtx.settings.image, readName("set", "demo"), { tolerateUnpinnedImage: true });
       const problems = await validateSet(manifest, { checkFiles: true });
       const advice = problems.find((entry) => entry.code === "SET_IMAGE_UNPINNED")?.nextAction ?? "";
       let refusal = "";
       try {
-        await collectManifest(buildCtx.settings.image, "demo");
+        await collectManifest(buildCtx.settings.image, readName("set", "demo"));
       } catch (error) {
         refusal = error instanceof Error ? error.message : String(error);
       }
@@ -134,7 +135,7 @@ useDeployment(baseDeployment);
       check("the refusal carries validate's exact advice", advice !== "" && refusal.includes(advice), true);
       let invalidImage = "";
       try {
-        await collectManifest("garbage image@sha256:zz", "demo");
+        await collectManifest("garbage image@sha256:zz", readName("set", "demo"));
       } catch (error) {
         invalidImage = error instanceof Error ? error.message : String(error);
       }

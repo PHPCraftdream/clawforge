@@ -4,6 +4,7 @@
 // commented prepare.ts/verify.ts stubs that still parse and export real (no-op) hooks.
 
 import { access, mkdir, readFile, rm } from "node:fs/promises";
+import { readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -56,7 +57,7 @@ try {
   // --- the framework's own validator accepts it: loadRecipe succeeds, and `recipe list` -------
   // would show it as a working recipe, never under listBrokenRecipes() ("a broken-manifest
   // note") — the exact promise U11b makes.
-  const loaded = await loadRecipe("plain-service");
+  const loaded = await loadRecipe(readName("recipe", "plain-service"));
   check("the scaffolded recipe has a non-empty description", loaded.description.length > 0, true);
   const [recipes, broken] = await Promise.all([listRecipes(), listBrokenRecipes()]);
   check("recipe list carries it as a working recipe", recipes.some((entry) => entry.name === "plain-service"), true);

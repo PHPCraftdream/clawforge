@@ -8,13 +8,14 @@ import { resolve } from "node:path";
 import { die } from "#src/core/io/log.ts";
 import { recipesDir } from "#src/runtime/deployment.ts";
 import { containerPaths } from "#src/runtime/mounts.ts";
-import { newName, safeName } from "#src/core/values/names.ts";
+import { createName, newName, readName, safeName } from "#src/core/values/names.ts";
 import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
 
 const DEFAULT_CRON_SCHEDULE = "17 3 * * *"; // daily, off-peak, off the :00/:30 pileup minutes
 const DEFAULT_CRON_TIMEOUT_SECONDS = 900;
 
 export interface AgentConfig {
+  // raw string: branding agentId as AgentName breaks set/ownership/validate.ts's declaredAgents set, outside this stage's editable files (S3.1 lists it for S1.3)
   readonly agentId: string;
   readonly mcpServerName: string;
   readonly cronJobName?: string;
@@ -42,17 +43,19 @@ export function parseAgentConfig(raw: unknown, minting = false): AgentConfig {
     die("agent/config.json: \"cronJobName\" must be a non-empty string when present");
   }
   // These values become path segments, OpenClaw identifiers and plan arguments — same
-  // portable name contract as recipes/deployments.
-  const checkName = minting ? newName : safeName;
-  checkName("agent", obj.agentId);
-  checkName("MCP server", obj.mcpServerName);
-  if (obj.cronJobName !== undefined) checkName("cron job", obj.cronJobName);
+  // portable name contract as recipes/deployments. The agent id is a branded Name (kinds.ts's
+  // "agent" kind); the MCP server and cron job names have no brand kind and keep the untyped
+  // wrappers.
+  const checkWrapper = minting ? newName : safeName;
+  const agentId = minting ? createName("agent", obj.agentId) : readName("agent", obj.agentId);
+  checkWrapper("MCP server", obj.mcpServerName);
+  if (obj.cronJobName !== undefined) checkWrapper("cron job", obj.cronJobName);
   if (obj.cronTimezone !== undefined) {
     if (typeof obj.cronTimezone !== "string" || obj.cronTimezone === "") die("cronTimezone must be an IANA timezone");
     try { new Intl.DateTimeFormat("en", { timeZone: obj.cronTimezone }); } catch { die("cronTimezone must be an IANA timezone"); }
   }
   return {
-    agentId: obj.agentId as string,
+    agentId,
     mcpServerName: obj.mcpServerName as string,
     cronJobName: obj.cronJobName as string | undefined,
     cronSchedule: typeof obj.cronSchedule === "string" && obj.cronSchedule !== "" ? obj.cronSchedule : DEFAULT_CRON_SCHEDULE,
@@ -85,6 +88,7 @@ export async function collectRecipeFiles(dir: string, excludeDir: string): Promi
  *  (when cron is declared) cron-message.txt are mandatory — the policy holding either back
  *  refuses rather than silently reading or dropping it. */
 export async function loadRecipeAgentBundle(recipeName: string, minting = false): Promise<RecipeAgentBundle> {
+  // raw string: commands/orchestration/inspect/declared.ts passes an unbranded recipe name, outside this stage's editable files (S3.1 lists it for S1.3)
   const recipeDir = resolve(recipesDir(), recipeName);
   const agentDir = resolve(recipeDir, "agent");
 

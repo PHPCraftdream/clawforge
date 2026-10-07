@@ -3,6 +3,7 @@
 // readers (safeName); attempting to create reserved `con` names is refused per creator type.
 
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createName, readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { scanApps } from "#framework/integration/deployment/names.ts";
@@ -18,7 +19,9 @@ import { parseAgentConfig } from "#framework/commands/management/provision-agent
 import { reservedNameMessage } from "#framework/core/values/names.ts";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
+import * as kinds from "#framework/core/values/kinds.ts";
+import { ValueError } from "#framework/core/values/value.ts";
 
 const DEVICE = "aux";
 const root = await mkdtemp(join(tmpdir(), "clawforge-name-compat-"));
@@ -33,7 +36,7 @@ try {
   check("a deployment directory named aux is listed", (await scanApps(appsRoot)).names, [DEVICE]);
   check("--app aux is accepted by the handover", handoverArgv(DEVICE, ["--app", DEVICE]), { argv: ["--app", DEVICE] });
   const buildContext = async (): Promise<Context> => ({ runtime: { isRunning: async () => { throw new NotBootstrapped("/srv/aux"); } }, transport: { description: "local" } }) as unknown as Context;
-  const code = await withOutputSink(() => {}, () => removeApp(DEVICE, true, { appsRoot, buildContext }));
+  const code = await withOutputSink(() => {}, () => removeApp(readName("deployment", DEVICE), true, { appsRoot, buildContext }));
   check("remove-app aux succeeds", code, 0);
   check("and the directory is gone", await access(join(appsRoot, DEVICE)).then(() => true, () => false), false);
 
@@ -71,9 +74,52 @@ try {
   check("an agent config named aux reads", parseAgentConfig(config).agentId, DEVICE);
   const agentMintRefusal = (() => { try { parseAgentConfig({ ...config, agentId: "con" }, true); return undefined; } catch (error) { return (error as Error).message; } })();
   check("provision-agent creator path uses its specific reserved-name reason", agentMintRefusal, reservedNameMessage("agent", "con"));
-const deploymentMintRefusal = await createApp("con").then(() => undefined, (error: unknown) => (error as Error).message);
-check("new-app creator path refuses device names with the reserved-name reason", deploymentMintRefusal, reservedNameMessage("deployment", "con"));
+// Literal, not derived from names.ts: the check must fail if the product list shrinks.
+const RESERVED = ["con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"];
+const KINDS = ["deployment", "recipe", "set", "store", "agent", "owned-object"] as const;
+for (const kind of KINDS) {
+  for (const name of RESERVED) {
+    let minted: string | undefined;
+    try {
+      createName(kind, name);
+    } catch (error) {
+      minted = (error as Error).message;
+    }
+    checkTrue(`${kind}: creating "${name}" is refused with the reserved-name text`, minted === reservedNameMessage(kind, name));
+    checkTrue(`${kind}: reading "${name}" stays legal`, readName(kind, name) === name);
+  }
+}
 
+// The console/MCP argument surface: the create-mode parser refuses at parse, the read-mode
+// parser accepts.
+let parserClause: string | undefined;
+try {
+  kinds.name("deployment", "create").parse("con");
+} catch (error) {
+  parserClause = (error as ValueError).clause;
+}
+// Hoisted so the comparison line holds no backtick literal (ratchet hygiene).
+const expectedClause = `: ${reservedNameMessage("deployment", "con")}`;
+checkTrue('the deployment create parser refuses "con" with the reserved-name clause', parserClause === expectedClause);
+checkTrue('the deployment read parser accepts "aux"', kinds.name("deployment", "read").parse("aux") === "aux");
+for (const kind of KINDS) {
+  for (const name of RESERVED) {
+    let refused: string | undefined;
+    try {
+      kinds.name(kind, "create").parse(name);
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    const expected = `: ${reservedNameMessage(kind, name)}`;
+    checkTrue(`${kind}: the create parser refuses "${name}" with the reserved-name clause`, refused === expected);
+  }
+}
+
+// Minting through the real writer, table-driven across the whole reserved list.
+for (const name of RESERVED) {
+  const refusal = await createApp(readName("deployment", name)).then(() => undefined, (error: unknown) => (error as Error).message);
+  checkTrue(`new-app refuses the reserved deployment name "${name}" with the reserved-name reason`, refusal === reservedNameMessage("deployment", name));
+}
 } finally {
   await apps.dispose();
   await rm(resolve(root), { recursive: true, force: true });

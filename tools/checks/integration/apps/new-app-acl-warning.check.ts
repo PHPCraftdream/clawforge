@@ -7,6 +7,7 @@
 // seam private-file.check.ts's own dedupeChecks uses, to force the "exposed" finding.
 
 import { randomBytes } from "node:crypto";
+import { createName } from "#framework/core/values/names.ts";
 import { resolve } from "node:path";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { resetWslBoundaryDedupe, withToolRunner } from "#framework/security/privacy/private-file.ts";
@@ -36,7 +37,7 @@ try {
   await withToolRunner(scriptedWsl, () =>
     withOutputSink((chunk) => {
       output += chunk;
-    }, () => createApp(name)));
+    }, () => createApp(createName("deployment", name))));
 
   const createdIndex = output.indexOf(`created ${resolve(apps.root, name)}`);
   const nextIndex = output.indexOf("next:");

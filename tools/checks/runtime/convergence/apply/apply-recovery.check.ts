@@ -12,6 +12,7 @@ import { problem } from "#framework/service/inspection.ts";
 import { Journal } from "#framework/service/operations.ts";
 import type { OperationRecord } from "#framework/service/operations.ts";
 import { useDeployment, desiredStateFile, secretStoreFile } from "#framework/runtime/deployment.ts";
+import { readName } from "#framework/core/values/names.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
 import { mkdir, mkdtemp, readFile, readdir, writeFile, access, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -134,7 +135,7 @@ function localTransport(): {
       },
     );
     check("the store refusal is a failed step too", storeRefusal.map((step) => [step.id, step.status]), [["secrets-dump", "failed"]]);
-    check("it names the store and --force", [(storeRefusal[0].detail ?? "").includes(storeExistsRefusal(secretStoreFile("local"))), (storeRefusal[0].detail ?? "").includes("--force")], [true, true]);
+    check("it names the store and --force", [(storeRefusal[0].detail ?? "").includes(storeExistsRefusal(secretStoreFile(readName("store", "local")))), (storeRefusal[0].detail ?? "").includes("--force")], [true, true]);
     check("and the store survives byte-identical", await readFile(resolve(deployment, "secrets", "local.env"), "utf8"), storeBefore);
   } finally {
     await rm(deployment, { recursive: true, force: true });

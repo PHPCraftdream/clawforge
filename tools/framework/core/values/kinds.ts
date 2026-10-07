@@ -5,6 +5,7 @@
 
 import { parseInterval, sinceValue } from "#src/core/values/durations.ts";
 import { nameValue, newNameValue, countValue, portValue, regexValue, ValueError, type ValueParser } from "#src/core/values/value.ts";
+import type { NameKind, NameOf, RecipeName } from "#src/core/values/names.ts";
 import type { InvalidSample, KindName, ValueKind } from "#src/core/values/kind.ts";
 import { parse as parseImageRef, type ImageRef } from "#src/runtime/docker/image-ref.ts";
 import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
@@ -155,8 +156,10 @@ export const since: ValueKind<string> = kindOf("since", sinceValue, [
   { raw: "", stage: "parse", why: "empty" },
 ]);
 
+export function name<K extends NameKind>(kind: K, mode: "create" | "read"): ValueKind<NameOf<K>>;
+export function name(kind: string, mode: "create" | "read"): ValueKind<string>;
 export function name(kind: string, mode: "create" | "read"): ValueKind<string> {
-  return kindOf("name", mode === "create" ? newNameValue(kind) : nameValue(kind), [
+  return kindOf("name", mode === "create" ? newNameValue(kind as NameKind) : nameValue(kind as NameKind), [
     { raw: "Bad_Name", stage: "parse", why: "upper case and underscore" },
     { raw: "../x", stage: "parse", why: "a path step" },
     { raw: "-x", stage: "parse", why: "a flag look-alike" },
@@ -335,8 +338,8 @@ export function localDirectory(reason: string, example = "recipes/local"): Value
 }
 
 /** A recipe name on the reader grammar; existence in the current source stays with run. */
-export function recipeRef(): ValueKind<string> {
-  return kindOf("recipeRef", nameValue("recipe"), [
+export function recipeRef(): ValueKind<RecipeName> {
+  return kindOf("recipeRef", nameValue<"recipe">("recipe"), [
     { raw: "Bad_Name", stage: "parse", why: "upper case and underscore" },
     { raw: "", stage: "parse", why: "empty" },
   ]);

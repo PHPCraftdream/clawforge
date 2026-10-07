@@ -19,7 +19,7 @@ import { commandLine, SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import type { GateCommand } from "../gate.ts";
 import { log, info, die } from "../../core/io/log.ts";
-import { newName } from "../../core/values/names.ts";
+import { createName, type DeploymentName } from "../../core/values/names.ts";
 import { parseDeclaredArgs } from "../../core/command/index.ts";
 import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
@@ -349,9 +349,10 @@ export async function localTypesLines(): Promise<string[]> {
 export async function initApp(root: string, options: { local?: boolean } = {}): Promise<void> {
   // The directory's own name becomes the compose project name (deploymentDir()'s basename
   // — see deployment.ts) — checked first, since there's no argument to fall back to here.
-  const base = basename(root);
+  const rawBase = basename(root);
+  let base: DeploymentName;
   try {
-    newName("deployment", base);
+    base = createName("deployment", rawBase);
   } catch (error) {
     die(
       `${(error as Error).message} — this becomes the compose project name and the archive ` +

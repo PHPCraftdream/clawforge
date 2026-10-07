@@ -47,7 +47,7 @@ import {
   runVerifyAction,
 } from "./actions.ts";
 import { INVALID_MANIFEST } from "./lifecycle.ts";
-import { newName } from "#src/core/values/names.ts";
+import { createName, readName } from "#src/core/values/names.ts";
 import { importNameOf } from "./actions.ts";
 
 function describe(recipe: Recipe): void {
@@ -207,7 +207,7 @@ export const RECIPE = multiActionBody({
       prepare: ({ values }) => {
         // The name it lands under is minted: refused here, before any context is built,
         // instead of mid-copy — the same words the run's own check keeps.
-        newName("recipe", importNameOf(values.name, values["new-name"]));
+        createName("recipe", importNameOf(values.name, values["new-name"]));
         return values;
       },
       run: (_ctx, values) => runImportAction(values.name, values["new-name"]),
@@ -303,7 +303,7 @@ async function runLocked(
   const name = values.name;
   // R32-08 class: resolve the recipe purely locally before the lock or any transport call,
   // so a typo dies here instead of as a lock failure or an unreachable-target error.
-  await loadRecipe(name);
+  await loadRecipe(readName("recipe", name));
   if (!gate) return body();
   await guardedWith(ctx, `recipe ${action} ${name}`, takeoverOf(values), body);
 }
@@ -330,7 +330,7 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
 
     let recipe: Recipe;
     try {
-      recipe = await loadRecipe(entry.name);
+      recipe = await loadRecipe(readName("recipe", entry.name));
     } catch (error) {
       // A broken declaration can't supply hooks, but its directory still names the compose
       // project — fail closed before backup archives it unsafely if that project is live.

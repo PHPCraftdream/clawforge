@@ -7,6 +7,7 @@
 import { parseDeclaredArgs } from "../core/command/index.ts";
 import * as kinds from "../core/values/kinds.ts";
 import { emit } from "../core/io/output.ts";
+import { createName, readName } from "../core/values/names.ts";
 import { createApp } from "../integration/deployment/scaffold.ts";
 import { removeApp } from "../integration/deployment/remove.ts";
 import { listDeployments, printDeploymentList } from "../integration/list.ts";
@@ -114,7 +115,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
     run: async (args) => {
       // required is enforced by runGateCommand against this same declaration.
       const target = parseDeclaredArgs(NEW_APP_ARGUMENTS, args).name as string;
-      await createApp(target);
+      await createApp(createName("deployment", target));
       return 0;
     },
   },
@@ -138,7 +139,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
     arguments: REMOVE_APP_ARGUMENTS,
     run: async (args) => {
       const parsed = parseDeclaredArgs(REMOVE_APP_ARGUMENTS, args);
-      return removeApp(parsed.name as string, parsed.yes === true);
+      return removeApp(readName("deployment", parsed.name as string), parsed.yes === true);
     },
   },
   {

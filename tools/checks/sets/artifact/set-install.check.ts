@@ -7,6 +7,7 @@
 
 import { resolve } from "node:path";
 import { useDeployment, recipesDir, desiredStateFile, envFile, secretStoreFile } from "#framework/runtime/deployment.ts";
+import { readName } from "#framework/core/values/names.ts";
 import { useSetSource, clearSetSource, withSetSource, setSourceDir } from "#framework/set/artifacts/source.ts";
 import {
   requirementProblems,
@@ -41,13 +42,13 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
   useDeployment("/srv/deployment");
   const deploymentRecipes = recipesDir();
   const deploymentEnv = envFile();
-  const deploymentStore = secretStoreFile("local");
+  const deploymentStore = secretStoreFile(readName("store", "local"));
 
   useSetSource("/tmp/unpacked");
   check("recipes come from the set source", recipesDir(), resolve("/tmp/unpacked", "recipes"));
   check("so does the declaration", desiredStateFile(), resolve("/tmp/unpacked", "config", "desired-state.json"));
   check(".env stays with the deployment", envFile(), deploymentEnv);
-  check("and so do the secret stores", secretStoreFile("local"), deploymentStore);
+  check("and so do the secret stores", secretStoreFile(readName("store", "local")), deploymentStore);
 
   clearSetSource();
   check("clearing puts the set back where it was", recipesDir(), deploymentRecipes);

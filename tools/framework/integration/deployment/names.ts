@@ -4,11 +4,11 @@
 
 import { readdir, access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { safeName } from "../../core/values/names.ts";
+import { readName, type DeploymentName } from "../../core/values/names.ts";
 
 export interface AppsScan {
   /** Deployments, sorted. */
-  readonly names: string[];
+  readonly names: DeploymentName[];
   /** Visible directories that are not deployments, with the reason. */
   readonly others: { readonly name: string; readonly reason: string }[];
 }
@@ -19,17 +19,18 @@ export async function scanApps(appsRoot: string): Promise<AppsScan> {
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
     .map((entry) => entry.name)
     .sort();
-  const names: string[] = [];
+  const names: DeploymentName[] = [];
   const others: { name: string; reason: string }[] = [];
   for (const name of directories) {
+    let safe: DeploymentName;
     try {
-      safeName("deployment", name);
+      safe = readName("deployment", name);
     } catch (error) {
       others.push({ name, reason: `not a deployment: ${(error as Error).message}` });
       continue;
     }
     const hasApp = await access(resolve(appsRoot, name, "app.ts")).then(() => true, () => false);
-    if (hasApp) names.push(name);
+    if (hasApp) names.push(safe);
     else others.push({ name, reason: "not a deployment: no app.ts" });
   }
   return { names, others };

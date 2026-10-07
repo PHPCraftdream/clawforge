@@ -10,7 +10,7 @@ import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
 import * as kinds from "#src/core/values/kinds.ts";
-import { newName } from "#src/core/values/names.ts";
+import { createName, readName } from "#src/core/values/names.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
@@ -68,7 +68,7 @@ export const CANNOT_READ_RUNNING_ENV = "cannot read a running container's own en
 /** Reads a local store file, dying with the store's own fix-it message — usable before any
  *  lock or transport call, so a typo in --store refuses locally. */
 async function readStoreOrDie(storeName: string): Promise<string> {
-  const path = secretStoreFile(storeName);
+  const path = secretStoreFile(readName("store", storeName));
 
   try {
     return await readFile(path, "utf8");
@@ -82,7 +82,7 @@ async function readStoreOrDie(storeName: string): Promise<string> {
 
 /** Delivers a local store to each declared secret location, refusing incomplete input. */
 async function applyStore(ctx: Context, storeName: string): Promise<void> {
-  const path = secretStoreFile(storeName);
+  const path = secretStoreFile(readName("store", storeName));
   const raw = await readStoreOrDie(storeName);
 
   // Reported, not refused: reading a store neither causes nor deepens an exposure, and
@@ -247,8 +247,8 @@ export function storeExistsRefusal(path: string): string {
 
 async function dumpToStore(ctx: Context, storeName: string, force: boolean): Promise<void> {
   // The store file name is minted here; readers keep safeName so a store named before the device rule stays readable.
-  newName("store", storeName);
-  const path = secretStoreFile(storeName);
+  createName("store", storeName);
+  const path = secretStoreFile(readName("store", storeName));
 
   const exists = await access(path).then(
     () => true,
@@ -324,8 +324,8 @@ async function runApplyAction(ctx: Context, store: string, breakForeignLockHost:
 /** --init-store: creates an empty store locally, refusing to overwrite a filled one. */
 async function runInitStoreAction(ctx: Context, store: string, force: boolean): Promise<void> {
   // The store file name is minted here; readers keep safeName so a store named before the device rule stays readable.
-  newName("store", store);
-  const path = secretStoreFile(store);
+  createName("store", store);
+  const path = secretStoreFile(readName("store", store));
 
   // An existing store holds filled-in keys, unrecoverable elsewhere if overwritten silently.
   const exists = await access(path).then(

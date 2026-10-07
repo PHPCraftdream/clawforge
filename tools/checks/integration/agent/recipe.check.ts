@@ -1,6 +1,7 @@
 // Recipe manifests and action guards run against isolated files and a modeled locked target.
 
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
@@ -190,7 +191,7 @@ try {
   // --- safeName runs before any file is touched -----------------------------------
 
   const escapeMessage = await messageOf("loadRecipe validates the name before touching disk", () =>
-    loadRecipe("../escape"),
+    loadRecipe(readName("recipe", "../escape")),
   );
   check(
     'the error comes from name validation, not "not found"',
@@ -201,20 +202,20 @@ try {
   // --- missing recipe.json ----------------------------------------------------------
 
   const missingMessage = await messageOf("loadRecipe on a directory without recipe.json", () =>
-    loadRecipe("no-recipe-json"),
+    loadRecipe(readName("recipe", "no-recipe-json")),
   );
   check('missing recipe.json error mentions "not found"', missingMessage.includes("not found"), true);
 
   // --- missing/empty description -----------------------------------------------------
 
   const emptyDescMessage = await messageOf("loadRecipe with an empty description", () =>
-    loadRecipe("empty-description"),
+    loadRecipe(readName("recipe", "empty-description")),
   );
   check('empty description error mentions "description"', emptyDescMessage.includes("description"), true);
 
   // --- enabled default and override, disabledReason carried through ------------------
 
-  const plain = await loadRecipe("plain");
+  const plain = await loadRecipe(readName("recipe", "plain"));
   check("enabled defaults to true when omitted", plain.enabled, true);
   check("disabledReason is undefined by default", plain.disabledReason, undefined);
   check("ports is undefined when absent", plain.ports, undefined);
@@ -225,19 +226,19 @@ try {
     resolve(scratch, "plain", "compose.yml"),
   );
 
-  const disabled = await loadRecipe("disabled");
+  const disabled = await loadRecipe(readName("recipe", "disabled"));
   check('"enabled": false is honoured', disabled.enabled, false);
   check("disabledReason is carried through", disabled.disabledReason, "kept ready, not built by default");
 
   // --- ports/variables pass through as-is ---------------------------------------------
 
-  const withExtras = await loadRecipe("with-extras");
+  const withExtras = await loadRecipe(readName("recipe", "with-extras"));
   check("ports pass through as-is", withExtras.ports, [{ container: 80, host: 8080, description: "web" }]);
   check("variables pass through as-is", withExtras.variables, { FOO: "needed for the web UI" });
   check("source passes through", withExtras.source, "https://example.com/with-extras");
-  check("recipe preparation hook is discovered", (await loadRecipe("prepared")).preparePath?.endsWith("prepare.ts"), true);
-  check("recipe verification hook is discovered", (await loadRecipe("prepared")).verifyPath?.endsWith("verify.ts"), true);
-  check("recipe onboarding hook is discovered", (await loadRecipe("prepared")).onboardPath?.endsWith("onboard.ts"), true);
+  check("recipe preparation hook is discovered", (await loadRecipe(readName("recipe", "prepared"))).preparePath?.endsWith("prepare.ts"), true);
+  check("recipe verification hook is discovered", (await loadRecipe(readName("recipe", "prepared"))).verifyPath?.endsWith("verify.ts"), true);
+  check("recipe onboarding hook is discovered", (await loadRecipe(readName("recipe", "prepared"))).onboardPath?.endsWith("onboard.ts"), true);
 
   // --- listRecipes skips broken directories without aborting the scan ----------------
 

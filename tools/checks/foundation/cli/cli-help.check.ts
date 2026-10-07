@@ -12,6 +12,7 @@
 // direct function call.
 
 import { rm, readFile } from "node:fs/promises";
+import { createName } from "#framework/core/values/names.ts";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
@@ -37,7 +38,7 @@ const deploymentName = `cli-help-check-${randomBytes(4).toString("hex")}`;
 
 const apps = await isolatedAppsRoot("cli-help");
 try {
-  await createApp(deploymentName);
+  await createApp(createName("deployment", deploymentName));
 
   // new-app's own .gitignore must keep machine-local, regenerated-every-cycle state out of a
   // deployment's git history (state/watch.json, sets/*.tar.gz and sets/.tries|receipts/) while

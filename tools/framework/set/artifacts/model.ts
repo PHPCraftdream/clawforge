@@ -18,7 +18,7 @@
 // ones (gateway.bind); it goes into the set whole for now.
 
 import { checksumOf } from "#src/service/checksums.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { readName, type SetName } from "#src/core/values/names.ts";
 import type { AgentConfig } from "#src/commands/management/provision-agent/index.ts";
 import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 
@@ -65,7 +65,7 @@ export interface SetManifest {
 }
 
 export interface SetManifestInput {
-  readonly name: string;
+  readonly name: SetName;
   readonly requires: SetRequirements;
   readonly files: Record<string, string>;
   readonly recipes: Record<string, SetRecipe>;
@@ -92,7 +92,7 @@ function assertCleanRelativePath(where: string, path: string): void {
 
 export function buildSetManifest(input: SetManifestInput): SetManifest {
   // The name becomes paths later; names.ts is where that rule lives.
-  safeName("set", input.name);
+  readName("set", input.name);
 
   for (const path of Object.keys(input.files)) {
     assertCleanRelativePath("set files", path);

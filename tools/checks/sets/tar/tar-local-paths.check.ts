@@ -5,6 +5,7 @@
 // try, set diff and rollback all load through this path. The staging root is built here
 // from the OS temp dir with a `tom` component, so nothing depends on the host user's name.
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSet } from "#framework/set/load.ts";
@@ -16,7 +17,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 const DECLARATION = "config/desired-state.json";
 const DECLARED = '[{ "path": "gateway.mode", "value": "local" }]' + "\n";
 const manifest = buildSetManifest({
-  name: "tar-paths-fixture",
+  name: readName("set", "tar-paths-fixture"),
   requires: { framework: "*", image: "ghcr.io/openclaw/openclaw@sha256:" + "0".repeat(64) },
   files: { [DECLARATION]: checksumOf(Buffer.from(DECLARED, "utf8")) },
   recipes: {},

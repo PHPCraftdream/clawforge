@@ -8,7 +8,7 @@
 import { readdir, rm, lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "../../core/io/log.ts";
-import { safeName } from "../../core/values/names.ts";
+import { safeName, type DeploymentName } from "../../core/values/names.ts";
 import { humanSize } from "../../core/io/size.ts";
 import { commandLine } from "../../core/io/invocation/render.ts";
 import { listDeployments, type ListDeploymentsOptions } from "../list.ts";
@@ -104,7 +104,7 @@ async function hasOwnGitHistory(directory: string): Promise<boolean> {
  *  deployment still has a bootstrapped instance (running or stopped-but-bootstrapped) —
  *  destroy that first. The argv re-parse used to live here too; the gate's
  *  parseDeclaredArgs(REMOVE_APP_ARGUMENTS) is the one parse. */
-export async function removeApp(name: string, yes: boolean, options: RemoveAppOptions = {}): Promise<number> {
+export async function removeApp(name: DeploymentName, yes: boolean, options: RemoveAppOptions = {}): Promise<number> {
   const appsRoot = options.appsRoot ?? appsRootFor(monorepoRoot);
 
   const directory = await resolveTargetDirectory(name, appsRoot);

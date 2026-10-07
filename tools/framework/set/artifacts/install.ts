@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { die, log } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { readName } from "#src/core/values/names.ts";
 import { problem } from "#src/service/inspection.ts";
 import { writeFileAtomic } from "#src/set/ownership/ledger.ts";
 import { readFileCandidate } from "#src/set/ownership/candidate-file.ts";
@@ -80,9 +80,9 @@ function parseInstalledSetResult(text: string): InstalledSetParseResult {
   try {
     const parsed = JSON.parse(text) as InstalledSet;
     if (!isSetId(parsed.id) || typeof parsed.name !== "string") return { ok: false };
-    safeName("set", parsed.name);
+    readName("set", parsed.name);
     if (parsed.previous !== undefined && (!isSetId(parsed.previous.id) || typeof parsed.previous.name !== "string")) return { ok: false };
-    if (parsed.previous !== undefined) safeName("set", parsed.previous.name);
+    if (parsed.previous !== undefined) readName("set", parsed.previous.name);
     return { ok: true, set: parsed };
   } catch {
     return { ok: false };
@@ -155,7 +155,7 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
   if (!isSetId(id) || id !== setManifestId(manifest)) {
     throw new Error("refusing to record an installed set whose id does not match its manifest");
   }
-  safeName("set", manifest.name);
+  readName("set", manifest.name);
   const current = await readInstalledSetStrict(ctx);
   const sameSet = current !== undefined && current.id === id;
   const previous: PreviousSet | undefined = current === undefined || sameSet
@@ -180,7 +180,7 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
 /** Keeps a validated artifact in the deployment so rollback does not depend on its original
  *  path still existing. The copy is complete before apply is allowed to mutate the target. */
 export async function storeArtifactForRollback(artifact: string, verified: VerifiedArtifact): Promise<string> {
-  safeName("set", verified.manifest.name);
+  readName("set", verified.manifest.name);
   if (!isSetId(verified.id)) throw new Error("refusing to store an artifact with an invalid content id");
   const directory = resolve(deploymentDir(), "sets");
   await mkdir(directory, { recursive: true });

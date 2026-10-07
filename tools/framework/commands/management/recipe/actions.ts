@@ -16,7 +16,7 @@ import {
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
 import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
-import { newName } from "#src/core/values/names.ts";
+import { createName, readName } from "#src/core/values/names.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
 import { importHookModule } from "./hook-runtime.ts";
@@ -27,7 +27,7 @@ import { importHookModule } from "./hook-runtime.ts";
  *  which may mutate the target, so the framework can't know a given hook is read-only. */
 
 async function stackFor(ctx: Context, name: string) {
-  const recipe = await loadRecipe(name);
+  const recipe = await loadRecipe(readName("recipe", name));
   return { recipe, stack: recipeStack(ctx, name, recipe.definitionPath) };
 }
 
@@ -202,7 +202,7 @@ export function importNameOf(source: string, newName: string | undefined): strin
 export async function runImportAction(name: string, newNameArg: string | undefined): Promise<void> {
   const source = resolve(name);
   const importedName = importNameOf(name, newNameArg);
-  newName("recipe", importedName);
+  createName("recipe", importedName);
   try { await access(resolve(source, "recipe.json")); } catch { die(`recipe source has no recipe.json: ${source}`); }
   const destination = resolve(recipesDirectory(), importedName);
   try {
@@ -285,7 +285,7 @@ export async function verify(): Promise<{ ok: boolean }> {
 }
 
 export async function runNewAction(name: string, withHooks: boolean): Promise<void> {
-  newName("recipe", name);
+  createName("recipe", name);
   const destination = resolve(recipesDirectory(), name);
   try {
     await access(destination);

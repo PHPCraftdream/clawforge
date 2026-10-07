@@ -12,6 +12,7 @@
 // the check must not depend on whichever deployment happens to be on this machine.
 
 import { randomBytes } from "node:crypto";
+import { createName } from "#framework/core/values/names.ts";
 import { resolve } from "node:path";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -41,7 +42,7 @@ const deployment = `mcp-mirror-check-${randomBytes(4).toString("hex")}`;
 const apps = await isolatedAppsRoot("mcp-mirror");
 
 try {
-  await createApp(deployment);
+  await createApp(createName("deployment", deployment));
 
   const help = await run(["--app", deployment, "help"]);
   const console = consoleCommands(help.stdout + help.stderr);

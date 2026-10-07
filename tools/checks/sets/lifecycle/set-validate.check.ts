@@ -6,6 +6,7 @@
 // is worse than no finding.
 
 import { validateSet, cronProblem, INVALID_JSON_NOTE, addingFix } from "#framework/set/ownership/validate.ts";
+import { readName } from "#framework/core/values/names.ts";
 import { defaultSetName, collectManifest, buildSet, blockingFindingsMessage, blockingWarningsSummary } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
@@ -43,7 +44,7 @@ const agent = {
  *  checks naming only what it declares. */
 function coherent(overrides: Partial<SetManifest> = {}): SetManifest {
   return buildSetManifest({
-    name: "demo",
+    name: readName("set", "demo"),
     requires: { framework: "0.1.0", image: `ghcr.io/openclaw/openclaw@sha256:${HASH}` },
     files: { "config/desired-state.json": HASH, "recipes/demo/server.ts": HASH, "recipes/demo/recipe.json": HASH, "recipes/demo/agent/config.json": HASH },
     recipes: {
@@ -171,7 +172,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     // deployment: a service recipe has a compose stack and a recipe.json and no server.ts,
     // and demanding one of it made the validator fire on a correct set.
     const serviceOnly = buildSetManifest({
-      name: "demo",
+      name: readName("set", "demo"),
       requires: { framework: "0.1.0", image: `ghcr.io/openclaw/openclaw@sha256:${HASH}` },
       files: { "recipes/svc/recipe.json": HASH },
       recipes: { svc: { checksum: HASH, files: { "recipe.json": HASH } } },
@@ -289,7 +290,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     await rm(resolve(deployment, "config", "deployment.lock.json"), { force: true });
 
     // validate: the tag travels into requires.image and the validator reports it.
-    const { manifest } = await collectManifest(buildCtx.settings.image, "demo", { tolerateUnpinnedImage: true });
+    const { manifest } = await collectManifest(buildCtx.settings.image, readName("set", "demo"), { tolerateUnpinnedImage: true });
     check("validate builds the manifest despite an unpinned image", Object.keys(manifest.recipes).length > 0, true);
     check("the unpinned tag is kept in requires.image", manifest.requires.image.includes(":extended-stable"), true);
     const problems = await validateSet(manifest, { checkFiles: true });
@@ -302,7 +303,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     // build: the hard refusal stays — only validate tolerates the gap.
     let refused = false;
     try {
-      await collectManifest(buildCtx.settings.image, "demo");
+      await collectManifest(buildCtx.settings.image, readName("set", "demo"));
     } catch {
       refused = true;
     }

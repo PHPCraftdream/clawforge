@@ -21,7 +21,7 @@ import { invocation } from "../../core/io/invocation/index.ts";
 import { commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
 import { rootedProgram } from "../../core/io/invocation/frame.ts";
 import { appsRootFor, monorepoRoot, parseEnv } from "../../core/env.ts";
-import { newName } from "../../core/values/names.ts";
+import { newName, type DeploymentName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
@@ -108,7 +108,7 @@ export function gitInitAdvice(name: string): string {
   );
 }
 
-export async function createApp(name: string): Promise<void> {
+export async function createApp(name: DeploymentName): Promise<void> {
   newName("deployment", name);
 
   const directory = resolve(appsRootFor(monorepoRoot), name);

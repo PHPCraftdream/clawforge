@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createName } from "#framework/core/values/names.ts";
 import { mkdtemp, mkdir, readFile, writeFile, rename, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -127,8 +128,8 @@ try {
   process.env[checksAppsEnv] = join(syntheticRoot, "apps");
   // An empty directory left by a refused `init` is accepted; a non-empty one is not.
   await mkdir(monorepoApp, { recursive: true });
-  await withOutputSink(() => {}, () => createApp(name));
-  await assert.rejects(withOutputSink(() => {}, () => createApp(name)), /already exists/, "new-app refuses a non-empty directory");
+  await withOutputSink(() => {}, () => createApp(createName("deployment", name)));
+  await assert.rejects(withOutputSink(() => {}, () => createApp(createName("deployment", name))), /already exists/, "new-app refuses a non-empty directory");
   // Same rule as init.check.ts: no template key the published image rejects.
   const desiredState = JSON.parse(await readFile(resolve(monorepoApp, "config", "desired-state.json"), "utf8")) as { path: string; value: unknown }[];
   assert.ok(!desiredState.some((entry) => entry.path.startsWith("telemetry")), "new-app declares no telemetry key the published image rejects");

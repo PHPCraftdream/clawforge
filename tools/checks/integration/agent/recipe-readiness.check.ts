@@ -6,6 +6,7 @@
 // Split out of recipe.check.ts, which outgrew the check-file line limit when this landed.
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
@@ -224,7 +225,7 @@ try {
 
   for (const { name, json, expects } of malformedManifests) {
     await writeRecipe(name, json);
-    const message = await messageOf(`loadRecipe rejects ${name}`, () => loadRecipe(name));
+    const message = await messageOf(`loadRecipe rejects ${name}`, () => loadRecipe(readName("recipe", name)));
     check(`${name}: error names the actual problem`, message.includes(expects), true);
   }
 

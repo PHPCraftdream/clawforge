@@ -7,6 +7,7 @@
 // the deployment has no local package.
 
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createName } from "#framework/core/values/names.ts";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -317,9 +318,9 @@ try {
   check("so a clawforge run in another app still hands over to that app's own package", probe.output.includes("child:" + `clawforge ${expected}-other|`), true);
 
   // --- this checkout: apps/<name> and the root hand over to the checkout's own gate -------------
-  await createApp(checkoutApp);
+  await createApp(createName("deployment", checkoutApp));
   // A second deployment makes the root's deployment ambiguous, which `<command> --help` must survive.
-  await createApp(`${checkoutApp}-b`);
+  await createApp(createName("deployment", `${checkoutApp}-b`));
   const ambiguousHelp = await clawforge(["watch", "--help"], monorepoRoot);
   tail(ambiguousHelp);
   check("watch --help at the checkout root answers even with several deployments", ambiguousHelp.code === 0 && ambiguousHelp.output.includes("watch"), true);

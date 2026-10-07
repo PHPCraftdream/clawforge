@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access } from "node:f
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { removeApp, NOTHING_REMOVED, notPresent, bootstrappedRefusal, instanceStateRefusal } from "#framework/integration/deployment/remove.ts";
-import { invalidNameMessage } from "#framework/core/values/names.ts";
+import { invalidNameMessage, readName } from "#framework/core/values/names.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -59,7 +59,7 @@ async function captured(body: () => Promise<number>): Promise<{ code: number; te
 
 {
   const directory = await writeDeployment("fresh-app", 18101, true);
-  const { code, text } = await captured(() => removeApp("fresh-app", false, { appsRoot: root, buildContext }));
+  const { code, text } = await captured(() => removeApp(readName("deployment", "fresh-app"), false, { appsRoot: root, buildContext }));
   check("dry run exits 0", code, 0);
   check("the directory is untouched", await exists(directory), true);
   check("it names the directory", text.includes(directory), true);
@@ -72,7 +72,7 @@ async function captured(body: () => Promise<number>): Promise<{ code: number; te
 
 {
   const directory = await writeDeployment("to-remove", 18102);
-  const { code } = await captured(() => removeApp("to-remove", true, { appsRoot: root, buildContext }));
+  const { code } = await captured(() => removeApp(readName("deployment", "to-remove"), true, { appsRoot: root, buildContext }));
   check("a real run exits 0", code, 0);
   check("the directory is gone", await exists(directory), false);
 }
@@ -83,7 +83,7 @@ async function captured(body: () => Promise<number>): Promise<{ code: number; te
   const secretFile = resolve(directory, "secrets", "token.txt");
   await writeFile(secretFile, "fixture-secret-sentinel", "utf8");
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("error-target", true, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "error-target"), true, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check("an unreachable target blocks removal", message.includes(instanceStateRefusal("error-target", "error")), true);
@@ -97,7 +97,7 @@ for (const state of ["unchecked", "missing"] as const) {
   await writeFile(secretFile, "fixture-secret-sentinel", "utf8");
   const listDeployments = async (): Promise<DeploymentSummary[]> => state === "missing" ? [] : [{ name, state: "unchecked" } as DeploymentSummary];
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp(name, true, { appsRoot: root, buildContext, listDeployments }); return ""; }
+    try { await removeApp(readName("deployment", name), true, { appsRoot: root, buildContext, listDeployments }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check(`${state} state blocks removal`, message.includes(`state is ${state === "missing" ? "unknown" : "unchecked"}`), true);
@@ -109,7 +109,7 @@ for (const state of ["unchecked", "missing"] as const) {
 {
   const directory = await writeDeployment("running-app", 18103);
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("running-app", true, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "running-app"), true, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check("a running instance is refused", message.includes(bootstrappedRefusal("running-app", "running")), true);
@@ -119,7 +119,7 @@ for (const state of ["unchecked", "missing"] as const) {
 {
   const directory = await writeDeployment("stopped-app", 18104);
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("stopped-app", true, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "stopped-app"), true, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check("a stopped-but-bootstrapped instance is refused the same way", message.includes(bootstrappedRefusal("stopped-app", "stopped")), true);
@@ -130,7 +130,7 @@ for (const state of ["unchecked", "missing"] as const) {
   // Dry run is refused too — the state check runs before the --yes branch, not instead of it.
   const directory = await writeDeployment("running-dry", 18105);
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("running-dry", false, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "running-dry"), false, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check("a running instance is refused even for a dry run", message.includes(bootstrappedRefusal("running-dry", "running")), true);
@@ -141,7 +141,7 @@ for (const state of ["unchecked", "missing"] as const) {
 
 {
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("../escape", false, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "../escape"), false, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check("a traversal name is refused", message.includes(invalidNameMessage("deployment", "../escape")), true);
@@ -149,7 +149,7 @@ for (const state of ["unchecked", "missing"] as const) {
 
 {
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("Not_Valid", false, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "Not_Valid"), false, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   check("an uppercase/underscore name is refused, same as new-app", message.includes(invalidNameMessage("deployment", "Not_Valid")), true);
@@ -159,7 +159,7 @@ for (const state of ["unchecked", "missing"] as const) {
 
 {
   const message = await withOutputSink(() => {}, async () => {
-    try { await removeApp("no-such-deployment", false, { appsRoot: root, buildContext }); return ""; }
+    try { await removeApp(readName("deployment", "no-such-deployment"), false, { appsRoot: root, buildContext }); return ""; }
     catch (error) { return (error as Error).message; }
   });
   const missing = resolve(root, "no-such-deployment");
@@ -182,7 +182,7 @@ for (const state of ["unchecked", "missing"] as const) {
   }
   if (linked) {
     const message = await withOutputSink(() => {}, async () => {
-      try { await removeApp("linked-app", true, { appsRoot: root, buildContext }); return ""; }
+      try { await removeApp(readName("deployment", "linked-app"), true, { appsRoot: root, buildContext }); return ""; }
       catch (error) { return (error as Error).message; }
     });
     check("a symlinked deployment directory is refused", message.includes("symlink"), true);

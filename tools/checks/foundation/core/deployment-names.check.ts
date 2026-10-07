@@ -26,7 +26,7 @@ import {
   useComposeProjectOverride,
   composeProjectOverride,
 } from "#framework/runtime/deployment.ts";
-import { safeName } from "#framework/core/values/names.ts";
+import { readName, safeName } from "#framework/core/values/names.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -109,19 +109,19 @@ check("secretsDir() resolves under the deployment", secretsDir(), resolve(dir, "
 
 check(
   "secretStoreFile() resolves a valid name under secrets/",
-  secretStoreFile("local"),
+  secretStoreFile(readName("store", "local")),
   resolve(dir, "secrets", "local.env"),
 );
 
-checkThrows("secretStoreFile() rejects a traversal attempt", () => secretStoreFile("../../etc"), [
+checkThrows("secretStoreFile() rejects a traversal attempt", () => secretStoreFile(readName("store", "../../etc")), [
   "store",
   "../../etc",
 ]);
-checkThrows("secretStoreFile() rejects an uppercase name", () => secretStoreFile("Foo"), [
+checkThrows("secretStoreFile() rejects an uppercase name", () => secretStoreFile(readName("store", "Foo")), [
   "store",
   "Foo",
 ]);
-checkThrows("secretStoreFile() rejects a name with a space", () => secretStoreFile("a b"), [
+checkThrows("secretStoreFile() rejects a name with a space", () => secretStoreFile(readName("store", "a b")), [
   "store",
   "a b",
 ]);

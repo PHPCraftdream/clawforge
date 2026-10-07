@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { die } from "#src/core/io/log.ts";
 import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { parseEnv } from "#src/core/env.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { readName, type SetName } from "#src/core/values/names.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
 import { runLocalTar } from "#src/set/artifacts/tar.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
@@ -172,7 +172,7 @@ async function acceptanceChecks(recipe: string, report: boolean): Promise<Accept
  *  two collectors drifting apart. */
 export async function collectManifest(
   declaredImage: string,
-  setName: string,
+  setName: SetName,
   options: { tolerateUnpinnedImage?: boolean; reportInvalidDeclaration?: boolean } = {},
 ): Promise<{
   root: string;
@@ -181,7 +181,7 @@ export async function collectManifest(
   manifest: SetManifest;
 }> {
   // The name becomes a file name under sets/ before buildSetManifest validates it.
-  safeName("set", setName);
+  readName("set", setName);
   const root = deploymentDir();
   // Recipes may live outside the deployment directory; manifest keys are portable
   // `recipes/...`, so the real source root is kept for the copy phase.
@@ -283,7 +283,7 @@ async function loadTree(options: SetLoadOptions): Promise<LoadedSet> {
   if (options.declaredImage === undefined) {
     die("loading a set from the working tree needs the declared image — pass declaredImage in the load options");
   }
-  const collected = await collectManifest(options.declaredImage, options.name ?? "", {
+  const collected = await collectManifest(options.declaredImage, readName("set", options.name ?? ""), {
     tolerateUnpinnedImage: options.tolerateUnpinnedImage,
     reportInvalidDeclaration: options.reportInvalidDeclaration,
   });
@@ -340,7 +340,7 @@ async function validateManifest(value: unknown): Promise<SetManifest> {
   if (!isRecord(value) || value.version !== SET_MANIFEST_VERSION || typeof value.name !== "string" || !isRecord(value.requires)) {
     throw new Error("artifact set.json has an invalid manifest shape");
   }
-  safeName("set", value.name);
+  readName("set", value.name);
   if (typeof value.requires.framework !== "string" || typeof value.requires.image !== "string") {
     throw new Error("artifact set.json has invalid requirements");
   }

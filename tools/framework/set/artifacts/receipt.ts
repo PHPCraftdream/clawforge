@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf } from "#src/service/checksums.ts";
 import { canonicalJson } from "./model.ts";
-import { safeName } from "#src/core/values/names.ts";
+import { readName } from "#src/core/values/names.ts";
 import { ValueError, type ValueParser } from "#src/core/values/value.ts";
 import type { AcceptanceStatus, AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 
@@ -59,6 +59,7 @@ export interface ReceiptObservations {
 
 export interface ReceiptSelection {
   /** Recipe names that were selected, in the order supplied by the caller. */
+  // raw string: set/artifacts/evidence.ts feeds unbranded selections, outside this stage's editable files (S3.1 lists it for S1.3)
   readonly recipes: readonly string[];
   readonly withModel: boolean;
   /** True only when the caller ran the complete declared recipe selection. */
@@ -115,6 +116,7 @@ export type ReceiptCheckInput = AcceptanceResult & {
 export interface WriteReceiptInput {
   readonly receiptId?: string;
   readonly setId: string;
+  // raw string: set/artifacts/evidence.ts passes manifest.name (SetManifest's reader-side string), outside this stage's editable files (S3.1 lists it for S1.3)
   readonly setName: string;
   readonly source: ReceiptSource;
   readonly subjectVerified: boolean;
@@ -196,7 +198,7 @@ function normalizeChecks(input: Record<string, readonly ReceiptCheckInput[]>): R
   if (input === null || typeof input !== "object" || Array.isArray(input)) throw new Error("receipt checks must be an object keyed by recipe");
   const output: Record<string, readonly ReceiptCheck[]> = {};
   for (const [recipe, checks] of Object.entries(input)) {
-    safeName("recipe", recipe);
+    readName("recipe", recipe);
     if (!Array.isArray(checks)) throw new Error(`receipt checks for recipe "${recipe}" must be an array`);
     output[recipe] = checks.map((check, index) => checkInput(check, recipe, index));
   }
@@ -207,7 +209,7 @@ function normalizeSelection(input: ReceiptSelection): ReceiptSelection {
   if (input === null || typeof input !== "object" || Array.isArray(input)) throw new Error("receipt selection must be an object");
   if (!Array.isArray(input.recipes) || input.recipes.some((recipe) => typeof recipe !== "string")) throw new Error("receipt selection.recipes must be an array of names");
   if (typeof input.withModel !== "boolean" || typeof input.allRecipes !== "boolean") throw new Error("receipt selection flags must be booleans");
-  const recipes = input.recipes.map((recipe) => safeName("recipe", recipe));
+  const recipes = input.recipes.map((recipe) => readName("recipe", recipe));
   if (new Set(recipes).size !== recipes.length) throw new Error("receipt selection.recipes must contain unique names");
   return { recipes, withModel: input.withModel, allRecipes: input.allRecipes };
 }
@@ -279,7 +281,7 @@ function validateReceipt(value: unknown, expectedSetId?: string, expectedReceipt
   if (expectedSetId !== undefined && setId !== expectedSetId) throw new Error("receipt set id does not match its directory");
   if (expectedReceiptId !== undefined && receiptId !== expectedReceiptId) throw new Error("receipt id does not match its file");
   const setName = text(raw.setName, "receipt setName");
-  safeName("set", setName);
+  readName("set", setName);
   if (raw.source !== "set-try" && raw.source !== "accept") throw new Error("receipt source must be set-try or accept");
   if (typeof raw.subjectVerified !== "boolean") throw new Error("receipt subjectVerified must be a boolean");
   const observations = raw.observations;
@@ -334,7 +336,7 @@ export async function writeReceipt(input: WriteReceiptInput, root?: string): Pro
   const receiptId = input.receiptId ?? randomUUID().replaceAll("-", "");
   if (!RECEIPT_ID.test(receiptId)) throw new Error(`invalid receipt id "${receiptId}"`);
   if (!SET_ID.test(input.setId)) throw new Error(`invalid set id "${input.setId}"`);
-  safeName("set", input.setName);
+  readName("set", input.setName);
   if (input.source !== "set-try" && input.source !== "accept") throw new Error("receipt source must be set-try or accept");
   if (typeof input.subjectVerified !== "boolean") throw new Error("receipt subjectVerified must be a boolean");
   const selection = normalizeSelection(input.selection);

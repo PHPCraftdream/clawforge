@@ -25,7 +25,7 @@ import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#
 import { packArtifact } from "#checks/sets/pack.ts";
 import { invalidImageReference } from "#framework/runtime/docker/image-ref.ts";
 import { TAR_REMOTE_HOST_NOISE } from "#framework/runtime/transport/transport.ts";
-import { invalidNameMessage } from "#framework/core/values/names.ts";
+import { invalidNameMessage, readName } from "#framework/core/values/names.ts";
 import { acceptanceLabel } from "#framework/set/recipe-files.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -60,7 +60,7 @@ function sortedDetails(problems: readonly Problem[], dirs: readonly string[]): s
 /** The manifest the tree currently collects to (tolerating an unpinned image, which the
  *  validator reports as a finding rather than refusing). */
 async function collectedManifest(): Promise<SetManifest> {
-  return (await collectManifest(IMAGE, "demo-set", { tolerateUnpinnedImage: true })).manifest;
+  return (await collectManifest(IMAGE, readName("set", "demo-set"), { tolerateUnpinnedImage: true })).manifest;
 }
 
 interface Variant {
@@ -572,7 +572,7 @@ for (const [kind, relative, text, label] of [
 
     let refusal = "";
     try {
-      await collectManifest(IMAGE, "demo-set", { tolerateUnpinnedImage: true });
+      await collectManifest(IMAGE, readName("set", "demo-set"), { tolerateUnpinnedImage: true });
     } catch (error) {
       refusal = error instanceof Error ? error.message : String(error);
     }
@@ -622,7 +622,7 @@ for (const [kind, relative, text, label] of [
 
     // The artifact side of the same bytes: pack a manifest carrying the invalid image with
     // the test assembler (build refuses to) and load it strictly.
-    const healthyInvalid = await collectManifest(IMAGE, "demo-set", { tolerateUnpinnedImage: true });
+    const healthyInvalid = await collectManifest(IMAGE, readName("set", "demo-set"), { tolerateUnpinnedImage: true });
     const crafted: SetManifest = { ...healthyInvalid.manifest, requires: { ...healthyInvalid.manifest.requires, image: "garbage image@sha256:zz" } };
     const artifact = resolve(deployment, "invalid-image-assembled.tar.gz");
     await packArtifact(deployment, crafted, artifact);
@@ -638,7 +638,7 @@ for (const [kind, relative, text, label] of [
 
     let refusal = "";
     try {
-      await collectManifest("garbage image@sha256:zz", "demo-set");
+      await collectManifest("garbage image@sha256:zz", readName("set", "demo-set"));
     } catch (error) {
       refusal = error instanceof Error ? error.message : String(error);
     }

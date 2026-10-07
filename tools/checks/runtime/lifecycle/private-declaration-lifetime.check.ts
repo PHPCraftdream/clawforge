@@ -16,6 +16,7 @@
 // distribution on it — and is skipped cleanly without one.
 
 import { randomBytes } from "node:crypto";
+import { readName } from "#framework/core/values/names.ts";
 import { mkdirSync } from "node:fs";
 import { access, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -160,7 +161,7 @@ try {
     const fixture = (await import(
       new URL("../../security/credentials/recipe-private-snapshot/fixture-recipe/fixture-sidecar/prepare.ts", import.meta.url).href
     )) as { prepare: (ctx: Context, recipe: Recipe) => Promise<void> };
-    await fixture.prepare(ctx, await loadRecipe("lifetime-sidecar"));
+    await fixture.prepare(ctx, await loadRecipe(readName("recipe", "lifetime-sidecar")));
     check(
       "the fixture's private write really happened on the target",
       await transport.exists(`${DATA}/sidecar-private/credentials.env`),

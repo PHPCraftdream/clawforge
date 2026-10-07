@@ -16,6 +16,7 @@ import { orchestrationCommands } from "#framework/commands/interface/groups/open
 import { status } from "#framework/commands/interface/status.ts";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { blockingProblems, problem } from "#framework/service/inspection.ts";
+import { readName } from "#framework/core/values/names.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { secretStoreFile, deploymentName, useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
@@ -127,7 +128,7 @@ try {
       { name: "OC_COMPOSE_PROJECT", state: "match" },
       { name: "OPENCLAW_IMAGE", state: "match" },
     ]);
-    check("the store is observed complete", inspection.observed.secretStore, { file: secretStoreFile("local"), missing: [] });
+    check("the store is observed complete", inspection.observed.secretStore, { file: secretStoreFile(readName("store", "local")), missing: [] });
     check("no .env value reaches the answer", JSON.stringify(renderJson(inspection)).includes(TOKEN), false);
   }
 
@@ -224,7 +225,7 @@ try {
     const detail = findings[0]?.detail ?? "";
     check("a store that exists missing a required value is STORE_INCOMPLETE", codes(inspection.problems), ["STORE_INCOMPLETE"]);
     check("the finding is advisory", findings.map((entry) => entry.severity), ["warning"]);
-    check("it names the secret, what uses it, and where the copy belongs", detail.includes(storeIncompleteDetail("ZAI_API_KEY", "provider zai", secretStoreFile("local"))), true);
+    check("it names the secret, what uses it, and where the copy belongs", detail.includes(storeIncompleteDetail("ZAI_API_KEY", "provider zai", secretStoreFile(readName("store", "local")))), true);
     check("a matching .env adds no ENV_STALE beside it", inspection.problems.some((entry) => entry.code === "ENV_STALE"), false);
   }
 

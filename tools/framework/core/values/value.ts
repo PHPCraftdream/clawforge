@@ -2,7 +2,7 @@
 // ValueError that `bind` (core/command/parse.ts) turns into an ArgumentError naming the argument.
 
 import { UserError } from "#src/core/io/log.ts";
-import { newName, safeName } from "#src/core/values/names.ts";
+import { readName, createName, type NameKind, type NameOf } from "#src/core/values/names.ts";
 
 /** A refused value. `clause` is the text after the argument's label (`--tail`, `<name>`):
  *  `takes a number of lines, not "abc"`. A clause starting with ":" attaches to the label
@@ -72,13 +72,13 @@ export function regexValue(expected = "a valid regular expression"): ValueParser
   };
 }
 
-/** A name that becomes a path segment (safeName): the refusal is safeName's own sentence. */
-export function nameValue(kind: string): ValueParser<string> {
+/** A name that becomes a path segment (readName): the refusal is readName's own sentence. */
+export function nameValue<K extends NameKind>(kind: K): ValueParser<NameOf<K>> {
   return {
     expected: `a ${kind} name`, example: "local", invalidExample: "Bad_Name",
     parse(raw) {
       try {
-        return safeName(kind, raw);
+        return readName(kind, raw);
       } catch (error) {
         throw new ValueError(`: ${(error as Error).message}`);
       }
@@ -88,12 +88,12 @@ export function nameValue(kind: string): ValueParser<string> {
 
 /** A name about to be minted (newName): the reader grammar plus the Windows device names,
  *  refused at parse for commands that create the named thing. */
-export function newNameValue(kind: string): ValueParser<string> {
+export function newNameValue<K extends NameKind>(kind: K): ValueParser<NameOf<K>> {
   return {
     expected: `a ${kind} name`, example: "local", invalidExample: "aux",
     parse(raw) {
       try {
-        return newName(kind, raw);
+        return createName(kind, raw);
       } catch (error) {
         throw new ValueError(`: ${(error as Error).message}`);
       }

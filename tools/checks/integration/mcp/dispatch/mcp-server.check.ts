@@ -13,6 +13,7 @@
 // deployment happens to already be on this machine.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createName } from "#framework/core/values/names.ts";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -68,7 +69,7 @@ const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;
 const apps = await isolatedAppsRoot("mcp-server");
 
 try {
-  await createApp(deploymentName);
+  await createApp(createName("deployment", deploymentName));
 
   // A real `recipe import` round trip: one of the plain-text actions, driven end to end.
   const importSource = resolve(apps.root, deploymentName, "fixture-source");
@@ -158,7 +159,7 @@ try {
   ].map((request) => JSON.stringify(request)).join("\n");
 
   try {
-    await createApp(recipeDeployment);
+    await createApp(createName("deployment", recipeDeployment));
     const result = await runServer(recipeDeployment, recipeLines);
     const responses = result.stdout
       .split("\n")
@@ -257,7 +258,7 @@ try {
   ].map((request) => JSON.stringify(request)).join("\n");
 
   try {
-    await createApp(lockDeployment);
+    await createApp(createName("deployment", lockDeployment));
     const result = await runServer(lockDeployment, lockLines);
     const responses = result.stdout
       .split("\n")
@@ -311,7 +312,7 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
   ].map((request) => JSON.stringify(request)).join("\n");
 
   try {
-    await createApp(verifyDeployment);
+    await createApp(createName("deployment", verifyDeployment));
     // The confirmed verify is the one call here that reaches a lock-taking command, so the data
     // directory — and with it the instance lock's home beside it — is kept inside the scratch app
     // rather than the scaffold's /srv default, which a check has no business needing write access
@@ -381,7 +382,7 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
   ];
 
   try {
-    await createApp(badCallDeployment);
+    await createApp(createName("deployment", badCallDeployment));
     const result = await runServer(badCallDeployment, malformedCallLines.join("\n"));
     const responses = result.stdout
       .split("\n")

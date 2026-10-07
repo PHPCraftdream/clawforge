@@ -13,6 +13,7 @@
 // the calls. A scratch deployment is created and removed for the duration.
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createName } from "#framework/core/values/names.ts";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -88,7 +89,7 @@ const hook = (revision: number): string =>
   `export async function verify() { return { ok: true, revision: ${revision} }; }\n`;
 
 try {
-  await createApp(deploymentName);
+  await createApp(createName("deployment", deploymentName));
   await mkdir(recipeDir, { recursive: true });
   await writeFile(resolve(recipeDir, "recipe.json"), JSON.stringify({ description: "Hook freshness probe" }), "utf8");
   await writeFile(verifyPath, hook(1), "utf8");

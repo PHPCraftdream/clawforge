@@ -14,6 +14,7 @@ import {
   DESIRED_STATE_PATH,
 } from "#framework/set/artifacts/model.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
+import { readName } from "#framework/core/values/names.ts";
 import type { SetManifest, SetManifestInput, SetRecipe } from "#framework/set/artifacts/model.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -42,7 +43,7 @@ const agentRecipe: SetRecipe = {
 
 function input(overrides: Partial<SetManifestInput> = {}): SetManifestInput {
   return {
-    name: "demo",
+    name: readName("set", "demo"),
     requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:" + "1".repeat(64) },
     files: {
       [DESIRED_STATE_PATH]: "e".repeat(64),
@@ -97,7 +98,7 @@ function carriesValue(manifestValue: SetManifest): boolean {
 // would naturally produce from the same content.
 const builtOne = manifest();
 const builtTwo = buildSetManifest({
-  name: "demo",
+  name: readName("set", "demo"),
   files: {
     "recipes/demo/server.ts": "a".repeat(64),
     [DESIRED_STATE_PATH]: "e".repeat(64),

@@ -18,6 +18,7 @@ import {
 } from "#src/commands/operate/recover-env/facts.ts";
 import type { ConnectionFacts } from "#src/commands/operate/recover-env/facts.ts";
 import { DEFAULT_SECRET_STORE } from "#src/commands/management/secrets.ts";
+import { readName } from "#src/core/values/names.ts";
 import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt } from "./helpers.ts";
 import type { Context } from "#src/core/context.ts";
 
@@ -144,7 +145,7 @@ export async function observeSecretStore(
   secrets: readonly SecretStatus[],
   problems: Problem[],
 ): Promise<SecretStoreObservation | undefined> {
-  const store = secretStoreFile(DEFAULT_SECRET_STORE);
+  const store = secretStoreFile(readName("store", DEFAULT_SECRET_STORE));
   let raw: string;
   try {
     raw = await readFile(store, "utf8");

@@ -12,7 +12,7 @@
 // root. This file does not need to know which mode produced the directory.
 
 import { basename, resolve } from "node:path";
-import { safeName } from "../core/values/names.ts";
+import { readName, type StoreName } from "../core/values/names.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 
 let activeDir: string | undefined;
@@ -117,8 +117,8 @@ export function secretsTemplateFile(): string {
 /** Filled-in values for a named target, kept out of git. The name is checked because it
  *  comes from the command line: a store called ../../other/local would read another
  *  deployment's credentials. */
-export function secretStoreFile(name: string): string {
-  return resolve(deploymentDir(), "secrets", `${safeName("store", name)}.env`);
+export function secretStoreFile(name: StoreName): string {
+  return resolve(deploymentDir(), "secrets", `${readName("store", name)}.env`);
 }
 
 /** Where the deployment's secret stores live. */

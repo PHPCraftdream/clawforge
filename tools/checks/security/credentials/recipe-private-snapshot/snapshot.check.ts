@@ -30,6 +30,7 @@
 // archive (restoring one restores the recipes' working state) and in no other profile.
 
 import { forbiddenViolations, verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
+import { readName } from "#framework/core/values/names.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -112,9 +113,9 @@ try {
 
   // --- the declarations (pure group: no WSL needed) --------------------------------------------
 
-  const sidecar = await loadRecipe("fixture-sidecar");
+  const sidecar = await loadRecipe(readName("recipe", "fixture-sidecar"));
   check("loadRecipe carries the sidecar's declared privatePaths", JSON.stringify(sidecar.privatePaths), JSON.stringify(["sidecar-private"]));
-  const bracket = await loadRecipe("fixture-bracket");
+  const bracket = await loadRecipe(readName("recipe", "fixture-bracket"));
   check("loadRecipe carries the bracket's literal declared privatePaths", JSON.stringify(bracket.privatePaths), JSON.stringify(["vault[1]"]));
   // The third recipe lives only in the one-shot temp copy: an exact FILE declaration in the
   // public workspace/ subtree, written here so the shared fixture directory stays two-recipe
@@ -161,7 +162,7 @@ try {
     `${JSON.stringify({ description: "noncanonical path fixture", privatePaths: ["workspace//credential.txt"] })}\n`,
     "utf8",
   );
-  const noncanonicalRecipe = await rejectionOf(() => loadRecipe("fixture-sidecar"));
+  const noncanonicalRecipe = await rejectionOf(() => loadRecipe(readName("recipe", "fixture-sidecar")));
   checkTrue("loadRecipe rejects privatePaths with an empty interior segment", /empty path segments/.test(noncanonicalRecipe ?? ""));
   const noncanonicalPolicy = await rejectionOf(() => installedRecipePrivatePaths());
   checkTrue("installedRecipePrivatePaths rejects noncanonical privatePaths", /empty path segments/.test(noncanonicalPolicy ?? ""));

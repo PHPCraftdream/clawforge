@@ -28,6 +28,7 @@
 // through the same renderers the entries call.
 
 import { reportError } from "#framework/core/io/log.ts";
+import { createName } from "#framework/core/values/names.ts";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -240,7 +241,7 @@ export async function renderGolden(): Promise<Record<string, string>> {
 
   const apps = await isolatedAppsRoot("golden-render");
   try {
-    await createApp(FIXTURE_APP);
+    await createApp(createName("deployment", FIXTURE_APP));
 
     // Checkout entry: the real gate script renders its own top-level help (gate help lines
     // included) with the scratch deployment selected, and each gate command's --help.

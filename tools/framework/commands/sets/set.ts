@@ -9,7 +9,7 @@
 import { die, log, info } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { newName } from "#src/core/values/names.ts";
+import { createName } from "#src/core/values/names.ts";
 import * as kinds from "#src/core/values/kinds.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
@@ -161,7 +161,7 @@ async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUM
 async function buildAction(ctx: Context, { name, json: jsonOnly }: Values<typeof SET_BUILD_ARGUMENTS>): Promise<void> {
   // The artifact's file name is minted here: the creator grammar, so a set built on this machine is always a file every host can open and remove.
   const setName = name ?? defaultSetName(deploymentName());
-  newName("set", setName);
+  createName("set", setName);
   const built = await buildSet(ctx, setName);
 
   // Same split as lock: --json or a captured caller gets the machine-readable answer;

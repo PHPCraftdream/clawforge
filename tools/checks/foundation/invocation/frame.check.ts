@@ -167,26 +167,22 @@ for (const p of FRAME_PRODUCERS) {
 // --- the {install completion pwsh} rows -------------------------------------------------------------
 
 await requires("windows-host", "the install rows under the Windows shells", () => {
-  // S1.4: the renderer has no `shell` advice field yet — `install` only folds backslashes,
-  // renderAdvice reads the process frame (through the Invocation), and forShell is not read
-  // by it. So the design's checkout-win32 row has no (in bash) note yet; the CURRENT output
-  // is pinned here and the note row arrives with S1.4's renderer.
   check(
-    "the checkout-shim install row under a Windows frame spells the shim (S1.4: adds the bash note)",
-    words(renderAdvice(command(["completion", "pwsh"], { install: true }), { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" })),
-    ["./clawforge", "completion", "pwsh"],
+    "the checkout-shim install row under a Windows frame spells the shim with the bash note (D6/O1: the pwsh shell has no shim spelling)",
+    words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" })),
+    ["./clawforge", "completion", "pwsh", "", "(in", "bash)"],
   );
   check(
-    "the npm-bin install row folds to forward slashes under a Windows frame",
-    words(renderAdvice(command(["completion", "pwsh"], { install: true }), { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" })),
-    ["node_modules/.bin/clawforge", "completion", "pwsh"],
+    "the npm-bin install row keeps the wrapper's backslashes under the pwsh shell it names (S1.4)",
+    words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" })),
+    ["node_modules\\.bin\\clawforge", "completion", "pwsh"],
   );
 });
 await requires("posix-host", "the install row under the POSIX frame", () => {
   check(
-    "the npm-bin install row keeps the posix spelling",
-    words(renderAdvice(command(["completion", "pwsh"], { install: true }), { program: "node_modules/.bin/clawforge", mode: "local-package", audience: "terminal" })),
-    ["node_modules/.bin/clawforge", "completion", "pwsh"],
+    "the npm-bin install row keeps the posix spelling with the bash note (D6/O1: pwsh has no posix wrapper)",
+    words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: "node_modules/.bin/clawforge", mode: "local-package", audience: "terminal" })),
+    ["node_modules/.bin/clawforge", "completion", "pwsh", "", "(in", "bash)"],
   );
 });
 

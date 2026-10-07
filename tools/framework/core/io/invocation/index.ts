@@ -64,6 +64,13 @@ export function currentFrame(): Frame {
   return installed ??= frameFromInvocation(invocation(), frameFacts());
 }
 
+/** The whole installed frame for render defaults (prose): the entry's install carries the
+ *  real roots/places; only the never-installed fallback rebuilds — and it must not cache
+ *  that rebuild into `installed`. */
+export function invokedFrame(): Frame {
+  return installed ?? frameFromInvocation(invocation(), frameFacts());
+}
+
 /** The frame an Invocation stands for, without installing it: renderers read the frame of
  *  the invocation they are handed, never the process-global one. */
 export function frameOf(on: Invocation): Frame {

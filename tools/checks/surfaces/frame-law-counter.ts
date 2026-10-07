@@ -14,7 +14,7 @@
 import { dirname, resolve as pathResolve } from "node:path";
 import { renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { frameFromInvocation, handoverOf, IN_BASH_NOTE, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
+import { forShell, frameFromInvocation, handoverOf, IN_BASH_NOTE, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
 import {
   findCheckoutRootIn,
   frameworkOwner,
@@ -47,17 +47,24 @@ const FILES: Record<string, string> = {
   [`${ROOT}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
   [`${ROOT}/apps/openclaw/app.ts`]: "export default {};\n",
   [`${ROOT}/apps/demo/app.ts`]: "export default {};\n",
+  // The case-4 target deployment exists on the law's layout, like demo and openclaw: rows
+  // filled to app "x" name ROOT/apps/x, and the real resolver must accept it.
+  [`${ROOT}/apps/x/app.ts`]: "export default {};\n",
   [`${APP_LOCAL}/app.ts`]: "export default {};\n",
   [`${APP_LOCAL}/config/desired-state.json`]: "{}\n",
   [LOCAL_ENTRY]: "// local package entry\n",
 };
 const DIRS: readonly string[] = [
-  `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/docs`,
+  `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/x`, `${ROOT}/docs`,
   `${ROOT}/tools`, `${ROOT}/tools/framework`, `${APP_LOCAL}/config`,
   `${APP_LOCAL}/node_modules`, `${APP_LOCAL}/node_modules/.bin`,
   `${APP_LOCAL}/node_modules/@clawforge`, `${APP_LOCAL}/node_modules/@clawforge/framework`,
   `${APP_LOCAL}/node_modules/@clawforge/framework/entry`,
 ];
+/** Host-independent refusal TEXT: paths inside a recorded reason normalize exactly like
+ *  the layout's paths (drive letter and separators stripped), so a baseline reason written
+ *  on one host compares equal on every host. */
+const normalizeMessage = (text: string): string => text.replaceAll("\\", "/").replace(/([A-Za-z]):\//g, "/");
 const fakePath = (path: string): string => {
   const slashed = path.replaceAll("\\", "/");
   const stripped = slashed.replace(/^[A-Za-z]:\//, "");
@@ -181,11 +188,14 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
     ...ADVICE_ROWS,
     QUOTE_ROW,
   ].filter((rowEntry) => rowEntry.advice.kind === "clawforge");
-  /** Install lines, the help-prose token rows and the synthetic quoting row paste in every
-   *  shell, not only the producer's own set (the renderer spells them shell-free). */
+  /** Help-prose token rows without a shell of their own and the synthetic quoting row paste
+   *  in every shell, not only the producer's own set (the renderer spells them shell-free).
+   *  A row WITH a shell (S1.4's CommandAdvice.shell — the install lines) spells for that
+   *  shell alone: the renderer re-transitions to advice.shell whatever frame pastes it, so
+   *  pasting it elsewhere would re-measure the same line against a shell it does not name. */
   const PROSE_PREFIX = ["help", "prose:"].join(" ");
-  const expandsShells = (label: string, advice: { readonly install?: boolean }): boolean =>
-    advice.install === true || label.startsWith(PROSE_PREFIX) || label === QUOTE_ROW.label;
+  const expandsShells = (label: string, advice: { readonly shell?: string }): boolean =>
+    advice.shell === undefined && (label.startsWith(PROSE_PREFIX) || label === QUOTE_ROW.label);
 
   for (const producer of FRAME_PRODUCERS) {
     const frameCwd = producer.frame.cwd.kind === "dir" ? producer.frame.cwd.path : ROOT;
@@ -205,31 +215,36 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
       };
       const pasteDir = frameCwd;
       // The paste directory mirrors the renderer's rooted branch (design §2.3 rule 1, §3):
-      // a row that spells from the checkout root — `at: "checkout-root"`, or the cwd-conflict
-      // remedy — is rendered against the RE-ROOTED frame, so the line pastes where the
-      // sentence names: the re-rooted frame's cwd, i.e. the frame's checkout root. A frame
-      // without a known checkout root is a genuine setup stop. Every other row (including a
-      // cwdConflict-rooted one's note-bearing line, which names its own paste place) pastes
-      // where the frame stands.
+      // a row that spells from the checkout root — `at: "checkout-root"` — is rendered
+      // against the RE-ROOTED frame, so the line pastes where the sentence names: the
+      // re-rooted frame's cwd, i.e. the frame's checkout root. A frame without a known
+      // checkout root is a genuine setup stop. A cwd-conflict row (decision O2, case 4) is
+      // NOT re-rooted: its line runs where the reader stands (O2), the producer's own cwd
+      // (apps/demo), and points at the other deployment with --project-root. Every other
+      // row pastes where the frame stands.
       const on = handoverOf(producer.frame);
       const cwdConflict = filled.app !== undefined
         && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" && producer.frame.app.name !== filled.app
         && resolvesByCwd(producer.frame.launch, on.program);
-      const rooted = filled.at === "checkout-root" || cwdConflict;
-      const rootedPasteDir = rooted ? producer.frame.places.checkoutRoot : undefined;
+      const atRooted = filled.at === "checkout-root";
+      const rootedPasteDir = atRooted ? producer.frame.places.checkoutRoot : undefined;
+      // O2: the case-4 line runs where the reader stands — the paste directory is the
+      // producer's cwd; only an `at` row re-roots.
       const pasteBase = rootedPasteDir ?? pasteDir;
-      if (rooted && rootedPasteDir === undefined) {
+      if (atRooted && rootedPasteDir === undefined) {
         setupFailures.push(`${producer.label} | ${rowEntry.label}: the checkout-root row renders against a re-rooted frame, but the producer frame has no checkout root place`);
         continue;
       }
-      const shells = new Set<Shell>(producer.frame.shells);
+      const shells = new Set<Shell>(filled.shell !== undefined ? [filled.shell] : producer.frame.shells);
       if (expandsShells(rowEntry.label, filled)) for (const shell of EXPANDING_SHELLS) shells.add(shell);
       for (const shell of shells) {
         const key = `${producer.label} | ${rowEntry.label} | ${shell}`;
         attempted += 1;
         let stage: import("#framework/core/command/execute.ts").Stage = "parse";
         try {
-          const line = renderFrameAdvice(filled, producer.frame);
+          // The law tests the line PRODUCTION emits from the original multi-shell frame;
+          // only a row that names its own shell (advice.shell) re-renders for that shell.
+          const line = renderFrameAdvice(filled, filled.shell !== undefined ? forShell(producer.frame, shell) : producer.frame);
           const { command: clean, note } = stripNote(line);
           // The bash-shim fallback (O1): the line itself names the shell it pastes in — a
           // non-posix paste of it is the known npm-bin re-root violation (D1).
@@ -257,8 +272,20 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
           const program = words[0] ?? "";
           const tokenArgv = words.slice(1);
           // The pasted words must reassemble the FILLED advice argv (a leading --app pair is
-          // the selector the renderer and the resolver share; the command follows it).
-          const withoutSelector = tokenArgv[0] === "--app" ? tokenArgv.slice(2) : tokenArgv;
+          // the selector the renderer and the resolver share; the command follows it). The
+          // S1.4 case-4 selector (--project-root, decision O2) implies the deployment the
+          // same way, so its pair is stripped too — and the path it names is verified
+          // against the fake layout: <ROOT>/apps/<filled.app>, or the row names the wrong
+          // deployment directory.
+          const selector = tokenArgv[0] === "--app" || tokenArgv[0] === "--project-root" ? tokenArgv[0] : undefined;
+          const withoutSelector = selector !== undefined ? tokenArgv.slice(2) : tokenArgv;
+          if (selector === "--project-root") {
+            const wantRoot = `${ROOT}/apps/${filled.app}`;
+            if (tokenArgv[1] !== wantRoot) {
+              record(key, `--project-root drift: the row names ${tokenArgv[1] ?? "no path"} where the law expects ${wantRoot}`);
+              continue;
+            }
+          }
           if (!sameWords(withoutSelector, filled.argv)) {
             record(key, `quoting/spelling drift: the shell model tokenized ${JSON.stringify(tokenArgv)} where the advice declares ${JSON.stringify(filled.argv)}`);
             continue;
@@ -284,7 +311,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                 record(key, `command drift: the gate ran ${JSON.stringify(decision.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
                 continue;
               }
-              const want = expected ?? "openclaw";
+              const want = expected ?? (!atRooted && !cwdConflict && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" ? producer.frame.app.name : undefined) ?? "openclaw";
               if (decision.appName !== want) {
                 record(key, `deployment drift: the gate ran ${decision.appName} where the law expects ${want}`);
               }
@@ -304,6 +331,9 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
             reached += 1;
             stage = "context";
             if (decision.kind !== "run") {
+              // A refusal is the law's FINDING, not a setup stop: the pasted line is the
+              // renderer's output, so the resolver refusing it names a real drift.
+              record(key, `the resolver refused the pasted line: ${decision.kind}${decision.kind === "refuse" ? ` — ${normalizeMessage((decision.refusals[0] as Error | undefined)?.message ?? "no message")}` : ""}`);
               continue;
             }
             if (!sameWords(decision.argv[0] === "--app" ? decision.argv.slice(2) : decision.argv, filled.argv)) {
@@ -336,7 +366,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                   record(key, `command drift: the spawned gate ran ${JSON.stringify(final.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
                   continue;
                 }
-                const want = expected ?? "openclaw";
+                const want = expected ?? (!atRooted && !cwdConflict && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" ? producer.frame.app.name : undefined) ?? "openclaw";
                 if (final.appName !== want) {
                   record(key, `deployment drift: the spawned gate ran ${final.appName} where the law expects ${want}`);
                 }

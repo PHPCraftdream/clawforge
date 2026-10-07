@@ -68,7 +68,7 @@ if (handed === undefined) {
 installFrame(frame);
 switch (entry.kind) {
   case "refuse": {
-    for (const refusal of entry.refusals) reportError(refusal);
+    for (const refusal of entry.refusals) reportError(refusal, frame);
     process.exit(1);
   }
   case "checkout-types-note": {
@@ -94,7 +94,7 @@ useGateCommands(gateCommands.map((command) => command.name));
 const gateExit = await runGateCommand(gateCommands, argv);
 if (gateExit !== undefined) process.exit(gateExit);
 // Only after the gate commands: `version` answers without needing the app to be one of apps/<name>.
-refuseStrayCheckoutApp(fileURLToPath(import.meta.url), appRoot);
+refuseStrayCheckoutApp(fileURLToPath(import.meta.url), appRoot, frame);
 
 const appFile = resolve(appRoot, "app.ts");
 try {
@@ -109,8 +109,8 @@ try {
     frame,
   });
   if (missing.kind === "subfolder-report") {
-    reportError(missing.headline);
-    reportError(missing.refusal);
+    reportError(missing.headline, frame);
+    reportError(missing.refusal, frame);
     process.exit(1);
   }
   if (missing.kind === "help") {
@@ -121,14 +121,14 @@ try {
       checkout,
       deploymentHelp: (name) => {
         const declared = openclawCommands[name];
-        if (declared !== undefined) renderFullCommandHelp(name, declared);
+        if (declared !== undefined) renderFullCommandHelp(name, declared, frame);
       },
     });
     if (helpExit !== undefined) process.exit(helpExit);
   }
   const { headline, refusals } = missing.kind === "help" ? missing.fallback : missing;
-  reportError(headline);
-  for (const refusal of refusals) reportError(refusal);
+  reportError(headline, frame);
+  for (const refusal of refusals) reportError(refusal, frame);
   process.exit(1);
 }
 
@@ -158,9 +158,9 @@ try {
   const cannotReadTypeScript = message.includes("Unknown file extension") || message.includes("experimental-strip-types");
   if (cannotReadTypeScript && process.env.CLAWFORGE_TYPE_STRIPPING_RETRY !== "1") retryWithTypeStripping();
 
-  reportError(`${CANNOT_LOAD} ${appFile}: ${message}`);
+  reportError(`${CANNOT_LOAD} ${appFile}: ${message}`, frame);
   if (cannotReadTypeScript) {
-    reportError("this Node cannot execute TypeScript even with --experimental-strip-types — Node 24 or newer is required");
+    reportError("this Node cannot execute TypeScript even with --experimental-strip-types — Node 24 or newer is required", frame);
   }
   process.exit(1);
 }

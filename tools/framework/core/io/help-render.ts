@@ -6,9 +6,10 @@ import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 import type { EffectDeclaration } from "../command/index.ts";
 import { effectProfile, argumentScopes, argumentRules, ruleText } from "../command/index.ts";
-import { commandLine, renderAdvice } from "./invocation/render.ts";
-import { command } from "./invocation/advice.ts";
-import { invocation, type Invocation } from "./invocation/index.ts";
+import { renderAdvice } from "./invocation/render.ts";
+import { command as commandAdvice } from "./invocation/advice.ts";
+import { frameOf, type Invocation } from "./invocation/index.ts";
+import type { Frame } from "./invocation/frame.ts";
 import { renderProse } from "./invocation/prose.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
@@ -42,14 +43,25 @@ export function argumentsSignature(args: readonly CommandArgument[] | undefined)
   return args.map((argument) => (argument.required === true ? argumentLabel(argument) : `[${argumentLabel(argument)}]`)).join(" ");
 }
 
+/** Both help renderers take the run's Frame when the caller holds one (used directly, prose
+ *  included) or — callers that hold no frame — the Invocation, which rebuilds a rootless
+ *  frame for prose (frameOf) and drives the usage advice as typed (renderAdvice takes the
+ *  Invocation; a Frame drives the usage line whole). */
+function helpSources(source: Frame | Invocation): { readonly frame: Frame; readonly on: Frame | Invocation } {
+  return "launch" in source
+    ? { frame: source, on: source }
+    : { frame: frameOf(source), on: source };
+}
+
 /** Full `--help` body for one command: summary line, usage line, one line per argument
  *  (label, description, choices, required-ness), then one line of details per newline. Callers append
  *  whatever is specific to their own command shape afterwards — the destructive-state note
  *  (effectNote, shared with the gate's commands) and AppCommand's structured-envelope note. */
-export function renderCommandHelp(name: string, command: HelpDeclaration): void {
+export function renderCommandHelp(name: string, command: HelpDeclaration, source?: Frame | Invocation): void {
+  const help = source === undefined ? undefined : helpSources(source);
   log(`${name} — ${command.summary}`);
   const signature = argumentsSignature(command.arguments);
-  if (signature !== "") info(`Usage: ${commandLine([name])} ${signature}`);
+  if (signature !== "") info(`Usage: ${renderAdvice(commandAdvice([name]), help?.on)} ${signature}`);
   for (const argument of command.arguments ?? []) {
     const required = argument.required === true ? " (required)" : "";
     const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
@@ -71,7 +83,7 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
   }
   if (command.details !== undefined) {
     info("");
-    for (const line of renderProse(command.details).split("\n")) info(line);
+    for (const line of renderProse(command.details, help?.frame).split("\n")) info(line);
   }
 }
 
@@ -127,20 +139,20 @@ export function helpEntryLine(name: string, summary: string): string {
 
 /** The usage screen's own line and the full-description hint under it — exported so the
  *  gate's bare screen and the checks assert the same text the renderer prints. */
-export function usageTopLine(on: Invocation = invocation()): string {
-  return `Usage: ${renderAdvice(command(["<command>"]), on)} [options]`;
+export function usageTopLine(on?: Invocation): string {
+  return `Usage: ${renderAdvice(commandAdvice(["<command>"]), on)} [options]`;
 }
-export function usageFooterHint(on: Invocation = invocation()): string {
-  return `Run \`${renderAdvice(command(["help", "<command>"]), on)}\` or \`${renderAdvice(command(["<command>", "--help"]), on)}\` for its full description.`;
+export function usageFooterHint(on?: Invocation): string {
+  return `Run \`${renderAdvice(commandAdvice(["help", "<command>"]), on)}\` or \`${renderAdvice(commandAdvice(["<command>", "--help"]), on)}\` for its full description.`;
 }
 
 /** The top-level `--help` screen, shared by the console and the MCP `help` tool. The footer
  *  is the caller's to compose: the gate's own lines followed by integration/gate.ts's
  *  dispatcherHelpLines(registry). */
-export function renderUsage(app: AppDefinition, footer: readonly string[]): void {
+export function renderUsage(app: AppDefinition, footer: readonly string[], on?: Invocation): void {
   log(`${app.name} — ${app.description}`);
   info("");
-  info(usageTopLine());
+  info(usageTopLine(on));
   info("");
 
   const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
@@ -176,7 +188,7 @@ export function renderUsage(app: AppDefinition, footer: readonly string[]): void
   info("");
   info("  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)");
   info("");
-  info(usageFooterHint());
+  info(usageFooterHint(on));
 }
 
 /** The envelope every structured tool call answers in (mcp/schema.ts's StructuredResult) —
@@ -190,8 +202,8 @@ export const STRUCTURED_ENVELOPE_HELP =
 
 /** One command's full `--help` body plus the destructive-state note entry/cli.ts's console
  *  path appends after it. */
-export function renderFullCommandHelp(name: string, command: AppCommand): void {
-  renderCommandHelp(name, command);
+export function renderFullCommandHelp(name: string, command: AppCommand, source?: Frame | Invocation): void {
+  renderCommandHelp(name, command, source);
   const note = effectNote(command);
   if (note !== undefined) {
     info("");

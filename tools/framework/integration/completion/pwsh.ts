@@ -4,7 +4,7 @@
 // two different command sets, so a check can diff renders and drive the two scripts against
 // completionCandidates() differentially.
 
-import { installLine } from "../../core/io/invocation/render.ts";
+import { installLineParts } from "../../core/io/invocation/render.ts";
 import type { CompletionData } from "./table.ts";
 
 /** The `$clawforgeCompleter = { … }` body — the decision completionCandidates() makes, branch
@@ -112,9 +112,15 @@ export function renderPwsh(data: CompletionData): string {
   const block = (name: string, lines: readonly string[]): string =>
     `$${name} = [hashtable]::new(@{\n${lines.length === 0 ? "" : `${lines.join("\n")}\n`}}, [System.StringComparer]::Ordinal)`;
   const values = data.values.map((entry) => `  "${entry.command}${entry.scope}${entry.option}" = @(${quoted(entry.values)})`);
+  const install = installLineParts(["completion", "pwsh"], "pwsh");
+  // A bash-only fallback must not read as a PowerShell pipeline: the header names the
+  // condition instead (the shim runs in Git Bash; PowerShell consumes its saved output).
+  const installText = install.note?.includes("in bash") === true
+    ? `run ${install.line} in Git Bash, save the output to a file, and dot-source it from PowerShell`
+    : `${install.line} | Out-String | Invoke-Expression${install.note === undefined ? "" : `  (${install.note})`}`;
   return (
     "# clawforge PowerShell completion — generated from the command declarations.\n" +
-    `# Install: ${installLine(["completion", "pwsh"])} | Out-String | Invoke-Expression\n` +
+    `# Install: ${installText}\n` +
     (data.appFlag ? "$clawforgeApp = $true\n" : "$clawforgeApp = $false\n") +
     `$clawforgeTop = @(${quoted(data.top)})\n` +
     block("clawforgeFirst", entries(data.first)) +

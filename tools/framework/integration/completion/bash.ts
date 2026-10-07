@@ -5,7 +5,7 @@
 // answers and the pwsh script renders, so a script and the table it was rendered from cannot
 // quietly diverge.
 
-import { installLine } from "../../core/io/invocation/render.ts";
+import { installLineParts } from "../../core/io/invocation/render.ts";
 import type { CompletionData } from "./table.ts";
 
 // Hidden directories (.r28) are not deployments.
@@ -140,9 +140,11 @@ export const bashCompletionLines: string =
  *  `__CLAWFORGE_CASE_ARMS__` (and the `--app` slots filled only where the gate has one), then
  *  the registrations. Nothing else — no command name is written anywhere in this file. */
 export function renderBash(data: CompletionData): string {
+  // The note rides AFTER the whole composed line (installLineParts), never inside it.
+  const install = installLineParts(["completion", "bash"], "posix");
   return (
     "# clawforge bash completion — generated from the command declarations.\n" +
-    `# Install: source <(${installLine(["completion", "bash"])})\n` +
+    `# Install: source <(${install.line})${install.note === undefined ? "" : `  (${install.note})`}\n` +
     BASH_COMPLETER.replaceAll("__CLAWFORGE_CASE_ARMS__", caseArms(data))
       .replaceAll("__CLAWFORGE_APP_SKIP__", data.appFlag ? APP_SKIP_PAIR : "")
       .replaceAll("__CLAWFORGE_APP_VALUES__", data.appFlag ? APP_VALUES_BLOCK : "") +

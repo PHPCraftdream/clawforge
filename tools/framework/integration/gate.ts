@@ -12,9 +12,8 @@
 // repository's own test suite, which the npm package doesn't ship. Each gate builds its own list.
 
 import { info, log, reportError, UserError } from "../core/io/log.ts";
-import { command, manual, shellLine, type Advice } from "../core/io/invocation/advice.ts";
+import { command, changeDirectory, manual, type Advice } from "../core/io/invocation/advice.ts";
 import { commandLine, renderAdvice } from "../core/io/invocation/render.ts";
-import { shellQuote } from "../core/io/shell.ts";
 import { bind, tokenize, tokenizeLenient } from "../core/command/parse.ts";
 import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
 import { specData, specOf } from "../core/command/spec.ts";
@@ -272,19 +271,10 @@ export function checkoutListNote(checkout: string): string {
  *  another shell, so it is shell advice: nothing rewrites it. */
 export function checkoutSubfolderReport(first: string, checkout: string): UserError | undefined {
   if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
-  // One row per shell the command's host types (rf6-fix33): the installed clawforge runs
-  // in cmd.exe and PowerShell too, where a POSIX single-quoted line does not paste. Each
-  // row quotes by its own shell's rule — bash by the shared quoting rule (a path with
-  // spaces breaks unquoted, and inside double quotes bash still expands $ and runs
-  // backticks); cmd by its own `cd /d "<path>"` (a Windows path carries no ", and cmd
-  // expands nothing inside double quotes); pwsh with literal single quotes (a ' doubled,
-  // because $ and backticks are live inside pwsh's double quotes).
+  // One `cd` advice, spelled for every shell the command's host types (rf6-fix33, D4):
+  // changeDirectory carries the per-shell alternatives, the renderer picks by the frame.
   return new UserError(`${first} ${CHECKOUT_ROOT_NOTE}`, {
-    advice: [
-      shellLine("posix", `cd ${shellQuote(checkout)}`),
-      ...(checkout.includes('"') ? [] : [shellLine("cmd", `cd /d "${checkout}"`)]),
-      shellLine("pwsh", `cd '${checkout.replaceAll("'", "''")}'`),
-    ],
+    advice: [changeDirectory(checkout)],
   });
 }
 

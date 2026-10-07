@@ -16,6 +16,10 @@ that whole text, which would cost every session's context before the first real 
 pointer to the `help` tool, which returns exactly what `./clawforge help <command>` prints. What
 follows below is what does not fit in `--help` — the whole model, file formats, diagnostics.
 
+When the system-wide `clawforge` runs inside one deployment but advice names another, it
+prints the command with `--project-root <checkout>/apps/<name>` — a supported way to point
+the command at that specific deployment instead of the one it stands in.
+
 A bare sub-action group (`recipe`, `set`, `watch`, `expose`) either runs its one read-only
 default or refuses: `recipe` alone lists the catalog (its default action, harmless to run by
 accident); `set`, `watch` and `expose` alone have no such default, so they name every action

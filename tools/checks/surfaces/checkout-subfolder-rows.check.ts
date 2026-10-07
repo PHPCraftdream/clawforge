@@ -1,7 +1,7 @@
-// The checkout-subfolder refusal's cd rows paste in the shell each names (rf6-fix33): one
-// row per shell — the POSIX quoting rule for bash, cmd's own `cd /d "<path>"`, pwsh's
-// literal single quotes — over a path with a space and one with `$` (POSIX and PowerShell
-// both expand `$` inside double quotes, cmd does not). Each row is pasted into the real
+// The checkout-subfolder refusal's cd rows paste in the shell each names (rf6-fix33, S1.4):
+// ONE changeDirectory advice — the POSIX text plus per-shell alternatives — over a path
+// with a space and one with `$` (POSIX and PowerShell both expand `$` inside double
+// quotes, cmd does not, so cmd has no spelling for it). Each row is pasted into the real
 // shell it names; the paste proves it landed in the target by a marker file inside it, so
 // the comparison never depends on how a host spells the same directory (MSYS maps /tmp).
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -19,9 +19,13 @@ const CASES: readonly (readonly [string, string])[] = [
   ["a path with $", "dir$with space"],
 ];
 
+// The refusal carries ONE changeDirectory advice (S1.4, D4): the POSIX text is advice.text
+// (its own shell), cmd/pwsh come from advice.alternatives — a path with `$` gives cmd no
+// safe spelling (changeDirectory's rule), so the cmd row is expected only when spelled.
 function rows(error: UserError | undefined, shell: "posix" | "cmd" | "pwsh"): string | undefined {
-  const advice = error?.advice.find((entry) => entry.kind === "shell" && entry.shell === shell);
-  return advice?.kind === "shell" ? advice.text : undefined;
+  const advice = error?.advice.find((entry) => entry.kind === "shell" && entry.shell === "posix");
+  if (advice?.kind !== "shell") return undefined;
+  return shell === "posix" ? advice.text : advice.alternatives?.[shell];
 }
 
 for (const [label, leaf] of CASES) {
@@ -35,7 +39,11 @@ for (const [label, leaf] of CASES) {
     const cmd = rows(error, "cmd");
     const pwsh = rows(error, "pwsh");
     checkTrue(`${label}: the refusal carries a posix row`, posix !== undefined);
-    checkTrue(`${label}: the refusal carries a cmd row`, cmd !== undefined);
+    // cmd has a spelling only when the path carries none of `"`, `%`, `$`, backtick —
+    // with `$` the cmd alternative is deliberately undefined (changeDirectory's rule: cmd
+    // has no safe spelling there), the renderer prints the POSIX line for cmd instead.
+    const cmdSpelled = !/["%$`]/.test(leaf);
+    checkTrue(`${label}: the cmd alternative is ${cmdSpelled ? "present" : "explicitly undefined (cmd has no safe spelling for this path)"}`, cmdSpelled === (cmd !== undefined));
     checkTrue(`${label}: the refusal carries a pwsh row`, pwsh !== undefined);
 
     await requires("bash", `${label}: the posix row pastes in bash`, async () => {
@@ -44,7 +52,12 @@ for (const [label, leaf] of CASES) {
       checkTrue(`${label}: bash lands in the target`, result.code === 0);
     });
     await requires("windows-host", `${label}: the cmd row pastes in cmd.exe`, async () => {
-      if (cmd === undefined) { checkTrue(`${label}: no cmd row to paste`, false); return; }
+      if (cmd === undefined) {
+        // Asserted, not silent: the $ case's cmd alternative must be explicitly undefined
+        // (changeDirectory's rule) — a present cmd row for a $ path would paste expanded.
+        checkTrue(`${label}: no cmd row to paste — the $ path gives cmd no alternative`, !cmdSpelled);
+        return;
+      }
       // Through a batch file: a spawned argv re-escapes the row's inner double quotes
       // (spawnLocal hands cmd "\"" for ""), which interactive cmd never sees — the file's bytes are
       // exactly the paste.

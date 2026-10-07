@@ -14,11 +14,18 @@ function ratchet(name: string, expected: number, actual: number): Ratchet { retu
 function report(result: Ratchet): void { checkTrue(`${result.name} equals the baseline (${result.actual} measured, ${result.expected} recorded)`, result.actual === result.expected); const problems = result.grew.map((file) => `${result.name}: a new occurrence was added: ${file}`); problems.push(...(result.unrecordedMessages.length > 0 ? result.unrecordedMessages : result.unrecordedShrank.map((file) => `${result.name}: lower the baseline to ${result.actual} in the same commit (decreased: ${file})`))); checkTrue(`${result.name}: no single-file growth and no unrecorded decrease`, problems.length === 0); for (const line of [...problems, ...result.details]) process.stderr.write(`    ${line}\n`); }
 export async function runFrameRatchets(root: string, frameworkFiles: readonly string[], rel: (full: string) => string, baseline: { frameReads: { total: number }; frameInstalls: PerFileMetric; modeDeciders: PerFileMetric }): Promise<void> {
 const FRAME_READ = /\b(?:invocation|currentFrame)\(\s*\)/;
-const FRAME_READ_EXEMPT = (file: string): boolean => file.startsWith("tools/framework/core/io/invocation/") || file === "tools/framework/core/io/help-render.ts" || file === "tools/framework/core/io/log.ts";
+// help-render.ts and log.ts left the exemption with S1.4: both take the frame from the invocation module (renderCurrentAdviceRows) now.
+const FRAME_READ_EXEMPT = (file: string): boolean => file.startsWith("tools/framework/core/io/invocation/");
 let frameReadTotal = 0;
 for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) {
   if (FRAME_READ_EXEMPT(rel(full))) continue;
-  for (const line of (await readFile(full, "utf8")).split("\n")) { let stripped = line.replace(/(^|\s)\/\/.*$/, "$1"); stripped = stripped.replace(/\/\*.*?\*\//g, ""); const trimmed = stripped.trim(); if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue; frameReadTotal += (stripped.match(new RegExp(FRAME_READ.source, "g")) ?? []).length; }
+  for (const line of (await readFile(full, "utf8")).split("\n")) {
+    let stripped = line.replace(/(^|\s)\/\/.*$/, "$1");
+    stripped = stripped.replace(/\/\*.*?\*\//g, "");
+    const trimmed = stripped.trim();
+    if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+    frameReadTotal += (stripped.match(new RegExp(FRAME_READ.source, "g")) ?? []).length;
+  }
 }
 report(ratchet("frameReads", baseline.frameReads.total, frameReadTotal));
 const FRAME_INSTALL = /\b(?:installFrame|setInvocation)\(/;
@@ -30,7 +37,7 @@ const MODE_LITERAL = /(?:\bmode\s*(?:===|!==|==|!=|=)\s*["'](?:installed|checkou
 const MODE_EXEMPT_LINES: Readonly<Record<string, ReadonlySet<string>>> = {
   "tools/framework/core/io/invocation/frame.ts": new Set(["case \"system\": return \"installed\";", "case \"checkout-shim\":", "case \"deployment-shim\": return \"checkout\";", "case \"npm-bin\": return \"local-package\";", "case \"verbatim\": return launch.mode;"]),
   "tools/framework/core/io/invocation/index.ts": new Set(["mode: value.mode as InvocationMode", "mode: mode as InvocationMode", "readonly mode: InvocationMode;", "mode: \"checkout\"", "if (mode === \"installed\" && (trimmed.startsWith(\"./\") || trimmed.startsWith(\".\\\\\"))) return undefined;"]),
-  "tools/framework/core/io/invocation/render.ts": new Set(["mode: modeOf(launch),", "const launchRoot = frame.launch.kind === \"checkout-shim\" || frame.launch.kind === \"deployment-shim\" || frame.launch.kind === \"npm-bin\" ? frame.launch.root : undefined;"]),
+  "tools/framework/core/io/invocation/render.ts": new Set(["mode: modeOf(launch),", "const launchRoot = f.launch.kind === \"checkout-shim\" || f.launch.kind === \"deployment-shim\" || f.launch.kind === \"npm-bin\" ? f.launch.root : undefined;"]),
   "tools/framework/entry/delegate.ts": new Set(["if (rootedLaunch(frame.launch).kind === \"system\") {"]),
   "tools/framework/entry/resolve.ts": new Set(["if (rootedLaunch(frame.launch).kind === \"system\") {", "...(rootedLaunch(frame.launch).kind === \"system\""]),
   "tools/framework/integration/mcp/project.ts": new Set(["return mode === \"installed\" ? INSTALLED_LAUNCHER : MONOREPO_LAUNCHER;"]),

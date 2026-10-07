@@ -215,6 +215,15 @@ const list: FrameProducer[] = [
     frame: frameFromInvocation({ program: "/opt/claw forge/clawforge", mode: "checkout", audience: "terminal" }, { ...FACTS, cwd: ROOT, places: { checkoutRoot: ROOT } }),
     invocation: { program: "/opt/claw forge/clawforge", mode: "checkout", audience: "terminal" },
   },
+  // The S1.4 case-4 producer (O2): the system-wide command pasted inside a deployment the
+  // user cwd-selected — advice naming ANOTHER deployment must run there via --project-root.
+  (() => {
+    const frame = {
+      ...frameOf({ kind: "system" } as Launch, HOST, false, DEMO),
+      app: { state: "selected", name: "demo", by: "cwd" },
+    } as Frame;
+    return { label: "system-wide inside apps/demo (cwd selection)", frame, invocation: handoverOf(frame) };
+  })(),
 ];
 
 // --- the O7 compatibility generations: fixture literals from history -------------------------------

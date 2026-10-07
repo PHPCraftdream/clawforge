@@ -12,6 +12,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge status
   manual verbatim (bare word): cw status
   manual verbatim (spaced program): '/opt/claw forge/clawforge' status
+  system-wide inside apps/demo (cwd selection): clawforge status
   fixture G0: shim before 710cf66 wrote no variables: clawforge status
   fixture G1 (710cf66): the legacy variable alone: ./clawforge status
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge status
@@ -34,6 +35,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge new-app <name>
   manual verbatim (bare word): cw new-app <name>
   manual verbatim (spaced program): '/opt/claw forge/clawforge' new-app <name>
+  system-wide inside apps/demo (cwd selection): clawforge new-app <name>
   fixture G0: shim before 710cf66 wrote no variables: clawforge new-app <name>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app <name>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app <name>
@@ -56,6 +58,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge --app demo status
   manual verbatim (bare word): cw --app demo status
   manual verbatim (spaced program): '/opt/claw forge/clawforge' --app demo status
+  system-wide inside apps/demo (cwd selection): clawforge --app demo status
   fixture G0: shim before 710cf66 wrote no variables: clawforge --app demo status
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app demo status
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app demo status
@@ -78,6 +81,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge logs --tail <n>
   manual verbatim (bare word): cw logs --tail <n>
   manual verbatim (spaced program): '/opt/claw forge/clawforge' logs --tail <n>
+  system-wide inside apps/demo (cwd selection): clawforge logs --tail <n>
   fixture G0: shim before 710cf66 wrote no variables: clawforge logs --tail <n>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge logs --tail <n>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge logs --tail <n>
@@ -100,6 +104,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge up  (after the change)
   manual verbatim (bare word): cw up  (after the change)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' up  (after the change)
+  system-wide inside apps/demo (cwd selection): clawforge up  (after the change)
   fixture G0: shim before 710cf66 wrote no variables: clawforge up  (after the change)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge up  (after the change)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge up  (after the change)
@@ -122,6 +127,7 @@
   defaultLaunch: local package (win32, Git Bash): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   manual verbatim (bare word): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   manual verbatim (spaced program): cd /srv/openclaw && ./clawforge backup  (in the crontab)
+  system-wide inside apps/demo (cwd selection): cd /srv/openclaw && ./clawforge backup  (in the crontab)
   fixture G0: shim before 710cf66 wrote no variables: cd /srv/openclaw && ./clawforge backup  (in the crontab)
   fixture G1 (710cf66): the legacy variable alone: cd /srv/openclaw && ./clawforge backup  (in the crontab)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): cd /srv/openclaw && ./clawforge backup  (in the crontab)
@@ -144,6 +150,7 @@
   defaultLaunch: local package (win32, Git Bash): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   manual verbatim (bare word): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   manual verbatim (spaced program): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
+  system-wide inside apps/demo (cwd selection): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   fixture G0: shim before 710cf66 wrote no variables: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   fixture G1 (710cf66): the legacy variable alone: schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"
@@ -166,6 +173,7 @@
   defaultLaunch: local package (win32, Git Bash): clawforge status | Out-String
   manual verbatim (bare word): clawforge status | Out-String
   manual verbatim (spaced program): clawforge status | Out-String
+  system-wide inside apps/demo (cwd selection): clawforge status | Out-String
   fixture G0: shim before 710cf66 wrote no variables: clawforge status | Out-String
   fixture G1 (710cf66): the legacy variable alone: clawforge status | Out-String
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): clawforge status | Out-String
@@ -188,6 +196,7 @@
   defaultLaunch: local package (win32, Git Bash): reconnect the MCP client (in Claude Code: /mcp)
   manual verbatim (bare word): reconnect the MCP client (in Claude Code: /mcp)
   manual verbatim (spaced program): reconnect the MCP client (in Claude Code: /mcp)
+  system-wide inside apps/demo (cwd selection): reconnect the MCP client (in Claude Code: /mcp)
   fixture G0: shim before 710cf66 wrote no variables: reconnect the MCP client (in Claude Code: /mcp)
   fixture G1 (710cf66): the legacy variable alone: reconnect the MCP client (in Claude Code: /mcp)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): reconnect the MCP client (in Claude Code: /mcp)
@@ -210,6 +219,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge bootstrap
   manual verbatim (bare word): cw bootstrap
   manual verbatim (spaced program): '/opt/claw forge/clawforge' bootstrap
+  system-wide inside apps/demo (cwd selection): clawforge bootstrap
   fixture G0: shim before 710cf66 wrote no variables: clawforge bootstrap
   fixture G1 (710cf66): the legacy variable alone: ./clawforge bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge bootstrap
@@ -232,6 +242,7 @@
   defaultLaunch: local package (win32, Git Bash): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   manual verbatim (bare word): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   manual verbatim (spaced program): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
+  system-wide inside apps/demo (cwd selection): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   fixture G0: shim before 710cf66 wrote no variables: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   fixture G1 (710cf66): the legacy variable alone: check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
@@ -254,6 +265,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge bootstrap --check
   manual verbatim (bare word): cw bootstrap --check
   manual verbatim (spaced program): '/opt/claw forge/clawforge' bootstrap --check
+  system-wide inside apps/demo (cwd selection): clawforge bootstrap --check
   fixture G0: shim before 710cf66 wrote no variables: clawforge bootstrap --check
   fixture G1 (710cf66): the legacy variable alone: ./clawforge bootstrap --check
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge bootstrap --check
@@ -276,6 +288,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge up
   manual verbatim (bare word): cw up
   manual verbatim (spaced program): '/opt/claw forge/clawforge' up
+  system-wide inside apps/demo (cwd selection): clawforge up
   fixture G0: shim before 710cf66 wrote no variables: clawforge up
   fixture G1 (710cf66): the legacy variable alone: ./clawforge up
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge up
@@ -298,6 +311,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge logs --tail 100
   manual verbatim (bare word): cw logs --tail 100
   manual verbatim (spaced program): '/opt/claw forge/clawforge' logs --tail 100
+  system-wide inside apps/demo (cwd selection): clawforge logs --tail 100
   fixture G0: shim before 710cf66 wrote no variables: clawforge logs --tail 100
   fixture G1 (710cf66): the legacy variable alone: ./clawforge logs --tail 100
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge logs --tail 100
@@ -320,6 +334,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge logs --tail 100
   manual verbatim (bare word): cw logs --tail 100
   manual verbatim (spaced program): '/opt/claw forge/clawforge' logs --tail 100
+  system-wide inside apps/demo (cwd selection): clawforge logs --tail 100
   fixture G0: shim before 710cf66 wrote no variables: clawforge logs --tail 100
   fixture G1 (710cf66): the legacy variable alone: ./clawforge logs --tail 100
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge logs --tail 100
@@ -342,6 +357,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -364,6 +380,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge secrets --apply
   manual verbatim (bare word): cw secrets --apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' secrets --apply
+  system-wide inside apps/demo (cwd selection): clawforge secrets --apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge secrets --apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge secrets --apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge secrets --apply
@@ -386,6 +403,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge configure-provider
   manual verbatim (bare word): cw configure-provider
   manual verbatim (spaced program): '/opt/claw forge/clawforge' configure-provider
+  system-wide inside apps/demo (cwd selection): clawforge configure-provider
   fixture G0: shim before 710cf66 wrote no variables: clawforge configure-provider
   fixture G1 (710cf66): the legacy variable alone: ./clawforge configure-provider
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge configure-provider
@@ -408,6 +426,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge restart
   manual verbatim (bare word): cw restart
   manual verbatim (spaced program): '/opt/claw forge/clawforge' restart
+  system-wide inside apps/demo (cwd selection): clawforge restart
   fixture G0: shim before 710cf66 wrote no variables: clawforge restart
   fixture G1 (710cf66): the legacy variable alone: ./clawforge restart
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge restart
@@ -430,6 +449,7 @@
   defaultLaunch: local package (win32, Git Bash): reconnect the MCP client (in Claude Code: /mcp)
   manual verbatim (bare word): reconnect the MCP client (in Claude Code: /mcp)
   manual verbatim (spaced program): reconnect the MCP client (in Claude Code: /mcp)
+  system-wide inside apps/demo (cwd selection): reconnect the MCP client (in Claude Code: /mcp)
   fixture G0: shim before 710cf66 wrote no variables: reconnect the MCP client (in Claude Code: /mcp)
   fixture G1 (710cf66): the legacy variable alone: reconnect the MCP client (in Claude Code: /mcp)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): reconnect the MCP client (in Claude Code: /mcp)
@@ -452,6 +472,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -474,6 +495,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -496,6 +518,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -518,6 +541,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -540,6 +564,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge inspect
   manual verbatim (bare word): cw inspect
   manual verbatim (spaced program): '/opt/claw forge/clawforge' inspect
+  system-wide inside apps/demo (cwd selection): clawforge inspect
   fixture G0: shim before 710cf66 wrote no variables: clawforge inspect
   fixture G1 (710cf66): the legacy variable alone: ./clawforge inspect
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge inspect
@@ -562,6 +587,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli channels status --json
   manual verbatim (bare word): cw cli channels status --json
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli channels status --json
+  system-wide inside apps/demo (cwd selection): clawforge cli channels status --json
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli channels status --json
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli channels status --json
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli channels status --json
@@ -584,6 +610,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge lock
   manual verbatim (bare word): cw lock
   manual verbatim (spaced program): '/opt/claw forge/clawforge' lock
+  system-wide inside apps/demo (cwd selection): clawforge lock
   fixture G0: shim before 710cf66 wrote no variables: clawforge lock
   fixture G1 (710cf66): the legacy variable alone: ./clawforge lock
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge lock
@@ -606,6 +633,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -628,6 +656,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -650,6 +679,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -672,6 +702,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge recover-env
   manual verbatim (bare word): cw recover-env
   manual verbatim (spaced program): '/opt/claw forge/clawforge' recover-env
+  system-wide inside apps/demo (cwd selection): clawforge recover-env
   fixture G0: shim before 710cf66 wrote no variables: clawforge recover-env
   fixture G1 (710cf66): the legacy variable alone: ./clawforge recover-env
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge recover-env
@@ -694,6 +725,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge inspect  (then edit .env: fix the line named)
   manual verbatim (bare word): cw inspect  (then edit .env: fix the line named)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' inspect  (then edit .env: fix the line named)
+  system-wide inside apps/demo (cwd selection): clawforge inspect  (then edit .env: fix the line named)
   fixture G0: shim before 710cf66 wrote no variables: clawforge inspect  (then edit .env: fix the line named)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge inspect  (then edit .env: fix the line named)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge inspect  (then edit .env: fix the line named)
@@ -716,6 +748,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply-config --dump
   manual verbatim (bare word): cw apply-config --dump
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply-config --dump
+  system-wide inside apps/demo (cwd selection): clawforge apply-config --dump
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply-config --dump
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply-config --dump
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply-config --dump
@@ -738,6 +771,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge secrets --dump
   manual verbatim (bare word): cw secrets --dump
   manual verbatim (spaced program): '/opt/claw forge/clawforge' secrets --dump
+  system-wide inside apps/demo (cwd selection): clawforge secrets --dump
   fixture G0: shim before 710cf66 wrote no variables: clawforge secrets --dump
   fixture G1 (710cf66): the legacy variable alone: ./clawforge secrets --dump
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge secrets --dump
@@ -760,6 +794,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge upgrade
   manual verbatim (bare word): cw upgrade
   manual verbatim (spaced program): '/opt/claw forge/clawforge' upgrade
+  system-wide inside apps/demo (cwd selection): clawforge upgrade
   fixture G0: shim before 710cf66 wrote no variables: clawforge upgrade
   fixture G1 (710cf66): the legacy variable alone: ./clawforge upgrade
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge upgrade
@@ -782,6 +817,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge upgrade
   manual verbatim (bare word): cw upgrade
   manual verbatim (spaced program): '/opt/claw forge/clawforge' upgrade
+  system-wide inside apps/demo (cwd selection): clawforge upgrade
   fixture G0: shim before 710cf66 wrote no variables: clawforge upgrade
   fixture G1 (710cf66): the legacy variable alone: ./clawforge upgrade
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge upgrade
@@ -804,6 +840,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   manual verbatim (bare word): cw set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
+  system-wide inside apps/demo (cwd selection): clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
@@ -826,6 +863,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate  (after fixing the recipe's recipe.json)
   manual verbatim (bare word): cw set validate  (after fixing the recipe's recipe.json)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate  (after fixing the recipe's recipe.json)
+  system-wide inside apps/demo (cwd selection): clawforge set validate  (after fixing the recipe's recipe.json)
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate  (after fixing the recipe's recipe.json)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate  (after fixing the recipe's recipe.json)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate  (after fixing the recipe's recipe.json)
@@ -848,6 +886,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate
   manual verbatim (bare word): cw set validate
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate
+  system-wide inside apps/demo (cwd selection): clawforge set validate
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate
@@ -870,6 +909,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate
   manual verbatim (bare word): cw set validate
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate
+  system-wide inside apps/demo (cwd selection): clawforge set validate
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate
@@ -892,6 +932,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate
   manual verbatim (bare word): cw set validate
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate
+  system-wide inside apps/demo (cwd selection): clawforge set validate
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate
@@ -914,6 +955,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate
   manual verbatim (bare word): cw set validate
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate
+  system-wide inside apps/demo (cwd selection): clawforge set validate
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate
@@ -936,6 +978,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge inspect
   manual verbatim (bare word): cw inspect
   manual verbatim (spaced program): '/opt/claw forge/clawforge' inspect
+  system-wide inside apps/demo (cwd selection): clawforge inspect
   fixture G0: shim before 710cf66 wrote no variables: clawforge inspect
   fixture G1 (710cf66): the legacy variable alone: ./clawforge inspect
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge inspect
@@ -958,6 +1001,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge bootstrap
   manual verbatim (bare word): cw bootstrap
   manual verbatim (spaced program): '/opt/claw forge/clawforge' bootstrap
+  system-wide inside apps/demo (cwd selection): clawforge bootstrap
   fixture G0: shim before 710cf66 wrote no variables: clawforge bootstrap
   fixture G1 (710cf66): the legacy variable alone: ./clawforge bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge bootstrap
@@ -980,6 +1024,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate
   manual verbatim (bare word): cw set validate
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate
+  system-wide inside apps/demo (cwd selection): clawforge set validate
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate
@@ -1002,6 +1047,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -1024,6 +1070,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli security audit --json
   manual verbatim (bare word): cw cli security audit --json
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli security audit --json
+  system-wide inside apps/demo (cwd selection): clawforge cli security audit --json
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli security audit --json
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli security audit --json
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli security audit --json
@@ -1046,6 +1093,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli security audit --json
   manual verbatim (bare word): cw cli security audit --json
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli security audit --json
+  system-wide inside apps/demo (cwd selection): clawforge cli security audit --json
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli security audit --json
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli security audit --json
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli security audit --json
@@ -1068,6 +1116,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   manual verbatim (bare word): cw expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
+  system-wide inside apps/demo (cwd selection): clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   fixture G0: shim before 710cf66 wrote no variables: clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
@@ -1090,6 +1139,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge expose status
   manual verbatim (bare word): cw expose status
   manual verbatim (spaced program): '/opt/claw forge/clawforge' expose status
+  system-wide inside apps/demo (cwd selection): clawforge expose status
   fixture G0: shim before 710cf66 wrote no variables: clawforge expose status
   fixture G1 (710cf66): the legacy variable alone: ./clawforge expose status
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge expose status
@@ -1112,6 +1162,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   manual verbatim (bare word): cw expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
+  system-wide inside apps/demo (cwd selection): clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   fixture G0: shim before 710cf66 wrote no variables: clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
@@ -1134,6 +1185,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   manual verbatim (bare word): cw secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
+  system-wide inside apps/demo (cwd selection): clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   fixture G0: shim before 710cf66 wrote no variables: clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
@@ -1156,6 +1208,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge doctor  (check local filesystem access, then retry)
   manual verbatim (bare word): cw doctor  (check local filesystem access, then retry)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' doctor  (check local filesystem access, then retry)
+  system-wide inside apps/demo (cwd selection): clawforge doctor  (check local filesystem access, then retry)
   fixture G0: shim before 710cf66 wrote no variables: clawforge doctor  (check local filesystem access, then retry)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge doctor  (check local filesystem access, then retry)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge doctor  (check local filesystem access, then retry)
@@ -1178,6 +1231,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge backup
   manual verbatim (bare word): cw backup
   manual verbatim (spaced program): '/opt/claw forge/clawforge' backup
+  system-wide inside apps/demo (cwd selection): clawforge backup
   fixture G0: shim before 710cf66 wrote no variables: clawforge backup
   fixture G1 (710cf66): the legacy variable alone: ./clawforge backup
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge backup
@@ -1200,6 +1254,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge backup list
   manual verbatim (bare word): cw backup list
   manual verbatim (spaced program): '/opt/claw forge/clawforge' backup list
+  system-wide inside apps/demo (cwd selection): clawforge backup list
   fixture G0: shim before 710cf66 wrote no variables: clawforge backup list
   fixture G1 (710cf66): the legacy variable alone: ./clawforge backup list
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge backup list
@@ -1222,6 +1277,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge backup install --apply
   manual verbatim (bare word): cw backup install --apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' backup install --apply
+  system-wide inside apps/demo (cwd selection): clawforge backup install --apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge backup install --apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge backup install --apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge backup install --apply
@@ -1244,6 +1300,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   manual verbatim (bare word): cw backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
+  system-wide inside apps/demo (cwd selection): clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   fixture G0: shim before 710cf66 wrote no variables: clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)
@@ -1266,6 +1323,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge bootstrap
   manual verbatim (bare word): cw bootstrap
   manual verbatim (spaced program): '/opt/claw forge/clawforge' bootstrap
+  system-wide inside apps/demo (cwd selection): clawforge bootstrap
   fixture G0: shim before 710cf66 wrote no variables: clawforge bootstrap
   fixture G1 (710cf66): the legacy variable alone: ./clawforge bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge bootstrap
@@ -1288,6 +1346,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   manual verbatim (bare word): cw upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
+  system-wide inside apps/demo (cwd selection): clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   fixture G0: shim before 710cf66 wrote no variables: clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
@@ -1310,6 +1369,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   manual verbatim (bare word): cw upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   manual verbatim (spaced program): '/opt/claw forge/clawforge' upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
+  system-wide inside apps/demo (cwd selection): clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   fixture G0: shim before 710cf66 wrote no variables: clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   fixture G1 (710cf66): the legacy variable alone: ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
@@ -1332,6 +1392,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate  (after adding the missing file)
   manual verbatim (bare word): cw set validate  (after adding the missing file)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate  (after adding the missing file)
+  system-wide inside apps/demo (cwd selection): clawforge set validate  (after adding the missing file)
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate  (after adding the missing file)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate  (after adding the missing file)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate  (after adding the missing file)
@@ -1354,6 +1415,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set build  (after rebuilding)
   manual verbatim (bare word): cw set build  (after rebuilding)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set build  (after rebuilding)
+  system-wide inside apps/demo (cwd selection): clawforge set build  (after rebuilding)
   fixture G0: shim before 710cf66 wrote no variables: clawforge set build  (after rebuilding)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set build  (after rebuilding)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set build  (after rebuilding)
@@ -1376,6 +1438,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   manual verbatim (bare word): cw set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
+  system-wide inside apps/demo (cwd selection): clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   fixture G0: shim before 710cf66 wrote no variables: clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set build  (after adding recipe.json or server.ts to recipes/<recipe>, or removing the directory)
@@ -1398,6 +1461,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   manual verbatim (bare word): cw set validate  (after fixing recipes/<recipe>/recipe.json)
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set validate  (after fixing recipes/<recipe>/recipe.json)
+  system-wide inside apps/demo (cwd selection): clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   fixture G0: shim before 710cf66 wrote no variables: clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set validate  (after fixing recipes/<recipe>/recipe.json)
@@ -1420,6 +1484,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge provision-agent <recipe>
   manual verbatim (bare word): cw provision-agent <recipe>
   manual verbatim (spaced program): '/opt/claw forge/clawforge' provision-agent <recipe>
+  system-wide inside apps/demo (cwd selection): clawforge provision-agent <recipe>
   fixture G0: shim before 710cf66 wrote no variables: clawforge provision-agent <recipe>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge provision-agent <recipe>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge provision-agent <recipe>
@@ -1442,6 +1507,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge set forget --kind cron-job --name <name>
   manual verbatim (bare word): cw set forget --kind cron-job --name <name>
   manual verbatim (spaced program): '/opt/claw forge/clawforge' set forget --kind cron-job --name <name>
+  system-wide inside apps/demo (cwd selection): clawforge set forget --kind cron-job --name <name>
   fixture G0: shim before 710cf66 wrote no variables: clawforge set forget --kind cron-job --name <name>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge set forget --kind cron-job --name <name>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge set forget --kind cron-job --name <name>
@@ -1464,6 +1530,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli plugins install <package> --force
   manual verbatim (bare word): cw cli plugins install <package> --force
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli plugins install <package> --force
+  system-wide inside apps/demo (cwd selection): clawforge cli plugins install <package> --force
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli plugins install <package> --force
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli plugins install <package> --force
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli plugins install <package> --force
@@ -1486,6 +1553,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli skills install <name> --force
   manual verbatim (bare word): cw cli skills install <name> --force
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli skills install <name> --force
+  system-wide inside apps/demo (cwd selection): clawforge cli skills install <name> --force
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli skills install <name> --force
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli skills install <name> --force
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli skills install <name> --force
@@ -1508,6 +1576,7 @@
   defaultLaunch: local package (win32, Git Bash): Set gateway.auth (token recommended).
   manual verbatim (bare word): Set gateway.auth (token recommended).
   manual verbatim (spaced program): Set gateway.auth (token recommended).
+  system-wide inside apps/demo (cwd selection): Set gateway.auth (token recommended).
   fixture G0: shim before 710cf66 wrote no variables: Set gateway.auth (token recommended).
   fixture G1 (710cf66): the legacy variable alone: Set gateway.auth (token recommended).
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): Set gateway.auth (token recommended).
@@ -1530,6 +1599,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli security audit --json
   manual verbatim (bare word): cw cli security audit --json
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli security audit --json
+  system-wide inside apps/demo (cwd selection): clawforge cli security audit --json
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli security audit --json
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli security audit --json
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli security audit --json
@@ -1552,6 +1622,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge new-app <name>
   manual verbatim (bare word): cw new-app <name>
   manual verbatim (spaced program): '/opt/claw forge/clawforge' new-app <name>
+  system-wide inside apps/demo (cwd selection): clawforge new-app <name>
   fixture G0: shim before 710cf66 wrote no variables: clawforge new-app <name>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app <name>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app <name>
@@ -1574,6 +1645,7 @@
   defaultLaunch: local package (win32, Git Bash): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   manual verbatim (bare word): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   manual verbatim (spaced program): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
+  system-wide inside apps/demo (cwd selection): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   fixture G0: shim before 710cf66 wrote no variables: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   fixture G1 (710cf66): the legacy variable alone: available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
@@ -1596,6 +1668,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge new-app <name>
   manual verbatim (bare word): cw new-app <name>
   manual verbatim (spaced program): '/opt/claw forge/clawforge' new-app <name>
+  system-wide inside apps/demo (cwd selection): clawforge new-app <name>
   fixture G0: shim before 710cf66 wrote no variables: clawforge new-app <name>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app <name>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app <name>
@@ -1618,6 +1691,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge new-app demo
   manual verbatim (bare word): cw new-app demo
   manual verbatim (spaced program): '/opt/claw forge/clawforge' new-app demo
+  system-wide inside apps/demo (cwd selection): clawforge new-app demo
   fixture G0: shim before 710cf66 wrote no variables: clawforge new-app demo
   fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app demo
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app demo
@@ -1640,6 +1714,7 @@
   defaultLaunch: local package (win32, Git Bash): otherwise remove it or pick another name
   manual verbatim (bare word): otherwise remove it or pick another name
   manual verbatim (spaced program): otherwise remove it or pick another name
+  system-wide inside apps/demo (cwd selection): otherwise remove it or pick another name
   fixture G0: shim before 710cf66 wrote no variables: otherwise remove it or pick another name
   fixture G1 (710cf66): the legacy variable alone: otherwise remove it or pick another name
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): otherwise remove it or pick another name
@@ -1658,54 +1733,11 @@
   defaultLaunch: global install: cd '/clawforge-checkout'
   defaultLaunch: checkout copy: cd '/clawforge-checkout'
   defaultLaunch: local package (posix): cd '/clawforge-checkout'
-  defaultLaunch: local package (win32): cd '/clawforge-checkout'
+  defaultLaunch: local package (win32): pushd "/clawforge-checkout"
   defaultLaunch: local package (win32, Git Bash): cd '/clawforge-checkout'
   manual verbatim (bare word): cd '/clawforge-checkout'
   manual verbatim (spaced program): cd '/clawforge-checkout'
-  fixture G0: shim before 710cf66 wrote no variables: cd '/clawforge-checkout'
-  fixture G1 (710cf66): the legacy variable alone: cd '/clawforge-checkout'
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): cd '/clawforge-checkout'
-  fixture G3 (a841c16): v1 checkout + legacy: cd '/clawforge-checkout'
-  fixture L1 (f620c8a): the legacy launcher variable: cd '/clawforge-checkout'
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: cd '/clawforge-checkout'
-  tool form: —
-
-=== refusal: checkout gate command from a subfolder (2) ===
-  checkout gate shim (cwd: checkout root): cd /d "/clawforge-checkout"
-  checkout gate shim (cwd: docs): cd /d "/clawforge-checkout"
-  checkout gate shim (cwd: apps/demo): cd /d "/clawforge-checkout"
-  checkout gate, handed over by the init shim: cd /d "/clawforge-checkout"
-  checkout gate, handed over by the monorepo MCP launcher: cd /d "/clawforge-checkout"
-  MCP launcher (installed): no variables — the entry default: cd /d "/clawforge-checkout"
-  defaultLaunch: global install: cd /d "/clawforge-checkout"
-  defaultLaunch: checkout copy: cd /d "/clawforge-checkout"
-  defaultLaunch: local package (posix): cd /d "/clawforge-checkout"
-  defaultLaunch: local package (win32): cd /d "/clawforge-checkout"
-  defaultLaunch: local package (win32, Git Bash): cd /d "/clawforge-checkout"
-  manual verbatim (bare word): cd /d "/clawforge-checkout"
-  manual verbatim (spaced program): cd /d "/clawforge-checkout"
-  fixture G0: shim before 710cf66 wrote no variables: cd /d "/clawforge-checkout"
-  fixture G1 (710cf66): the legacy variable alone: cd /d "/clawforge-checkout"
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): cd /d "/clawforge-checkout"
-  fixture G3 (a841c16): v1 checkout + legacy: cd /d "/clawforge-checkout"
-  fixture L1 (f620c8a): the legacy launcher variable: cd /d "/clawforge-checkout"
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: cd /d "/clawforge-checkout"
-  tool form: —
-
-=== refusal: checkout gate command from a subfolder (3) ===
-  checkout gate shim (cwd: checkout root): cd '/clawforge-checkout'
-  checkout gate shim (cwd: docs): cd '/clawforge-checkout'
-  checkout gate shim (cwd: apps/demo): cd '/clawforge-checkout'
-  checkout gate, handed over by the init shim: cd '/clawforge-checkout'
-  checkout gate, handed over by the monorepo MCP launcher: cd '/clawforge-checkout'
-  MCP launcher (installed): no variables — the entry default: cd '/clawforge-checkout'
-  defaultLaunch: global install: cd '/clawforge-checkout'
-  defaultLaunch: checkout copy: cd '/clawforge-checkout'
-  defaultLaunch: local package (posix): cd '/clawforge-checkout'
-  defaultLaunch: local package (win32): cd '/clawforge-checkout'
-  defaultLaunch: local package (win32, Git Bash): cd '/clawforge-checkout'
-  manual verbatim (bare word): cd '/clawforge-checkout'
-  manual verbatim (spaced program): cd '/clawforge-checkout'
+  system-wide inside apps/demo (cwd selection): cd '/clawforge-checkout'
   fixture G0: shim before 710cf66 wrote no variables: cd '/clawforge-checkout'
   fixture G1 (710cf66): the legacy variable alone: cd '/clawforge-checkout'
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): cd '/clawforge-checkout'
@@ -1728,6 +1760,7 @@
   defaultLaunch: local package (win32, Git Bash): ./clawforge new-app <name>
   manual verbatim (bare word): ./clawforge new-app <name>
   manual verbatim (spaced program): ./clawforge new-app <name>
+  system-wide inside apps/demo (cwd selection): clawforge new-app <name>
   fixture G0: shim before 710cf66 wrote no variables: clawforge new-app <name>
   fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app <name>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app <name>
@@ -1750,6 +1783,7 @@
   defaultLaunch: local package (win32, Git Bash): ./clawforge new-app <name>  (in bash)
   manual verbatim (bare word): ./clawforge new-app <name>  (in bash)
   manual verbatim (spaced program): ./clawforge new-app <name>  (in bash)
+  system-wide inside apps/demo (cwd selection): ./clawforge new-app <name>  (in bash)
   fixture G0: shim before 710cf66 wrote no variables: ./clawforge new-app <name>  (in bash)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app <name>  (in bash)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app <name>  (in bash)
@@ -1772,6 +1806,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge init
   manual verbatim (bare word): cw init
   manual verbatim (spaced program): '/opt/claw forge/clawforge' init
+  system-wide inside apps/demo (cwd selection): clawforge init
   fixture G0: shim before 710cf66 wrote no variables: clawforge init
   fixture G1 (710cf66): the legacy variable alone: ./clawforge init
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge init
@@ -1794,6 +1829,7 @@
   defaultLaunch: local package (win32, Git Bash): ./clawforge  (in bash)
   manual verbatim (bare word): ./clawforge  (in bash)
   manual verbatim (spaced program): ./clawforge  (in bash)
+  system-wide inside apps/demo (cwd selection): ./clawforge  (in bash)
   fixture G0: shim before 710cf66 wrote no variables: ./clawforge  (in bash)
   fixture G1 (710cf66): the legacy variable alone: ./clawforge  (in bash)
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge  (in bash)
@@ -1816,6 +1852,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge help
   manual verbatim (bare word): cw help
   manual verbatim (spaced program): '/opt/claw forge/clawforge' help
+  system-wide inside apps/demo (cwd selection): clawforge help
   fixture G0: shim before 710cf66 wrote no variables: clawforge help
   fixture G1 (710cf66): the legacy variable alone: ./clawforge help
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge help
@@ -1838,6 +1875,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge status --help
   manual verbatim (bare word): cw status --help
   manual verbatim (spaced program): '/opt/claw forge/clawforge' status --help
+  system-wide inside apps/demo (cwd selection): clawforge status --help
   fixture G0: shim before 710cf66 wrote no variables: clawforge status --help
   fixture G1 (710cf66): the legacy variable alone: ./clawforge status --help
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge status --help
@@ -1860,6 +1898,7 @@
   defaultLaunch: local package (win32, Git Bash): cd '<remotePath>' && ./clawforge --app <name> bootstrap
   manual verbatim (bare word): cd '<remotePath>' && ./clawforge --app <name> bootstrap
   manual verbatim (spaced program): cd '<remotePath>' && ./clawforge --app <name> bootstrap
+  system-wide inside apps/demo (cwd selection): cd '<remotePath>' && ./clawforge --app <name> bootstrap
   fixture G0: shim before 710cf66 wrote no variables: cd '<remotePath>' && ./clawforge --app <name> bootstrap
   fixture G1 (710cf66): the legacy variable alone: cd '<remotePath>' && ./clawforge --app <name> bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): cd '<remotePath>' && ./clawforge --app <name> bootstrap
@@ -1882,6 +1921,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge --app <name> bootstrap
   manual verbatim (bare word): cw --app <name> bootstrap
   manual verbatim (spaced program): '/opt/claw forge/clawforge' --app <name> bootstrap
+  system-wide inside apps/demo (cwd selection): clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
   fixture G0: shim before 710cf66 wrote no variables: clawforge --app <name> bootstrap
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> bootstrap
@@ -1904,6 +1944,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge --app <name> secrets --apply
   manual verbatim (bare word): cw --app <name> secrets --apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' --app <name> secrets --apply
+  system-wide inside apps/demo (cwd selection): clawforge --project-root '/clawforge-checkout/apps/<name>' secrets --apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge --app <name> secrets --apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> secrets --apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> secrets --apply
@@ -1926,6 +1967,7 @@
   defaultLaunch: local package (win32, Git Bash): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
   manual verbatim (bare word): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
   manual verbatim (spaced program): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
+  system-wide inside apps/demo (cwd selection): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
   fixture G0: shim before 710cf66 wrote no variables: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
   fixture G1 (710cf66): the legacy variable alone: cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>
@@ -1948,6 +1990,7 @@
   defaultLaunch: local package (win32, Git Bash): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   manual verbatim (bare word): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   manual verbatim (spaced program): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
+  system-wide inside apps/demo (cwd selection): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   fixture G0: shim before 710cf66 wrote no variables: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   fixture G1 (710cf66): the legacy variable alone: schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): schtasks /create /tn "clawforge-<identity>-backup" /sc HOURLY /mo 1 /tr "./clawforge --app demo backup" /f
@@ -1970,6 +2013,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge up
   manual verbatim (bare word): cw up
   manual verbatim (spaced program): '/opt/claw forge/clawforge' up
+  system-wide inside apps/demo (cwd selection): clawforge up
   fixture G0: shim before 710cf66 wrote no variables: clawforge up
   fixture G1 (710cf66): the legacy variable alone: ./clawforge up
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge up
@@ -1992,6 +2036,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge remove-app
   manual verbatim (bare word): cw remove-app
   manual verbatim (spaced program): '/opt/claw forge/clawforge' remove-app
+  system-wide inside apps/demo (cwd selection): clawforge remove-app
   fixture G0: shim before 710cf66 wrote no variables: clawforge remove-app
   fixture G1 (710cf66): the legacy variable alone: ./clawforge remove-app
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge remove-app
@@ -2014,6 +2059,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge help pull
   manual verbatim (bare word): cw help pull
   manual verbatim (spaced program): '/opt/claw forge/clawforge' help pull
+  system-wide inside apps/demo (cwd selection): clawforge help pull
   fixture G0: shim before 710cf66 wrote no variables: clawforge help pull
   fixture G1 (710cf66): the legacy variable alone: ./clawforge help pull
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge help pull
@@ -2036,6 +2082,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge restore
   manual verbatim (bare word): cw restore
   manual verbatim (spaced program): '/opt/claw forge/clawforge' restore
+  system-wide inside apps/demo (cwd selection): clawforge restore
   fixture G0: shim before 710cf66 wrote no variables: clawforge restore
   fixture G1 (710cf66): the legacy variable alone: ./clawforge restore
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge restore
@@ -2058,6 +2105,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge backup
   manual verbatim (bare word): cw backup
   manual verbatim (spaced program): '/opt/claw forge/clawforge' backup
+  system-wide inside apps/demo (cwd selection): clawforge backup
   fixture G0: shim before 710cf66 wrote no variables: clawforge backup
   fixture G1 (710cf66): the legacy variable alone: ./clawforge backup
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge backup
@@ -2080,6 +2128,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge pull --share
   manual verbatim (bare word): cw pull --share
   manual verbatim (spaced program): '/opt/claw forge/clawforge' pull --share
+  system-wide inside apps/demo (cwd selection): clawforge pull --share
   fixture G0: shim before 710cf66 wrote no variables: clawforge pull --share
   fixture G1 (710cf66): the legacy variable alone: ./clawforge pull --share
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge pull --share
@@ -2102,6 +2151,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge lock
   manual verbatim (bare word): cw lock
   manual verbatim (spaced program): '/opt/claw forge/clawforge' lock
+  system-wide inside apps/demo (cwd selection): clawforge lock
   fixture G0: shim before 710cf66 wrote no variables: clawforge lock
   fixture G1 (710cf66): the legacy variable alone: ./clawforge lock
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge lock
@@ -2124,6 +2174,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply-config
   manual verbatim (bare word): cw apply-config
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply-config
+  system-wide inside apps/demo (cwd selection): clawforge apply-config
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply-config
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply-config
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply-config
@@ -2146,6 +2197,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -2168,6 +2220,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli-start
   manual verbatim (bare word): cw cli-start
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli-start
+  system-wide inside apps/demo (cwd selection): clawforge cli-start
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli-start
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli-start
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli-start
@@ -2190,6 +2243,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge inspect
   manual verbatim (bare word): cw inspect
   manual verbatim (spaced program): '/opt/claw forge/clawforge' inspect
+  system-wide inside apps/demo (cwd selection): clawforge inspect
   fixture G0: shim before 710cf66 wrote no variables: clawforge inspect
   fixture G1 (710cf66): the legacy variable alone: ./clawforge inspect
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge inspect
@@ -2212,6 +2266,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge inspect
   manual verbatim (bare word): cw inspect
   manual verbatim (spaced program): '/opt/claw forge/clawforge' inspect
+  system-wide inside apps/demo (cwd selection): clawforge inspect
   fixture G0: shim before 710cf66 wrote no variables: clawforge inspect
   fixture G1 (710cf66): the legacy variable alone: ./clawforge inspect
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge inspect
@@ -2234,6 +2289,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge recover-env
   manual verbatim (bare word): cw recover-env
   manual verbatim (spaced program): '/opt/claw forge/clawforge' recover-env
+  system-wide inside apps/demo (cwd selection): clawforge recover-env
   fixture G0: shim before 710cf66 wrote no variables: clawforge recover-env
   fixture G1 (710cf66): the legacy variable alone: ./clawforge recover-env
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge recover-env
@@ -2256,6 +2312,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply-config --dump
   manual verbatim (bare word): cw apply-config --dump
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply-config --dump
+  system-wide inside apps/demo (cwd selection): clawforge apply-config --dump
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply-config --dump
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply-config --dump
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply-config --dump
@@ -2278,6 +2335,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge secrets --dump
   manual verbatim (bare word): cw secrets --dump
   manual verbatim (spaced program): '/opt/claw forge/clawforge' secrets --dump
+  system-wide inside apps/demo (cwd selection): clawforge secrets --dump
   fixture G0: shim before 710cf66 wrote no variables: clawforge secrets --dump
   fixture G1 (710cf66): the legacy variable alone: ./clawforge secrets --dump
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge secrets --dump
@@ -2300,6 +2358,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -2322,6 +2381,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -2344,6 +2404,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge operations
   manual verbatim (bare word): cw operations
   manual verbatim (spaced program): '/opt/claw forge/clawforge' operations
+  system-wide inside apps/demo (cwd selection): clawforge operations
   fixture G0: shim before 710cf66 wrote no variables: clawforge operations
   fixture G1 (710cf66): the legacy variable alone: ./clawforge operations
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge operations
@@ -2366,6 +2427,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge secrets --dump
   manual verbatim (bare word): cw secrets --dump
   manual verbatim (spaced program): '/opt/claw forge/clawforge' secrets --dump
+  system-wide inside apps/demo (cwd selection): clawforge secrets --dump
   fixture G0: shim before 710cf66 wrote no variables: clawforge secrets --dump
   fixture G1 (710cf66): the legacy variable alone: ./clawforge secrets --dump
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge secrets --dump
@@ -2388,6 +2450,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply-config --dry-run
   manual verbatim (bare word): cw apply-config --dry-run
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply-config --dry-run
+  system-wide inside apps/demo (cwd selection): clawforge apply-config --dry-run
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply-config --dry-run
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply-config --dry-run
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply-config --dry-run
@@ -2410,6 +2473,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge smoke
   manual verbatim (bare word): cw smoke
   manual verbatim (spaced program): '/opt/claw forge/clawforge' smoke
+  system-wide inside apps/demo (cwd selection): clawforge smoke
   fixture G0: shim before 710cf66 wrote no variables: clawforge smoke
   fixture G1 (710cf66): the legacy variable alone: ./clawforge smoke
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge smoke
@@ -2432,6 +2496,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge doctor
   manual verbatim (bare word): cw doctor
   manual verbatim (spaced program): '/opt/claw forge/clawforge' doctor
+  system-wide inside apps/demo (cwd selection): clawforge doctor
   fixture G0: shim before 710cf66 wrote no variables: clawforge doctor
   fixture G1 (710cf66): the legacy variable alone: ./clawforge doctor
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge doctor
@@ -2454,6 +2519,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply
   manual verbatim (bare word): cw apply
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply
+  system-wide inside apps/demo (cwd selection): clawforge apply
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply
@@ -2476,6 +2542,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge push
   manual verbatim (bare word): cw push
   manual verbatim (spaced program): '/opt/claw forge/clawforge' push
+  system-wide inside apps/demo (cwd selection): clawforge push
   fixture G0: shim before 710cf66 wrote no variables: clawforge push
   fixture G1 (710cf66): the legacy variable alone: ./clawforge push
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge push
@@ -2498,6 +2565,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge apply --set
   manual verbatim (bare word): cw apply --set
   manual verbatim (spaced program): '/opt/claw forge/clawforge' apply --set
+  system-wide inside apps/demo (cwd selection): clawforge apply --set
   fixture G0: shim before 710cf66 wrote no variables: clawforge apply --set
   fixture G1 (710cf66): the legacy variable alone: ./clawforge apply --set
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge apply --set
@@ -2520,6 +2588,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge rollback
   manual verbatim (bare word): cw rollback
   manual verbatim (spaced program): '/opt/claw forge/clawforge' rollback
+  system-wide inside apps/demo (cwd selection): clawforge rollback
   fixture G0: shim before 710cf66 wrote no variables: clawforge rollback
   fixture G1 (710cf66): the legacy variable alone: ./clawforge rollback
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge rollback
@@ -2542,6 +2611,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge status
   manual verbatim (bare word): cw status
   manual verbatim (spaced program): '/opt/claw forge/clawforge' status
+  system-wide inside apps/demo (cwd selection): clawforge status
   fixture G0: shim before 710cf66 wrote no variables: clawforge status
   fixture G1 (710cf66): the legacy variable alone: ./clawforge status
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge status
@@ -2564,6 +2634,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge up
   manual verbatim (bare word): cw up
   manual verbatim (spaced program): '/opt/claw forge/clawforge' up
+  system-wide inside apps/demo (cwd selection): clawforge up
   fixture G0: shim before 710cf66 wrote no variables: clawforge up
   fixture G1 (710cf66): the legacy variable alone: ./clawforge up
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge up
@@ -2586,6 +2657,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge mcp-creds
   manual verbatim (bare word): cw mcp-creds
   manual verbatim (spaced program): '/opt/claw forge/clawforge' mcp-creds
+  system-wide inside apps/demo (cwd selection): clawforge mcp-creds
   fixture G0: shim before 710cf66 wrote no variables: clawforge mcp-creds
   fixture G1 (710cf66): the legacy variable alone: ./clawforge mcp-creds
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge mcp-creds
@@ -2608,6 +2680,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge doctor
   manual verbatim (bare word): cw doctor
   manual verbatim (spaced program): '/opt/claw forge/clawforge' doctor
+  system-wide inside apps/demo (cwd selection): clawforge doctor
   fixture G0: shim before 710cf66 wrote no variables: clawforge doctor
   fixture G1 (710cf66): the legacy variable alone: ./clawforge doctor
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge doctor
@@ -2630,6 +2703,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge accept
   manual verbatim (bare word): cw accept
   manual verbatim (spaced program): '/opt/claw forge/clawforge' accept
+  system-wide inside apps/demo (cwd selection): clawforge accept
   fixture G0: shim before 710cf66 wrote no variables: clawforge accept
   fixture G1 (710cf66): the legacy variable alone: ./clawforge accept
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge accept
@@ -2652,6 +2726,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge inspect
   manual verbatim (bare word): cw inspect
   manual verbatim (spaced program): '/opt/claw forge/clawforge' inspect
+  system-wide inside apps/demo (cwd selection): clawforge inspect
   fixture G0: shim before 710cf66 wrote no variables: clawforge inspect
   fixture G1 (710cf66): the legacy variable alone: ./clawforge inspect
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge inspect
@@ -2674,6 +2749,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli config get gateway.mode
   manual verbatim (bare word): cw cli config get gateway.mode
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli config get gateway.mode
+  system-wide inside apps/demo (cwd selection): clawforge cli config get gateway.mode
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli config get gateway.mode
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli config get gateway.mode
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli config get gateway.mode
@@ -2696,6 +2772,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli-start
   manual verbatim (bare word): cw cli-start
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli-start
+  system-wide inside apps/demo (cwd selection): clawforge cli-start
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli-start
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli-start
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli-start
@@ -2718,6 +2795,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli --help
   manual verbatim (bare word): cw cli --help
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli --help
+  system-wide inside apps/demo (cwd selection): clawforge cli --help
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli --help
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli --help
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli --help
@@ -2740,6 +2818,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge help cli
   manual verbatim (bare word): cw help cli
   manual verbatim (spaced program): '/opt/claw forge/clawforge' help cli
+  system-wide inside apps/demo (cwd selection): clawforge help cli
   fixture G0: shim before 710cf66 wrote no variables: clawforge help cli
   fixture G1 (710cf66): the legacy variable alone: ./clawforge help cli
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge help cli
@@ -2762,6 +2841,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli -- --help
   manual verbatim (bare word): cw cli -- --help
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli -- --help
+  system-wide inside apps/demo (cwd selection): clawforge cli -- --help
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli -- --help
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli -- --help
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli -- --help
@@ -2784,6 +2864,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   manual verbatim (bare word): cw exec curl -fsS http://127.0.0.1:18789/healthz
   manual verbatim (spaced program): '/opt/claw forge/clawforge' exec curl -fsS http://127.0.0.1:18789/healthz
+  system-wide inside apps/demo (cwd selection): clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   fixture G0: shim before 710cf66 wrote no variables: clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   fixture G1 (710cf66): the legacy variable alone: ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge exec curl -fsS http://127.0.0.1:18789/healthz
@@ -2806,6 +2887,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge exec cat /app/docs/channels/telegram.md
   manual verbatim (bare word): cw exec cat /app/docs/channels/telegram.md
   manual verbatim (spaced program): '/opt/claw forge/clawforge' exec cat /app/docs/channels/telegram.md
+  system-wide inside apps/demo (cwd selection): clawforge exec cat /app/docs/channels/telegram.md
   fixture G0: shim before 710cf66 wrote no variables: clawforge exec cat /app/docs/channels/telegram.md
   fixture G1 (710cf66): the legacy variable alone: ./clawforge exec cat /app/docs/channels/telegram.md
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge exec cat /app/docs/channels/telegram.md
@@ -2828,6 +2910,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli
   manual verbatim (bare word): cw cli
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli
+  system-wide inside apps/demo (cwd selection): clawforge cli
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli
@@ -2850,6 +2933,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge mcp-serve
   manual verbatim (bare word): cw mcp-serve
   manual verbatim (spaced program): '/opt/claw forge/clawforge' mcp-serve
+  system-wide inside apps/demo (cwd selection): clawforge mcp-serve
   fixture G0: shim before 710cf66 wrote no variables: clawforge mcp-serve
   fixture G1 (710cf66): the legacy variable alone: ./clawforge mcp-serve
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge mcp-serve
@@ -2872,6 +2956,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge up
   manual verbatim (bare word): cw up
   manual verbatim (spaced program): '/opt/claw forge/clawforge' up
+  system-wide inside apps/demo (cwd selection): clawforge up
   fixture G0: shim before 710cf66 wrote no variables: clawforge up
   fixture G1 (710cf66): the legacy variable alone: ./clawforge up
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge up
@@ -2894,6 +2979,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge down
   manual verbatim (bare word): cw down
   manual verbatim (spaced program): '/opt/claw forge/clawforge' down
+  system-wide inside apps/demo (cwd selection): clawforge down
   fixture G0: shim before 710cf66 wrote no variables: clawforge down
   fixture G1 (710cf66): the legacy variable alone: ./clawforge down
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge down
@@ -2916,6 +3002,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli
   manual verbatim (bare word): cw cli
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli
+  system-wide inside apps/demo (cwd selection): clawforge cli
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli
@@ -2938,6 +3025,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge mcp-serve
   manual verbatim (bare word): cw mcp-serve
   manual verbatim (spaced program): '/opt/claw forge/clawforge' mcp-serve
+  system-wide inside apps/demo (cwd selection): clawforge mcp-serve
   fixture G0: shim before 710cf66 wrote no variables: clawforge mcp-serve
   fixture G1 (710cf66): the legacy variable alone: ./clawforge mcp-serve
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge mcp-serve
@@ -2960,6 +3048,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge up
   manual verbatim (bare word): cw up
   manual verbatim (spaced program): '/opt/claw forge/clawforge' up
+  system-wide inside apps/demo (cwd selection): clawforge up
   fixture G0: shim before 710cf66 wrote no variables: clawforge up
   fixture G1 (710cf66): the legacy variable alone: ./clawforge up
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge up
@@ -2982,6 +3071,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge mcp-setup
   manual verbatim (bare word): cw mcp-setup
   manual verbatim (spaced program): '/opt/claw forge/clawforge' mcp-setup
+  system-wide inside apps/demo (cwd selection): clawforge mcp-setup
   fixture G0: shim before 710cf66 wrote no variables: clawforge mcp-setup
   fixture G1 (710cf66): the legacy variable alone: ./clawforge mcp-setup
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge mcp-setup
@@ -3004,6 +3094,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge control-mcp
   manual verbatim (bare word): cw control-mcp
   manual verbatim (spaced program): '/opt/claw forge/clawforge' control-mcp
+  system-wide inside apps/demo (cwd selection): clawforge control-mcp
   fixture G0: shim before 710cf66 wrote no variables: clawforge control-mcp
   fixture G1 (710cf66): the legacy variable alone: ./clawforge control-mcp
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge control-mcp
@@ -3026,6 +3117,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli-start
   manual verbatim (bare word): cw cli-start
   manual verbatim (spaced program): '/opt/claw forge/clawforge' cli-start
+  system-wide inside apps/demo (cwd selection): clawforge cli-start
   fixture G0: shim before 710cf66 wrote no variables: clawforge cli-start
   fixture G1 (710cf66): the legacy variable alone: ./clawforge cli-start
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli-start
@@ -3048,6 +3140,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge mcp-setup
   manual verbatim (bare word): cw mcp-setup
   manual verbatim (spaced program): '/opt/claw forge/clawforge' mcp-setup
+  system-wide inside apps/demo (cwd selection): clawforge mcp-setup
   fixture G0: shim before 710cf66 wrote no variables: clawforge mcp-setup
   fixture G1 (710cf66): the legacy variable alone: ./clawforge mcp-setup
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge mcp-setup
@@ -3070,6 +3163,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge plan
   manual verbatim (bare word): cw plan
   manual verbatim (spaced program): '/opt/claw forge/clawforge' plan
+  system-wide inside apps/demo (cwd selection): clawforge plan
   fixture G0: shim before 710cf66 wrote no variables: clawforge plan
   fixture G1 (710cf66): the legacy variable alone: ./clawforge plan
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge plan
@@ -3092,6 +3186,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge smoke
   manual verbatim (bare word): cw smoke
   manual verbatim (spaced program): '/opt/claw forge/clawforge' smoke
+  system-wide inside apps/demo (cwd selection): clawforge smoke
   fixture G0: shim before 710cf66 wrote no variables: clawforge smoke
   fixture G1 (710cf66): the legacy variable alone: ./clawforge smoke
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge smoke
@@ -3114,6 +3209,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge check gate
   manual verbatim (bare word): cw check gate
   manual verbatim (spaced program): '/opt/claw forge/clawforge' check gate
+  system-wide inside apps/demo (cwd selection): clawforge check gate
   fixture G0: shim before 710cf66 wrote no variables: clawforge check gate
   fixture G1 (710cf66): the legacy variable alone: ./clawforge check gate
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge check gate
@@ -3136,6 +3232,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge --app <name> bootstrap
   manual verbatim (bare word): cw --app <name> bootstrap
   manual verbatim (spaced program): '/opt/claw forge/clawforge' --app <name> bootstrap
+  system-wide inside apps/demo (cwd selection): clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
   fixture G0: shim before 710cf66 wrote no variables: clawforge --app <name> bootstrap
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> bootstrap
@@ -3158,6 +3255,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge list
   manual verbatim (bare word): cw list
   manual verbatim (spaced program): '/opt/claw forge/clawforge' list
+  system-wide inside apps/demo (cwd selection): clawforge list
   fixture G0: shim before 710cf66 wrote no variables: clawforge list
   fixture G1 (710cf66): the legacy variable alone: ./clawforge list
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge list
@@ -3180,6 +3278,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge --app <name> destroy
   manual verbatim (bare word): cw --app <name> destroy
   manual verbatim (spaced program): '/opt/claw forge/clawforge' --app <name> destroy
+  system-wide inside apps/demo (cwd selection): clawforge --project-root '/clawforge-checkout/apps/<name>' destroy
   fixture G0: shim before 710cf66 wrote no variables: clawforge --app <name> destroy
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> destroy
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> destroy
@@ -3202,6 +3301,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge completion bash
   manual verbatim (bare word): cw completion bash
   manual verbatim (spaced program): '/opt/claw forge/clawforge' completion bash
+  system-wide inside apps/demo (cwd selection): clawforge completion bash
   fixture G0: shim before 710cf66 wrote no variables: clawforge completion bash
   fixture G1 (710cf66): the legacy variable alone: ./clawforge completion bash
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge completion bash
@@ -3224,6 +3324,7 @@
   defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge completion zsh
   manual verbatim (bare word): cw completion zsh
   manual verbatim (spaced program): '/opt/claw forge/clawforge' completion zsh
+  system-wide inside apps/demo (cwd selection): clawforge completion zsh
   fixture G0: shim before 710cf66 wrote no variables: clawforge completion zsh
   fixture G1 (710cf66): the legacy variable alone: ./clawforge completion zsh
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge completion zsh
@@ -3233,25 +3334,26 @@
   tool form: {"tool":"completion","arguments":{"shell":"zsh"}}
 
 === help prose: completion completion pwsh (install) ===
-  checkout gate shim (cwd: checkout root): ./clawforge completion pwsh
-  checkout gate shim (cwd: docs): ../clawforge completion pwsh
-  checkout gate shim (cwd: apps/demo): ../../clawforge completion pwsh
-  checkout gate, handed over by the init shim: ./clawforge completion pwsh
-  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge completion pwsh
+  checkout gate shim (cwd: checkout root): ./clawforge completion pwsh  (in bash)
+  checkout gate shim (cwd: docs): ../clawforge completion pwsh  (in bash)
+  checkout gate shim (cwd: apps/demo): ../../clawforge completion pwsh  (in bash)
+  checkout gate, handed over by the init shim: ./clawforge completion pwsh  (in bash)
+  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge completion pwsh  (in bash)
   MCP launcher (installed): no variables — the entry default: clawforge completion pwsh
   defaultLaunch: global install: clawforge completion pwsh
-  defaultLaunch: checkout copy: ./clawforge completion pwsh
-  defaultLaunch: local package (posix): ./clawforge completion pwsh
-  defaultLaunch: local package (win32): node_modules/.bin/clawforge completion pwsh
-  defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge completion pwsh
+  defaultLaunch: checkout copy: ./clawforge completion pwsh  (in bash)
+  defaultLaunch: local package (posix): ./clawforge completion pwsh  (in bash)
+  defaultLaunch: local package (win32): node_modules\.bin\clawforge completion pwsh
+  defaultLaunch: local package (win32, Git Bash): node_modules\.bin\clawforge completion pwsh
   manual verbatim (bare word): cw completion pwsh
-  manual verbatim (spaced program): '/opt/claw forge/clawforge' completion pwsh
+  manual verbatim (spaced program): "/opt/claw forge/clawforge" completion pwsh
+  system-wide inside apps/demo (cwd selection): clawforge completion pwsh
   fixture G0: shim before 710cf66 wrote no variables: clawforge completion pwsh
-  fixture G1 (710cf66): the legacy variable alone: ./clawforge completion pwsh
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge completion pwsh
-  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge completion pwsh
-  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge completion pwsh
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge completion pwsh
+  fixture G1 (710cf66): the legacy variable alone: ./clawforge completion pwsh  (in bash)
+  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge completion pwsh  (in bash)
+  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge completion pwsh  (in bash)
+  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge completion pwsh  (in bash)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge completion pwsh  (in bash)
   tool form: {"tool":"completion","arguments":{"shell":"pwsh"}}
 
 === gate inline note (1) ===
@@ -3268,6 +3370,7 @@
   defaultLaunch: local package (win32, Git Bash): ./clawforge help
   manual verbatim (bare word): ./clawforge help
   manual verbatim (spaced program): ./clawforge help
+  system-wide inside apps/demo (cwd selection): clawforge help
   fixture G0: shim before 710cf66 wrote no variables: clawforge help
   fixture G1 (710cf66): the legacy variable alone: ./clawforge help
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge help

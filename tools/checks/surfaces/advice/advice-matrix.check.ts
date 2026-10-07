@@ -22,10 +22,11 @@ import { toolArguments } from "#framework/integration/mcp/call.ts";
 import { toArgv } from "#framework/integration/mcp/legacy.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type Advice, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { CWD_CONFLICT_NOTE, renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { CWD_CONFLICT_NOTE, commandLine, renderAdvice, renderAdviceRows, renderArgument, renderFrameAdvice, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
-import { frameOf, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
-import { launchOf } from "#framework/core/io/invocation/frame.ts";
+import { currentFrame, frameOf, installFrame, invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { checkoutGateFrame, forShell, launchOf, spell } from "#framework/core/io/invocation/frame.ts";
+import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { APP_CONFLICT_FROM_ROOT } from "#framework/entry/delegate.ts";
@@ -118,13 +119,27 @@ for (const { label, advice } of ADVICE_ROWS) {
   for (const column of MATRIX_COLUMNS) {
     if (!("invocation" in column)) continue;
     const where = `${label} under ${column.label}`;
-    const words = commandWords(withoutNote(renderAdvice(advice, column.invocation), advice));
+    // A shell-named advice spells for ITS shell (S1.4): through the column's producer frame
+    // via forShell when the column carries one — the frame the golden renders through —
+    // not through the rootless Invocation frame.
+    const words = commandWords(withoutNote(
+      advice.shell !== undefined && column.frame !== undefined
+        ? renderFrameAdvice(advice, forShell(column.frame, advice.shell))
+        : renderAdvice(advice, column.invocation),
+      advice,
+    ));
     // A checkout-root row re-roots the program by design (rf6-fix30): the sentence names
     // the checkout root, so the opener is the root spelling, not the column cwd spelling.
     const rooted = advice.at === "checkout-root";
-    // An install row is spelled for the shell that pastes it, so its opener is the
-    // column program re-spelled portably — backslashes out (rf6-fix33's completion rows).
-    const opener = rooted ? column.rootProgram : advice.install === true ? column.invocation.program.split(String.fromCharCode(92)).join("/") : column.invocation.program;
+    // An install row is spelled for the shell that pastes it (S1.4's CommandAdvice.shell):
+    // the opener is the column program spelled for THAT shell by the frame's own spelling
+    // owner (spell, the O4 relative rule included) — never by a slash decision here.
+    const shellFrame = advice.shell !== undefined && column.frame !== undefined ? forShell(column.frame, advice.shell) : undefined;
+    const shellHost = shellFrame === undefined ? "posix" : shellFrame.host.kind === "operator" ? shellFrame.host.platform : "posix";
+    const shellFrom = shellFrame !== undefined && shellFrame.cwd.kind === "dir" ? shellFrame.cwd.path : undefined;
+    const opener = rooted ? column.rootProgram
+      : shellFrame !== undefined ? (spell(shellFrame.launch, advice.shell!, shellHost, shellFrom) ?? spell(shellFrame.launch, "posix", shellHost, shellFrom) ?? column.invocation.program)
+      : column.invocation.program;
     checkTrue(`${where}: opens with ${rooted ? "the checkout root program" : "the program as typed"}`, words[0] === opener);
     const flags = words.slice(1).filter((word) => word === APP_FLAG);
     checkTrue(`${where}: at most one ${APP_FLAG}`, flags.length <= 1);
@@ -141,7 +156,8 @@ for (const { label, advice } of ADVICE_ROWS) {
 const SHIM_SPELLING = "./clawforge";
 const SINGLE_QUOTE = "'";
 const bareColumns = MATRIX_COLUMNS.filter((column) => "invocation" in column && column.invocation.program === "clawforge");
-checkTrue("the matrix has bare-program columns", bareColumns.length === 3);
+// 4, not 3: S1.4 added the producer "system-wide inside apps/demo (cwd selection)", whose handover program is also the bare `clawforge` (each new bare-program producer joins the cmd/pwsh-typed rule).
+checkTrue("the matrix has bare-program columns", bareColumns.length === 4);
 for (const { label, advice } of ADVICE_ROWS) {
   for (const column of bareColumns) {
     if (!("invocation" in column)) continue;
@@ -315,30 +331,73 @@ check(
  *  program (quoted by the argument rule) and the `--app`, never the process's global one. */
 const FLAGGED_DEMO: Invocation = { program: "../../clawforge", mode: "checkout", audience: "mcp", app: { name: "demo", selectedBy: "flag" } };
 setInvocation(PATH_SPELLING);
-check("a {clawforge ...} token renders under the invocation it is given", renderProse("run {clawforge up}", FLAGGED_DEMO).split(" "), ["run", "../../clawforge", "--app", "demo", "up"]);
+check("a {clawforge ...} token renders under the invocation it is given", renderProse("run {clawforge up}", frameOf(FLAGGED_DEMO)).split(" "), ["run", "../../clawforge", "--app", "demo", "up"]);
 await requires("posix-host", "the spaced program's POSIX quoting in prose", () => {
   check(
     "the {clawforge} program token is quoted like the advice program on posix",
-    renderProse("run {clawforge}", { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" }),
+    renderProse("run {clawforge}", frameOf({ program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" })),
     "run '<programs dir>/clawforge'",
   );
 });
 await requires("windows-host", "the spaced program's cmd/pwsh quoting in prose", () => {
   check(
     "the {clawforge} program token is quoted like the advice program on windows",
-    renderProse("run {clawforge}", { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" }),
+    renderProse("run {clawforge}", frameOf({ program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" })),
     'run "<programs dir>/clawforge"',
   );
 });
-check("a plain program stays bare in the {clawforge} token", renderProse("run {clawforge}", BARE_PROGRAM).split(" "), ["run", "clawforge"]);
+check("a plain program stays bare in the {clawforge} token", renderProse("run {clawforge}", frameOf(BARE_PROGRAM)).split(" "), ["run", "clawforge"]);
 
-/** P3 — a `shell` line is byte for byte what the advice carries, note included, under every
- *  column: nothing in the output layer rewrites a line for another shell or host. */
+// The prose DEFAULT path (no frame argument) renders through the INSTALLED frame: the
+// entry's install (installFrame, S1.3) carries the real roots/places, so the O4 relative
+// spelling and the case-4 --project-root selector must hold without a hand-built frame.
+const PROSE_ROOT = "/clawforge-prose-check";
+{
+  const previous = invocation();
+  installFrame(checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/docs` }));
+  check("prose default renders from the installed frame's roots", commandLine(["status"]).split(" "), ["../clawforge", "status"]);
+  setInvocation(previous);
+}
+{
+  const previous = invocation();
+  const demo = { ...checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/apps/demo` }), app: { state: "selected", name: "demo", by: "cwd" } as const };
+  installFrame(demo);
+  const prose = renderProse("run {clawforge --app X destroy}");
+  checkTrue("prose default names another deployment with --project-root", prose.includes("--project-root") && prose.includes(`${PROSE_ROOT}/apps/X`));
+  setInvocation(previous);
+}
+{
+  // The caller's Frame reaches the USAGE line whole (renderAdvice accepts a Frame): the
+  // relative spelling matches what the details get, no handoverOf projection in between.
+  const previous = invocation();
+  const frame = checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/docs` });
+  let printed = "";
+  await withOutputSink((chunk) => { printed += chunk; }, async () => {
+    renderCommandHelp("status", { summary: "status", arguments: [{ kind: "flag", name: "x", description: "d" } as CommandArgument] }, frame);
+  });
+  const usage = (printed.split("Usage: ")[1] ?? "").split(" ").slice(0, 2);
+  check("help usage renders from the installed-style Frame's cwd", usage, ["../clawforge", "status"]);
+  setInvocation(previous);
+}
+
+/** P3 — a `shell` line is byte for byte what the advice spells for the column's primary
+ *  shell, note included, under every column: nothing in the output layer rewrites a line
+ *  for another shell or host. With alternatives and an own shell outside the frame's, the
+ *  renderer prints the first distinct alternative text (design §2.3 rule 5) — expected
+ *  independently by that rule, not read back. */
 for (const { label, advice } of ADVICE_ROWS) {
   if (advice.kind !== "shell") continue;
-  const expected = advice.note === undefined ? advice.text : `${advice.text}  (${advice.note})`;
+  const own = advice.note === undefined ? advice.text : `${advice.text}  (${advice.note})`;
   for (const column of MATRIX_COLUMNS) {
     if (!("invocation" in column)) continue;
+    const frame = frameOf(column.invocation);
+    let expected = own;
+    if (advice.alternatives !== undefined && !frame.shells.includes(advice.shell)) {
+      const first = frame.shells
+        .map((shell) => (shell === advice.shell ? advice.text : advice.alternatives?.[shell]))
+        .find((text) => text !== undefined);
+      if (first !== undefined) expected = first;
+    }
     check(`${label} under ${column.label}: byte for byte`, renderAdvice(advice, column.invocation), expected);
   }
 }
@@ -371,7 +430,10 @@ const SERVER_BOOTSTRAP = renderAdvice(command(["bootstrap"], { app: "demo" }), s
 for (const column of MATRIX_COLUMNS) {
   if (!("invocation" in column)) continue;
   setInvocation(column.invocation);
-  const adviceLine = renderAdvice(command(["logs"]));
+  // The advice line is computed through the same rows path formatError takes (the
+  // hand-over spelling, not as typed) — the pin is that reportError prints the message
+  // and that line un-rewritten, not how the line is spelled.
+  const adviceLine = renderAdviceRows(command(["logs"]), currentFrame())[0] ?? "";
   let printed = "";
   await withOutputSink((chunk) => { printed += chunk; }, async () => {
     reportError(new UserError(SERVER_BOOTSTRAP, { advice: [command(["logs"])] }));
@@ -456,9 +518,9 @@ for (const { label, advice } of ADVICE_ROWS) {
   const checkHelp = checkoutGateCommands.find((gate) => gate.name === "check")?.details ?? "";
   const gateFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", ...(appOf(gate) === undefined ? {} : { app: appOf(gate) as Invocation["app"] }) };
   const runFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", ...(appOf(run) === undefined ? {} : { app: appOf(run) as Invocation["app"] }) };
-  const proseWords = renderProse(checkHelp, gateFrame).split(" ");
+  const proseWords = renderProse(checkHelp, frameOf(gateFrame)).split(" ");
   checkTrue("the check help's prose names the app under the gate-command frame", proseWords.includes("--app") && proseWords.includes("demo"));
-  check("both spellings of the same typed --app render the same prose", renderProse(checkHelp, gateFrame), renderProse(checkHelp, runFrame));
+  check("both spellings of the same typed --app render the same prose", renderProse(checkHelp, frameOf(gateFrame)), renderProse(checkHelp, frameOf(runFrame)));
 }
 
 /** Key-order-independent JSON, so the law compares values, not declaration order. */

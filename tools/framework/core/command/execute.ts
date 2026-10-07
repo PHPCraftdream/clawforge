@@ -13,7 +13,7 @@ import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInpu
 import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError, CommandFailedError } from "#src/core/io/log.ts";
-import { renderAdvice } from "#src/core/io/invocation/render.ts";
+import { renderCurrentAdviceRows } from "#src/core/io/invocation/render.ts";
 import { emit, machineWritesCount, stdoutBytesWritten } from "#src/core/io/output.ts";
 import { useApplicationRecipesDir, envFile } from "#src/runtime/deployment.ts";
 import { createTransport, type Transport } from "#src/runtime/transport/transport.ts";
@@ -157,7 +157,7 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
       emit(`${JSON.stringify({
         error: { message },
         ...(advice.length === 0 ? {} : {
-          nextActions: [...new Set(advice.map((entry) => maskSecrets(renderAdvice(entry))))],
+          nextActions: [...new Set(advice.flatMap(renderCurrentAdviceRows).map(maskSecrets))],
           next: advice.map(maskedJson),
         }),
       }, null, 2)}\n`);

@@ -15,10 +15,12 @@ import { completionCandidates, completionData } from "#framework/integration/com
 import { makeCompletionGateCommand, renderCompletion } from "#framework/integration/completion/index.ts";
 import { APP_SKIP_PAIR, APP_VALUES_BLOCK } from "#framework/integration/completion/bash.ts";
 import { invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
-import { installLine } from "#framework/core/io/invocation/render.ts";
+import { renderProse } from "#framework/core/io/invocation/prose.ts";
+import { SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { completionScenarios, type CompletionScenario } from "./scenarios.ts";
-import { check, finish, requires } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
+import { tokenizeLine } from "#checks/kit/shells.ts";
 import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 
@@ -343,12 +345,77 @@ function pwshDriver(scriptPath: string): string {
 
 // --- 3b. the Install: line pasted in ITS shell ----------------------------------------------
 //
-// The Install: header is spelled for the script's OWN shell through installLine, independent of
-// the invocation's host (rf6-fix30): under the win32 bin-wrapper program the bash line carries
-// forward slashes (bash strips a backslash), the pwsh line names a path PowerShell resolves.
-// Each paste below runs the spelled line for real, a stub standing in for the bin wrapper.
+// The Install: header is spelled for the script's OWN shell, independent of the invocation's
+// host (rf6-fix30): under the win32 bin-wrapper program the bash line carries forward slashes
+// (bash strips a backslash), the pwsh line names a path PowerShell resolves. The program word
+// of each line is pinned LITERALLY below — not by calling installLine, which would make the
+// expectation a tautology a spelling regression passes.
 
 const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mode: "local-package", audience: "terminal" };
+
+// --- 3c. notes stay OUT of the executable lines (S1.4 item 3) --------------------------------
+//
+// A note names the shell that can paste a line; it must never land INSIDE an executable
+// pipeline. The render API carries notes separately (renderAdviceParts/installLineParts);
+// these literals pin the composed surfaces.
+{
+  // Item 5 (S1.4): these checks run over the CURRENT composer output — never the committed
+  // snapshot. Under a checkout frame the pwsh Install line is the sentence form (the bash
+  // shim has no pwsh pipeline); every rendered command tokenizes in its own shell
+  // (kit/shells.ts) and opens with the frame's program spelling.
+  const previous = invocation();
+  setInvocation({ program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
+  try {
+    const commandOf = (line: string): string => {
+      const inner = /source <\(([^)]+)\)/.exec(line);
+      if (inner !== null) return inner[1]!;
+      const sentence = /run (\S+ completion \S+) in Git Bash/.exec(line);
+      if (sentence !== null) return sentence[1]!;
+      const cut = line.lastIndexOf("  (");
+      return (cut === -1 ? line : line.slice(0, cut)).trim();
+    };
+    for (const shell of ["bash", "zsh", "pwsh"] as const) {
+      const script = renderCompletion(shell, data);
+      const installMarker = /Install: /;
+      const sourceMarker = /^# +source <\(/
+      const installLines = script.split("\n").filter((line) => installMarker.test(line) || sourceMarker.test(line.trim())).map((line) => {
+        const at = line.search(installMarker);
+        const text = at === -1 ? line.trim().replace(/^# +/, "") : line.slice(at + "Install:".length + 1);
+        return text;
+      });
+      const carriesInstall = installLines.length >= (shell === "zsh" ? 2 : 1);
+      checkTrue(`the ${shell} script carries Install lines`, carriesInstall);
+      const model = shell === "pwsh" ? "pwsh" : "posix";
+      for (const install of installLines) {
+        const executable = commandOf(install);
+        const marker = executable.search(/  \(/);
+        const noteInside = marker !== -1 || executable.indexOf("(in") !== -1;
+        let words: readonly string[] = [];
+        let tokenized = true;
+        try { words = tokenizeLine(executable, model); } catch { tokenized = false; }
+        const opensWithProgram = tokenized && words.length > 0 && words[0] === SHIM_PROGRAM;
+        checkTrue("an Install line's executable part carries no note", noteInside === false);
+        checkTrue("an Install line tokenizes in its own shell", tokenized === true && words.length > 0);
+        checkTrue("an Install line opens with the frame's program", opensWithProgram);
+      }
+      // The note rides AFTER the whole composed line: a sentence names the shell it needs
+      // ("... in Git Bash"); a pipeline never carries a parenthetical mid-command.
+      const first = installLines[0] ?? "";
+      const sentenceForm = / in Git Bash/.test(first);
+      const markerAt = first.search(/  \(/);
+      const ridesWhole = sentenceForm || markerAt === -1 || first.slice(markerAt).endsWith(")");
+      checkTrue(`the ${shell} Install header's note rides after the whole line`, ridesWhole === true);
+    }
+    // Help prose: the rendered sentence keeps every command whole, its note outside.
+    const details = makeCompletionGateCommand([], true).details ?? "";
+    const prose = renderProse(details);
+    const pipeNote = prose.search(/  \(in bash\) \|/) !== -1;
+    const redirectNote = prose.search(/  \(in bash\) >/) !== -1;
+    checkTrue("the rendered Install sentence keeps the pwsh note out of the pipeline", pipeNote === false && redirectNote === false && /and pipe it through/.test(prose) === true);
+  } finally {
+    setInvocation(previous);
+  }
+}
 
 await requires("bash", "the bash Install: line, pasted in a real bash", async () => {
   const previous = invocation();
@@ -356,8 +423,8 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
   try {
     const rendered = renderCompletion("bash", data);
     const install = rendered.split("\n")[1]!.slice("# Install: ".length);
-    const expectedInstall = `source <(${installLine(["completion", "bash"])})`;
-    check("bash: the Install: line spells the wrapper with forward slashes", install, expectedInstall);
+    const installProgram = install.slice("source <(".length, -1).split(" ")[0];
+    check("bash: the Install: line's program is the forward-slash wrapper", installProgram, "node_modules/.bin/clawforge");
     const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
     try {
       await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
@@ -394,8 +461,8 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
   try {
     const rendered = renderCompletion("pwsh", data);
     const install = rendered.split("\n")[1]!.slice("# Install: ".length);
-    const expectedInstallPwsh = `${installLine(["completion", "pwsh"])} | Out-String | Invoke-Expression`;
-    check("pwsh: the Install: line spells the wrapper portably", install, expectedInstallPwsh);
+    const pwshInstallProgram = install.split(" ")[0];
+    check("pwsh: the Install: line's program is npm's Windows wrapper", pwshInstallProgram, "node_modules\\.bin\\clawforge");
     const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
     try {
       await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });

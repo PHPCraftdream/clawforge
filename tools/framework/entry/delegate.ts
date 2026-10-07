@@ -91,24 +91,24 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
     return;
   }
   if (decision.reason === "missing-app-value") {
-    reportError("--app needs a deployment name");
+    reportError("--app needs a deployment name", frame);
     process.exit(1);
   }
   if (decision.reason === "invalid-app-value") {
-    reportError(decision.message);
+    reportError(decision.message, frame);
     process.exit(1);
   }
-  reportError(appConflictRefusal(decision, frame));
+  reportError(appConflictRefusal(decision, frame), frame);
   process.exit(1);
 }
 
 // No hand-over, yet its app.ts imports a checkout's framework sources: this package would
 // load a second copy next to its own. An installed-style app.ts (the package specifier) is fine.
 // Called after the gate commands have had their turn, so `version` etc. still answer here.
-export function refuseStrayCheckoutApp(self: string, appRoot: string): void {
+export function refuseStrayCheckoutApp(self: string, appRoot: string, frame: Frame): void {
   const stray = strayCheckoutApp({ self, appRoot, fs: nodeFs });
   if (stray === undefined) return;
-  reportError(`${appRoot} ${FOREIGN_SOURCES_NOTE} of the ClawForge checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`);
+  reportError(`${appRoot} ${FOREIGN_SOURCES_NOTE} of the ClawForge checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`, frame);
   process.exit(1);
 }
 

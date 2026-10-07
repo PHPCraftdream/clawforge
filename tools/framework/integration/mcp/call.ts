@@ -9,7 +9,7 @@ import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Execution } from "../../core/command/execute.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
-import { renderAdvice } from "../../core/io/invocation/render.ts";
+import { renderCurrentAdviceRows } from "../../core/io/invocation/render.ts";
 import type { Declared, StructuredResult, ToolStep } from "./schema.ts";
 
 function isWarning(problem: unknown): boolean {
@@ -150,7 +150,7 @@ export function toolEnvelope(command: Declared, output: string, machineOutput: s
     changed: changedFact(command, {}, args, execution),
     problems: [],
     warnings: [],
-    nextActions: [...new Set(advice.map((entry) => maskSecrets(renderAdvice(entry))))],
+    nextActions: [...new Set(advice.flatMap(renderCurrentAdviceRows).map(maskSecrets))],
     nextSteps: toolSteps(advice, lookup ?? (() => undefined)),
     result: machineOutput ?? output,
   };

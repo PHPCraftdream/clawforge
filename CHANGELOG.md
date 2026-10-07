@@ -6,6 +6,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* The checkout-subfolder refusal prints a `cd` line each shell accepts.
+* Advice naming another deployment, printed inside a deployment by the system-wide command, runs there instead of being refused as an `--app` conflict.
 * An MCP call of a mutating command refused before it ran reports changed: false.
 * MCP tool calls bind arguments by name with the console's own binder: an unknown action is refused as such, a positional never lands in another action's slot (`<name> applies to ...`), and the first refusal is reported in the console's words instead of a list.
 * MCP gate and help tool calls report the first refusal only, where they used to join every problem into one sentence.

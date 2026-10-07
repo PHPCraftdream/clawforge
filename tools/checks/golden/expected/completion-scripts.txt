@@ -501,7 +501,7 @@ complete -F _clawforge_complete ./clawforge
 
 === ./clawforge completion pwsh ===
 # clawforge PowerShell completion — generated from the command declarations.
-# Install: ./clawforge completion pwsh | Out-String | Invoke-Expression
+# Install: run ./clawforge completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell
 $clawforgeApp = $true
 $clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v", "--app")
 $clawforgeFirst = [hashtable]::new(@{

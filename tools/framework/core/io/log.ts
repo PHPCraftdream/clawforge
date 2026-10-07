@@ -3,7 +3,9 @@
 
 import { outputSink } from "./output.ts";
 import type { Advice } from "./invocation/advice.ts";
-import { renderAdvice } from "./invocation/render.ts";
+import { frameOf, type Invocation } from "./invocation/index.ts";
+import type { Frame } from "./invocation/frame.ts";
+import { renderAdviceRows, renderCurrentAdviceRows } from "./invocation/render.ts";
 
 const useColour = process.stderr.isTTY === true;
 
@@ -133,17 +135,24 @@ export function dieWithExitCode(message: string, exitCode: number): never {
   throw new CommandFailedError(message, exitCode);
 }
 
-/** The error message plus, per piece of advice a UserError carries, a rendered line.
+/** The error message plus, per piece of advice a UserError carries, its rendered lines —
+ *  one per DISTINCT text, so an advice spelled for several shells prints every variant.
  *  Both are printed as they were built: the message is whatever the thrower wrote, and an
- *  advice line is rendered by the invocation that reported it. All masked once. */
-export function formatError(error: unknown): string {
+ *  advice line is rendered by the invocation that reported it. All masked once.
+ *
+ *  The frame form is the primary one: a caller that already holds the run's Frame passes it
+ *  and it renders directly. The Invocation form is for callers that hold no frame — it
+ *  rebuilds one from the hand-over alone (frameOf), which is rootless. */
+export function formatError(error: unknown, source?: Frame | Invocation): string {
   const message = error instanceof Error ? error.message : String(error);
   const advice = error instanceof UserError ? error.advice : [];
-  const lines = advice.map((entry) => `\n    → ${renderAdvice(entry)}`).join("");
+  const frame = source === undefined ? undefined : ("launch" in source ? source : frameOf(source));
+  const lines = (frame === undefined ? advice.flatMap(renderCurrentAdviceRows)
+    : advice.flatMap((entry) => renderAdviceRows(entry, frame))).map((row) => `\n    → ${row}`).join("");
   return maskSecrets(message + lines);
 }
 
-export function reportError(error: unknown): void {
-  write(`${C.red}error:${C.off} ${formatError(error)}\n`);
+export function reportError(error: unknown, source?: Frame | Invocation): void {
+  write(`${C.red}error:${C.off} ${formatError(error, source)}\n`);
 }
 

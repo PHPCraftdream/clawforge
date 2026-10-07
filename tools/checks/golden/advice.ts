@@ -91,7 +91,9 @@ const PROSE_ROWS: readonly AdviceRow[] = [
   if (details === undefined) return [];
   return parseProse(details).flatMap((token) => {
     if (token.kind === "install") {
-      return [{ label: `help prose: ${name} ${token.argv.join(" ")} (install)`, advice: command(token.argv, { install: true }) }];
+      const last = token.argv[token.argv.length - 1];
+      const shell = last === "pwsh" ? "pwsh" as const : "posix" as const;
+      return [{ label: `help prose: ${name} ${token.argv.join(" ")} (install)`, advice: command(token.argv, { shell }) }];
     }
     if (token.kind !== "command") return [];
     return [{ label: `help prose: ${name} ${token.argv.join(" ")}`, advice: command(token.argv, token.app === undefined ? undefined : { app: token.app }) }];

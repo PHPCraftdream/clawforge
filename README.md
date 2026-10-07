@@ -50,7 +50,8 @@ The first step is needed once per machine: a deployment is not kept in the repos
 is the configuration of one host, with its paths and its keys. `apps/` is entirely in
 `.gitignore`.
 
-Works both from WSL and from Windows (Git Bash, PowerShell): Windows Node reaches the
+Works from WSL and from Windows' Git Bash (the checkout entry `./clawforge` is a bash
+script; PowerShell works for the installed package): Windows Node reaches the
 target through `wsl.exe`, so there is no need to install Node inside WSL.
 
 Web interface: `http://127.0.0.1:<OPENCLAW_GATEWAY_PORT>` — `new-app` picks the port (20000–32767)

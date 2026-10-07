@@ -92,7 +92,7 @@
       <shell>                bash, zsh or pwsh [bash|zsh|pwsh] (required)
     
     Generated from the live command declarations — names, flags, and a multi-action command's own flags under the right action — so it cannot drift from --help.
-    Install: source <(clawforge completion bash); clawforge completion zsh > "${fpath[1]}/_clawforge"; or clawforge completion pwsh | Out-String | Invoke-Expression.
+    Install: source <(clawforge completion bash); clawforge completion zsh > "${fpath[1]}/_clawforge"; or take clawforge completion pwsh and pipe it through Out-String and Invoke-Expression.
     Completes the built-in commands only: a command a deployment declares itself is not offered, since the script is generated without loading any deployment.
     No deployment is resolved, no .env is read, no lock is touched.
 

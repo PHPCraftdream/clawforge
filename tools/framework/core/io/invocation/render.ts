@@ -11,6 +11,7 @@ import {
   modeOf,
   checkoutLaunch,
   launchFromModeBoundary,
+  forShell,
   IN_BASH_NOTE,
   launchOf,
   pasteShells,
@@ -23,7 +24,7 @@ import {
   type Host,
   rootedLaunch,
 } from "./frame.ts";
-import { command, type Advice } from "./advice.ts";
+import { command, type Advice, type Shell } from "./advice.ts";
 
 export { SHIM_PROGRAM };
 export { WINDOWS_BIN_PROGRAM };
@@ -126,15 +127,71 @@ export function renderFrameAdvice(
   // passes it through here (S1.3's Launch-carrying resolver removes the gap).
   asTyped?: string,
 ): string {
+  return renderAdviceRows(advice, frame, options, asTyped)[0] ?? "";
+}
+
+/** The same rendering, one row per DISTINCT text (design §2.3 rule 5), with each row's note
+ *  kept STRUCTURED instead of appended: callers that compose the line into a larger sentence
+ *  (a completion header, help prose) place the note after the whole composed line, never
+ *  inside the executable text. */
+export interface AdviceRowPart {
+  readonly line: string;
+  readonly note?: string;
+}
+
+export function renderAdviceParts(
+  advice: Advice,
+  frame: Frame,
+  options?: { readonly deploymentFree?: boolean },
+  asTyped?: string,
+): readonly AdviceRowPart[] {
   if (advice.kind === "shell") {
-    return advice.note === undefined ? advice.text : `${advice.text}  (${advice.note})`;
+    if (advice.alternatives !== undefined && !frame.shells.includes(advice.shell)) {
+      // The advice's own shell does not paste here: the frame's shells decide, in order.
+      // One row per DISTINCT text; every frame shell spelling that text is collected, so a
+      // row is shell-specific exactly when its shells do not cover the whole frame.
+      const texts: string[] = [];
+      const covered: Shell[][] = [];
+      for (const s of frame.shells) {
+        const text = s === advice.shell ? advice.text : advice.alternatives[s];
+        if (text === undefined) continue;
+        const seen = texts.indexOf(text);
+        if (seen === -1) {
+          texts.push(text);
+          covered.push([s]);
+        } else covered[seen]!.push(s);
+      }
+      if (texts.length === 0) {
+        // No shell of the frame spells a line (cmd with a $-path cd): the POSIX text
+        // stands in — bash, the documented checkout path on Windows — and the note names it.
+        return [{ line: advice.text, note: IN_BASH_NOTE }];
+      }
+      // A row whose spelling shells are not the frame's FULL shell set is shell-specific:
+      // it names the shells it is for, in frame order (the primary included — a line only
+      // cmd pastes names cmd as much as one only pwsh pastes names pwsh).
+      const parts: AdviceRowPart[] = texts.map((line, i) => {
+        const shells = covered[i]!;
+        // Full coverage stays unlabelled; partial coverage names its shells. An advice
+        // note COMBINES with the shell label (label first) — never replaces it.
+        const shellNote = shells.length === frame.shells.length ? undefined : `for ${shells.join(", ")}`;
+        if (i === 0 && advice.note !== undefined) {
+          return { line, note: shellNote === undefined ? advice.note : `${shellNote}; ${advice.note}` };
+        }
+        return shellNote === undefined ? { line } : { line, note: shellNote };
+      });
+      return parts;
+    }
+    return [advice.note === undefined ? { line: advice.text } : { line: advice.text, note: advice.note }];
   }
   if (advice.kind === "manual") {
-    return advice.text;
+    return [{ line: advice.text }];
   }
   const on = handoverOf(frame);
   const handed = asTyped ?? on.program;
-  const host = frame.host.kind === "operator" ? frame.host.platform : "posix";
+  // A shell-named advice (a completion Install: header) spells for that shell alone —
+  // transition order (§2.3 rule 1): at → shell → app selection.
+  const f = advice.shell === undefined ? frame : forShell(frame, advice.shell);
+  const host = f.host.kind === "operator" ? f.host.platform : "posix";
   // A checkout-root advice spells the program from the checkout root — the frame the
   // place-naming sentences direct to — not from the directory this run refused in. The
   // same frame for a row that names a deployment the cwd's own selection does not, under
@@ -144,8 +201,15 @@ export function renderFrameAdvice(
   const cwdConflict = advice.app !== undefined
     && frame.app.state === "selected" && frame.app.by === "cwd" && frame.app.name !== advice.app
     && resolvesByCwd(frame.launch, on.program);
-  const rooted = advice.at === "checkout-root" || cwdConflict;
-  let note = advice.note ?? (cwdConflict ? CWD_CONFLICT_NOTE : undefined);
+  // Decision O2: with the checkout root KNOWN the named deployment runs where the reader
+  // stands — the --project-root selector points the cwd-resolving program at it, so the
+  // row neither re-roots nor carries the paste-conflict note. Unknown root keeps the old
+  // re-rooted row byte for byte.
+  const projectRoot = cwdConflict && frame.places.checkoutRoot !== undefined
+    ? `${frame.places.checkoutRoot}/apps/${advice.app}`
+    : undefined;
+  const rooted = advice.at === "checkout-root" || (cwdConflict && projectRoot === undefined);
+  let note = advice.note ?? (cwdConflict && projectRoot === undefined ? CWD_CONFLICT_NOTE : undefined);
   let program = handed;
   if (rooted) {
     // The re-rooted frame spells in the frame's primary shell, or — a bash shim under
@@ -154,9 +218,9 @@ export function renderFrameAdvice(
     // renderer's: this check set reads the note suffix as command words (design S1.6).
     // Without a known checkout root the transition is a no-op, so the spelling falls
     // back to the launch's own re-rooting (the pre-frame behavior, kept byte-identical).
-    const reRooted = toCheckoutRoot(frame);
+    const reRooted = toCheckoutRoot(f);
     const root = reRooted.places.checkoutRoot;
-    const launch = root === undefined ? rootedLaunch(frame.launch) : reRooted.launch;
+    const launch = root === undefined ? rootedLaunch(f.launch) : reRooted.launch;
     // The spelling is relative to where the frame stands: the frame's places decide the
     // program (a wrong recorded root spells a wrong line), and the transition's paste
     // directory is the checkout root itself. Without a known root the transition is a
@@ -166,9 +230,9 @@ export function renderFrameAdvice(
     // from there (design §2.3/§3): the re-rooted frame's own cwd, not the directory
     // this run refused in. Without a known root it stays the frame's own cwd.
     const from = root === undefined
-      ? (frame.cwd.kind === "dir" ? frame.cwd.path : undefined)
+      ? (f.cwd.kind === "dir" ? f.cwd.path : undefined)
       : (reRooted.cwd.kind === "dir" ? reRooted.cwd.path : undefined);
-    const primary = spell(launch, frame.shells[0], host, from);
+    const primary = spell(launch, f.shells[0], host, from);
     program = primary ?? spell(launch, "posix", host, from) ?? handed;
     // The fallback case (O1, S1.2a): the frame's own shells have no spelling for the
     // re-rooted launch — npm's bin wrapper on win32 re-roots to the bash-only shim under
@@ -184,26 +248,43 @@ export function renderFrameAdvice(
     // stands byte-identical. Only a frame that knows BOTH its launch root and its paste
     // directory re-spells — a launch read back from a hand-over (root "") or a frame
     // without a paste directory keeps the handed spelling (the pre-frame behavior).
-    const from = frame.cwd.kind === "dir" ? frame.cwd.path : undefined;
-    const launchRoot = frame.launch.kind === "checkout-shim" || frame.launch.kind === "deployment-shim" || frame.launch.kind === "npm-bin" ? frame.launch.root : undefined;
+    const from = f.cwd.kind === "dir" ? f.cwd.path : undefined;
+    const launchRoot = f.launch.kind === "checkout-shim" || f.launch.kind === "deployment-shim" || f.launch.kind === "npm-bin" ? f.launch.root : undefined;
+    // A line that leaves the terminal for a NAMED shell — a completion Install: header —
+    // spells for that shell whatever the launch root: a frame whose launch read back from a
+    // hand-over carries root "" and must still re-spell (binSpelling's root "" case is
+    // already the portable spelling).
+    if (advice.shell !== undefined && from !== undefined) {
+      const primary = spell(f.launch, f.shells[0], host, from);
+      program = primary ?? spell(f.launch, "posix", host, from)
+        ?? handed;
+      // The shell the advice names may have no spelling (a pwsh install header under a
+      // bash shim): the POSIX line pastes there only in Git Bash (design D6/O1) — the
+      // note names that shell, like the rooted branch.
+      if (primary === undefined) {
+        note = note === undefined ? IN_BASH_NOTE : `${note}, ${IN_BASH_NOTE}`;
+      }
+    }
     if (launchRoot !== undefined && launchRoot !== "" && from !== undefined) {
-      program = spell(frame.launch, frame.shells[0], host, from)
-        ?? spell(frame.launch, "posix", host, from)
+      program = spell(f.launch, f.shells[0], host, from)
+        ?? spell(f.launch, "posix", host, from)
         ?? handed;
     }
   }
-  // An install line spells its program for the shell that pastes it, not for wherever
-  // this run stood: forward slashes survive bash, zsh and every PowerShell alike.
-  if (advice.install === true) program = program.replaceAll("\\", "/");
   // Arguments quote by the frame's shells, not by the program's spelling: a frame that
   // also pastes into cmd.exe and PowerShell takes the double-quote rule, a POSIX-only
   // frame the POSIX one.
-  const posixOnly = frame.shells.length === 1 && frame.shells[0] === "posix";
+  const posixOnly = f.shells.length === 1 && f.shells[0] === "posix";
   const quote = (word: string): string => (posixOnly ? posixArgument(word) : shellArgument(word));
   // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
   // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
   const parts = [SAFE_PROGRAM.test(program) ? program : quote(program)];
-  if (advice.app !== undefined) {
+  if (projectRoot !== undefined) {
+    // Decision O2: the selector reads --project-root as the first token; the path it names
+    // implies the app, so no --app rides along. Quoted by the frame's shells rule, like
+    // any argument — never by the program's spelling.
+    parts.push("--project-root", quote(projectRoot));
+  } else if (advice.app !== undefined) {
     parts.push("--app", quote(advice.app));
   } else if (
     !isGateCommand(advice.argv[0]) &&
@@ -217,7 +298,21 @@ export function renderFrameAdvice(
   }
   for (const argument of advice.argv) parts.push(quote(argument));
   const line = parts.join(" ");
-  return note === undefined ? line : `${line}  (${note})`;
+  return [note === undefined ? { line } : { line, note }];
+}
+
+/** The rows as text: each part's note appended in the `  (note)` suffix style. The rendered
+ *  text is byte-identical to the pre-parts renderer — the frame law and the advice matrix
+ *  read these strings. */
+export function renderAdviceRows(
+  advice: Advice,
+  frame: Frame,
+  options?: { readonly deploymentFree?: boolean },
+  asTyped?: string,
+): readonly string[] {
+  return renderAdviceParts(advice, frame, options, asTyped).map((part) =>
+    part.note === undefined ? part.line : `${part.line}  (${part.note})`
+  );
 }
 
 /** Compatibility wrapper: the remaining Invocation-passing callers (commands/**,
@@ -226,18 +321,24 @@ export function renderFrameAdvice(
  *  derives its frame without installing. */
 export function renderAdvice(
   advice: Advice,
-  on?: Invocation,
+  on?: Invocation | Frame,
   options?: { readonly deploymentFree?: boolean },
 ): string {
   // The CURRENT invocation (the entry installed its frame, S1.3) renders against that
   // installed frame: a frame derived back from the hand-over spelling carries a rootless
   // launch, which would hide the known launch root the O4 rule below needs. An explicit
   // Invocation the caller holds separately keeps its derived frame (rootless frames render
-  // exactly as before).
-  const frame = on === undefined || on === invocation() ? currentFrame() : frameOf(on);
+  // exactly as before). A caller that holds the run's FRAME passes it whole — never a
+  // projected Invocation, whose frameOf rebuild loses the roots and the cwd.
+  const frame = on === undefined ? currentFrame()
+    : "launch" in on ? on
+    : on === invocation() ? currentFrame()
+    : frameOf(on);
   // The spelling as handed: the stored Invocation's own program (a hand-over's checkout
-  // spelling survives the frame round-trip only through this pass-through).
-  return renderFrameAdvice(advice, frame, options, on?.program ?? invocation().program);
+  // spelling survives the frame round-trip only through this pass-through); a Frame spells
+  // its own hand-over.
+  const asTyped = on === undefined ? invocation().program : "launch" in on ? handoverOf(on).program : on.program;
+  return renderFrameAdvice(advice, frame, options, asTyped);
 }
 
 export function commandLine(argv: string | readonly string[], options?: { readonly app?: string; readonly note?: string; readonly deploymentFree?: boolean; readonly at?: "checkout-root" }): string {
@@ -245,8 +346,26 @@ export function commandLine(argv: string | readonly string[], options?: { readon
 }
 
 /** The install line a generated completion script spells in its header, and the --help
- *  prose sentences echo: this invocation's program and argv, the program re-spelled for
- *  the shell that pastes the line (CommandAdvice.install), not for wherever the run stood. */
-export function installLine(argv: readonly string[]): string {
-  return renderAdvice(command(argv, { install: true }), invocation());
+ *  prose sentences echo: this invocation's program and argv, spelled for the shell that
+ *  pastes the line (CommandAdvice.shell), not for wherever the run stood. */
+export function installLine(argv: readonly string[], shell: Shell): string {
+  const part = installLineParts(argv, shell);
+  return part.note === undefined ? part.line : `${part.line}  (${part.note})`;
+}
+
+/** installLine with the note STRUCTURED: the completion composers place the note after the
+ *  whole composed header line, never inside the executable pipeline. Same frame derivation
+ *  as renderAdvice on the current invocation — the spelling matches installLine exactly. */
+export function installLineParts(argv: readonly string[], shell: Shell): AdviceRowPart {
+  return renderAdviceParts(command(argv, { shell }), currentFrame(), undefined, invocation().program)[0]!;
+}
+
+/** The caller-less reads that remain (all inside core/io/invocation/**, frameReads = 0
+ *  elsewhere): (1) this accessor — formatError's and nextActions' slots, whose callers
+ *  hold no frame; (2) renderAdvice's currentFrame() fallback when no Invocation is
+ *  passed — the commands/** call sites (S1.5 scope); (3) commandLine/installLine('s and
+ *  installLineParts') invocation() — the same S1.5 scope; (4) prose.ts's default
+ *  invokedFrame() — inside the invocation module itself. */
+export function renderCurrentAdviceRows(advice: Advice): readonly string[] {
+  return renderAdviceRows(advice, currentFrame());
 }

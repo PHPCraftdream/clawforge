@@ -4,7 +4,7 @@
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
-import { frameworkRoot, parseEnv, projectPort } from "../../core/env.ts";
+import { frameworkRoot, parseEnv, projectPort, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
 
 /** Ports claimed by sibling deployments (each subdirectory's own .env) under `scanDir`. */
 export async function usedPorts(scanDir: string): Promise<Set<number>> {
@@ -31,12 +31,12 @@ export async function usedPorts(scanDir: string): Promise<Set<number>> {
 }
 
 /** The template .env with a data path and a port that do not collide with siblings under `scanDir`. */
-export async function deploymentEnv(name: string, scanDir: string, portStart?: number): Promise<string> {
+export async function deploymentEnv(name: string, scanDir: string, portStart?: number): Promise<DeploymentEnv> {
   const template = await readFile(resolve(frameworkRoot, ".env.example"), "utf8");
   const taken = await usedPorts(scanDir);
   const port = projectPort(taken, portStart);
 
-  return template
+  return deploymentEnvText(template
     .split("\n")
     .map((line) => {
       if (line.startsWith("OC_DATA_DIR=")) return `OC_DATA_DIR=/srv/${name}/data`;
@@ -45,7 +45,7 @@ export async function deploymentEnv(name: string, scanDir: string, portStart?: n
       if (line.startsWith("OPENCLAW_GATEWAY_PORT=")) return `OPENCLAW_GATEWAY_PORT=${port}`;
       return line;
     })
-    .join("\n");
+    .join("\n"));
 }
 
 /** Ordered .gitignore lines; `nodeModules` adds the installed-mode `node_modules/`. */

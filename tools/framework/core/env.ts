@@ -98,6 +98,9 @@ export function checkoutFrameworkSource(specifier: string): string | undefined {
   return existsSync(target) ? target : undefined;
 }
 
+export type DeploymentEnv = string & { readonly __deploymentEnv: unique symbol };
+export function deploymentEnvText(text: string): DeploymentEnv { return text as DeploymentEnv; }
+
 export type Env = Record<string, string>;
 
 /** The framework's own scratch directory on the target, beside the data directory — not

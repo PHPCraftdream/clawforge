@@ -11,7 +11,7 @@
 
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
-import { frameworkPackage, frameworkRoot } from "../../core/env.ts";
+import { frameworkPackage, frameworkRoot, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
 import { handoverJson, spell, type Launch } from "../../core/io/invocation/frame.ts";
 import { renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
 import { command } from "../../core/io/invocation/advice.ts";
@@ -145,8 +145,8 @@ async function writeShim(root: string): Promise<void> {
 }
 
 /** The shared template; the port avoids sibling deployments beside this directory. */
-async function deploymentEnv(root: string, name: string): Promise<string> {
-  return templateEnv(name, dirname(root));
+async function deploymentEnv(root: string, name: string): Promise<DeploymentEnv> {
+  return deploymentEnvText(await templateEnv(name, dirname(root)));
 }
 
 /** Appends the deployment-state entries to .gitignore, creating the file if the consumer

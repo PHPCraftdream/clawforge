@@ -5,10 +5,12 @@
 // launch, never by "contains /".
 
 import { shellQuote } from "../shell.ts";
-import { currentFrame, frameFacts, invocation, type Invocation } from "./index.ts";
+import { currentFrame, frameOf, invocation, type Invocation } from "./index.ts";
 import {
-  frameFromInvocation,
   handoverOf,
+  modeOf,
+  checkoutLaunch,
+  launchFromModeBoundary,
   IN_BASH_NOTE,
   launchOf,
   pasteShells,
@@ -37,8 +39,9 @@ export function useGateCommands(names: readonly string[]): void {
 /** The explicit invocation for text that leaves the terminal — a file, cron, a remote
  *  server — where no CLAWFORGE_INVOCATION rides along; the shim spells its own `--app`. */
 export function shimInvocation(app?: string): Invocation {
-  if (app === undefined) return { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" };
-  return { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", app: { name: app, selectedBy: "flag" } };
+  const launch = checkoutLaunch();
+  const base = { program: SHIM_PROGRAM, mode: modeOf(launch), audience: "terminal" } as const;
+  return app === undefined ? base : { ...base, app: { name: app, selectedBy: "flag" } };
 }
 
 function isGateCommand(word: string | undefined): boolean {
@@ -78,7 +81,7 @@ function shellArgument(word: string): string {
  *  S1.3/S1.4): the shells come from the program's launch kind plus this process's host
  *  facts, and the word quotes by those shells — no decision by the program's spelling. */
 export function renderArgument(word: string, program: string): string {
-  const launch = launchOf({ program, mode: program === "clawforge" ? "installed" : "checkout", audience: "terminal" });
+  const launch = launchOf({ program, mode: modeOf(launchFromModeBoundary(program)), audience: "terminal" });
   const host: Host = { kind: "operator", platform: process.platform === "win32" ? "win32" : "posix" };
   const shells = pasteShells(launch, host, false);
   return shells.length === 1 && shells[0] === "posix" ? posixArgument(word) : shellArgument(word);
@@ -159,7 +162,12 @@ export function renderFrameAdvice(
     // directory is the checkout root itself. Without a known root the transition is a
     // no-op and the launch's own re-rooting stands (the pre-frame behavior, kept
     // byte-identical).
-    const from = frame.cwd.kind === "dir" ? frame.cwd.path : undefined;
+    // The paste directory of the transition is the checkout root, so the row spells
+    // from there (design §2.3/§3): the re-rooted frame's own cwd, not the directory
+    // this run refused in. Without a known root it stays the frame's own cwd.
+    const from = root === undefined
+      ? (frame.cwd.kind === "dir" ? frame.cwd.path : undefined)
+      : (reRooted.cwd.kind === "dir" ? reRooted.cwd.path : undefined);
     const primary = spell(launch, frame.shells[0], host, from);
     program = primary ?? spell(launch, "posix", host, from) ?? handed;
     // The fallback case (O1, S1.2a): the frame's own shells have no spelling for the
@@ -221,7 +229,12 @@ export function renderAdvice(
   on?: Invocation,
   options?: { readonly deploymentFree?: boolean },
 ): string {
-  const frame = on === undefined ? currentFrame() : frameFromInvocation(on, frameFacts());
+  // The CURRENT invocation (the entry installed its frame, S1.3) renders against that
+  // installed frame: a frame derived back from the hand-over spelling carries a rootless
+  // launch, which would hide the known launch root the O4 rule below needs. An explicit
+  // Invocation the caller holds separately keeps its derived frame (rootless frames render
+  // exactly as before).
+  const frame = on === undefined || on === invocation() ? currentFrame() : frameOf(on);
   // The spelling as handed: the stored Invocation's own program (a hand-over's checkout
   // spelling survives the frame round-trip only through this pass-through).
   return renderFrameAdvice(advice, frame, options, on?.program ?? invocation().program);

@@ -8,13 +8,13 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { appsRootFor } from "../core/env.ts";
-import { safeName } from "../core/values/names.ts";
-import type { Invocation, InvocationApp } from "../core/io/invocation/index.ts";
+import { readName, safeName, type DeploymentName } from "../core/values/names.ts";
+import type { InvocationApp } from "../core/io/invocation/index.ts";
 import type { CommandArgument } from "../core/app.ts";
 import { manual } from "../core/io/invocation/advice.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { CWD_RESOLVING_PROGRAMS, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
-import { IN_BASH_NOTE, rootedProgram } from "../core/io/invocation/frame.ts";
+import { renderFrameAdvice } from "../core/io/invocation/render.ts";
+import { IN_BASH_NOTE, resolvesByCwd, rootedLaunch, shimFrame, type Frame, type Launch } from "../core/io/invocation/frame.ts";
 export { IN_BASH_NOTE };
 import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
@@ -52,6 +52,22 @@ export const FROM_CHECKOUT_ROOT = "run the gate from its root";
 export const CANNOT_LOAD = "cannot load";
 export function takeoverNote(directory: string): string {
   return `new-app ${directory} takes over this empty directory, or remove it`;
+}
+
+/** The empty-OC_APP refusal (decision O3): an empty value is an explicit selection, so a
+ *  command that needs a deployment refuses it by the variable's name. */
+export const EMPTY_OC_APP = "OC_APP is set but empty — unset it or name a deployment";
+
+/** OC_APP as the entry reads it (decision O3): unset, empty/blank (an explicit selection,
+ *  typically an interpolated-but-unset variable), or a name as handed. */
+export type EnvApp =
+  | { readonly state: "unset" }
+  | { readonly state: "empty" }
+  | { readonly state: "named"; readonly name: string };
+
+export function appFromEnv(value: string | undefined): EnvApp {
+  if (value === undefined) return { state: "unset" };
+  return value.trim() === "" ? { state: "empty" } : { state: "named", name: value };
 }
 
 export const nodeFs: FsProbe = {
@@ -97,7 +113,11 @@ export interface CheckoutEntryInput {
   readonly ocApp: string | undefined;
   /** A hand-over (bin.shim → gate, or the legacy variable) named this process. */
   readonly handedOver: boolean;
-  /** The program the hand-over named (Invocation.program); decides whether the cwd selects the deployment. */
+  /** The launch the hand-over was classified as (launchFromHandover): decides whether the
+   *  cwd selects the deployment — a longer path spelling never reads the cwd. */
+  readonly launch?: Launch;
+  /** The program the hand-over named (Invocation.program): the spelling resolvesByCwd
+   *  checks the checkout-shim launch against. */
   readonly handedProgram?: string;
   readonly fs: FsProbe;
   readonly gateCommands: readonly string[];
@@ -119,7 +139,7 @@ export type CheckoutEntryDecision =
   | {
       readonly kind: "run";
       readonly deploymentDir: string;
-      readonly appName: string;
+      readonly appName: DeploymentName;
       readonly argv: readonly string[];
       /** The deployment fact for hints; undefined only when no app fact applies. */
       readonly app: InvocationApp | undefined;
@@ -128,17 +148,17 @@ export type CheckoutEntryDecision =
     };
 
 /** Visible apps/<name> directories holding app.ts, sorted — the same rule scanApps applies. */
-function availableNames(root: string, fs: FsProbe): string[] {
-  const names: string[] = [];
+function availableNames(root: string, fs: FsProbe): DeploymentName[] {
+  const names: DeploymentName[] = [];
   for (const entry of fs.readdir(resolve(appsRootFor(root)))) {
     if (entry.startsWith(".")) continue;
     if (!fs.isDirectory(resolve(appsRootFor(root), entry))) continue;
     try {
-      safeName("deployment", entry);
+      readName("deployment", entry);
     } catch {
       continue;
     }
-    if (fs.exists(resolve(appsRootFor(root), entry, "app.ts"))) names.push(entry);
+    if (fs.exists(resolve(appsRootFor(root), entry, "app.ts"))) names.push(readName("deployment", entry));
   }
   return names.sort();
 }
@@ -150,27 +170,52 @@ function sameFile(fs: FsProbe, a: string, b: string): boolean {
 // Programs that find their deployment from the cwd: the system-wide command and the
 // deployment's own shim / npm bin wrapper. A path out of the deployment (the MCP launcher's
 // shim two levels up) is the checkout gate, which reads --app and OC_APP and never the cwd.
-// One list with the renderer's, which needs it for the paste-conflict frame (rf6-fix33).
-const CWD_PROGRAMS = CWD_RESOLVING_PROGRAMS;
+// The launch kind decides (frame.ts's resolvesByCwd); only the checkout-shim launch checks
+// the spelling, so the hand-over's program rides along.
 
 /** The deployment fact hints need: recorded for every selected deployment as handed over; only
  *  a hand-over by a cwd-resolving program, run inside the deployment, re-selects it by the cwd
  *  (the prefix rule then prints nothing). */
-function appFact(name: string, selectedBy: InvocationApp["selectedBy"], handedProgram: string | undefined, deploymentDir: string, cwd: string): InvocationApp {
-  const byCwd = handedProgram !== undefined && CWD_PROGRAMS.includes(handedProgram) && isWithin(deploymentDir, cwd);
+function appFact(name: DeploymentName, selectedBy: InvocationApp["selectedBy"], launch: Launch | undefined, handedProgram: string | undefined, deploymentDir: string, cwd: string): InvocationApp {
+  const byCwd = launch !== undefined && handedProgram !== undefined && resolvesByCwd(launch, handedProgram) && isWithin(deploymentDir, cwd);
   return { name, selectedBy: byCwd ? "cwd" : selectedBy };
+}
+
+function readDeploymentName(name: string): DeploymentName | undefined {
+  try {
+    return readName("deployment", name);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The gate-command fact: the typed --app is the frame's fact when it is a valid name —
+ *  where a command actually runs, the safeName refusal owns the invalid case. */
+function appFactMaybe(name: string, selectedBy: InvocationApp["selectedBy"], launch: Launch | undefined, handedProgram: string | undefined, deploymentDir: string, cwd: string): InvocationApp | undefined {
+  const deployment = readDeploymentName(name);
+  return deployment === undefined ? undefined : appFact(deployment, selectedBy, launch, handedProgram, deploymentDir, cwd);
+}
+
+/** Whether the command word needs a deployment: help requests and the dispatcher's commands
+ *  answer without one (O3), and so does a bare invocation (help with no command). */
+function needsDeployment(rest: readonly string[], deploymentCommands: readonly string[]): boolean {
+  const first = rest[0];
+  if (first === undefined || first === "help" || first === "--help" || first === "-h" || isDeploymentHelpRequest(rest, deploymentCommands)) return false;
+  return !((DISPATCHER_COMMANDS as readonly string[]).includes(first));
 }
 
 export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDecision {
   const { root, cwd, argv, ocApp, handedOver, fs, gateCommands, deploymentCommands, variadicCommands, deploymentArguments } = input;
   const handedProgram = handedOver ? input.handedProgram : undefined;
+  const launch = handedOver ? input.launch : undefined;
 
-  // --app wins over the environment, the environment over the default. An exported-but-blank
-  // OC_APP is no selection (rf6-fix33): reading it as the name "" fails safeName with the
-  // Deployment name refusal instead of answering as unset.
-  const envApp = ocApp !== undefined && ocApp.trim() === "" ? undefined : ocApp;
-  let name = envApp ?? "openclaw";
-  let selectedBy: InvocationApp["selectedBy"] = envApp !== undefined ? "env" : "default";
+  // --app wins over the environment, the environment over the default (O3 classifies the
+  // variable; an empty one is an explicit selection, refused where a deployment is needed
+  // and ignored by the commands below that answer without one).
+  const env = appFromEnv(ocApp);
+  const envName = env.state === "named" ? env.name : undefined;
+  let name = envName ?? "openclaw";
+  let selectedBy: InvocationApp["selectedBy"] = envName !== undefined ? "env" : "default";
   const appFlag = splitLeadingAppFlag([...argv]);
   if (appFlag.missingValue) return { kind: "refuse", refusals: [new UserError("--app needs a deployment name")] };
   if (appFlag.value !== undefined) {
@@ -195,26 +240,36 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
       kind: "gate-command",
       name: rest[0],
       args: rest.slice(1),
-      app: isValidDeploymentName(name) ? appFact(name, selectedBy, handedProgram, resolve(appsRootFor(root), name), cwd) : undefined,
+      app: appFactMaybe(name, selectedBy, launch, handedProgram, resolve(appsRootFor(root), name), cwd),
     };
   }
 
-  // Checked before it becomes a path: the name also becomes the compose project.
+  // A command that needs a deployment refuses an empty OC_APP by name (O3); help requests
+  // and the dispatcher answer without one, and so does a bare invocation.
+  const envSelected = envName !== undefined || appFlag.value !== undefined;
+  if (env.state === "empty" && appFlag.value === undefined && needsDeployment(rest, deploymentCommands)) {
+    return { kind: "refuse", refusals: [new UserError(EMPTY_OC_APP)] };
+  }
+
+  // Checked before it becomes a path: the name also becomes the compose project. From here
+  // on the name travels branded (S3.1): it passed the reader grammar.
   try {
     safeName("deployment", name);
   } catch (error) {
     return { kind: "refuse", refusals: [new UserError((error as Error).message)] };
   }
+  const deployment = readName("deployment", name);
 
   const baseCommandNames = [...deploymentCommands, ...gateCommands, ...DISPATCHER_COMMANDS];
 
-  const deploymentDir = resolve(appsRootFor(root), name);
+  const deploymentDir = resolve(appsRootFor(root), deployment);
   if (!fs.exists(resolve(deploymentDir, "app.ts"))) {
     // Other deployments may exist under another name: name them instead of claiming none.
     const available = availableNames(root, fs);
-    const sole = soleDeploymentFallback(envApp !== undefined || appFlag.value !== undefined, available);
+    const sole = soleDeploymentFallback(envSelected, available);
     if (sole !== undefined) {
-      return { kind: "run", deploymentDir: resolve(appsRootFor(root), sole), appName: sole, argv: rest, app: appFact(sole, "sole", handedProgram, resolve(appsRootFor(root), sole), cwd), soleNote: sole };
+      const soleName = readName("deployment", sole);
+      return { kind: "run", deploymentDir: resolve(appsRootFor(root), soleName), appName: soleName, argv: rest, app: appFact(soleName, "sole", launch, handedProgram, resolve(appsRootFor(root), soleName), cwd), soleNote: sole };
     }
     if (rest.length === 0 || rest[0] === "help" || rest[0] === "--help" || rest[0] === "-h" || isDeploymentHelpRequest(rest, deploymentCommands)) {
       const pick = available.length === 0
@@ -227,11 +282,11 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     }
     return {
       kind: "refuse",
-      refusals: [missingDeploymentReport(envApp !== undefined || appFlag.value !== undefined, name, deploymentDir, available, fs.exists(deploymentDir))],
+      refusals: [missingDeploymentReport(envSelected, name, deploymentDir, available, fs.exists(deploymentDir))],
     };
   }
 
-  return { kind: "run", deploymentDir, appName: name, argv: rest, app: appFact(name, selectedBy, handedProgram, deploymentDir, cwd) };
+  return { kind: "run", deploymentDir, appName: deployment, argv: rest, app: appFact(deployment, selectedBy, launch, handedProgram, deploymentDir, cwd) };
 }
 
 // --- the installed command: which framework copy runs --------------------------------------------
@@ -386,10 +441,9 @@ export interface InstalledEntryInput {
   readonly rawArgv: readonly string[];
   readonly platform: NodeJS.Platform;
   readonly fs: FsProbe;
-  /** The frame this run is (the handed invocation, or root.ts's default): the bash-shim
-   *  row's drop decision spells its advice for it, so the resolver stays pure (rf6-fix33)
-   *  instead of reading the process-global at decision time. */
-  readonly frame: Invocation;
+  /** The frame this run is (S1.3): the bash-shim row's drop decision spells its advice
+   *  from it, so the resolver stays pure instead of reading the process-global. */
+  readonly frame: Frame;
 }
 
 export type InstalledEntryDecision =
@@ -467,13 +521,13 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
       fs.readdir(cwd).length === 0 &&
       // Both sides resolved, so the comparison does not depend on how the caller spelled cwd.
       sameDirectory(platform, dirname(here), resolve(checkout, "apps")) &&
-      isValidDeploymentName(basename(here));
+      readDeploymentName(basename(here)) !== undefined;
     // The sentence directs to the checkout root: row 1 spells the program from there for
     // the copy this run is (the at mark re-roots it in the renderer); row 2 is the bash
     // shim's own spelling, dropped when row 1 already is it.
     const advice: Advice[] = [command(["new-app", "<name>"], { at: "checkout-root" })];
-    if (rootedProgram(frame) !== SHIM_PROGRAM) {
-      advice.push(shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: IN_BASH_NOTE }));
+    if (rootedLaunch(frame.launch).kind === "system") {
+      advice.push(shellLine("posix", renderFrameAdvice(command(["new-app", "<name>"]), shimFrame(frame)), { note: IN_BASH_NOTE }));
     }
     if (reusable) {
       advice.push(manual(takeoverNote(basename(cwd))));
@@ -499,15 +553,6 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
   return { kind: "run", appRoot, argv, launchArgv, initializing, localTypesOnly, ancestor, checkout };
 }
 
-function isValidDeploymentName(name: string): boolean {
-  try {
-    safeName("deployment", name);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** The "no app.ts here" branches of the installed entry, as data. The executor checks
  *  app.ts, then renders this decision: a checkout-subfolder report, the deployment-less
  *  help (which always exits), or the not-initialised refusal — in that order, as today. */
@@ -518,8 +563,8 @@ export interface MissingAppInput {
   /** The installed gate's own commands (init, version, completion). */
   readonly gateCommandNames: readonly string[];
   readonly deploymentCommands: readonly string[];
-  /** The frame this run is — same purity rule as InstalledEntryInput's (rf6-fix33). */
-  readonly frame: Invocation;
+  /** The frame this run is — same purity rule as InstalledEntryInput's (S1.3). */
+  readonly frame: Frame;
 }
 
 interface NotInitialised {
@@ -548,9 +593,9 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
         new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
             command([], { at: "checkout-root" }),
-            ...(rootedProgram(frame) === SHIM_PROGRAM
-              ? []
-              : [shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: IN_BASH_NOTE })]),
+            ...(rootedLaunch(frame.launch).kind === "system"
+              ? [shellLine("posix", renderFrameAdvice(command([]), shimFrame(frame)), { note: IN_BASH_NOTE })]
+              : []),
           ],
         }),
       ];

@@ -11,12 +11,12 @@ import { createRequire, registerHooks } from "node:module";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { INVOCATION_ENV, invocation, serializeInvocation, type Invocation } from "../core/io/invocation/index.ts";
+import { INVOCATION_ENV, serializeInvocation } from "../core/io/invocation/index.ts";
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError, UserError } from "../core/io/log.ts";
 import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
-import { renderArgument, renderAdvice, shimInvocation, SHIM_PROGRAM } from "../core/io/invocation/render.ts";
-import { IN_BASH_NOTE, rootedProgram } from "../core/io/invocation/frame.ts";
+import { renderArgument, renderFrameAdvice } from "../core/io/invocation/render.ts";
+import { handoverOf, IN_BASH_NOTE, rootedLaunch, shimFrame, type Frame } from "../core/io/invocation/frame.ts";
 import { nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
@@ -46,11 +46,15 @@ export function takeDelegationFlag(): boolean {
 }
 
 /** `flag`: only a package entry (bin.js) reads it; a checkout gate never would, so it would leak. */
-function runInstead(entry: string, args: string[], flag: boolean): never {
-  const result = spawnSync(process.execPath, ["--experimental-strip-types", entry, ...args], {
+export function spawnDelegated(entry: string, args: string[], flag: boolean, frame: Frame, runner: typeof spawnSync = spawnSync): ReturnType<typeof spawnSync> {
+  return runner(process.execPath, ["--experimental-strip-types", entry, ...args], {
     stdio: "inherit",
-    env: { ...process.env, [INVOCATION_ENV]: serializeInvocation(invocation()), ...(flag ? { [DELEGATED]: "1" } : {}) },
+    env: { ...process.env, [INVOCATION_ENV]: serializeInvocation(handoverOf(frame)), ...(flag ? { [DELEGATED]: "1" } : {}) },
   });
+}
+
+function runInstead(entry: string, args: string[], flag: boolean, frame: Frame): never {
+  const result = spawnDelegated(entry, args, flag, frame);
   if (result.error !== undefined) {
     process.stderr.write(`clawforge: cannot start ${entry}: ${result.error.message}\n`);
     process.exit(1);
@@ -62,15 +66,15 @@ function runInstead(entry: string, args: string[], flag: boolean): never {
  *  spells the gate from there for the copy this run is (the at mark re-roots it), and row
  *  2 is the bash shim's own spelling, dropped when it duplicates row 1 — the same frame
  *  rule as entry/resolve.ts's checkout refusals. */
-export function appConflictRefusal(decision: { readonly typed: string; readonly app: string }, frame: Invocation): UserError {
-  // The frame arrives from the caller (bin.ts's one source, rf6-fix33): the bash row's
-  // drop decision and the typed name's quoting spell it, no process-global read.
+export function appConflictRefusal(decision: { readonly typed: string; readonly app: string }, frame: Frame): UserError {
+  // The frame arrives from the caller (bin.ts's one source): the bash row's drop decision
+  // and the typed name's quoting spell it, no process-global read.
   const advice: Advice[] = [command([], { app: decision.typed, at: "checkout-root" })];
-  if (rootedProgram(frame) !== SHIM_PROGRAM) {
-    advice.push(shellLine("posix", renderAdvice(command([], { app: decision.typed }), shimInvocation()), { note: IN_BASH_NOTE }));
+  if (rootedLaunch(frame.launch).kind === "system") {
+    advice.push(shellLine("posix", renderFrameAdvice(command([], { app: decision.typed }), shimFrame(frame)), { note: IN_BASH_NOTE }));
   }
   return new UserError(
-    `--app ${renderArgument(decision.typed, frame.program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — ${APP_CONFLICT_FROM_ROOT}:`,
+    `--app ${renderArgument(decision.typed, handoverOf(frame).program)} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — ${APP_CONFLICT_FROM_ROOT}:`,
     { advice },
   );
 }
@@ -79,11 +83,11 @@ export function appConflictRefusal(decision: { readonly typed: string; readonly 
  *  only when this package is the one to run. `launchArgv` is passed on untouched to a local
  *  install (same entry point), `argv` (without --project-root) to a checkout gate. Which
  *  copy that is — the decision — is entry/resolve.ts's; here only the effects remain. */
-export function delegateToOwnFramework(self: string, appRoot: string, launchArgv: string[], argv: string[], handedOver: boolean, frame: Invocation): void {
+export function delegateToOwnFramework(self: string, appRoot: string, launchArgv: string[], argv: string[], handedOver: boolean, frame: Frame): void {
   const decision = frameworkOwner({ self, appRoot, launchArgv, argv, handedOver, platform: process.platform, fs: nodeFs, localEntry: localEntry(appRoot) });
   if (decision.kind === "run-here") return;
   if (decision.kind === "spawn") {
-    runInstead(decision.entry, [...decision.args], decision.delegated);
+    runInstead(decision.entry, [...decision.args], decision.delegated, frame);
     return;
   }
   if (decision.reason === "missing-app-value") {

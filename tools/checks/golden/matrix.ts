@@ -5,8 +5,10 @@
 // builders the entries render, and the file is a golden diff like the other surfaces.
 
 import { basename, dirname } from "node:path";
-import { invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { invocation, setInvocation } from "#framework/core/io/invocation/index.ts";
 import { commandLine, renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { frameFromInvocation, launchFromHandover, type Frame, type HandoverFacts, type Launch } from "#framework/core/io/invocation/frame.ts";
+import type { Invocation } from "#framework/core/io/invocation/index.ts";
 import { command, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
@@ -35,14 +37,14 @@ const SELF = "/usr/local/lib/node_modules/@clawforge/framework/dist/entry/bin.js
 const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@clawforge/framework/entry/bin.js`;
 
 /** The frame the installed command builds its refusals as ("clawforge"): the golden's
- *  builders pin it, because the bash shim row's drop decision reads the invocation at
- *  build time — the entries themselves build after bin.ts has set the real one. */
-const INSTALLED_FRAME: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
+ *  builders pin it, because the bash shim row's drop decision reads the frame at build
+ *  time — the entries themselves build after bin.ts has installed the real one. */
+const INSTALLED_FRAME: Frame = frameFromInvocation({ program: "clawforge", mode: "installed", audience: "terminal" }, { host: "posix", msys: false });
 
 /** A tiny in-memory file system: exact paths plus a canonical-spelling map (Windows case).
  *  Lookups are normalised, because node's resolve spells fake paths with this host's drive
  *  and separators. */
-function fakeFs(files: Record<string, string>, dirs: readonly string[], real: Record<string, string> = {}): FsProbe {
+export function fakeFs(files: Record<string, string>, dirs: readonly string[], real: Record<string, string> = {}): FsProbe {
   const norm = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
   const canonical = (path: string): string => real[norm(path)] ?? norm(path);
   return {
@@ -137,7 +139,8 @@ const ENVS: readonly (readonly [string, string | undefined])[] = [
   ["none", undefined],
   ["OC_APP=x", "x"],
   ["OC_APP=staging", "staging"],
-  // An exported-but-blank variable decides like an unset one (rf6-fix33), not like a name.
+  // An exported-but-blank variable is an explicit selection (decision O3): refused by name
+  // where a deployment is needed, ignored by the commands that answer without one.
   ["OC_APP=<blank>", ""],
 ];
 
@@ -169,6 +172,14 @@ const INSTALLED_ARGVS: readonly (readonly string[])[] = [
 ];
 /** The installed gate's own commands: the executor answers them before the app.ts check. */
 const INSTALLED_GATE_COMMANDS = installedGate("<app-root>").map((command) => command.name);
+
+/** The launch a hand-over program's spelling classifies as (renderArgument's rule). */
+const launchOfProgram = (program: string, cwd: string): Launch => {
+  const fs = fakeFs(BASE_FILES, BASE_DIRS);
+  const on: Invocation = { program, mode: program === "clawforge" ? "installed" : "checkout", audience: "terminal" };
+  const facts: HandoverFacts = { cwd, fs };
+  return launchFromHandover(on, facts);
+};
 
 /** Host-independent path text: this machine's path module may prefix a drive and prefer
  *  backslashes; the fake world spells everything with forward slashes from /. */
@@ -336,6 +347,7 @@ export function renderEntryMatrix(): string {
               argv,
               ocApp,
               handedOver: layout.gate.handedOver,
+              launch: layout.gate.handedOver ? launchOfProgram(layout.gate.program ?? SHIM_PROGRAM, layout.gate.cwd) : undefined,
               handedProgram: layout.gate.program,
               fs,
               gateCommands: GATE_COMMANDS,
@@ -385,6 +397,14 @@ export function renderEntryMatrix(): string {
       }
     }
   }
+  lines.push(
+    "",
+    "== o3 empty OC_APP",
+    `(a) destroy, empty OC_APP: ${o3GateLine(["destroy"], "")}`,
+    `(b) help, empty OC_APP: ${o3GateLine(["help"], "")}`,
+    `(b) bare, empty OC_APP: ${o3GateLine([], "")}`,
+    `(c) control, unset OC_APP: ${o3GateLine(["destroy"], undefined)}`,
+  );
   return `${lines.join("\n")}\n`;
 }
 
@@ -413,7 +433,9 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
           if (layout.gate !== undefined) {
             const decision = resolveCheckoutEntry({
               root: ROOT, cwd: layout.gate.cwd, argv, ocApp,
-              handedOver: layout.gate.handedOver, handedProgram: layout.gate.program,
+              handedOver: layout.gate.handedOver,
+              launch: layout.gate.handedOver ? launchOfProgram(layout.gate.program ?? SHIM_PROGRAM, layout.gate.cwd) : undefined,
+              handedProgram: layout.gate.program,
               fs, gateCommands: GATE_COMMANDS, deploymentCommands: DEPLOYMENT_COMMANDS,
               variadicCommands: VARIADIC_COMMANDS,
               deploymentArguments: (name) => gateArguments(name) ?? openclawCommands[name]?.arguments,
@@ -470,10 +492,10 @@ export function gateInlineNoteAdvice(): { label: string; advice: Advice }[] {
 }
 
 /** The three place-naming refusals as a run of `frame` builds them: the bash shim row's
- *  drop decision reads the invocation at build time, as the entries do after bin.ts has
+ *  drop decision reads the frame at build time, as the entries do after bin.ts has
  *  set it — the installed copy keeps the row, the shim copy already is the root spelling
  *  and drops it. */
-export function placeNamingRefusals(frame: Invocation): { label: string; error: UserError }[] {
+export function placeNamingRefusals(frame: Frame): { label: string; error: UserError }[] {
   const fs = fakeFs(BASE_FILES, BASE_DIRS);
   const rows: { label: string; error: UserError }[] = [];
   const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs, frame });
@@ -496,6 +518,20 @@ export function placeNamingRefusals(frame: Invocation): { label: string; error: 
   }
   rows.push({ label: "--app conflict", error: appConflictRefusal({ typed: "other", app: "demo" }, frame) });
   return rows;
+}
+
+/** Decision O3 as literal expectations, independent of the sweep above: an empty OC_APP is
+ *  an explicit selection — refused by name where a deployment is needed (a), answered
+ *  without one where not (b), and never the default openclaw (c: unset still picks it,
+ *  empty refuses instead). */
+function o3GateLine(argv: readonly string[], ocApp: string | undefined): string {
+  return gateDecisionLine({
+    root: ROOT, cwd: ROOT, argv, ocApp, handedOver: false,
+    fs: fakeFs(BASE_FILES, BASE_DIRS),
+    gateCommands: GATE_COMMANDS, deploymentCommands: DEPLOYMENT_COMMANDS,
+    variadicCommands: VARIADIC_COMMANDS,
+    deploymentArguments: (name) => gateArguments(name) ?? openclawCommands[name]?.arguments,
+  });
 }
 
 /** placeNamingRefusals as the installed command builds them: the root-spelled row and the

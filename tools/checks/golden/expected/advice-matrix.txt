@@ -1716,24 +1716,24 @@
 
 === refusal: init inside a ClawForge checkout ===
   checkout gate shim (cwd: checkout root): ./clawforge new-app <name>
-  checkout gate shim (cwd: docs): ../clawforge new-app <name>
-  checkout gate shim (cwd: apps/demo): ../../clawforge new-app <name>
+  checkout gate shim (cwd: docs): ./clawforge new-app <name>
+  checkout gate shim (cwd: apps/demo): ./clawforge new-app <name>
   checkout gate, handed over by the init shim: ./clawforge new-app <name>
-  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge new-app <name>
+  checkout gate, handed over by the monorepo MCP launcher: ./clawforge new-app <name>
   MCP launcher (installed): no variables — the entry default: clawforge new-app <name>
   defaultLaunch: global install: clawforge new-app <name>
   defaultLaunch: checkout copy: ./clawforge new-app <name>
-  defaultLaunch: local package (posix): /clawforge-checkout/clawforge new-app <name>
-  defaultLaunch: local package (win32): /clawforge-checkout/clawforge new-app <name>  (in bash)
-  defaultLaunch: local package (win32, Git Bash): /clawforge-checkout/clawforge new-app <name>
+  defaultLaunch: local package (posix): ./clawforge new-app <name>
+  defaultLaunch: local package (win32): ./clawforge new-app <name>  (in bash)
+  defaultLaunch: local package (win32, Git Bash): ./clawforge new-app <name>
   manual verbatim (bare word): ./clawforge new-app <name>
   manual verbatim (spaced program): ./clawforge new-app <name>
   fixture G0: shim before 710cf66 wrote no variables: clawforge new-app <name>
-  fixture G1 (710cf66): the legacy variable alone: /clawforge-checkout/clawforge new-app <name>
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): /clawforge-checkout/clawforge new-app <name>
-  fixture G3 (a841c16): v1 checkout + legacy: /clawforge-checkout/clawforge new-app <name>
-  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge new-app <name>
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge new-app <name>
+  fixture G1 (710cf66): the legacy variable alone: ./clawforge new-app <name>
+  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge new-app <name>
+  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge new-app <name>
+  fixture L1 (f620c8a): the legacy launcher variable: ./clawforge new-app <name>
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge new-app <name>
   tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
 
 === refusal: init inside a ClawForge checkout (2) ===
@@ -3256,22 +3256,22 @@
 
 === gate inline note (1) ===
   checkout gate shim (cwd: checkout root): ./clawforge help
-  checkout gate shim (cwd: docs): ../clawforge help
-  checkout gate shim (cwd: apps/demo): ../../clawforge help
+  checkout gate shim (cwd: docs): ./clawforge help
+  checkout gate shim (cwd: apps/demo): ./clawforge help
   checkout gate, handed over by the init shim: ./clawforge help
-  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge --app demo help
+  checkout gate, handed over by the monorepo MCP launcher: ./clawforge --app demo help
   MCP launcher (installed): no variables — the entry default: clawforge help
   defaultLaunch: global install: clawforge help
   defaultLaunch: checkout copy: ./clawforge help
-  defaultLaunch: local package (posix): /clawforge-checkout/clawforge help
-  defaultLaunch: local package (win32): /clawforge-checkout/clawforge help  (in bash)
-  defaultLaunch: local package (win32, Git Bash): /clawforge-checkout/clawforge help
+  defaultLaunch: local package (posix): ./clawforge help
+  defaultLaunch: local package (win32): ./clawforge help  (in bash)
+  defaultLaunch: local package (win32, Git Bash): ./clawforge help
   manual verbatim (bare word): ./clawforge help
   manual verbatim (spaced program): ./clawforge help
   fixture G0: shim before 710cf66 wrote no variables: clawforge help
-  fixture G1 (710cf66): the legacy variable alone: /clawforge-checkout/clawforge help
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): /clawforge-checkout/clawforge help
-  fixture G3 (a841c16): v1 checkout + legacy: /clawforge-checkout/clawforge help
-  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo help
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo help
+  fixture G1 (710cf66): the legacy variable alone: ./clawforge help
+  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge help
+  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge help
+  fixture L1 (f620c8a): the legacy launcher variable: ./clawforge --app demo help
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge --app demo help
   tool form: —

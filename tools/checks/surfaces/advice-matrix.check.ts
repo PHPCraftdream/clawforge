@@ -24,7 +24,8 @@ import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type Advice, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
 import { CWD_CONFLICT_NOTE, renderAdvice, renderArgument, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
-import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { frameOf, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { launchOf } from "#framework/core/io/invocation/frame.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { APP_CONFLICT_FROM_ROOT } from "#framework/entry/delegate.ts";
@@ -280,7 +281,9 @@ const treeFs: FsProbe = {
 function adviceAfterEntry(argv: string[], options: { cwd: string; ocApp?: string; handedProgram?: string }): string {
   const decision = resolveCheckoutEntry({
     root: TREE_ROOT, cwd: options.cwd, argv, ocApp: options.ocApp,
-    handedOver: options.handedProgram !== undefined, handedProgram: options.handedProgram,
+    handedOver: options.handedProgram !== undefined,
+    launch: options.handedProgram === undefined ? undefined : launchOf({ program: options.handedProgram, mode: options.handedProgram === "clawforge" ? "installed" : "checkout", audience: "mcp" }),
+    handedProgram: options.handedProgram,
     fs: treeFs, gateCommands: [], deploymentCommands: ["bootstrap", "up"], variadicCommands: [],
   });
   if (decision.kind !== "run") throw new Error(`entry did not run: ${decision.kind}`);
@@ -568,7 +571,7 @@ for (const { label, error } of installedFrameRefusals()) {
   const shimRender = renderAdvice(shimRow!, shimInvocation());
   checkTrue(`${label}: row 2 is the bash shim with its note`, shimRender.startsWith(SHIM_PROGRAM) && shimRender.endsWith(shimNoteSuffix));
 }
-for (const { label, error } of placeNamingRefusals(shimInvocation())) {
+for (const { label, error } of placeNamingRefusals(frameOf(shimInvocation()))) {
   check(`${label}: the shim copy's build drops the bash row`, error.advice.length, 1);
 }
 

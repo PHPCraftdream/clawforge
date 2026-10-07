@@ -27,8 +27,8 @@ import { helpEntryLine } from "./framework/core/io/help-render.ts";
 import type { ArgumentSpec } from "./framework/core/command/spec.ts";
 import { reportError, info, UserError } from "./framework/core/io/log.ts";
 import { command } from "./framework/core/io/invocation/advice.ts";
-import { checkoutGateFrame } from "./framework/core/io/invocation/frame.ts";
-import { frameFacts, installFrame, invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
+import { checkoutGateFrame, frameFromInvocation, launchFromHandover, type Frame } from "./framework/core/io/invocation/frame.ts";
+import { frameFacts, installFrame, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
 import { useGateCommands } from "./framework/core/io/invocation/render.ts";
 import { monorepoRoot, appsRootFor } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
@@ -47,13 +47,20 @@ import { resolve as pathResolve } from "node:path";
 resolveFrameworkFromSources();
 
 // A hand-over from the system-wide command or a launcher names itself; otherwise this is
-// the checkout's committed gate script — its own frame, built once (frame.ts).
+// the checkout's committed gate script — its own frame, built once (frame.ts), installed
+// once, and passed down as a value (S1.3); the branches below only complete its app fact.
 const handedOver = takeInvocationFromEnv();
-if (handedOver === undefined) {
-  installFrame(checkoutGateFrame(monorepoRoot, frameFacts()));
-} else {
-  setInvocation(handedOver);
-}
+const facts = frameFacts();
+let frame: Frame = handedOver === undefined
+  ? checkoutGateFrame(monorepoRoot, facts)
+  : {
+      ...frameFromInvocation(handedOver, { ...facts, places: { checkoutRoot: monorepoRoot } }),
+      launch: launchFromHandover(handedOver, {
+        cwd: facts.cwd,
+        fs: { exists: nodeFs.exists, readFile: nodeFs.readFile },
+        checkoutRoot: monorepoRoot,
+      }),
+    };
 const argv = normalizeVersionAlias(process.argv.slice(2));
 
 // The gate's own commands, one list from entry/registry.ts — the declared check/new-app/
@@ -61,13 +68,6 @@ const argv = normalizeVersionAlias(process.argv.slice(2));
 const gateCommands: GateCommand[] = checkoutGate();
 // Registered before any command runs, so the renderer omits --app from these (they run before a deployment is resolved).
 useGateCommands(gateCommands.map((command) => command.name));
-
-// The command list in the gate's `help`: the gate's own commands, plus the one line here that is
-// not a command at all.
-const monorepoGateHelp = [
-  ...gateHelpLines(gateCommands),
-  helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
-];
 
 // Where am I, which deployment, which framework copy, how do I name myself — one pure
 // decision (entry/resolve.ts); the switch below only performs its side effects.
@@ -77,6 +77,7 @@ const decision = resolveCheckoutEntry({
   argv,
   ocApp: process.env.OC_APP,
   handedOver: handedOver !== undefined,
+  launch: frame.launch,
   handedProgram: handedOver?.program,
   fs: nodeFs,
   gateCommands: gateCommands.map((command) => command.name),
@@ -86,6 +87,17 @@ const decision = resolveCheckoutEntry({
     .map(([commandName]) => commandName),
   deploymentArguments: (name) => (gateCommands.find((command) => command.name === name)?.arguments ?? openclawCommands[name]?.arguments) as readonly ArgumentSpec[],
 });
+  if ("app" in decision && decision.app !== undefined) {
+    frame = { ...frame, app: { state: "selected", name: decision.app.name, by: decision.app.selectedBy } };
+  }
+installFrame(frame);
+
+// The command list in the gate's `help`: the gate's own commands, plus the one line here that is
+// not a command at all.
+const monorepoGateHelp = [
+  ...gateHelpLines(gateCommands),
+  helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
+];
 
 switch (decision.kind) {
   case "refuse": {
@@ -105,7 +117,6 @@ switch (decision.kind) {
   case "gate-command": {
     // Same frame rule as the run branch (rf6-fix33): the typed --app rides, so prose hints
     // spell the deployment the same way under `check --help` and `help check`.
-    if (decision.app !== undefined) setInvocation({ ...invocation(), app: decision.app });
     process.exit((await runGateCommand(gateCommands, [decision.name, ...decision.args])) ?? 0);
   }
   case "help-without-deployment": {
@@ -129,8 +140,6 @@ switch (decision.kind) {
     if (decision.soleNote !== undefined && !beforeBareDoubleDash(decision.argv).includes("--json") && process.stderr.isTTY === true) {
       info(`using the only deployment: ${decision.soleNote}`);
     }
-    if (decision.app !== undefined) setInvocation({ ...invocation(), app: decision.app });
-
     // Set before anything reads configuration: every path below resolves against it.
     useDeployment(decision.deploymentDir);
 
@@ -143,6 +152,13 @@ switch (decision.kind) {
       reportError(`cannot load deployment "${decision.appName}": ${(error as Error).message}`);
       process.exit(1);
     }
+
+    // The command list in the gate's `help`: the gate's own commands, plus the one line here that is
+    // not a command at all.
+    const monorepoGateHelp = [
+      ...gateHelpLines(gateCommands),
+      helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
+    ];
 
     await main(app, [...decision.argv], monorepoGateHelp, gateCommands);
   }

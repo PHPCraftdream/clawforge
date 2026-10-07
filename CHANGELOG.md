@@ -9,6 +9,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * An MCP call of a mutating command refused before it ran reports changed: false.
 * MCP tool calls bind arguments by name with the console's own binder: an unknown action is refused as such, a positional never lands in another action's slot (`<name> applies to ...`), and the first refusal is reported in the console's words instead of a list.
 * MCP gate and help tool calls report the first refusal only, where they used to join every problem into one sentence.
+* An empty OC_APP no longer breaks commands that need no deployment; commands that need one refuse it by name instead of reporting an invalid deployment name.
 * `restore`, `push`, `verify` and `deploy` refuse a positional that begins with `-` even after `--` on the console, like the MCP surface already did.
 * `deploy` refuses a target that starts with `-` (it reached ssh as an option).
 * `configure-provider --provider` and `--env` are refused at parse in the argument kind's own words instead of after the settings are read.
@@ -17,7 +18,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `deploy --path` must be an absolute path, refused at parse (the remote-root boundary still applies in full).
 
 * Checkout refusals printed by npm's Windows bin wrapper no longer name `node_modules\.bin\clawforge` at the checkout root, where it does not exist — they spell the checkout's committed `./clawforge` shim, with an `(in bash)` note where only bash can run it.
-* Advice rendered for a frame with a known launch root spells the entry relative to the frame's paste directory; wiring a known root into every production hint path follows (S1.3).
+* Hints printed from a subfolder of the launch spell the entry relative to that folder (`../clawforge status` from `docs/`, `./clawforge status` at the checkout root); every production hint path renders against the frame's known launch root.
 * An MCP tool call that names an unknown action is refused as an unknown action, in the console's own words and ahead of any argument problem — the console's own order — instead of reporting an argument problem first or silently running the default action.
 * A target that cannot be reached is reported as such instead of as empty (S3.4 target-read contract): reading and enumerating on the target distinguish present, absent and unknown (`readIfExists`/`probeExists`/`listIfExists` in runtime/transport — unknown answers always carry a runnable next step as Advice), and the operation history (list/read/latest) plus the configuration-snapshot read refuse an unknown target instead of answering an empty history or skipping the recovery point. A tokenizer-based hygiene ratchet fails a catch around a transport read (readFile/exists/listFiles, the read-contract helpers, or an allowFailure exec whose failure would become the answer) in service/ or commands/ unless the handler rethrows or ends the command; documented deliberate sites sit on a counted, shrink-only allow-list.
 * Unreachable-target failures retain structured remedies across console, JSON and MCP; operation history and rollback refuse unreachable targets rather than answering empty. Checkout-root advice uses a runnable shim, checkout refusals include shell-specific pasteable rows, and bootstrap reports the tag-preserving pinned image reference.

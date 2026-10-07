@@ -5,7 +5,8 @@
 // their own constructors (frame.ts), before any command runs; the value is read everywhere
 // through the accessors, never re-derived from strings.
 
-import { SHIM_PROGRAM } from "./frame.ts";
+import { SHIM_PROGRAM, parseLegacyInvokedAs } from "./frame.ts";
+export { parseLegacyInvokedAs } from "./frame.ts";
 import { frameFromInvocation, handoverOf, type Frame, type HostPlatform } from "./frame.ts";
 
 /** The invocation travels to child gate processes as versioned JSON (see serializeInvocation). */
@@ -125,29 +126,6 @@ export function parseInvocation(text: string): Invocation | undefined {
     Object.keys(appExtra).length > 0
   ) return undefined;
   return { program: trimmed, mode: mode as InvocationMode, app: { name: name.trim(), selectedBy: selectedBy as AppSelection }, audience: audience as InvocationAudience };
-}
-
-/** A legacy CLAWFORGE_INVOKED_AS prefix mapped onto the value: a program path (the launcher's
- *  relative spelling included), optionally with the hand-written `--app <name>` suffix the old
- *  variable carried. The old variable never said how the deployment was picked; every writer
- *  spelled the suffix by hand for a selection the cwd would not repeat, so `flag`. The mode
- *  follows the program: the bare system-wide command is `installed`, everything else (a path
- *  into the checkout or a deployment) is `checkout`. */
-export function parseLegacyInvokedAs(text: string): Invocation | undefined {
-  const value = text.trim();
-  if (value === "") return undefined;
-  const suffix = /^(.*) --app (\S+)$/.exec(value);
-  if (suffix === null || suffix[1].trim() === "") {
-    // A value that is only a flag suffix, or whose program carries internal spacing, is
-    // garbage a hand-written variable picked up on the way: it reads as unset, like the
-    // strict parse. Spacing between program and suffix trims away and is kept.
-    if (value.startsWith("--") || /\s/.test(value)) return undefined;
-    return { program: value, mode: value === "clawforge" ? "installed" : "checkout", audience: "terminal" };
-  }
-  const program = suffix[1].trim();
-  // The same rule for the program of a suffixed value: "--app x --app y" is not a path.
-  if (program.startsWith("--") || /\s/.test(program)) return undefined;
-  return { program, mode: program === "clawforge" ? "installed" : "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
 }
 
 /** Reads the invocation a parent handed over and removes both variables, so descendants

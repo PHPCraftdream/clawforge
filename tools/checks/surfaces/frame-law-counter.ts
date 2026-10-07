@@ -14,7 +14,7 @@
 import { dirname, resolve as pathResolve } from "node:path";
 import { renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { IN_BASH_NOTE, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
+import { frameFromInvocation, handoverOf, IN_BASH_NOTE, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
 import {
   findCheckoutRootIn,
   frameworkOwner,
@@ -26,6 +26,7 @@ import { FRAME_PRODUCERS, SELECTION_CASES } from "#checks/golden/frames.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES } from "#checks/golden/advice.ts";
 import { parsePaste, type Shell } from "#checks/kit/shells.ts";
 import { basename } from "node:path";
+import { stageTally } from "#checks/kit/deployment-fixture.ts";
 
 // --- the fake layout (the law's own tree; paths spelled like golden/matrix.ts's) ------------
 
@@ -157,17 +158,21 @@ export interface FrameLawMeasurement {
    *  unresolvable paste directory, model crash): the law check fails on these —
    *  violations recorded in the baseline are fine, silent setup stops are not. */
   readonly setupFailures: readonly string[];
+  /** Pipeline-stage case accounting: before final run versus resolved final run. */
+  readonly stageCounts: ReadonlyArray<{ readonly stage: string; readonly count: number }>;
+  readonly finalRuns: number;
 }
 
 /** The full law measurement: every clawforge-kind row of ADVICE_ROWS (plus the synthetic
  *  quoting round-trip row) × every producer × the producer's shells (install/prose/quoting
  *  rows paste in all three shells), then the SELECTION_CASES drive through the gate
  *  resolver (design §5, decision O3). */
-export function runFrameLaw(): FrameLawMeasurement {
+export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
   const violations = new Map<string, string>();
   const setupFailures: string[] = [];
   let reached = 0;
   let attempted = 0;
+  let finalRuns = 0;
   const record = (key: string, reason: string): void => {
     if (!violations.has(key)) violations.set(key, reason);
   };
@@ -199,11 +204,30 @@ export function runFrameLaw(): FrameLawMeasurement {
         app: advice.app === undefined ? undefined : fillWord(advice.app),
       };
       const pasteDir = frameCwd;
+      // The paste directory mirrors the renderer's rooted branch (design §2.3 rule 1, §3):
+      // a row that spells from the checkout root — `at: "checkout-root"`, or the cwd-conflict
+      // remedy — is rendered against the RE-ROOTED frame, so the line pastes where the
+      // sentence names: the re-rooted frame's cwd, i.e. the frame's checkout root. A frame
+      // without a known checkout root is a genuine setup stop. Every other row (including a
+      // cwdConflict-rooted one's note-bearing line, which names its own paste place) pastes
+      // where the frame stands.
+      const on = handoverOf(producer.frame);
+      const cwdConflict = filled.app !== undefined
+        && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" && producer.frame.app.name !== filled.app
+        && resolvesByCwd(producer.frame.launch, on.program);
+      const rooted = filled.at === "checkout-root" || cwdConflict;
+      const rootedPasteDir = rooted ? producer.frame.places.checkoutRoot : undefined;
+      const pasteBase = rootedPasteDir ?? pasteDir;
+      if (rooted && rootedPasteDir === undefined) {
+        setupFailures.push(`${producer.label} | ${rowEntry.label}: the checkout-root row renders against a re-rooted frame, but the producer frame has no checkout root place`);
+        continue;
+      }
       const shells = new Set<Shell>(producer.frame.shells);
       if (expandsShells(rowEntry.label, filled)) for (const shell of EXPANDING_SHELLS) shells.add(shell);
       for (const shell of shells) {
         const key = `${producer.label} | ${rowEntry.label} | ${shell}`;
         attempted += 1;
+        let stage: import("#framework/core/command/execute.ts").Stage = "parse";
         try {
           const line = renderFrameAdvice(filled, producer.frame);
           const { command: clean, note } = stripNote(line);
@@ -220,9 +244,9 @@ export function runFrameLaw(): FrameLawMeasurement {
           // otherwise the frame's own directory — the spelling the renderer produced is
           // relative to exactly that directory (the S1.2b relative-spelling rule), so the
           // program resolves against it, whatever place mark the row carries.
-          let resolvedPasteDir = pasteDir;
+          let resolvedPasteDir = pasteBase;
           if (pasted.cd !== undefined) {
-            const resolved = fakePath(pathResolve(frameCwd, pasted.cd));
+            const resolved = fakePath(pathResolve(pasteBase, pasted.cd));
             if (resolved === "" || resolved === "/") {
               setupFailures.push(`${key}: the pasted cd does not resolve on the fake layout (${pasted.cd})`);
               continue;
@@ -240,6 +264,7 @@ export function runFrameLaw(): FrameLawMeasurement {
             continue;
           }
           const where = resolveProgram(program, resolvedPasteDir, producer.frame.launch.kind, shell);
+          stage = "environment";
           if ("problem" in where) {
             record(key, `the pasted program does not resolve — ${where.problem}`);
             continue;
@@ -249,10 +274,11 @@ export function runFrameLaw(): FrameLawMeasurement {
             const decision = resolveCheckoutEntry({
               root: ROOT, cwd: resolvedPasteDir, argv: tokenArgv,
               ocApp: producer.env?.OC_APP,
-              handedOver: producer.env !== undefined, handedProgram: producer.invocation.program,
+              handedOver: producer.env !== undefined, launch: producer.frame.launch, handedProgram: producer.invocation.program,
               fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
             });
             reached += 1;
+            stage = decision.kind === "run" || decision.kind === "gate-command" ? "run" : "context";
             if (decision.kind === "run") {
               if (!sameWords(decision.argv, filled.argv)) {
                 record(key, `command drift: the gate ran ${JSON.stringify(decision.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
@@ -274,16 +300,17 @@ export function runFrameLaw(): FrameLawMeasurement {
               record(key, `the resolver did not run the advice: ${decision.kind}`);
             }
           } else {
-            const decision = resolveInstalledEntry({ cwd: resolvedPasteDir, rawArgv: tokenArgv, platform, fs, frame: producer.invocation });
+            const decision = resolveInstalledEntry({ cwd: resolvedPasteDir, rawArgv: tokenArgv, platform, fs, frame: frameFromInvocation(producer.invocation, { host: producer.frame.host.kind === "operator" ? producer.frame.host.platform : "posix", msys: false }) });
             reached += 1;
+            stage = "context";
             if (decision.kind !== "run") {
-              record(key, `the resolver did not run the advice: ${decision.kind}`);
               continue;
             }
             if (!sameWords(decision.argv[0] === "--app" ? decision.argv.slice(2) : decision.argv, filled.argv)) {
               record(key, `command drift: the entry ran ${JSON.stringify(decision.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
               continue;
             }
+            stage = "prepare";
             const owner = frameworkOwner({
               self: SELF, appRoot: decision.appRoot, launchArgv: decision.launchArgv, argv: decision.argv,
               handedOver: producer.env !== undefined, platform, fs,
@@ -294,19 +321,18 @@ export function runFrameLaw(): FrameLawMeasurement {
               continue;
             }
             if (owner.kind === "spawn" && owner.delegated === false) {
-              // The installed run hands over to a checkout gate: re-run THAT resolver in the
-              // spawn entry's checkout (cwd = the checkout root — the app root's checkout
-              // ancestor on the fake layout) and assert the FINAL decision.
+              // Spawn inherits the original cwd; resolve against it, with handed-over facts.
               const checkout = findCheckoutRootIn(dirname(owner.entry), fs) ?? dirname(dirname(decision.appRoot));
-              const finalCwd = findCheckoutRootIn(decision.appRoot, fs) ?? dirname(dirname(decision.appRoot));
               const final = resolveCheckoutEntry({
-                root: checkout, cwd: finalCwd, argv: owner.args,
+                root: checkout, cwd: resolvedPasteDir, argv: owner.args,
                 ocApp: producer.env?.OC_APP,
-                handedOver: false, handedProgram: undefined,
+                handedOver: true, launch: producer.frame.launch, handedProgram: owner.entry,
                 fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
               });
               if (final.kind === "run") {
-                if (!sameWords(final.argv[0] === "--app" ? final.argv.slice(2) : final.argv, filled.argv)) {
+                stage = "run";
+              finalRuns++;
+              if (!sameWords(final.argv[0] === "--app" ? final.argv.slice(2) : final.argv, filled.argv)) {
                   record(key, `command drift: the spawned gate ran ${JSON.stringify(final.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
                   continue;
                 }
@@ -326,11 +352,29 @@ export function runFrameLaw(): FrameLawMeasurement {
                 record(key, `the hand-over gate did not run the advice: ${final.kind}`);
               }
             }
-            // A delegated spawn (the app's own local package) runs in place: the argv
-            // equality asserted above IS the final decision.
+            if (owner.kind === "spawn" && owner.delegated === true) {
+              const finalEntry = resolveInstalledEntry({ cwd: resolvedPasteDir, rawArgv: owner.args, platform, fs, frame: frameFromInvocation(producer.invocation, { host: producer.frame.host.kind === "operator" ? producer.frame.host.platform : "posix", msys: false }) });
+              if (finalEntry.kind !== "run") {
+              stage = "context";
+              record(key, `the delegated final entry did not run the advice: ${finalEntry.kind}`);
+                continue;
+              }
+              // spawnSync inherits cwd; the delegated checkout gate is the final framework
+              // owner (its own gate path is not delegated a second time).
+              stage = "run";
+              finalRuns++;
+              if (!sameWords(finalEntry.argv[0] === "--app" ? finalEntry.argv.slice(2) : finalEntry.argv, filled.argv)) {
+                record(key, `delegated final entry argv drift: ${JSON.stringify(finalEntry.argv)} does not match advice ${JSON.stringify(filled.argv)}`);
+              }
+              if (owner.entry === LOCAL_ENTRY && finalEntry.appRoot !== APP_LOCAL) {
+                record(key, `delegated final entry app root drift: ${finalEntry.appRoot} does not match local app ${APP_LOCAL}`);
+              }
+            }
           }
         } catch (error) {
           setupFailures.push(`${key}: model crash — ${(error as Error).message}`);
+        } finally {
+          tally.case(key, stage);
         }
       }
     }
@@ -340,8 +384,11 @@ export function runFrameLaw(): FrameLawMeasurement {
   for (const selection of SELECTION_CASES) {
     const producer = FRAME_PRODUCERS.find((entry) => entry.label === selection.producer);
     const key = `selection ${selection.label} | ${selection.producer}`;
+    attempted += 1;
+    let stage: import("#framework/core/command/execute.ts").Stage = "parse";
     if (producer === undefined) {
       setupFailures.push(`${key}: unknown producer`);
+      tally.case(key, stage);
       continue;
     }
     const cwd = producer.frame.cwd.kind === "dir" ? producer.frame.cwd.path : ROOT;
@@ -349,7 +396,7 @@ export function runFrameLaw(): FrameLawMeasurement {
       const decision = resolveCheckoutEntry({
         root: ROOT, cwd, argv: selection.argv,
         ocApp: selection.ocApp,
-        handedOver: producer.env !== undefined, handedProgram: producer.invocation.program,
+        handedOver: producer.env !== undefined, launch: producer.frame.launch, handedProgram: producer.invocation.program,
         fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
       });
       reached += 1;
@@ -373,8 +420,10 @@ export function runFrameLaw(): FrameLawMeasurement {
       }
     } catch (error) {
       setupFailures.push(`${key}: model crash — ${(error as Error).message}`);
+    } finally {
+      tally.case(key, stage);
     }
   }
 
-  return { violations, reached, attempted, setupFailures };
+  return { violations, reached, attempted, setupFailures, stageCounts: tally.counts(), finalRuns };
 }

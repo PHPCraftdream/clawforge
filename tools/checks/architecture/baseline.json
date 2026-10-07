@@ -5,6 +5,13 @@
     "files": {},
     "total": 36,
     "exempt": {
+      "tools/framework/core/io/invocation/frame.ts": {
+        "reason": "strict single-value persisted invocation parser validates program spelling; not argv scanning",
+        "lines": {
+          "if (value.startsWith(\"--\") || /\\s/.test(value)) return undefined;": 1,
+          "if (program.startsWith(\"--\") || /\\s/.test(program)) return undefined;": 1
+        }
+      },
       "tools/framework/core/command/parse.ts": {
         "reason": "the tokenizer and selectAction (parseCall's action pick): the one reading every other site defers to",
         "lines": {
@@ -68,13 +75,6 @@
         "reason": "narrowing a document's structured advice payload field, not a process-argv scan",
         "lines": {
           "if (advice.kind === \"clawforge\") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === \"string\");": 1
-        }
-      },
-      "tools/framework/core/io/invocation/index.ts": {
-        "reason": "program spelling validation, not an argv membership scan",
-        "lines": {
-          "if (value.startsWith(\"--\") || /\\s/.test(value)) return undefined;": 1,
-          "if (program.startsWith(\"--\") || /\\s/.test(program)) return undefined;": 1
         }
       },
       "tools/framework/commands/management/provision-agent/declaration.ts": {
@@ -798,8 +798,27 @@
     },
     "total": 378
   },
+  "frameReads": {
+    "comment": "stage 7 S1.3 (design docs/internal/refactor-stage7-frame-design.md §8): occurrences of invocation()/currentFrame() in product code outside the exempt modules core/io/invocation/**, core/io/help-render.ts, core/io/log.ts. Scan scope: tools/framework/**/*.ts plus tools/clawforge.ts. Measured at the S1.3 resolver refactor: 0 — the reads the design lists as pre-S1.3 (entry/resolve.ts, entry/delegate.ts, entry/bin.ts, integration/deployment/scaffold.ts, tools/clawforge.ts) are gone; the only remaining raw reads are the exempt ones (help-render.ts: 2 invocation() default arguments; invocation/{index,render,prose}.ts). Shrink-only at target 0: any occurrence fails.",
+    "total": 0
+  },
+  "frameInstalls": {
+    "comment": "stage 7 S1.3 (design §8): installFrame(/setInvocation( call sites outside the accessor module; app-selection refinement installs are obsolete, leaving one process-entry install in each owning entry. Verified measured sites: entry/bin.ts:68 and tools/clawforge.ts:64.",
+    "files": {
+      "tools/framework/entry/bin.ts": 1,
+      "tools/clawforge.ts": 1
+    },
+    "total": 2
+  },
+  "modeDeciders": {
+    "comment": "Semantic modeDeciders counts actual mode/launch decisions only. modeOf in frame.ts is the sole computation (one occurrence, deliberately counted honestly). Persisted mode validation/type/default compatibility in invocation/index.ts is excluded, not a launch decision; mcp/project.ts is an immutable generated-writer fixture with exact output pinned by golden. Baseline reduced 4 to 1 by measuring decisions rather than all compatibility literals; no thresholds were raised.",
+    "files": {
+      "tools/framework/core/io/invocation/frame.ts": 1
+    },
+    "total": 1
+  },
   "frameLawViolations": {
-    "comment": "stage 7 S1.2b (O4): hints spelled from a subdirectory spell the entry relative to the frame cwd, so the relative-spelling group (2250+ recorded here) collapses; keys whose case now reaches the next defect carry the next mechanism's reason (deployment drift / resolver refusal) — same key, progressed case, no new keys. stage 7 S1.2a frame law (invariant I12, design §7.1, decision O6), re-measured after the law was widened (item 3/6 of refactor-stage7 frame chunks): the law now iterates EVERY clawforge-kind advice row (not 7 selected rows) × every producer × its shells (install/prose/quoting rows paste in all three shells), renders through the producer frame (no setInvocation/frameOf), fills <placeholder> words, resolves the pasted program against the frame cwd, and drives the SELECTION_CASES sweep through resolveCheckoutEntry. MEASUREMENT CORRECTION, not growth: the old total (103) was measured on the 7-row law and misattributed model-defect entries (e.g. quoting drifts caused by rendering under the real host frame instead of the producer frame); the new measurement records the truthful per-case mechanisms. MECHANISM GROUPS and the step that owns each — S1.2b relative spelling (the handed/shim program is spelled from the checkout root whatever directory the frame stands in: 2250 keys, e.g. \"checkout gate shim (cwd: docs) | command: status | posix\"; plus npm bin backslash spelling pasted in POSIX: 57, e.g. \"defaultLaunch: local package (win32) | help prose: restart up | posix\"; plus npm-bin re-root fallback note pasted non-posix: 4, e.g. \"defaultLaunch: local package (win32) | explicit app: status | cmd\") — S1.3 resolver/adapter (hand-set verbatim programs name no resolvable entry: 445, e.g. \"manual verbatim (bare word) | command: status | posix\"; resolver refusals for rows naming deployments/commands the gate layout lacks: 14+12 run + 16 spawned-gate, e.g. \"defaultLaunch: global install | deploy: remote bootstrap command | posix\"; gate commands not carrying the handed deployment: 3, e.g. \"checkout gate, handed over by the monorepo MCP launcher | refusal: init inside a ClawForge checkout | posix\"; the selection sweep: 4, keys prefixed \"selection\") — S1.4 renderer shell-field (quoting/spelling round-trip drift: 77, e.g. \"checkout gate shim (cwd: checkout root) | law: quoting round-trip | cmd\") — S1.6 real-shell verification owns emptying this baseline. Ratchet: DECREASING-ONLY — a new key, a total above the recorded, or a changed reason at a recorded key fails; a decrease must lower the total in the same commit.",
+    "comment": "stage 7 S1.2b (O4): hints spelled from a subdirectory spell the entry relative to the frame cwd, so the relative-spelling group (2250+ recorded here) collapses; keys whose case now reaches the next defect carry the next mechanism's reason (deployment drift / resolver refusal) — same key, progressed case, no new keys. stage 7 S1.2a frame law (invariant I12, design §7.1, decision O6), re-measured after the law was widened (item 3/6 of refactor-stage7 frame chunks): the law now iterates EVERY clawforge-kind advice row (not 7 selected rows) × every producer × its shells (install/prose/quoting rows paste in all three shells), renders through the producer frame (no setInvocation/frameOf), fills <placeholder> words, resolves the pasted program against the frame cwd, and drives the SELECTION_CASES sweep through resolveCheckoutEntry. MEASUREMENT CORRECTION, not growth: the old total (103) was measured on the 7-row law and misattributed model-defect entries (e.g. quoting drifts caused by rendering under the real host frame instead of the producer frame); the new measurement records the truthful per-case mechanisms. MECHANISM GROUPS and the step that owns each — S1.2b relative spelling (the handed/shim program is spelled from the checkout root whatever directory the frame stands in: 2250 keys, e.g. \"checkout gate shim (cwd: docs) | command: status | posix\"; plus npm bin backslash spelling pasted in POSIX: 57, e.g. \"defaultLaunch: local package (win32) | help prose: restart up | posix\"; plus npm-bin re-root fallback note pasted non-posix: 4, e.g. \"defaultLaunch: local package (win32) | explicit app: status | cmd\") — S1.3 resolver/adapter (hand-set verbatim programs name no resolvable entry: 445, e.g. \"manual verbatim (bare word) | command: status | posix\"; resolver refusals for rows naming deployments/commands the gate layout lacks: 14+12 run + 16 spawned-gate, e.g. \"defaultLaunch: global install | deploy: remote bootstrap command | posix\"; gate commands not carrying the handed deployment: 3, e.g. \"checkout gate, handed over by the monorepo MCP launcher | refusal: init inside a ClawForge checkout | posix\"; the selection sweep: 4, keys prefixed \"selection\") — S1.4 renderer shell-field (quoting/spelling round-trip drift: 77, e.g. \"checkout gate shim (cwd: checkout root) | law: quoting round-trip | cmd\") — S1.6 real-shell verification owns emptying this baseline. Ratchet: DECREASING-ONLY — a new key, a total above the recorded, or a changed reason at a recorded key fails; a decrease must lower the total in the same commit. Exact reconciliation: three retired keys were removed (two not-initialised installed refusals and the EMPTY OC_APP selection record).",
     "violations": {
       "checkout gate shim (cwd: checkout root) | deploy: remote bootstrap command | posix": "the resolver did not run the advice: refuse",
       "checkout gate shim (cwd: checkout root) | deploy: remote secrets --apply command | posix": "the resolver did not run the advice: refuse-unknown-command",
@@ -870,7 +889,6 @@
       "checkout gate, handed over by the monorepo MCP launcher | help prose: completion completion pwsh (install) | cmd": "deployment drift: the gate command carries openclaw where the law expects demo",
       "checkout gate, handed over by the monorepo MCP launcher | help prose: completion completion pwsh (install) | pwsh": "deployment drift: the gate command carries openclaw where the law expects demo",
       "checkout gate, handed over by the monorepo MCP launcher | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"--app\",\"demo\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
-      "MCP launcher (installed): no variables — the entry default | refusal: not initialised (installed) | posix": "the resolver did not run the advice: refuse",
       "MCP launcher (installed): no variables — the entry default | deploy: remote bootstrap command | posix": "the hand-over gate did not run the advice: refuse",
       "MCP launcher (installed): no variables — the entry default | deploy: remote secrets --apply command | posix": "the hand-over gate did not run the advice: refuse-unknown-command",
       "MCP launcher (installed): no variables — the entry default | help prose: new-app bootstrap | posix": "the hand-over gate did not run the advice: refuse",
@@ -880,7 +898,6 @@
       "MCP launcher (installed): no variables — the entry default | help prose: remove-app destroy | cmd": "the hand-over gate did not run the advice: refuse-unknown-command",
       "MCP launcher (installed): no variables — the entry default | help prose: remove-app destroy | pwsh": "the hand-over gate did not run the advice: refuse-unknown-command",
       "MCP launcher (installed): no variables — the entry default | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
-      "defaultLaunch: global install | refusal: not initialised (installed) | posix": "the resolver did not run the advice: refuse",
       "defaultLaunch: global install | deploy: remote bootstrap command | posix": "the hand-over gate did not run the advice: refuse",
       "defaultLaunch: global install | deploy: remote secrets --apply command | posix": "the hand-over gate did not run the advice: refuse-unknown-command",
       "defaultLaunch: global install | help prose: new-app bootstrap | posix": "the hand-over gate did not run the advice: refuse",
@@ -2540,9 +2557,8 @@
       "fixture L2 (a7d027e): v1 checkout launcher + legacy | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"--app\",\"demo\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "selection OC_APP env | checkout gate shim (cwd: docs)": "the OC_APP env selection did not run: refuse-unknown-command (S1.3/O3)",
       "selection sole | defaultLaunch: checkout copy": "deployment drift: the sole selection ran openclaw where the law expects demo (the selection sweep is not yet resolver-visible — S1.3/O3)",
-      "selection cwd | checkout gate shim (cwd: apps/demo)": "deployment drift: the cwd selection ran openclaw where the law expects demo (the selection sweep is not yet resolver-visible — S1.3/O3)",
-      "selection EMPTY OC_APP | MCP launcher (installed): no variables — the entry default": "empty OC_APP ran as run where O3 expects a refusal naming OC_APP — the resolver's empty reading is S1.3 behavior"
+      "selection cwd | checkout gate shim (cwd: apps/demo)": "deployment drift: the cwd selection ran openclaw where the law expects demo (the selection sweep is not yet resolver-visible — S1.3/O3)"
     },
-    "total": 1741
+    "total": 1738
   }
 }

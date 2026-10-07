@@ -17,10 +17,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { log, info, die } from "../../core/io/log.ts";
 import { command } from "../../core/io/invocation/advice.ts";
-import { invocation } from "../../core/io/invocation/index.ts";
 import { commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
-import { rootedProgram } from "../../core/io/invocation/frame.ts";
-import { appsRootFor, monorepoRoot, parseEnv } from "../../core/env.ts";
+import { appsRootFor, monorepoRoot, parseEnv, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
 import { newName, type DeploymentName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
@@ -76,8 +74,8 @@ const DESIRED_STATE = `[
 /** The template's own settings, adjusted so a new deployment doesn't collide with existing
  *  ones under apps/. Exported because bootstrap creates the file too, when a deployment
  *  directory exists without one — both paths must produce the same isolated settings. */
-export async function deploymentEnv(name: string, portStart?: number): Promise<string> {
-  return templateEnv(name, appsRootFor(monorepoRoot), portStart);
+export async function deploymentEnv(name: string, portStart?: number): Promise<DeploymentEnv> {
+  return deploymentEnvText(await templateEnv(name, appsRootFor(monorepoRoot), portStart));
 }
 
 /** Appended, not overwritten — shares its lines with init.ts's updateGitignore, minus the
@@ -96,11 +94,9 @@ export const GIT_INIT_STEP = "git init";
 export function gitInitAdvice(name: string): string {
   // One frame for the whole sentence — the checkout root, where the cd lands and the gate
   // resolves: the lock names the new deployment and spells this copy's program from there.
-  const lock = renderAdvice(command(["lock"], { app: name }), {
-    program: rootedProgram(invocation()),
-    mode: "checkout",
-    audience: "terminal",
-  });
+  // No frame argument: the renderer reads the installed frame (core/io/invocation is
+  // exempt); the at mark re-roots the row (S1.3).
+  const lock = renderAdvice(command(["lock"], { app: name, at: "checkout-root" }));
   return (
     `apps/ is entirely in this repository's own .gitignore, so apps/${name} has no git history ` +
     `of its own — make it one if you want "${lock}" committed: cd apps/${name} && ${GIT_INIT_STEP} ` +

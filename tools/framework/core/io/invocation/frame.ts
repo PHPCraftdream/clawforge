@@ -77,6 +77,12 @@ export function launchOf(on: Invocation): Launch {
   return { kind: "verbatim", program, mode: on.mode };
 }
 
+export function classifyCopy(packageDir: string, appRoot: string): { source: "global" } | { source: "checkout"; path: string } | { source: "local-package" } {
+  const relative = posix.normalize(packageDir.replaceAll("\\", "/").replace(`${appRoot.replaceAll("\\", "/")}/`, ""));
+  if (relative === packageDir.replaceAll("\\", "/")) return { source: "global" };
+  return relative.startsWith("node_modules/") ? { source: "local-package" } : { source: "checkout", path: packageDir };
+}
+
 /** The entry default's three cases (entry/root.ts): the system-wide copy, a checkout's own
  *  copy (the checkout the decision walked to), an app's own local package — npm's bin
  *  wrapper on Windows, where the bash-only shim does not run. */
@@ -201,10 +207,20 @@ export function rootedLaunch(launch: Launch): Launch {
   return { kind: "checkout-shim", root: launch.kind === "verbatim" ? "" : launch.root };
 }
 
-/** The program the re-rooted frame spells: `clawforge` for the system command, the
- *  committed shim for everything else. */
-export function rootedProgram(on: Invocation): string {
-  return rootedLaunch(launchOf(on)).kind === "system" ? "clawforge" : SHIM_PROGRAM;
+/** The bash shim's own frame: the committed shim spelling, POSIX-only, no places — the
+ *  second row of a place-naming refusal, built from the frame that builds row 1 (the
+ *  renderer adds no shim row of its own yet; that is S1.4). */
+export function shimFrame(from: Frame, app?: string): Frame {
+  const launch: Launch = { kind: "checkout-shim", root: "" };
+  return {
+    launch,
+    host: from.host,
+    shells: ["posix"],
+    cwd: { kind: "unknown" },
+    places: {},
+    app: app === undefined ? { state: "none" } : { state: "selected", name: app, by: "flag" },
+    audience: from.audience,
+  };
 }
 
 /** Frame → frame: the frame the place-naming sentences direct to. Without a known checkout
@@ -239,7 +255,13 @@ export function resolvesByCwd(launch: Launch, program: string): boolean {
 
 // --- the v1 projection ---------------------------------------------------------------------------
 
-function modeOf(launch: Launch): InvocationMode {
+// Writers use this constructor so mode projection always flows through modeOf.
+export function checkoutLaunch(): Launch { return { kind: "checkout-shim", root: "" }; }
+
+export function launchFromModeBoundary(program: string): Launch {
+  return program === "clawforge" ? { kind: "system" } : checkoutLaunch();
+}
+export function modeOf(launch: Launch): InvocationMode {
   switch (launch.kind) {
     case "system": return "installed";
     case "checkout-shim":
@@ -338,3 +360,27 @@ export function handoverJson(launch: Launch, audience: InvocationAudience = "ter
   const program = spell(launch, "posix", host, undefined) ?? (launch.kind === "verbatim" ? launch.program : SHIM_PROGRAM);
   return JSON.stringify({ version: INVOCATION_VERSION, program, mode: modeOf(launch), audience });
 }
+
+/** A legacy CLAWFORGE_INVOKED_AS prefix mapped onto the value: a program path (the launcher's
+ *  relative spelling included), optionally with the hand-written `--app <name>` suffix the old
+ *  variable carried. The old variable never said how the deployment was picked; every writer
+ *  spelled the suffix by hand for a selection the cwd would not repeat, so `flag`. The mode
+ *  follows the program: the bare system-wide command is `installed`, everything else (a path
+ *  into the checkout or a deployment) is `checkout`. */
+export function parseLegacyInvokedAs(text: string): Invocation | undefined {
+  const value = text.trim();
+  if (value === "") return undefined;
+  const suffix = /^(.*) --app (\S+)$/.exec(value);
+  if (suffix === null || suffix[1].trim() === "") {
+    // A value that is only a flag suffix, or whose program carries internal spacing, is
+    // garbage a hand-written variable picked up on the way: it reads as unset, like the
+    // strict parse. Spacing between program and suffix trims away and is kept.
+    if (value.startsWith("--") || /\s/.test(value)) return undefined;
+    return { program: value, mode: value === "clawforge" ? "installed" : "checkout", audience: "terminal" };
+  }
+  const program = suffix[1].trim();
+  // The same rule for the program of a suffixed value: "--app x --app y" is not a path.
+  if (program.startsWith("--") || /\s/.test(program)) return undefined;
+  return { program, mode: program === "clawforge" ? "installed" : "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
+}
+

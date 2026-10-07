@@ -188,7 +188,7 @@ const list: FrameProducer[] = [
   // The installed launcher writes no variables: the entry default (G0's reading).
   {
     label: "MCP launcher (installed): no variables — the entry default",
-    frame: frameFromInvocation({ program: "clawforge", mode: "installed", audience: "terminal" }, { ...FACTS, cwd: ROOT }),
+    frame: frameFromInvocation({ program: "clawforge", mode: "installed", audience: "terminal" }, { ...FACTS, cwd: ROOT, places: { checkoutRoot: ROOT } }),
     invocation: { program: "clawforge", mode: "installed", audience: "terminal" },
     selection: { ocApp: "" },
   },

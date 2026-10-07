@@ -30,6 +30,7 @@ import { runFrameLaw } from "#checks/surfaces/frame-law-counter.ts";
 import { CONTROLS } from "#checks/controls/controls.ts";
 import { importedFrameworkSymbols, scanOwnProduct, SCANNER_SELF_CHECKS } from "./own-product.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
+import { runFrameRatchets } from "./frame-ratchets.ts";
 
 interface PerFileMetric {
   readonly comment: string;
@@ -69,6 +70,9 @@ interface Baseline {
   readonly rawArgvScans: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly ownProductExpectations: PerFileMetric;
   readonly frameLawViolations: { readonly comment: string; readonly violations: Record<string, string>; readonly total: number };
+  readonly frameReads: { readonly comment: string; readonly total: number };
+  readonly frameInstalls: PerFileMetric;
+  readonly modeDeciders: PerFileMetric;
 }
 
 const root = monorepoRoot;
@@ -685,5 +689,7 @@ for (const line of ownExempt) process.stderr.write(`    ownProductExpectations e
 // (useGateCommands, the surface registry) — no process-global the earlier measurements
 // above depend on is disturbed, so it runs in-process with the rest.
 report(ratchet("frameLawViolations", baseline.frameLawViolations.total, runFrameLaw().violations.size));
+
+await runFrameRatchets(root, frameworkFiles, rel, baseline);
 
 finish("architecture ratchet");

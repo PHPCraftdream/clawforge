@@ -14,13 +14,16 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { runFrameLaw } from "./frame-law-counter.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const { violations, reached, attempted, setupFailures } = runFrameLaw();
+const { violations, reached, attempted, setupFailures, stageCounts, finalRuns } = runFrameLaw();
 
 // Every violation prints with a stable format — the negative controls read these lines.
 for (const [key, reason] of violations) {
   process.stderr.write(`  frame law violation: ${key} \u2014 ${reason}\n`);
 }
 process.stderr.write(`law tally: reached ${reached}/${attempted}\n`);
+process.stderr.write(`stage tally: ${stageCounts.map(({ stage, count }) => `${stage} ${count}`).join(", ")} (${stageCounts.reduce((sum, item) => sum + item.count, 0)} accounted); final runs ${finalRuns}\n`);
+check("frame law: every attempt has one stage", stageCounts.reduce((sum, item) => sum + item.count, 0), attempted);
+checkTrue("frame law: final-run path reaches at least one delegated final decision", finalRuns > 0);
 
 for (const failure of setupFailures) {
   checkTrue(`frame law: setup stop before a decision — ${failure}`, false);

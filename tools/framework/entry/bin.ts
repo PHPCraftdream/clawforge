@@ -22,39 +22,50 @@ import { spawnSync } from "node:child_process";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
 import { info, reportError } from "../core/io/log.ts";
-import { INVOCATION_ENV, invocation, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
+import { INVOCATION_ENV, serializeInvocation, installFrame, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
 import { useGateCommands } from "../core/io/invocation/render.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import { renderFullCommandHelp } from "../core/io/help-render.ts";
+import { frameFromInvocation, handoverOf, launchFromHandover, type Frame } from "../core/io/invocation/frame.ts";
 import { installedGate } from "./registry.ts";
 import { delegateToOwnFramework, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
-import { defaultInvocation } from "./root.ts";
+import { defaultFrame } from "./root.ts";
 import { findCheckoutRootIn, missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
 import type { AppDefinition } from "../core/app.ts";
 import { CANNOT_LOAD } from "./resolve.ts";
 
 // First, before anything can spawn: the flag covers this hand-over only, not descendants.
 const handedOver = takeDelegationFlag();
-// The shim names itself; unnamed, the copy decides (see defaultInvocation).
+// The shim names itself; unnamed, the copy decides (see defaultFrame).
 const handed = takeInvocationFromEnv();
 const rawArgv = process.argv.slice(2);
 
-// The placement decision builds its checkout refusal's advice (resolve.ts), so the frame is
-// decided once here and passed in (rf6-fix33) — walked from the cwd, the same walk the
-// decision makes — instead of the resolver reading the process-global.
-const frame = handed ?? { ...(await defaultInvocation(process.cwd(), process.platform, findCheckoutRootIn(process.cwd(), nodeFs))), audience: "terminal" };
-setInvocation(frame);
+// The frame is built once here and passed down as a value (S1.3): a hand-over is classified
+// by what its program points at (launchFromHandover's file facts), otherwise the copy
+// decides (root.ts's three cases). Nothing below reads the process-global back.
+const host = process.platform === "win32" ? "win32" : "posix";
+const cwd = process.cwd();
+let frame: Frame = handed === undefined
+  ? await defaultFrame(cwd, { host, msys: false, cwd, checkout: findCheckoutRootIn(cwd, nodeFs) })
+  : {
+      ...frameFromInvocation(handed, { host, msys: false, cwd, places: findCheckoutRootIn(cwd, nodeFs) === undefined ? {} : { checkoutRoot: findCheckoutRootIn(cwd, nodeFs) } }),
+      launch: launchFromHandover(handed, {
+        cwd,
+        fs: { exists: nodeFs.exists, readFile: nodeFs.readFile },
+        checkoutRoot: findCheckoutRootIn(cwd, nodeFs),
+      }),
+    };
 
-const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs, frame });
-// Refine with the decision's own roots: a run names the deployment it runs, a refusal the
-// root it decided about (the nesting refusal its deployment, the checkout refusal the
-// checkout it walked up to); a decision with neither stands in the cwd.
+const entry = resolveInstalledEntry({ cwd, rawArgv, platform: process.platform, fs: nodeFs, frame });
+const root = entry.kind === "run" ? entry.appRoot : entry.kind === "refuse" ? (entry.ancestor ?? cwd) : cwd;
 if (handed === undefined) {
-  const root = entry.kind === "run" ? entry.appRoot : entry.kind === "refuse" ? (entry.ancestor ?? process.cwd()) : process.cwd();
   const checkout = entry.kind === "run" || entry.kind === "refuse" ? entry.checkout : undefined;
-  setInvocation({ ...(await defaultInvocation(root, process.platform, checkout)), audience: "terminal" });
+  frame = await defaultFrame(root, { host, msys: false, cwd, checkout });
+} else {
+  frame = { ...frame, places: { ...frame.places, deploymentRoot: root, ...(entry.kind === "run" || entry.kind === "refuse" ? { checkoutRoot: entry.checkout } : {}) } };
 }
+installFrame(frame);
 switch (entry.kind) {
   case "refuse": {
     for (const refusal of entry.refusals) reportError(refusal);
@@ -66,12 +77,10 @@ switch (entry.kind) {
   }
 }
 const { appRoot, localTypesOnly, ancestor, checkout } = entry;
-// Mutable copies: the executors below take string[].
 const argv = [...entry.argv];
 const launchArgv = [...entry.launchArgv];
-
 // Installed system-wide, this may not be the framework this deployment runs on.
-delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver, invocation());
+delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver, frame);
 resolveFrameworkFromSelf();
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
@@ -97,7 +106,7 @@ try {
     checkout,
     gateCommandNames: gateCommands.map((command) => command.name),
     deploymentCommands: Object.keys(openclawCommands),
-    frame: invocation(),
+    frame,
   });
   if (missing.kind === "subfolder-report") {
     reportError(missing.headline);
@@ -135,7 +144,7 @@ function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,
     ["--experimental-strip-types", fileURLToPath(import.meta.url), ...launchArgv],
-    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", [INVOCATION_ENV]: serializeInvocation(invocation()), ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
+    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", [INVOCATION_ENV]: serializeInvocation(handoverOf(frame)), ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
   );
   process.exit(result.status ?? 1);
 }

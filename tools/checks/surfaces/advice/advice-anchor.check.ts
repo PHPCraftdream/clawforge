@@ -3,6 +3,9 @@
 // changeDirectory alternatives, asserted against strings written by hand — the renderer
 // is never read back.
 
+import { resolve } from "node:path";
+import { resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts";
+import { parsePaste } from "#checks/kit/shells.ts";
 import { changeDirectory, command } from "#framework/core/io/invocation/advice.ts";
 import { CWD_CONFLICT_NOTE, renderAdviceRows, renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
 import { forShell, type Frame } from "#framework/core/io/invocation/frame.ts";
@@ -44,12 +47,55 @@ check(
     || renderFrameAdvice(command(["destroy"], { app: "X" }), case4("/co")).includes(CWD_CONFLICT_NOTE),
   false,
 );
+check("R1-A-2 external cwd retains frame by-cwd selection", renderFrameAdvice(command(["destroy"], { app: "X" }), {
+  ...case4("/co"), cwd: { kind: "dir", path: "/external/deployment" },
+}).split(" "), ["clawforge", "--project-root", "/co/apps/X", "destroy"]);
+
 const unknownRootFrame: Frame = { ...case4("/co"), places: {} };
 check(
   "the unknown-root cwd-conflict fallback keeps the re-rooted row with the paste-conflict note",
   renderFrameAdvice(command(["destroy"], { app: "X" }), unknownRootFrame).split(" "),
   ["clawforge", "--app", "X", "destroy", "", "(from", "the", "checkout", "root)"],
 );
+
+// R1-A-2 / O2: the prior --project-root selected aux by flag, but a fresh paste
+// still starts in demo. Both explicit and inherited app advice must bypass that cwd.
+const replayRoot = resolve("/co space $ O'Brien").replaceAll("\\", "/");
+const replayFrame: Frame = {
+  ...case4(replayRoot),
+  cwd: { kind: "dir", path: `${replayRoot}/apps/demo/nested` },
+  app: { state: "selected", name: "aux", by: "flag" },
+};
+const replayFiles = new Set([`${replayRoot}/apps/demo/app.ts`, `${replayRoot}/apps/aux/app.ts`].map((p) => resolve(p)));
+const replayFs: FsProbe = {
+  exists: (p) => replayFiles.has(resolve(p)),
+  isDirectory: () => false,
+  readdir: () => [],
+  readFile: (p) => replayFiles.has(resolve(p)) ? "export default {};" : undefined,
+  realpath: (p) => p,
+};
+for (const shell of ["cmd", "pwsh", "posix"] as const) {
+  for (const advice of [command(["set", "build"], { app: "aux" }), command(["set", "build"])]) {
+    const line = renderFrameAdvice(advice, forShell(replayFrame, shell));
+    const words = parsePaste(line, shell).words;
+    check(`R1-A-2 ${shell}: fresh explicit/inherited aux advice uses O2, not --app`, words,
+      ["clawforge", "--project-root", `${replayRoot}/apps/aux`, "set", "build"]);
+    const fresh = resolveInstalledEntry({
+      cwd: replayFrame.cwd.kind === "dir" ? replayFrame.cwd.path : "",
+      rawArgv: words.slice(1), platform: "win32", fs: replayFs,
+      frame: { ...forShell(replayFrame, shell), app: { state: "none" } },
+    });
+    checkTrue(`R1-A-2 ${shell}: real fresh resolver reaches aux/set build`,
+      fresh.kind === "run" && fresh.appRoot === resolve(replayRoot, "apps", "aux")
+      && JSON.stringify(fresh.argv) === JSON.stringify(["set", "build"]));
+  }
+}
+check("R1-A-2 same-cwd aux still uses --app", renderFrameAdvice(command(["set", "build"]), {
+  ...replayFrame, cwd: { kind: "dir", path: `${replayRoot}/apps/aux` },
+}).split(" "), ["clawforge", "--app", "aux", "set", "build"]);
+check("R1-A-2 checkout-root cwd still uses --app", renderFrameAdvice(command(["set", "build"]), {
+  ...replayFrame, cwd: { kind: "dir", path: replayRoot },
+}).split(" "), ["clawforge", "--app", "aux", "set", "build"]);
 
 // changeDirectory: the POSIX text quotes by shellQuote (always single quotes), cmd/pwsh
 // take pushd unless the path carries `"`, `%`, `$` or a backtick — then cmd has NO safe

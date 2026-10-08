@@ -14,18 +14,19 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync, realpathSync, rmSync } from "node:fs";
 
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { installLineParts, renderAdviceParts } from "#framework/core/io/invocation/render.ts";
 import { command, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { pasteShells, SHIM_PROGRAM, type Frame, type Host, type HostPlatform, type Launch, type Places } from "#framework/core/io/invocation/frame.ts";
 import { parsePaste, programArgv, type Shell } from "#checks/kit/shells.ts";
-import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, requires, setCaseProbe } from "#checks/kit/harness.ts";
 import { installFrame, setInvocation } from "#framework/core/io/invocation/index.ts";
 import { handoverOf } from "#framework/core/io/invocation/frame.ts";
 import { readFile } from "node:fs/promises";
 import { resolve as pathResolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
+import { pwshCommand, CapabilityProbe, DEFAULT_PROBES } from "#checks/kit/capabilities/capabilities.ts";
 import { runProcess, type ProcessResult } from "#checks/kit/spawn.ts";
 
 const TIMEOUT_MS = 60_000;
@@ -49,6 +50,8 @@ const seenGaps = new Set<string>();
 const GAP_PWSH = "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)";
 const GAP_CMD = "the renderer quotes the program word; cmd reads a single-quoted word literally — invoking it needs double quotes (owner decision: per-shell rows or a documented entry)";
 
+const NATIVE_SCOPE_PREFIX = "& { $PSNativeCommandArgumentPassing = 'Legacy'; ";
+const NATIVE_SCOPE_SUFFIX = " }";
 const NL = String.fromCharCode(10);
 const BS = String.fromCharCode(92);
 const fwd = (path: string): string => path.split(BS).join("/");
@@ -199,18 +202,17 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
     // A quoting split names the shell each variant is spelled for (AdviceRowPart.shell).
     spelled = renderAdviceParts(advice, frame).find((part) => part.shell === undefined || part.shell === model)?.line ?? "";
   }
-  const pasted = parsePaste(spelled, model);
+  const modelLine = model === "pwsh" && spelled.startsWith(NATIVE_SCOPE_PREFIX) && spelled.endsWith(NATIVE_SCOPE_SUFFIX)
+    ? spelled.slice(NATIVE_SCOPE_PREFIX.length, -NATIVE_SCOPE_SUFFIX.length) : spelled;
+  const pasted = parsePaste(modelLine, model);
   // What the PROGRAM receives: under cmd, the raw words through the program-side parser.
-  const words = programArgv(spelled, model);
+  const words = programArgv(modelLine, model);
   checkTrue(`${name}: the model parses the rendered line`, words.length > 0);
   if (words.length === 0) return;
   // A `cd <path> &&` prefix moves the paste directory before the command runs.
   const pasteDir = pasted.cd === undefined ? pasteBase : resolve(pasteBase, pasted.cd);
   // The shell starts where the operator pastes; a cd inside the line does the moving.
   const spawnCwd = pasted.cd === undefined ? pasteBase : paste;
-  if (shell === "pwsh" && intendedArgv !== undefined) {
-    spelled = `function clawforge { ConvertTo-Json -Compress -InputObject @{ stub = '${join(ROOT, "clawforge.ps1").replaceAll("'", "''")}'; cwd = (Get-Location).Path; argv = @($args) } }; ${spelled}`;
-  }
   rmSync(MARKER, { force: true });
   const run = shell === "bash"
     ? await runProcess("bash", ["-c", spelled], { cwd: spawnCwd, env: pathFor(shell), timeoutMs: TIMEOUT_MS })
@@ -274,11 +276,11 @@ const QUOTING_CASES: readonly RealCase[] = [
     frame: frameOf(shim(ROOT), false, DOCS, atRoot), paste: ROOT,
     intendedArgv: ["completion", "pwsh", "a$b'c", 'double"quote'] },
   { name: "R1-A-1: dollar + apostrophe root", shell: "pwsh", advice: command(["status"], { app: "aux" }),
-    frame: { ...case4(false), places: { checkoutRoot: join(ROOT, "literal $ quote'") } }, paste: ROOT,
+    frame: { ...case4(false), cwd: { kind: "dir", path: join(ROOT, "literal $ quote'", "apps", "demo") }, places: { checkoutRoot: join(ROOT, "literal $ quote'") } }, paste: ROOT,
     intendedArgv: ["--project-root", `${join(ROOT, "literal $ quote'")}/apps/aux`, "status"] },
-  ...(["bash", "cmd"] as const).map((shell) => ({
+  ...(["bash", "cmd"] as const).map((shell): RealCase => ({
     name: `R1-A-1: dollar + apostrophe root, ${shell}`, shell, advice: command(["status"], { app: "aux" }),
-    frame: { ...case4(shell === "bash"), places: { checkoutRoot: join(ROOT, "literal $ quote'") } }, paste: ROOT,
+    frame: { ...case4(shell === "bash"), cwd: { kind: "dir", path: join(ROOT, "literal $ quote'", "apps", "demo") }, places: { checkoutRoot: join(ROOT, "literal $ quote'") } }, paste: ROOT,
     intendedArgv: ["--project-root", `${join(ROOT, "literal $ quote'")}/apps/aux`, "status"],
   })),
   ...(["bash", "cmd", "pwsh"] as const).flatMap((shell) => {
@@ -305,6 +307,73 @@ for (const realCase of [...CASES, ...QUOTING_CASES]) {
   await requires(realCase.shell, `real shell: ${realCase.name}`, async () => {
     await drive(realCase.name, realCase.shell, realCase.advice, realCase.frame, realCase.paste, realCase.intendedArgv);
   });
+}
+
+const NATIVE_ARGS = ['double"quote', "O'Hara", 'a$b', 'two words', 'last\\', 'space tail\\', 'a"&calc', 'a"&echo NO_INJECTION', 'a\\"b'];
+const nativeFrame: Frame = { ...frameOf({ kind: "system" }, false, ROOT), shells: ["pwsh"] };
+const nativePart = renderAdviceParts(command(NATIVE_ARGS), nativeFrame)[0]!;
+const nativeScopeWords = ["&", "{", "$PSNativeCommandArgumentPassing", "=", "'Legacy';"];
+const nativeWords = nativePart.line.split(" ");
+check("native advice: scoped Legacy block present", [nativeWords.slice(0, 6), nativeWords.at(-1)], [[...nativeScopeWords, "clawforge"], "}"]);
+check("native advice: ordinary words need no scoped preference", renderAdviceParts(command(["status", "two words", "last\\"]), nativeFrame)[0]!.line.split(" "),
+  ["clawforge", "status", '"two', 'words"', "'last\\'"]);
+check("native advice: spaced trailing backslash needs scoped preference", renderAdviceParts(command(["space tail\\"]), nativeFrame)[0]!.line.split(" ").slice(0, 5), nativeScopeWords);
+const nativeRoot = join(ROOT, "native");
+await mkdir(nativeRoot);
+const nativeEntry = join(nativeRoot, "argv.cjs");
+await writeFile(nativeEntry, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));');
+const require = createRequire(import.meta.url);
+const shimCandidates = [dirname(process.execPath), ...(process.env.PATH ?? "").split(";")]
+  .map((dir) => join(dir, "node_modules", "npm", "node_modules", "cmd-shim"));
+const shimPath = shimCandidates.find((path) => existsSync(join(path, "package.json")));
+checkTrue("native wrappers: real npm cmd-shim available", shimPath !== undefined);
+if (shimPath !== undefined) {
+  const generate = require(shimPath) as (from: string, to: string) => Promise<void>;
+  await generate(nativeEntry, join(nativeRoot, "clawforge"));
+  for (const binary of ["powershell.exe", "pwsh"]) {
+    const probe = await runProcess(binary, ["-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()"], { timeoutMs: TIMEOUT_MS });
+    if (probe.code !== 0) {
+      if (binary === "powershell.exe") checkTrue("native wrappers: powershell.exe available", false);
+      else {
+        // The shared capability accepts Windows PowerShell; this case needs modern pwsh.
+        setCaseProbe(new CapabilityProbe({ ...DEFAULT_PROBES, pwsh: async () => false }));
+        await requires("pwsh", "native wrappers: modern pwsh", () => {});
+        setCaseProbe(undefined);
+      }
+      continue;
+    }
+    const version = probe.stdout.trim();
+    process.stdout.write(`native shell ${binary}: version ${version}, probe exit ${probe.code}\n`);
+    const functionText = `function capture { ConvertTo-Json -Compress -InputObject @($args) }; capture ${NATIVE_ARGS.map((word) => `'${word.replaceAll("'", "''")}'`).join(" ")}`;
+    const functionPart = renderAdviceParts(shellLine("pwsh", functionText), frameOf({ kind: "system" }, false, ROOT))[0]!;
+    check(`shell advice ${binary}: unchanged function text`, functionPart.line, functionText);
+    const functionRun = await runProcess(binary, ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(functionPart.line, "utf16le").toString("base64")], { cwd: ROOT, timeoutMs: TIMEOUT_MS });
+    checkTrue(`shell advice ${binary}: function exit 0`, functionRun.code === 0);
+    check(`shell advice ${binary}: function argv`, JSON.parse(functionRun.stdout.trim() || "null"), NATIVE_ARGS);
+    for (const extension of ["ps1", "cmd"]) {
+      const wrapper = join(nativeRoot, `clawforge.${extension}`).replaceAll("'", "''");
+      const line = nativePart.line.replace("clawforge ", `& '${wrapper}' `);
+      const modern = version.split(".").map(Number);
+      const modes = modern[0]! > 7 || (modern[0] === 7 && modern[1]! >= 3)
+        ? [undefined, "Standard", "Windows", "Legacy"] : [undefined, "Standard"];
+      for (const mode of modes) {
+        // Paste the whole row; observe the same session before and after its child scope.
+        const script = (mode === undefined ? "" : `$PSNativeCommandArgumentPassing = '${mode}'; `)
+          + "$before = $PSNativeCommandArgumentPassing; " + line
+          + "; Write-Output ''; Write-Output ('PREFERENCE:' + ($before -ceq $PSNativeCommandArgumentPassing))";
+        rmSync(MARKER, { force: true });
+        const run = await runProcess(binary, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { cwd: ROOT, env: pathFor("pwsh"), timeoutMs: TIMEOUT_MS });
+        process.stdout.write(`native ${binary} ${version} ${mode ?? "default"} .${extension}: exit ${run.code}, argv ${run.stdout.trim()}\n`);
+        checkTrue(`native ${binary} .${extension}: exit 0`, run.code === 0);
+        checkTrue(`native ${binary} .${extension}: no second command`, !existsSync(MARKER));
+        const output = run.stdout.trim().split(/\r?\n/);
+        check(`native ${binary} .${extension}: session preference restored (${mode ?? "default"})`, output.pop(), "PREFERENCE:True");
+        let argv: unknown;
+        try { argv = JSON.parse(output.join("\n")); } catch { argv = run.stdout; }
+        check(`native ${binary} .${extension}: exact argv`, argv, NATIVE_ARGS);
+      }
+    }
+  }
 }
 
 for (const [gapName] of Object.entries(knownGaps.gaps)) {

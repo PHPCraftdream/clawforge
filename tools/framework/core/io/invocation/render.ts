@@ -4,6 +4,7 @@
 // launch spells as handed, a checkout-root row spells from the root — by the KIND of
 // launch, never by "contains /".
 
+import { isAbsolute, relative, resolve } from "node:path";
 import { shellQuote } from "../shell.ts";
 import { currentFrame, frameOf, invocation, type Invocation } from "./index.ts";
 import {
@@ -231,15 +232,26 @@ export function renderAdviceParts(
   // a cwd-resolving program: pasted where this run stands it is refused as an app
   // conflict (rf6-fix33), and the conflict refusal's own remedy is the checkout root —
   // so the row is spelled from there, with the note saying where it pastes.
-  const cwdConflict = advice.app !== undefined
-    && frame.app.state === "selected" && frame.app.by === "cwd" && frame.app.name !== advice.app
+  // A fresh paste re-selects from its directory, not from the preceding call's app.by:
+  // --project-root may have selected aux by flag while the operator still stands in demo.
+  // Include the inherited selector used by commandLine (for example the set-build remedy).
+  const targetApp = advice.app ?? (!isGateCommand(advice.argv[0]) && options?.deploymentFree !== true
+    && frame.app.state === "selected" && ["flag", "env", "sole"].includes(frame.app.by)
+    ? frame.app.name : undefined);
+  let cwdApp = frame.app.state === "selected" && frame.app.by === "cwd" ? frame.app.name : undefined;
+  if (frame.cwd.kind === "dir" && frame.places.checkoutRoot !== undefined) {
+    const underApps = relative(resolve(frame.places.checkoutRoot, "apps"), resolve(frame.cwd.path));
+    const segments = underApps.split(/[\\/]+/);
+    if (!isAbsolute(underApps) && segments[0] !== ".." && segments[0] !== "") cwdApp = segments[0];
+  }
+  const cwdConflict = targetApp !== undefined && cwdApp !== undefined && cwdApp !== targetApp
     && resolvesByCwd(frame.launch, on.program);
   // Decision O2: with the checkout root KNOWN the named deployment runs where the reader
   // stands — the --project-root selector points the cwd-resolving program at it, so the
   // row neither re-roots nor carries the paste-conflict note. Unknown root keeps the old
   // re-rooted row byte for byte.
   const projectRoot = cwdConflict && frame.places.checkoutRoot !== undefined
-    ? `${frame.places.checkoutRoot}/apps/${advice.app}`
+    ? `${frame.places.checkoutRoot}/apps/${targetApp}`
     : undefined;
   const rooted = advice.at === "checkout-root" || (cwdConflict && projectRoot === undefined);
   let note = advice.note ?? (cwdConflict && projectRoot === undefined ? CWD_CONFLICT_NOTE : undefined);
@@ -307,6 +319,10 @@ export function renderAdviceParts(
         ?? handed;
     }
   }
+  // --project-root belongs to the installed entry, not tools/clawforge.ts.
+  // A checkout-shim conflict therefore invokes that entry before it delegates
+  // to the selected checkout gate with the consumed selector and named app.
+  if (projectRoot !== undefined) program = "clawforge";
   // Arguments quote by the frame's shells, not by the program's spelling: a frame that
   // also pastes into cmd.exe and PowerShell takes the double-quote rule, a POSIX-only
   // frame the POSIX one.
@@ -325,7 +341,16 @@ export function renderAdviceParts(
   // A word quotes for ONE shell only when the frame names one; a mixed frame keeps the
   // shared double-quote rule.
   const only = f.shells.length === 1 ? f.shells[0] : undefined;
-  const shellArgument = (word: string): string => shellArgumentForShell(word, only);
+  const needsLegacy = (word: string): boolean => word.includes('"') || (/\s/.test(word) && word.endsWith("\\"));
+  let protectedNativeWord = false;
+  const shellArgument = (word: string): string => {
+    // Legacy native handoff needs cmd's protected word inside a PowerShell literal.
+    if (only === "pwsh" && needsLegacy(word)) {
+      protectedNativeWord = true;
+      return `'${cmdArgument(word).replaceAll("'", "''")}'`;
+    }
+    return shellArgumentForShell(word, only);
+  };
   const quote = (word: string): string => (posixOnly ? posixArgument(word) : shellArgument(word));
   // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
   // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
@@ -348,7 +373,9 @@ export function renderAdviceParts(
     parts.push("--app", quote(on.app.name));
   }
   for (const argument of advice.argv) parts.push(quote(argument));
-  const line = parts.join(" ");
+  const text = parts.join(" ");
+  const line = protectedNativeWord
+    ? `& { $PSNativeCommandArgumentPassing = 'Legacy'; ${text} }` : text;
   const row: AdviceRowPart = note === undefined ? { line } : { line, note };
   return [inBash ? { ...row, inBash: true } : row];
 }

@@ -24,7 +24,30 @@ import {
 } from "#framework/entry/resolve.ts";
 import { FRAME_PRODUCERS, SELECTION_CASES } from "#checks/golden/frames.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES } from "#checks/golden/advice.ts";
-import { parsePaste, programArgv, type Shell } from "#checks/kit/shells.ts";
+import { parsePaste, programArgv, msvcrtArgv, type Shell } from "#checks/kit/shells.ts";
+
+// npm's .ps1 and .cmd wrappers pass PowerShell values through legacy native
+// command-line parsing. Observed with PowerShell 5.1 and real npm cmd-shim:
+// protected literals arrive as exact Node argv, not as PowerShell function args.
+// Keep the shell tokenizer intact; model only the subsequent native boundary.
+const PWSH_SCOPE_PREFIX = "& { $PSNativeCommandArgumentPassing = 'Legacy'; ";
+const PWSH_SCOPE_SUFFIX = " }";
+const pwshBody = (line: string, shell: Shell): string => shell === "pwsh"
+  && line.startsWith(PWSH_SCOPE_PREFIX) && line.endsWith(PWSH_SCOPE_SUFFIX)
+  ? line.slice(PWSH_SCOPE_PREFIX.length, -PWSH_SCOPE_SUFFIX.length) : line;
+
+function entryWords(line: string, shell: Shell): string[] {
+  const words = programArgv(pwshBody(line, shell), shell);
+  if (shell !== "pwsh") return words;
+  const nativeLine = words.slice(1).map((word) => {
+    // Legacy joins values into a command line, adding outer quotes only to
+    // empty/spaced values that do not already carry quotes. Native startup
+    // then consumes delimiters, doubled quotes and backslashes before quotes.
+    const spaced = word.includes(String.fromCharCode(32)) || word.includes("\t");
+    return (word === "" || spaced) && !word.includes('"') ? `"${word}"` : word;
+  }).join(String.fromCharCode(32));
+  return [words[0] ?? "", ...msvcrtArgv(nativeLine)];
+}
 import { basename } from "node:path";
 import { stageTally } from "#checks/kit/deployment-fixture.ts";
 
@@ -280,7 +303,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
             record(key, "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)");
             continue;
           }
-          const pasted = parsePaste(clean, pasteShell);
+          const pasted = parsePaste(pwshBody(clean, pasteShell), pasteShell);
           // The paste directory: the rendered `cd <path> &&` prefix, resolved against the
           // producer's frame cwd (the prefix is spelled relative to where the frame stands);
           // otherwise the frame's own directory — the spelling the renderer produced is
@@ -295,7 +318,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
             }
             resolvedPasteDir = resolved;
           }
-          const words = programArgv(clean, pasteShell);
+          const words = entryWords(clean, pasteShell);
           const program = words[0] ?? "";
           const tokenArgv = words.slice(1);
           // The pasted words must reassemble the FILLED advice argv (a leading --app pair is
@@ -546,7 +569,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
       quotingWitnesses.push(witness);
       const part = parts.find((p) => p.shell === undefined || p.shell === shell);
       if (part === undefined) { setupFailures.push(`${key}: no rendered variant`); tally.case(key, "parse"); continue; }
-      const words = programArgv(part.line, part.inBash === true ? "posix" : shell);
+      const words = entryWords(part.line, part.inBash === true ? "posix" : shell);
       let stage: import("#framework/core/command/execute.ts").Stage = "context";
       let resolved = false;
       if (row.advice.shell !== undefined) {

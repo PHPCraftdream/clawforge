@@ -11,6 +11,7 @@
 // is ssh's behaviour, not this machine's.
 
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { runRemote } from "#framework/commands/management/deploy/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { shellQuote } from "#framework/core/io/shell.ts";
@@ -20,7 +21,7 @@ import { check, finish, requires } from "#checks/kit/harness.ts";
 
 function runSh(line: string): Promise<ExecResult> {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn("sh", ["-c", line], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("sh", ["-c", line], { stdio: ["ignore", "pipe", "pipe"], cwd: tmpdir() });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {

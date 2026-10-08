@@ -7,6 +7,7 @@
 // the shell parses it back into the original string.
 
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { shellQuote } from "#framework/core/io/shell.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
 
@@ -32,7 +33,7 @@ for (const { name, value, expected } of CASES) {
 
 await requires("posix-sh", "shellQuote round-trips through POSIX sh", () => {
   for (const { name, value } of CASES) {
-    const result = spawnSync("sh", ["-c", `printf '%s' ${shellQuote(value)}`], { encoding: "utf8" });
+    const result = spawnSync("sh", ["-c", `printf '%s' ${shellQuote(value)}`], { encoding: "utf8", cwd: tmpdir() });
     check(`shellQuote round-trip via sh: ${name}`, result.status === 0 ? result.stdout : `exit ${result.status}: ${result.stderr}`, value);
   }
 });

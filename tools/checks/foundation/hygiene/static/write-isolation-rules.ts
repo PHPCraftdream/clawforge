@@ -1,3 +1,4 @@
+// Scanner approximation; runtime checkout snapshot in kit/run.ts is the guard of record.
 // Pure write-isolation analysis over source TEXT — no filesystem, no imports of the tree.
 // Enforces the invariant ("checks may only write outside an isolated apps sandbox") by
 // classifying write-shaped CALLS, not specific spellings. Shared by
@@ -7,15 +8,40 @@ export type Classification = "CLEAN" | "ANCHORED" | "UNKNOWN";
 
 export type Hit = { call: string; target: string; classification: Classification; approximation?: boolean };
 
-const WRITE_NAMES = "writeFile|appendFile|mkdir|rm|rename|cp|copyFile|symlink|createWriteStream";
+// Closed table of fs write/destroy operations and the argument indexes they write or
+// destroy (a move's source loses its file; copyFile also enforces source isolation).
+// Sync and
+// fs.promises variants share an entry; open counts only with a write flag.
+const OPERATIONS: Readonly<Record<string, { readonly targets: readonly number[] }>> = {
+  writeFile: { targets: [0] },
+  appendFile: { targets: [0] },
+  mkdir: { targets: [0] },
+  mkdtemp: { targets: [0] },
+  rm: { targets: [0] },
+  rmdir: { targets: [0] },
+  unlink: { targets: [0] },
+  truncate: { targets: [0] },
+  createWriteStream: { targets: [0] },
+  utimes: { targets: [0] },
+  lutimes: { targets: [0] },
+  chmod: { targets: [0] },
+  lchmod: { targets: [0] },
+  chown: { targets: [0] },
+  lchown: { targets: [0] },
+  open: { targets: [0] },
+  cp: { targets: [1] },
+  copyFile: { targets: [0, 1] },
+  symlink: { targets: [1] },
+  link: { targets: [1] },
+  rename: { targets: [0, 1] },
+};
+const OPERATION_TARGETS = new Map(Object.entries(OPERATIONS));
 
-// Bare calls plus fs./fsp/fsPromises.-namespace forms. Receivers on any other object
-// (transport.writeFile, ssh.writeFile) are NOT fs calls and are skipped below.
-const WRITE_CALL = new RegExp(`(?:(fs|fsp|fsPromises)\\s*\\.\\s*)?\\b(${WRITE_NAMES})(Sync)?\\s*\\(`, "g");
-
-// Calls whose write target is the LAST path argument (cp/rename copy from a read-only
-// source; symlink's link path is its second argument), so the destination is classified.
-const DEST_SECOND = new Set(["cp", "copyFile", "rename", "symlink"]);
+const FS_MODULE = /^(?:node:)?fs(?:\/promises)?$/;
+const CHILD_MODULE = /^(?:node:)?child_process$/;
+const CHILD_CALLEES = new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
+// Receivers the old spelling rule knew; still fs namespaces when the file binds them to nothing else.
+const FALLBACK_NAMESPACES = ["fs", "fsp", "fsPromises"];
 
 // const/let NAME = <single-line RHS> — the only shape fixed-point propagation follows.
 const DECL = /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\b[^=\n]*=\s*([^\n;]+)/g;
@@ -35,7 +61,7 @@ const ANCHORED_TOKEN =
  * literals or division, so a '/' inside code that looks like a comment start could
  * over-mask (conservative direction — hiding code never creates hits).
  */
-export function maskLiterals(source: string): string {
+export function maskLiterals(source: string, preserveStrings = false): string {
   const out = source.split("");
   const blank = (from: number, to: number): void => {
     for (let k = Math.max(0, from); k < Math.min(to, out.length); k++) if (out[k] !== "\n") out[k] = " ";
@@ -43,7 +69,7 @@ export function maskLiterals(source: string): string {
   const maskQuoted = (quote: string, start: number): number => {
     let j = start + 1;
     while (j < source.length && source[j] !== quote) j += source[j] === "\\" ? 2 : 1;
-    blank(start + 1, j);
+    if (!preserveStrings) blank(start + 1, j);
     return Math.min(j + 1, source.length);
   };
   const maskTemplate = (start: number): number => {
@@ -53,9 +79,9 @@ export function maskLiterals(source: string): string {
     let j = start + 1;
     while (j < source.length) {
       if (source[j] === "\\") { j += 2; continue; }
-      if (source[j] === "`") { blank(from + 1, j); return j + 1; }
+      if (source[j] === "`") { if (!preserveStrings) blank(from + 1, j); return j + 1; }
       if (source[j] === "$" && source[j + 1] === "{") {
-        blank(from + 1, j);
+        if (!preserveStrings) blank(from + 1, j);
         let depth = 1;
         let k = j + 2;
         while (k < source.length && depth > 0) {
@@ -70,7 +96,7 @@ export function maskLiterals(source: string): string {
       }
       j++;
     }
-    blank(from + 1, source.length);
+    if (!preserveStrings) blank(from + 1, source.length);
     return source.length;
   };
   let i = 0;
@@ -173,13 +199,13 @@ export function classifyTarget(expr: string, clean: ReadonlySet<string>, origin:
  * Path constructors follow their base, not leaf tokens. Bound unknown return values and
  * untraceable parameters are reported separately; unbound path bases fail enforcement.
  * Branch joins, imported returns, member property selection beyond sandbox roots,
- * regex-literal masking and closure invocation timing are not modeled. Named helper
+ * regex-literal masking and arbitrary helper bodies are not modeled. Named helper
  * calls are joined conservatively by spelling; shadowed helper names may over-report.
  * resolve/join follow only the first path argument (absolute later segments and '..'
  * escapes are an explicit approximation, not a filesystem containment proof).
  * checkoutWriteHits keeps the old anchored-token rule as a floor under this evaluator
  * (anchoredFloor): only an evaluator-proven CLEAN escapes it. */
-function scopedClassifier(source: string, masked: string): (expr: string, origin: string, at: number) => Classification | "UNBOUND" {
+function scopedClassifier(source: string, masked: string): Classify {
   type Scope = { start: number; end: number; parent?: Scope };
   type Binding = { name: string; scope: Scope; at: number; end: number; rhs: string; origin: string; callers?: Binding[] };
   const root: Scope = { start: 0, end: masked.length };
@@ -239,6 +265,13 @@ function scopedClassifier(source: string, masked: string): (expr: string, origin
   for (const m of masked.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)(?:\s*:[^;\n]+)?\s*(?:;|\n)/g)) {
     bindings.push({ name: m[1], scope: scopeAt(m.index), at: m.index, end: m.index + m[0].length, rhs: "", origin: "" });
   }
+  // Literal for-of tables are a conservative join of all possible argv rows.
+  for (const m of masked.matchAll(/\bfor\s*\(\s*(?:const|let)\s+([\w$]+)\s+of\s*(\[)/g)) {
+    const from = m.index + m[0].length - 1;
+    const end = rhsEnd(from);
+    const scope = scopes.find((s) => s.start >= end && s.parent === scopeAt(m.index));
+    if (scope !== undefined) bindings.push({ name: m[1], scope, at: scope.start, end: scope.start, rhs: masked.slice(from, end), origin: source.slice(from, end) });
+  }
   // Assignments bind to the nearest visible declaration, never a same-named sibling.
   for (const m of masked.matchAll(/\b([A-Za-z_$][\w$]*)\s*=(?!=|>)/g)) {
     const at = m.index;
@@ -272,28 +305,71 @@ function scopedClassifier(source: string, masked: string): (expr: string, origin
       bindings.push({ name, scope, at: scope.start, end: scope.start, rhs: "", origin: "", callers: calls });
     });
   }
-  const evaluate = (expr: string, origin: string, at: number, seen: Set<Binding>): Classification | "UNBOUND" => {
+  const lookup = (name: string, at: number, lexicalAt = at): Binding | undefined => {
+    let scope: Scope | undefined = scopeAt(lexicalAt);
+    while (scope !== undefined) {
+      const binding = bindings.filter((b) => b.name === name && b.scope === scope && b.at < at).sort((a, b) => b.at - a.at)[0];
+      if (binding !== undefined) return binding;
+      scope = scope.parent;
+    }
+    return undefined;
+  };
+  // Only zero-argument helpers with one unconditional return/expression are modeled.
+  // Evaluate captures at invocation, in the helper's lexical scope, not by helper spelling.
+  const helpers = new Map<Binding, { rhs: string; origin: string; at: number }>();
+  const returned = (text: string, original: string, at: number): { rhs: string; origin: string; at: number } | undefined => {
+    const arrow = /^(?:async\s+)?\(\)\s*(?::[^=]+)?=>\s*/.exec(text);
+    if (arrow === null) return undefined;
+    const from = arrow[0].length;
+    const body = text.slice(from).trim();
+    if (!body.startsWith("{")) return { rhs: text.slice(from), origin: original.slice(from), at: at + from };
+    const single = /^\{\s*return\s+([\s\S]*?);?\s*\}$/.exec(body);
+    if (single === null || reHits(/\breturn\b|;/, single[1])) return undefined;
+    const offset = text.indexOf(single[1], from);
+    return { rhs: single[1], origin: original.slice(offset, offset + single[1].length), at: at + offset };
+  };
+  for (const binding of bindings) {
+    const value = returned(binding.rhs.trimStart(), binding.origin.trimStart(), binding.end - binding.rhs.trimStart().length);
+    if (value !== undefined) helpers.set(binding, value);
+  }
+  for (const m of masked.matchAll(/\bfunction\s+([\w$]+)\s*\(\)\s*(?::[^{}]+)?\{/g)) {
+    const scope = scopes.find((s) => s.start === m.index + m[0].length - 1);
+    if (scope === undefined) continue;
+    const body = masked.slice(scope.start, scope.end + 1);
+    const value = returned("() => " + body, "() => " + source.slice(scope.start, scope.end + 1), scope.start - 6);
+    const binding: Binding = { name: m[1], scope: scopeAt(m.index), at: m.index, end: scope.end, rhs: "", origin: "" };
+    bindings.push(binding);
+    if (value !== undefined) helpers.set(binding, value);
+  }
+  const evaluate = (expr: string, origin: string, at: number, seen: Set<Binding>, lexicalAt = at): Classification | "UNBOUND" => {
     const leading = expr.length - expr.trimStart().length;
     expr = expr.trim(); origin = origin.slice(leading).trim();
-    if (reHits(/^await\s/, expr)) return evaluate(expr.slice(6), origin.slice(6), at, seen);
-    if (reHits(/^(?:mkdtemp|tmpdir|isolatedAppsRoot)\s*\(/, expr)) return "CLEAN";
-    const constructor = expr.match(/^(?:(?:path|nodePath)\.)?(resolve|join|dirname|fileURLToPath)\s*\(/);
+    if (reHits(/^await\s/, expr)) return evaluate(expr.slice(6), origin.slice(6), at, seen, lexicalAt);
+    if (reHits(/^(?:tmpdir|isolatedAppsRoot)\s*\(/, expr)) return "CLEAN";
+    // A template must start with a proven root and have a literal, non-escaping suffix.
+    const template = /^`\$\{([^{}]+)\}([^`$]*)`$/.exec(origin);
+    if (template !== null && !reHits(/\\|(?:^|\/)\.\.(?:\/|$)/, template[2])) {
+      const root = evaluate(maskLiterals(template[1]), template[1], at, seen, lexicalAt);
+      return root === "CLEAN" ? "CLEAN" : root === "ANCHORED" && !reHits(ANCHORED_TOKEN, expr) ? "ANCHORED" : "UNKNOWN";
+    }
+    const constructor = expr.match(/^(?:(?:path|nodePath|fs|fsp|fsPromises)\.)?(resolve|join|dirname|fileURLToPath|realpath(?:Sync)?(?:\.native)?|mkdtemp(?:Sync)?)\s*\(/);
     if (constructor !== null) {
       const range = extractArgRange(expr, constructor[0].length - 1, 0);
-      return range === undefined ? "UNKNOWN" : evaluate(expr.slice(...range), origin.slice(...range), at, seen);
+      return range === undefined ? "UNKNOWN" : evaluate(expr.slice(...range), origin.slice(...range), at, seen, lexicalAt);
     }
     if (reHits(/^(?:monorepoRoot|process\.cwd\(\)|import\.meta\.url)$/, expr) || reHits(/^new\s+URL\([\s\S]*import\.meta\.url/, expr)) return "ANCHORED";
     if (reHits(/^['"]/, expr)) return isAnchoredSignal(expr, origin) ? "ANCHORED" : "CLEAN";
+    const invocation = /^([A-Za-z_$][\w$]*)\s*\(\s*\)$/.exec(expr);
+    if (invocation !== null) {
+      const binding = lookup(invocation[1], at, lexicalAt);
+      const helper = binding === undefined ? undefined : helpers.get(binding);
+      if (binding === undefined || helper === undefined || seen.has(binding)) return "UNKNOWN";
+      return anchoredFloor(evaluate(helper.rhs, helper.origin, at, new Set([...seen, binding]), helper.at), helper.rhs);
+    }
     const identifier = expr.match(/^([A-Za-z_$][\w$]*)(?:\.([\w$]+))?$/);
     if (identifier === null) return "UNKNOWN";
     const name = identifier[1];
-    let scope: Scope | undefined = scopeAt(at);
-    let binding: Binding | undefined;
-    while (scope !== undefined) {
-      binding = bindings.filter((b) => b.name === name && b.scope === scope && b.at < at).sort((a, b) => b.at - a.at)[0];
-      if (binding !== undefined) break;
-      scope = scope.parent;
-    }
+    const binding = lookup(name, at, lexicalAt);
     if (binding === undefined) {
       if (reHits(/\bimport\b[\s\S]*?\b/, masked) && reHits(new RegExp(`\\bimport\\s+(?:[^;]*?\\b${name}\\b)[^;]*?from`), masked)) return "UNKNOWN";
       // Arrow parameters, loop bindings and unsupported declarations are bound unknowns.
@@ -307,9 +383,15 @@ function scopedClassifier(source: string, masked: string): (expr: string, origin
       const results = binding.callers.map((b) => evaluate(b.rhs, b.origin, b.at, next));
       return results.includes("ANCHORED") ? "ANCHORED" : results.length > 0 && results.every((r) => r === "CLEAN") ? "CLEAN" : "UNKNOWN";
     }
-    return evaluate(binding.rhs, binding.origin, binding.at, next);
+    if (identifier[2] !== undefined && (identifier[2] !== "root" || !reHits(/^(?:await\s+)?isolatedAppsRoot\s*\(/, binding.rhs.trim()))) return "UNKNOWN";
+    return anchoredFloor(evaluate(binding.rhs, binding.origin, Math.min(at, binding.at), next, binding.at), binding.rhs);
   };
-  return (expr, origin, at) => evaluate(expr, origin, at, new Set());
+  const resolveValue = (expr: string, origin: string, at: number, seen = new Set<Binding>()): Value => {
+    const binding = IDENT.test(expr.trim()) ? lookup(expr.trim(), at) : undefined;
+    if (binding === undefined || seen.has(binding) || binding.callers !== undefined) return { expr, origin, at };
+    return resolveValue(binding.rhs, binding.origin, binding.at, new Set([...seen, binding]));
+  };
+  return Object.assign((expr: string, origin: string, at: number) => evaluate(expr, origin, at, new Set()), { resolveValue });
 }
 
 /** Lower bound: the evaluator only models exact shapes, so any other target that merely
@@ -319,33 +401,257 @@ function anchoredFloor(classification: Classification | "UNBOUND", target: strin
   return classification !== "CLEAN" && reHits(ANCHORED_TOKEN, target) ? "ANCHORED" : classification;
 }
 
-/** Write-shaped calls with checkout or unresolved target provenance. */
+const IDENT = /^[A-Za-z_$][\w$]*$/;
+const IMPORT = /\bimport\s+(?:type\s+)?([\w$*\s{},]+?)\s*from\s*(["'])([^"'\n]+)\2/g;
+const REQUIRE = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\s*\(\s*(["'])([^"'\n]+)\2\s*\)/g;
+const DERIVED = /\b(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)(\s*\.\s*promises)?(?:\s*\.\s*([A-Za-z_$][\w$]*))?(?![\w$]|\s*[.(])/g;
+const CALL = /([A-Za-z_$][\w$]*)((?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*\(/g;
+
+type ImportEntry = { module: string; imported: string; local: string };
+type FsBindings = { namespaces: Set<string>; functions: Map<string, string>; childNamespaces: Set<string>; children: Map<string, string>; foreign: Set<string> };
+type Callee = { kind: "fs"; op: string; targets: readonly number[] } | { kind: "child"; name: string };
+type Value = { expr: string; origin: string; at: number };
+type Classify = ((expr: string, origin: string, at: number) => Classification | "UNBOUND") & { resolveValue: (expr: string, origin: string, at: number) => Value };
+
+/** Table entry for an fs function name (Sync variants share it). */
+function operationOf(name: string): { readonly name: string; readonly targets: readonly number[] } | undefined {
+  const entry = OPERATION_TARGETS.get(name.endsWith("Sync") ? name.slice(0, -4) : name);
+  return entry === undefined ? undefined : { name, targets: entry.targets };
+}
+
+/** Import and require bindings in real code (import text inside literals is masked out).
+ * imported is "*" for default, namespace and require bindings. */
+function parseImports(source: string, masked: string): ImportEntry[] {
+  const entries: ImportEntry[] = [];
+  const commentsMasked = maskLiterals(source, true);
+  for (const m of commentsMasked.matchAll(IMPORT)) {
+    if (masked.slice(m.index, m.index + 6) !== "import") continue;
+    const braces = /\{([^}]*)\}/.exec(m[1]);
+    for (const part of braces === null ? [] : braces[1].split(",")) {
+      const [imported, local] = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/);
+      const name = (local ?? imported).trim();
+      if (IDENT.test(name)) entries.push({ module: m[3], imported: imported.trim(), local: name });
+    }
+    for (const part of m[1].replace(/\{[^}]*\}/, "").split(",")) {
+      const name = part.trim().replace(/^\*\s*as\s+/, "");
+      if (IDENT.test(name)) entries.push({ module: m[3], imported: "*", local: name });
+    }
+  }
+  for (const m of commentsMasked.matchAll(REQUIRE)) {
+    if (masked.slice(m.index, m.index + 3) === source.slice(m.index, m.index + 3)) entries.push({ module: m[3], imported: "*", local: m[1] });
+  }
+  return entries;
+}
+
+function bindImport(b: FsBindings, entry: ImportEntry): void {
+  if (FS_MODULE.test(entry.module)) {
+    if (entry.imported === "*" || entry.imported === "promises") b.namespaces.add(entry.local);
+    else if (operationOf(entry.imported) !== undefined) b.functions.set(entry.local, entry.imported);
+  } else if (CHILD_MODULE.test(entry.module)) {
+    if (entry.imported === "*") b.childNamespaces.add(entry.local);
+    else if (CHILD_CALLEES.has(entry.imported)) b.children.set(entry.local, entry.imported);
+  } else if (entry.imported === "runProcess") b.children.set(entry.local, "runProcess");
+  else b.foreign.add(entry.local);
+}
+
+/** Names the file declares or imports (then a bare call is not the fs/child function). */
+function declaredNames(masked: string, imports: readonly ImportEntry[]): (name: string) => boolean {
+  const locals = new Set(imports.map((entry) => entry.local));
+  return (name) => locals.has(name) || reHits(new RegExp(`\\b(?:function\\*?|const|let|var|class)\\s+${name}\\b`), masked);
+}
+
+/** fs and child_process bindings by import, then aliases derived from them (fixed point). */
+function fsBindings(source: string, masked: string, declared: (name: string) => boolean): FsBindings {
+  const b: FsBindings = { namespaces: new Set(), functions: new Map(), childNamespaces: new Set(), children: new Map(), foreign: new Set() };
+  for (const entry of parseImports(source, masked)) bindImport(b, entry);
+  for (const name of FALLBACK_NAMESPACES) if (!declared(name)) b.namespaces.add(name);
+  for (let pass = 0; pass < 8; pass++) {
+    const before = b.namespaces.size + b.functions.size;
+    for (const m of masked.matchAll(DERIVED)) {
+      const [, pattern, base, viaPromises, member] = m;
+      if (!b.namespaces.has(base) || (pattern.startsWith("{") && member !== undefined)) continue;
+      const pairs = pattern.startsWith("{")
+        ? pattern.slice(1, -1).split(",").map((part) => part.split(":").map((s) => s.trim()))
+        : [[member ?? "*", pattern]];
+      for (const [key, local = key] of pairs) {
+        if (!IDENT.test(local)) continue;
+        if (key === "*" || (key === "promises" && viaPromises === undefined)) b.namespaces.add(local);
+        else if (operationOf(key) !== undefined) b.functions.set(local, key);
+      }
+    }
+    if (b.namespaces.size + b.functions.size === before) break;
+  }
+  return b;
+}
+
+function resolveCallee(parts: readonly string[], b: FsBindings, declared: (name: string) => boolean): Callee | undefined {
+  const [head, ...members] = parts;
+  const fsOp = (name: string): Callee | undefined => {
+    const op = operationOf(name);
+    return op === undefined ? undefined : { kind: "fs", op: op.name, targets: op.targets };
+  };
+  if (members.length === 0) {
+    const bound = b.functions.get(head);
+    if (bound !== undefined) return fsOp(bound);
+    const child = b.children.get(head);
+    if (child !== undefined) return { kind: "child", name: child };
+    const isChild = CHILD_CALLEES.has(head) || head === "runProcess";
+    // Unbound, undeclared bare names keep the old spelling coverage.
+    if ((!isChild && operationOf(head) === undefined) || b.foreign.has(head) || declared(head)) return undefined;
+    return isChild ? { kind: "child", name: head } : fsOp(head);
+  }
+  if (members.length === 1 && b.namespaces.has(head)) return fsOp(members[0]);
+  if (members.length === 2 && members[0] === "promises" && b.namespaces.has(head)) return fsOp(members[1]);
+  if (members.length === 1 && b.childNamespaces.has(head) && CHILD_CALLEES.has(members[0])) return { kind: "child", name: members[0] };
+  return undefined;
+}
+
+/** open/openSync write only with a write flag; a non-literal flag counts (conservative). */
+function opensForWrite(masked: string, source: string, open: number): boolean {
+  const range = extractArgRange(masked, open, 1);
+  if (range === undefined) return false;
+  const flag = source.slice(range[0], range[1]).trim();
+  if (flag.length === 0 || flag === "0") return false;
+  const literal = /^(["'`])([^"'`]*)\1$/.exec(flag);
+  return literal === null || (literal[1] === "`" && literal[2].includes("${")) || reHits(/[wa+]/, literal[2]);
+}
+
+/** Write/destroy-shaped calls with checkout or unresolved target provenance. */
 export function checkoutWriteHits(source: string): Hit[] {
   const masked = maskLiterals(source);
   const classify = scopedClassifier(source, masked);
+  const declared = declaredNames(masked, parseImports(source, masked));
+  const bindings = fsBindings(source, masked, declared);
   const hits: Hit[] = [];
-  for (const m of masked.matchAll(WRITE_CALL)) {
-    const receiver = m[1];
-    const bareName = m[2];
+  const children: Array<{ name: string; at: number; open: number }> = [];
+  for (const m of masked.matchAll(CALL)) {
     const at = m.index ?? 0;
     const before = masked[at - 1] ?? "";
-    // Object-method call (transport.writeFile) or a declaration, not an fs call site.
-    if (receiver === undefined && (reHits(/[$\w.]/, before) || reHits(/function\s*$/, masked.slice(Math.max(0, at - 9), at)))) continue;
+    // Member of another object (transport.writeFile) or a declaration, not a call site.
+    if (reHits(/[$\w.]/, before) || reHits(/function\s*$/, masked.slice(Math.max(0, at - 9), at))) continue;
+    const callee = resolveCallee([m[1], ...m[2].split(".").map((s) => s.trim()).filter((s) => s !== "")], bindings, declared);
+    if (callee === undefined) continue;
     const open = at + m[0].length - 1;
-    const index = DEST_SECOND.has(bareName) ? 1 : 0;
-    const range = extractArgRange(masked, open, index);
-    if (range === undefined) continue;
-    const after = masked.slice(extractArgRange(masked, open, 0)?.[1] ?? range[1]);
+    const after = masked.slice(extractArgRange(masked, open, 0)?.[1] ?? open);
     // Object method declarations are not calls (typed or inferred parameters).
     if (reHits(/^\)\s*(?::[^\n{]+)?\s*\{/, after) || reHits(/\basync\s*$/, masked.slice(Math.max(0, at - 10), at))) continue;
-    const target = masked.slice(range[0], range[1]);
-    if (target.length === 0) continue;
-    // maskLiterals preserves offsets 1:1, so the same range in the original source is the
-    // unmasked text of the target — needed to confirm "./" vs "../" in new URL(...).
-    const origin = source.slice(range[0], range[1]);
-    const classification = classify(target, origin, at);
-    const floored = anchoredFloor(classification, target);
-    if (floored !== "CLEAN") hits.push({ call: bareName + (m[3] ?? ""), target: origin.trim(), classification: floored === "UNBOUND" ? "UNKNOWN" : floored, approximation: floored === "UNKNOWN" });
+    if (callee.kind === "child") { children.push({ name: callee.name, at, open }); continue; }
+    if (reHits(/^open(?:Sync)?$/, callee.op) && !opensForWrite(masked, source, open)) continue;
+    for (const index of callee.targets) {
+      const range = extractArgRange(masked, open, index);
+      if (range === undefined) continue;
+      const target = masked.slice(range[0], range[1]);
+      if (target.trim().length === 0) continue;
+      // maskLiterals preserves offsets 1:1, so the same range in the original source is the
+      // unmasked text of the target — needed to confirm "./" vs "../" in new URL(...).
+      const origin = source.slice(range[0], range[1]);
+      const classification = classify(target, origin, at);
+      const floored = anchoredFloor(classification, target);
+      if (floored !== "CLEAN") hits.push({ call: callee.op, target: origin.trim(), classification: floored === "UNBOUND" ? "UNKNOWN" : floored, approximation: floored === "UNKNOWN" });
+    }
+  }
+  hits.push(...childProcessHits(source, masked, classify, children));
+  return hits;
+}
+
+const DESTRUCTIVE = /\bgit\b.*\bclean\b|\bgit\b.*\bcheckout\b.*\s--(?:\s|$)|\bgit\b.*\breset\b.*--hard\b|(?:^|[\s;&|])(?:rm|del|rmdir|rd|Remove-Item)(?:\s|$)/i;
+const LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+
+/** End offset of the depth-0 expression starting at from (stops at , ; ) ] }). */
+function expressionEnd(masked: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < masked.length; i++) {
+    const c = masked[i];
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) { if (depth === 0) return i; depth--; }
+    else if (depth === 0 && (c === "," || c === ";")) return i;
+  }
+  return masked.length;
+}
+
+/** Non-empty top-level items of the call or array opening at open. */
+function listItems(masked: string, open: number): Array<[number, number]> {
+  const items: Array<[number, number]> = [];
+  for (let index = 0; index < 64; index++) {
+    const range = extractArgRange(masked, open, index);
+    if (range === undefined) break;
+    if (masked.slice(range[0], range[1]).trim() !== "") items.push(range);
+  }
+  return items;
+}
+
+/** Extract path operands, not executables, subcommands or flags. Shell parsing is a
+ * bounded approximation; provenance of nonliteral operands is checked separately. */
+function destructiveOperands(command: string): string[] {
+  const words = [...command.matchAll(/"([^"]*)"|'([^']*)'|([^\s;&|]+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
+  const git = words.findIndex((word) => /^(?:.*[\\/])?git(?:\.exe)?$/i.test(word));
+  let operands: string[];
+  if (git >= 0) {
+    const subcommand = words[git + 1];
+    if (subcommand === "checkout") {
+      const separator = words.indexOf("--", git + 2);
+      operands = separator < 0 ? [] : words.slice(separator + 1);
+    } else operands = subcommand === "clean" ? words.slice(git + 2) : [];
+  } else {
+    const destroy = words.findIndex((word) => /^(?:rm|del|rmdir|rd|Remove-Item)$/i.test(word));
+    operands = destroy < 0 ? [] : words.slice(destroy + 1);
+  }
+  return operands.filter((word) => word !== "" && !word.startsWith("-") && !/^\/(?:s|q|f)$/i.test(word));
+}
+
+/** Child processes running a destructive command (git clean/checkout --/reset --hard,
+ * rm/del/rmdir/Remove-Item) with a checkout-anchored cwd or path argument. An absent cwd
+ * inherits the checkout; an unresolved cwd is enforced, not disclosed. */
+function childProcessHits(source: string, masked: string, classify: Classify, calls: ReadonlyArray<{ name: string; at: number; open: number }>): Hit[] {
+  const hits: Hit[] = [];
+  for (const { name, at, open } of calls) {
+    const items = listItems(masked, open);
+    const text = source.slice(open + 1, items.at(-1)?.[1] ?? open + 1);
+    const values = items.map(([f, t]) => classify.resolveValue?.(masked.slice(f, t), source.slice(f, t), at) ?? { expr: masked.slice(f, t), origin: source.slice(f, t), at });
+    const program = /^("|')([^"']+)\1$/.exec(values[0]?.origin.trim() ?? "")?.[2];
+    const argv = values[1];
+    const argvItems = argv?.expr.trim().startsWith("[") ? listItems(argv.expr, argv.expr.indexOf("[")) : [];
+    const args = argvItems.map(([f, t]) => /^(["'`])([^"'`$]*)\1$/.exec(argv!.origin.slice(f, t).trim())?.[2]);
+    const readOnlyGit = (expr: string, origin: string): boolean => {
+      if (!expr.trim().startsWith("[")) return false;
+      const rows = listItems(expr, expr.indexOf("["));
+      const first = rows[0];
+      if (first === undefined) return false;
+      if (expr.slice(...first).trim().startsWith("[")) return rows.every((r) => readOnlyGit(expr.slice(...r), origin.slice(...r)));
+      const subcommand = /^(["'`])([^"'`$]*)\1$/.exec(origin.slice(...first).trim())?.[2];
+      return subcommand !== undefined && /^(?:status|ls-files|ls-tree|diff|log|show|rev-parse|rev-list|cat-file|blame)$/.test(subcommand);
+    };
+    if (/^(?:.*[\\/])?git(?:\.exe)?$/i.test(program ?? "") && argv !== undefined && readOnlyGit(argv.expr, argv.origin)) continue;
+    const unresolved = argv !== undefined && (argvItems.length > 0 ? args.some((v) => v === undefined) : !argv.expr.trim().startsWith("{"));
+    const capable = /^(?:.*[\\/])?(?:git|rm|del|rmdir|rd|Remove-Item)(?:\.exe)?$/i.test(program ?? "")
+      || (/^(?:.*[\\/])?sh(?:\.exe)?$/i.test(program ?? "") && args.includes("-c"))
+      || (/^(?:.*[\\/])?cmd(?:\.exe)?$/i.test(program ?? "") && args.some((v) => v?.toLowerCase() === "/c"));
+    const destructive = DESTRUCTIVE.test(values.map((v) => [...v.origin.matchAll(LITERAL)].map((l) => l[2]).join(" ")).join(" "));
+    if (!destructive && !(unresolved && capable)) continue;
+    let cwd: Classification | "UNBOUND" = "ANCHORED";
+    let anchored = false;
+    for (const value of values) {
+      const item = value.expr.trim();
+      const start = value.expr.indexOf(item);
+      const localVerdict = (f: number, t: number): Classification | "UNBOUND" => anchoredFloor(classify(value.expr.slice(f, t), value.origin.slice(f, t), value.at), value.expr.slice(f, t));
+      if (item.startsWith("{")) {
+        const key = /\bcwd\b\s*(:)?/.exec(item);
+        if (key === null) continue;
+        const valueFrom = start + key.index + (key[1] === undefined ? 0 : key[0].length);
+        cwd = localVerdict(valueFrom, key[1] === undefined ? valueFrom + 3 : expressionEnd(value.expr, valueFrom));
+        continue;
+      }
+      const parts: Array<[number, number]> = item.startsWith("[") ? listItems(value.expr, start) : [[0, value.expr.length]];
+      const literals = parts.map(([f, t]) => /^(["'`])([^"'`$]*)\1$/.exec(value.origin.slice(f, t).trim())?.[2]);
+      const command = item.startsWith("[")
+        ? [program ?? "", ...literals.map((v) => v ?? "")].join(" ")
+        : literals[0] ?? "";
+      if (destructiveOperands(command).some((path) => isAnchoredSignal("", JSON.stringify(path)))) anchored = true;
+      for (const [f, t] of parts) if (!reHits(/^(["'`])\s*\1$/, value.expr.slice(f, t).trim()) && localVerdict(f, t) === "ANCHORED") anchored = true;
+    }
+    if (!destructive && cwd !== "ANCHORED") continue;
+    const classification = anchored || cwd === "ANCHORED" ? "ANCHORED" : cwd === "CLEAN" ? undefined : "UNKNOWN";
+    if (classification !== undefined) hits.push({ call: name, target: text.replace(/\s+/g, " ").trim(), classification, approximation: false });
   }
   return hits;
 }

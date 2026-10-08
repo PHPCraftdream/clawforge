@@ -207,4 +207,24 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     replace: "  const receivers = new Set<string>(); const bare = new Map<string, string>();",
     check: "tools/checks/architecture/self/prose-held.check.ts", fragment: "flow: reviewer assert.equal",
   },
+  {
+    id: "C240", finding: "rf7-tails-u", note: "Restore inherited runner requirements; isolated capture must skip an optional missing capability.",
+    product: "tools/checks/kit/self/runtime-guard.check.ts", search: "  for (const [key] of inherited) delete process.env[key];", replace: "  // control: inherit outer requirements",
+    check: "tools/checks/kit/self/runtime-guard.check.ts", fragment: "absent capability is skipped without spawning writer",
+  },
+  {
+    id: "C241", finding: "rf7-tails-u", note: "Treat ordinary-string interpolation spelling as computed; literal prose assertion must fail.",
+    product: "tools/checks/architecture/prose-held.ts", search: 'if (!template || text[i] !== "$" || text[i + 1] !== "{")', replace: 'if (text[i] !== "$" || text[i + 1] !== "{")',
+    check: "tools/checks/architecture/self/prose-held.check.ts", fragment: "ordinary single-quoted interpolation spelling is literal prose",
+  },
+  {
+    id: "C242", finding: "rf7-tails-u", note: "Restore target-context status advice; recovery diagnostic kind and argv must fail.",
+    product: "tools/framework/commands/operate/recover-env/bootstrap.ts", search: 'override readonly advice = [command(["recover-env", "--dry-run"])];', replace: 'override readonly advice = [command("status")];',
+    check: "tools/checks/kit/self/recovery-advice.check.ts", fragment: "every local recovery unknown carries diagnostic kind and argv",
+  },
+  {
+    id: "C244", finding: "rf7-tails-u", note: "Bypass secrets apply counted reader; dynamic calibration must fail independently of static sweep.",
+    product: "tools/framework/commands/management/secrets.ts", search: "let content = await readEnvFileText();", replace: 'let content = await readFile(envFile(), "utf8");',
+    check: "tools/checks/foundation/core/command/needs.check.ts", fragment: "secrets apply reads the .env through the counted reader exactly once",
+  },
 ];

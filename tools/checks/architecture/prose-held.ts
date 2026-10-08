@@ -226,10 +226,10 @@ export const PROSE_MATCHER =
 export const PROSE_EQUALITY = /\bcheck\([^\n]*,\s*(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\s*\)/;
 // Flow precision: only whole whitespace-free path/env values and whitespace-only separators are structural.
 // Template interpolation inputs are computed values, not literal output (e.g. JSON.stringify).
-function proseText(text: string): boolean {
+function proseText(text: string, template = false): boolean {
   let literal = "";
   for (let i = 0; i < text.length; i++) {
-    if (text[i] !== "$" || text[i + 1] !== "{") { literal += text[i]; continue; }
+    if (!template || text[i] !== "$" || text[i + 1] !== "{") { literal += text[i]; continue; }
     let depth = 1; i += 2;
     for (; i < text.length && depth; i++) {
       const c = text[i];
@@ -413,7 +413,7 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
   const none = (): Flow => ({ literals: [], names: [] });
   const single = (k: number, call = false): Flow => {
     const x = t[k];
-    if (x?.kind === "str") return { literals: proseText(x.text) ? [k] : [], names: [] };
+    if (x?.kind === "str") return { literals: proseText(x.text, source[x.at] === "`") ? [k] : [], names: [] };
     if (x?.kind === "regex") return { literals: proseRegex(x.text) ? [k] : [], names: [] };
     if (x?.kind === "id" && t[k - 1]?.text !== ".") return { literals: [], names: [{ name: x.text, call, k }] };
     return none();
@@ -570,7 +570,7 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         let eq = i + 2;
         if (t[eq]?.text === ":") { eq += 1; while (eq < end && t[eq]?.text !== "=") eq += 1; }
         const value = t[eq + 1];
-        const spaced = t[eq]?.text === "=" && value?.kind === "str" && proseText(value.text);
+        const spaced = t[eq]?.text === "=" && value?.kind === "str" && proseText(value.text, source[value.at] === "`");
         let valueFlow: Flow | undefined; let result: Flow | undefined;
         if (t[eq]?.text === "=") {
           const initEnd = Math.min(expressionEnd(eq + 1, end), end);

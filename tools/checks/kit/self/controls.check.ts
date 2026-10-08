@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { runProcess } from "../spawn.ts";
 import { check, checkTrue, finish } from "../harness.ts";
-import { copyRepo, runControls, FAIL_MARKER } from "../../controls/run-controls.ts";
+import { copyRepo, runControls, controlVerdict, FAIL_MARKER } from "../../controls/run-controls.ts";
 import type { ControlDecl } from "../../controls/controls.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-controls-self-"));
@@ -85,6 +85,9 @@ await writeFile(fileURLToPath(new URL("./executed.marker", import.meta.url)), "r
     (byId.get("S1")?.matchedFailLine ?? "").trim().split(/\s+/),
     [FAIL_MARKER.trim(), "mutation", "detected:", "the", "value", "grammar", "is", "gone"],
   );
+  check("S1: held evidence records the edited exit", byId.get("S1")?.editedExit, 1);
+  check("S1: held line exposes edited exit tokens", controlVerdict(byId.get("S1")!).split(/\s+/), ["held", "(edited", "exit", "1)"]);
+  check("S1: held line parser reads the edited exit", /^held \(edited exit (\d+)\)$/.exec(controlVerdict(byId.get("S1")!))?.[1], "1");
   checkTrue("S1: the product file inside the copy is byte-identical after the control", byId.get("S1")?.productHashBefore !== undefined && byId.get("S1")?.productHashBefore === byId.get("S1")?.productHashAfter);
   check("S2: a check that still passes is reported as not failing", byId.get("S2")?.kind, "not-failing");
   check("S3: a stale edit is reported, never skipped", byId.get("S3")?.kind, "stale");

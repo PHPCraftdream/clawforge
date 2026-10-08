@@ -16,6 +16,8 @@ const spawnFile = async (file: string, label: string) => {
 async function capture(entries: readonly LabeledCheck[], forced: readonly string[] = []) {
   let output = "";
   const write = process.stderr.write;
+  const inherited = Object.entries(process.env).filter(([key]) => key.startsWith("OC_CHECK_"));
+  for (const [key] of inherited) delete process.env[key];
   process.stderr.write = ((chunk: string | Uint8Array) => { output += String(chunk); return true; }) as typeof write;
   try {
     let probes = 0;
@@ -24,6 +26,8 @@ async function capture(entries: readonly LabeledCheck[], forced: readonly string
     return { code, output, probes };
   } finally {
     process.stderr.write = write;
+    for (const key of Object.keys(process.env)) if (key.startsWith("OC_CHECK_")) delete process.env[key];
+    for (const [key, value] of inherited) process.env[key] = value;
   }
 }
 async function witness(name: string, action: () => Promise<unknown>, fragment: string) {
@@ -86,18 +90,21 @@ try {
     checkTrue("checkout symlinks retain targets without descendants", snapshot.tree?.some((item) => item.path === "linked" && item.link === join(root, "scratch")) === true && !snapshot.tree?.some((item) => item.path.startsWith("linked/")));
   });
   for (const code of ["EBUSY", "EPERM", "EACCES"]) {
-    let caught: unknown;
-    let locked;
-    try {
-      locked = await snapshotCheckout(root, { beforeRead: (path) => {
-        if (path === join(root, "ignored", "mode.token")) throw Object.assign(new Error("fault"), { code });
-      } });
-    } catch (error) { caught = error; }
-    check("unreadable sentinel does not throw " + code, caught, undefined);
-    check("unreadable sentinel records " + code, locked?.ignored?.find((item) => item.path === "ignored/mode.token")?.unreadable, code);
-    if (locked !== undefined) {
-      check("unchanged unreadability is stable " + code, diffSnapshots(locked, locked), []);
-      checkTrue("readability transition is observed " + code, diffSnapshots(locked, await snapshotCheckout(root)).some((line) => line.includes("readability")));
+    for (const target of ["ignored/mode.token", "renamed ü.txt"]) {
+      let caught: unknown;
+      let locked;
+      try {
+        locked = await snapshotCheckout(root, { beforeRead: (path) => {
+          if (path === join(root, ...target.split("/"))) throw Object.assign(new Error("fault"), { code });
+        } });
+      } catch (error) { caught = error; }
+      check("unreadable sentinel does not throw " + code + (target.startsWith("ignored/") ? "" : " " + target), caught, undefined);
+      const entries = target.startsWith("ignored/") ? locked?.ignored : locked?.tree;
+      check("unreadable sentinel records " + target + " " + code, entries?.find((item) => item.path === target)?.unreadable, code);
+      if (locked !== undefined) {
+        check("unchanged unreadability is stable " + target + " " + code, diffSnapshots(locked, locked), []);
+        checkTrue("readability transition is observed " + target + " " + code, diffSnapshots(locked, await snapshotCheckout(root)).some((line) => line.includes(target) && line.includes("readability")));
+      }
     }
   }
   for (const excluded of ["node_modules", "apps", "worktrees", ".rush"]) {
@@ -123,7 +130,16 @@ try {
   const gated = { ...entry(writer), requires: ["docker" as const] };
   await writeFile(join(root, "notes ü.txt"), "BBBB");
   const beforeSkip = await snapshotCheckout(root);
-  const skipped = await capture([gated]);
+  const inheritedRequire = process.env.OC_CHECK_REQUIRE;
+  let skipped: Awaited<ReturnType<typeof capture>>;
+  try {
+    process.env.OC_CHECK_REQUIRE = "docker";
+    skipped = await capture([gated]);
+    check("capture restores outer OC_CHECK_REQUIRE", process.env.OC_CHECK_REQUIRE, "docker");
+  } finally {
+    if (inheritedRequire === undefined) delete process.env.OC_CHECK_REQUIRE;
+    else process.env.OC_CHECK_REQUIRE = inheritedRequire;
+  }
   check("absent capability is skipped without spawning writer", { code: skipped.code, changes: diffSnapshots(beforeSkip, await snapshotCheckout(root)), probes: skipped.probes }, { code: 0, changes: [], probes: 1 });
   const skipTokens = skipped.output.split(/\r?\n/).map((line) => line.trim().split(/\s+/)[0]);
   const skips = skipTokens.filter((token) => token === "SKIP");
@@ -138,11 +154,12 @@ try {
   if (process.platform === "win32") {
     const shell = await pwshCommand();
     if (shell !== undefined) {
-      const script = join(root, "locked.mjs");
-      await writeFile(script, `import { diffSnapshots, runChecks, snapshotCheckout } from ${JSON.stringify(new URL("../run.ts", import.meta.url).href)};
+      for (const target of ["ignored/mode.token", "renamed ü.txt"]) {
+        const script = join(root, "locked.mjs");
+        await writeFile(script, `import { diffSnapshots, runChecks, snapshotCheckout } from ${JSON.stringify(new URL("../run.ts", import.meta.url).href)};
 const root = ${JSON.stringify(root)};
 const before = await snapshotCheckout(root);
-console.log(JSON.stringify(before.ignored.find(e => e.path === 'ignored/mode.token')));
+console.log(JSON.stringify([...(before.ignored ?? []), ...(before.tree ?? [])].find(e => e.path === ${JSON.stringify(target)})));
 let ran = 0;
 const code = await runChecks({ checkoutRoot: root, jobs: 1,
   entries: [{ file: 'locked-noop', label: 'locked noop fixture', exclusive: false, requires: [] }],
@@ -153,17 +170,18 @@ const changes = diffSnapshots(before, await snapshotCheckout(root));
 console.log(JSON.stringify({ ran, code, changes }));
 process.exitCode = code === 0 && ran === 1 && changes.length === 0 ? 0 : 1;
 `);
-      const quoted = (text: string) => "'" + text.replaceAll("'", "''") + "'";
-      const result = await runProcess(shell, ["-NoProfile", "-NonInteractive", "-Command",
-        `$h=[System.IO.File]::Open(${quoted(join(root, "ignored", "mode.token"))},'Open','ReadWrite','None'); try { & ${quoted(process.execPath)} --experimental-strip-types ${quoted(script)}; exit $LASTEXITCODE } finally { $h.Dispose() }`], { cwd: root, timeoutMs: 60_000 });
-      check("real Windows exclusive lock does not abort snapshot", result.code, 0);
-      const records = result.stdout.split(/\r?\n/).filter((line) => line.trim() !== "").map((line) => JSON.parse(line));
-      const unreadable = records[0];
-      check("real Windows exclusive lock records unreadability", {
-        count: records.length, path: unreadable?.path,
-        locked: ["EBUSY", "EPERM", "EACCES"].includes(unreadable?.unreadable),
-      }, { count: 2, path: "ignored/mode.token", locked: true });
-      check("real Windows exclusive lock runs no-op check and runner exits zero without changes", records[1], { ran: 1, code: 0, changes: [] });
+        const quoted = (text: string) => "'" + text.replaceAll("'", "''") + "'";
+        const result = await runProcess(shell, ["-NoProfile", "-NonInteractive", "-Command",
+          `$h=[System.IO.File]::Open(${quoted(join(root, ...target.split("/")))},'Open','ReadWrite','None'); try { & ${quoted(process.execPath)} --experimental-strip-types ${quoted(script)}; exit $LASTEXITCODE } finally { $h.Dispose() }`], { cwd: root, timeoutMs: 60_000 });
+        check("real Windows exclusive lock does not abort snapshot " + target, result.code, 0);
+        const records = result.stdout.split(/\r?\n/).filter((line) => line.trim() !== "").map((line) => JSON.parse(line));
+        const unreadable = records[0];
+        check("real Windows exclusive lock records unreadability " + target, {
+          count: records.length, path: unreadable?.path,
+          locked: ["EBUSY", "EPERM", "EACCES"].includes(unreadable?.unreadable),
+        }, { count: 2, path: target, locked: true });
+        check("real Windows exclusive lock runs no-op check and runner exits zero without changes " + target, records[1], { ran: 1, code: 0, changes: [] });
+      }
     }
   }
 } finally {

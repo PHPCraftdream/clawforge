@@ -557,6 +557,12 @@ export function checkoutWriteHits(source: string): Hit[] {
 const DESTRUCTIVE = /\bgit\b.*\bclean\b|\bgit\b.*\bcheckout\b.*\s--(?:\s|$)|\bgit\b.*\breset\b.*--hard\b|(?:^|[\s;&|])(?:rm|del|rmdir|rd|Remove-Item)(?:\s|$)/i;
 const LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
 
+/** Ordinary strings and interpolation-free templates are fixed child-process words. */
+function childWord(origin: string): string | undefined {
+  const literal = /^(["'`])([^"'`]*)\1$/.exec(origin.trim());
+  return literal === null || (literal[1] === "`" && literal[2].includes("${")) ? undefined : literal[2];
+}
+
 /** End offset of the depth-0 expression starting at from (stops at , ; ) ] }). */
 function expressionEnd(masked: string, from: number): number {
   let depth = 0;
@@ -608,17 +614,17 @@ function childProcessHits(source: string, masked: string, classify: Classify, ca
     const items = listItems(masked, open);
     const text = source.slice(open + 1, items.at(-1)?.[1] ?? open + 1);
     const values = items.map(([f, t]) => classify.resolveValue?.(masked.slice(f, t), source.slice(f, t), at) ?? { expr: masked.slice(f, t), origin: source.slice(f, t), at });
-    const program = /^("|')([^"']+)\1$/.exec(values[0]?.origin.trim() ?? "")?.[2];
+    const program = childWord(values[0]?.origin ?? "");
     const argv = values[1];
     const argvItems = argv?.expr.trim().startsWith("[") ? listItems(argv.expr, argv.expr.indexOf("[")) : [];
-    const args = argvItems.map(([f, t]) => /^(["'`])([^"'`$]*)\1$/.exec(argv!.origin.slice(f, t).trim())?.[2]);
+    const args = argvItems.map(([f, t]) => childWord(argv!.origin.slice(f, t)));
     const readOnlyGit = (expr: string, origin: string): boolean => {
       if (!expr.trim().startsWith("[")) return false;
       const rows = listItems(expr, expr.indexOf("["));
       const first = rows[0];
       if (first === undefined) return false;
       if (expr.slice(...first).trim().startsWith("[")) return rows.every((r) => readOnlyGit(expr.slice(...r), origin.slice(...r)));
-      const subcommand = /^(["'`])([^"'`$]*)\1$/.exec(origin.slice(...first).trim())?.[2];
+      const subcommand = childWord(origin.slice(...first));
       return subcommand !== undefined && /^(?:status|ls-files|ls-tree|diff|log|show|rev-parse|rev-list|cat-file|blame)$/.test(subcommand);
     };
     if (/^(?:.*[\\/])?git(?:\.exe)?$/i.test(program ?? "") && argv !== undefined && readOnlyGit(argv.expr, argv.origin)) continue;
@@ -642,7 +648,7 @@ function childProcessHits(source: string, masked: string, classify: Classify, ca
         continue;
       }
       const parts: Array<[number, number]> = item.startsWith("[") ? listItems(value.expr, start) : [[0, value.expr.length]];
-      const literals = parts.map(([f, t]) => /^(["'`])([^"'`$]*)\1$/.exec(value.origin.slice(f, t).trim())?.[2]);
+      const literals = parts.map(([f, t]) => childWord(value.origin.slice(f, t)));
       const command = item.startsWith("[")
         ? [program ?? "", ...literals.map((v) => v ?? "")].join(" ")
         : literals[0] ?? "";

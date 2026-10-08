@@ -256,8 +256,11 @@ async function snapshotPath(absolute: string, display: string, entries: AppsEntr
       }
     } else if (info.isFile()) {
       options.beforeRead?.(absolute);
-      if (options.clean?.has(display)) entries.push({ path: display, mode });
-      else entries.push({ path: display, mode, size: info.size, hash: await hashFile(absolute) });
+      if (options.clean?.has(display)) {
+        const handle = await open(absolute, "r");
+        await handle.close();
+        entries.push({ path: display, mode });
+      } else entries.push({ path: display, mode, size: info.size, hash: await hashFile(absolute) });
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;

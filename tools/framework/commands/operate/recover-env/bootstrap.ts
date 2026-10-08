@@ -13,7 +13,13 @@ import type { Env } from "#src/core/env.ts";
 import { composeProjectName, useComposeProjectOverride } from "#src/runtime/deployment.ts";
 import { UserError } from "#src/core/io/log.ts";
 import { TargetReadUnknownError, TransportUnreachableError, type Transport } from "#src/runtime/transport/transport.ts";
+import { command } from "#src/core/io/invocation/advice.ts";
 import { connectionFactsFromInspect, type ConnectionFacts } from "./facts.ts";
+
+// Retry the recovery read without demanding the connection facts it exists to repair.
+class RecoveryReadUnknownError extends TargetReadUnknownError {
+  override readonly advice = [command(["recover-env", "--dry-run"])];
+}
 
 // The two labels compose writes on every container it creates. `compose ps` filters by
 // the same pair; asking Docker directly is what lets the lookup run without compose —
@@ -53,9 +59,9 @@ export async function runningConnectionFactsWithoutContext(options: {
     // An unreachable target is not a docker-not-running answer: the transport's typed
     // refusal carries the real next step (rf6-fix30) and reaches the caller as itself.
     if (error instanceof TransportUnreachableError || (error instanceof UserError && error.advice.length > 0)) throw error;
-    throw new TargetReadUnknownError(`could not list recovery containers on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    throw new RecoveryReadUnknownError(`could not list recovery containers on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  if (listed.code !== 0) throw new TargetReadUnknownError(`could not list recovery containers on the target: docker ps exited with code ${listed.code}`);
+  if (listed.code !== 0) throw new RecoveryReadUnknownError(`could not list recovery containers on the target: docker ps exited with code ${listed.code}`);
   const containerIds = listed.stdout.split(/\r?\n/).map((id) => id.trim()).filter((id) => id !== "");
 
   // `docker ps --all` puts stopped instances in this result too. A stale stopped
@@ -72,11 +78,11 @@ export async function runningConnectionFactsWithoutContext(options: {
       );
     } catch (error) {
       if (error instanceof TransportUnreachableError || (error instanceof UserError && error.advice.length > 0)) throw error;
-      unknown ??= new TargetReadUnknownError(`could not inspect recovery container ${containerId} on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      unknown ??= new RecoveryReadUnknownError(`could not inspect recovery container ${containerId} on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       continue;
     }
     if (inspected.code !== 0) {
-      unknown ??= new TargetReadUnknownError(`could not inspect recovery container ${containerId} on the target: docker inspect exited with code ${inspected.code}`);
+      unknown ??= new RecoveryReadUnknownError(`could not inspect recovery container ${containerId} on the target: docker inspect exited with code ${inspected.code}`);
       continue;
     }
     try {
@@ -92,7 +98,7 @@ export async function runningConnectionFactsWithoutContext(options: {
     } catch (error) {
       if (error instanceof TransportUnreachableError || (error instanceof UserError && error.advice.length > 0)) throw error;
       // Preserve the first unknown answer while still trying remaining candidates.
-      unknown ??= new TargetReadUnknownError(`could not inspect recovery container ${containerId} on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      unknown ??= new RecoveryReadUnknownError(`could not inspect recovery container ${containerId} on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
   if (unknown !== undefined) throw unknown;

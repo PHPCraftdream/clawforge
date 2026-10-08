@@ -191,4 +191,7 @@ check("flow: template interpolation propagates bound prose", flow(`${EXPECT}cons
 check("precision: template interpolation propagates structural constant", flow('const CODE = "CODE"; const E = `${CODE}`; check("n", msg, E);'), 0);
 check("precision: code regex whitespace is not prose", flow('const RE = /readdir\\(\\s*recipesDir\\(\\)/; checkTrue("n", !RE.test(content));'), 0);
 check("flow: word separating regex whitespace is prose", flow('const RE = /held\\s+phrase/; checkTrue("n", RE.test(msg));'), 1);
+check("flow: ordinary single-quoted interpolation spelling is literal prose", flow("const E = '${the target did not answer at all}'; check('n', msg, E);"), 1);
+check("flow: ordinary double-quoted interpolation spelling is literal prose", flow('const E = "${the target did not answer at all}"; check("n", msg, E);'), 1);
+check("precision: real template interpolation has no literal prose", flow('const E = `${the target did not answer at all}`; check("n", msg, E);'), 0);
 finish("architecture self: prose-held scanner");

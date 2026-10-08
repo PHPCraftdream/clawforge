@@ -17,6 +17,7 @@
 // sweep finds no product file reading envFile() past that reader.
 
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
@@ -25,6 +26,7 @@ import { envReads, monorepoRoot, readEnvFileText, resetEnvReads } from "#framewo
 import type { Context } from "#framework/core/context.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import { declaredState } from "#framework/commands/orchestration/inspect/declared.ts";
+import { secrets } from "#framework/commands/management/secrets.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { TRANSPORT_SENTINEL, createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
@@ -199,6 +201,41 @@ try {
   resetEnvReads();
   await declaredState({ settings: { image: "needs-fixture-image" } } as unknown as Context, [] as Problem[]);
   checkTrue("inspect declared state reads the .env through the counted reader exactly once", envReads() === 1);
+
+  // Exercise the actual apply path, including its repository-value branch and lock.
+  {
+    const calibrationRoot = join(tmpdir(), relative(tmpdir(), fixture.root));
+    const seed = await readFile(join(calibrationRoot, ".env"), "utf8");
+    await writeFile(join(calibrationRoot, "secrets", "calibration.env"), "REPO_SECRET=counted-reader-calibration\n", "utf8");
+    const lockFiles = new Map<string, string>();
+    const ctx = {
+      settings: { dataDir: "/needs-calibration", env: {} },
+      applicationSecrets: async () => [{ name: "REPO_SECRET", location: "repo-env", usedBy: "calibration", required: true }],
+      runtime: { isRunning: async () => false },
+      transport: {
+        description: "stub",
+        exists: async () => true,
+        readFile: async (path: string) => lockFiles.get(path) ?? (path.endsWith("openclaw.json") ? "{}" : ""),
+        writeFile: async (path: string, content: string) => { lockFiles.set(path, content); },
+        remove: async (path: string) => { lockFiles.delete(path); },
+        listFiles: async (path: string) => [...lockFiles.keys()].filter((entry) => entry.startsWith(`${path}/`)).map((entry) => entry.slice(path.length + 1)),
+        exec: async (command: string, args: string[]) => {
+          if (command === "ln") {
+            const [source, destination] = args;
+            if (source === undefined || destination === undefined || !lockFiles.has(source) || lockFiles.has(destination)) return { code: 1, stdout: "", stderr: "exists" };
+            lockFiles.set(destination, lockFiles.get(source)!);
+          }
+          return { code: command === "test" ? 1 : 0, stdout: "", stderr: "" };
+        },
+      },
+    } as unknown as Context;
+    try {
+      resetEnvReads();
+      await withOutputSink(() => {}, () => secrets(ctx, ["--apply", "--store", "calibration"]));
+      checkTrue("secrets apply reads the .env through the counted reader exactly once", envReads() === 1);
+      checkTrue("secrets apply calibration actually delivers the repository value", (await readFile(join(fixture.root, ".env"), "utf8")).includes("REPO_SECRET=counted-reader-calibration"));
+    } finally { await writeFile(join(calibrationRoot, ".env"), seed, "utf8"); }
+  }
 
   // Static sweep: the counted reader is the only text read of the selected .env.
   const offenders: string[] = [];

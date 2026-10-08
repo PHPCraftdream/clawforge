@@ -46,6 +46,8 @@ export interface ControlResult {
   /** SHA-256 of the product file inside the copy, before the edit and after the restore. */
   readonly productHashBefore?: string;
   readonly productHashAfter?: string;
+  /** Nonzero exit of the edited assertion run, recorded only for held controls. */
+  readonly editedExit?: number;
   readonly durationMs: number;
 }
 
@@ -215,7 +217,7 @@ async function runOne(
       productHashAfter: afterHash,
     });
   }
-  return done("held", true, { matchedFailLine: matched, failLines: [matched], productHashBefore: beforeHash, productHashAfter: afterHash });
+  return done("held", true, { editedExit: run.code, matchedFailLine: matched, failLines: [matched], productHashBefore: beforeHash, productHashAfter: afterHash });
 }
 
 export async function runControls(
@@ -257,6 +259,11 @@ export async function runControls(
   }
 }
 
+/** Per-control evidence; the aggregate held summary remains unchanged. */
+export function controlVerdict(result: ControlResult): string {
+  return result.ok ? `held (edited exit ${result.editedExit})` : `FAIL — ${result.kind}: ${result.reason}`;
+}
+
 async function main(): Promise<number> {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
   const selected = process.argv.slice(2);
@@ -270,7 +277,7 @@ async function main(): Promise<number> {
   const run = await runControls(root, controls);
   for (const result of run.results) {
     const declaration = controls.find((control) => control.id === result.id)!;
-    process.stdout.write(`${result.id} ${declaration.finding} ${result.ok ? "held" : `FAIL — ${result.kind}: ${result.reason}`}\n`);
+    process.stdout.write(`${result.id} ${declaration.finding} ${controlVerdict(result)}\n`);
     for (const line of failLinesOf(result)) process.stdout.write(`    ${line}\n`);
   }
   if (run.aborted !== undefined) process.stdout.write(`aborted: ${run.aborted}\n`);

@@ -157,7 +157,7 @@ try {
     check("listing sentinel is an unknown read", listed.error instanceof TargetReadUnknownError, true);
     check("listing sentinel retains its cause", listed.error instanceof Error && listed.error.cause === sentinel, true);
     check("listing sentinel retains its message", listed.error instanceof Error ? listed.error.message.split(" ") : [], ["could", "not", "list", "recovery", "containers", "on", "the", "target:", "recovery-list-sentinel"]);
-    check("listing unknown carries status advice", listed.error instanceof UserError ? listed.error.advice.map((step) => ({ kind: step.kind, argv: "argv" in step ? step.argv : undefined })) : [], [{ kind: "clawforge", argv: ["status"] }]);
+    check("listing unknown carries recovery diagnostic advice", listed.error instanceof UserError ? listed.error.advice.map((step) => ({ kind: step.kind, argv: "argv" in step ? step.argv : undefined })) : [], [{ kind: "clawforge", argv: ["recover-env", "--dry-run"] }]);
     const nonzeroList = await probe(failed);
     check("nonzero listing is unknown", nonzeroList.error instanceof TargetReadUnknownError, true);
     check("nonzero listing message", nonzeroList.error instanceof Error ? nonzeroList.error.message.split(" ") : [], ["could", "not", "list", "recovery", "containers", "on", "the", "target:", "docker", "ps", "exited", "with", "code", "17"]);

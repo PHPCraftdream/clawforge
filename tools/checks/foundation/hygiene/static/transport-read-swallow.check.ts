@@ -346,7 +346,7 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/operate/recover-env/bootstrap.ts",
-    line: 73,
+    line: 79,
     reason:
       "inspection failure retains the first TargetReadUnknownError with cause and advice while later candidates are tried; exhaustion throws it, and only a valid later match supersedes it. The handler-local analyzer cannot follow the deferred throw after the loop",
   },

@@ -319,4 +319,18 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     check: "tools/checks/integration/mcp/dispatch/mcp-envelope.check.ts",
     fragment: "R3-B-1 legacy numeric: exact raw named arguments",
   },
+  {
+    id: "C250", finding: "R3-A-1", note: "Restore the unavailable installed-command override for a checkout conflict.",
+    product: "tools/framework/core/io/invocation/render.ts",
+    search: '  // Arguments quote by the frame\'s shells, not by the program\'s spelling: a frame that',
+    replace: '  if (cwdConflict) program = "clawforge";\n  // Arguments quote by the frame\'s shells, not by the program\'s spelling: a frame that',
+    check: "tools/checks/surfaces/advice/checkout-paste.check.ts", fragment: "R3-A-1: checkout-only rendered paste exit 0",
+  },
+  {
+    id: "C251", finding: "R3-A-2 probe transport", note: "Restore native bash -c script transport: repeated tails already drift before Node runs.",
+    product: "tools/checks/surfaces/advice/checkout-paste.check.ts",
+    search: 'await runProcess("bash", ["-s"], { input: body, timeoutMs })',
+    replace: 'await runProcess("bash", ["-c", body], { timeoutMs })',
+    check: "tools/checks/surfaces/advice/checkout-paste.check.ts", fragment: "R3-A-2: pre-native exact argv",
+  },
 ];

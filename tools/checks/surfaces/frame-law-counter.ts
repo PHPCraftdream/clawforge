@@ -14,7 +14,7 @@
 import { dirname, resolve as pathResolve } from "node:path";
 import { renderAdviceParts } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { forShell, frameFromInvocation, handoverOf, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
+import { forShell, modeOf, frameFromInvocation, handoverOf, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
 import {
   findCheckoutRootIn,
   frameworkOwner,
@@ -259,22 +259,16 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
         app: advice.app === undefined ? undefined : fillWord(advice.app),
       };
       const pasteDir = frameCwd;
-      // The paste directory mirrors the renderer's rooted branch (design §2.3 rule 1, §3):
-      // a row that spells from the checkout root — `at: "checkout-root"` — is rendered
-      // against the RE-ROOTED frame, so the line pastes where the sentence names: the
-      // re-rooted frame's cwd, i.e. the frame's checkout root. A frame without a known
-      // checkout root is a genuine setup stop. A cwd-conflict row (decision O2, case 4) is
-      // NOT re-rooted: its line runs where the reader stands (O2), the producer's own cwd
-      // (apps/demo), and points at the other deployment with --project-root. Every other
-      // row pastes where the frame stands.
+      // Checkout conflicts paste at the named root to keep the available shim;
+      // installed conflicts use O2 in place. Explicit `at` rows also name the root.
       const on = handoverOf(producer.frame);
-      const cwdConflict = filled.app !== undefined
-        && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" && producer.frame.app.name !== filled.app
+      const targetApp = filled.app ?? (producer.frame.app.state === "selected" && ["flag", "env", "sole"].includes(producer.frame.app.by) ? producer.frame.app.name : undefined);
+      const cwdName = frameCwd.startsWith(`${ROOT}/apps/`) ? frameCwd.slice(`${ROOT}/apps/`.length).split("/")[0]
+        : producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" ? producer.frame.app.name : undefined;
+      const cwdConflict = targetApp !== undefined && cwdName !== undefined && cwdName !== targetApp
         && resolvesByCwd(producer.frame.launch, on.program);
-      const atRooted = filled.at === "checkout-root";
+      const atRooted = filled.at === "checkout-root" || (cwdConflict && modeOf(producer.frame.launch) === "checkout");
       const rootedPasteDir = atRooted ? producer.frame.places.checkoutRoot : undefined;
-      // O2: the case-4 line runs where the reader stands — the paste directory is the
-      // producer's cwd; only an `at` row re-roots.
       const pasteBase = rootedPasteDir ?? pasteDir;
       if (atRooted && rootedPasteDir === undefined) {
         setupFailures.push(`${producer.label} | ${rowEntry.label}: the checkout-root row renders against a re-rooted frame, but the producer frame has no checkout root place`);

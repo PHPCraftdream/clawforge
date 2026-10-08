@@ -215,7 +215,7 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
   const spawnCwd = pasted.cd === undefined ? pasteBase : paste;
   rmSync(MARKER, { force: true });
   const run = shell === "bash"
-    ? await runProcess("bash", ["-c", spelled], { cwd: spawnCwd, env: pathFor(shell), timeoutMs: TIMEOUT_MS })
+    ? await runProcess("bash", ["-s"], { input: spelled, cwd: spawnCwd, env: pathFor(shell), timeoutMs: TIMEOUT_MS })
     : shell === "pwsh"
       ? await runProcess(await pwshCommand() ?? "pwsh",
           // -EncodedCommand: the line reaches PowerShell's own tokenizer byte for byte —
@@ -298,6 +298,7 @@ const QUOTING_CASES: readonly RealCase[] = [
       word("quote then ampersand", 'a"&calc'),
       word("trailing backslash path", "C:\\dir\\"),
       word("spaced trailing backslash path", `${ROOT}${BS}`),
+      ...[2, 3, 4, 5, 6].map((n) => word(`repeated trailing backslashes ${n}`, "r3 spaced " + BS.repeat(n))),
       word("backslash before quote", 'a\\"b'),
     ];
   }),

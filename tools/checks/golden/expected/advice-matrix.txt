@@ -1910,9 +1910,9 @@
 === deploy: remote bootstrap command ===
   checkout gate shim (cwd: checkout root): ./clawforge --app <name> bootstrap
   checkout gate shim (cwd: docs): ../clawforge --app <name> bootstrap
-  checkout gate shim (cwd: apps/demo): clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
+  checkout gate shim (cwd: apps/demo): ./clawforge --app <name> bootstrap  (from the checkout root)
   checkout gate, handed over by the init shim: ./clawforge --app <name> bootstrap
-  checkout gate, handed over by the monorepo MCP launcher: clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
+  checkout gate, handed over by the monorepo MCP launcher: ./clawforge --app <name> bootstrap  (from the checkout root)
   MCP launcher (installed): no variables — the entry default: clawforge --app <name> bootstrap
   defaultLaunch: global install: clawforge --app <name> bootstrap
   defaultLaunch: checkout copy: ./clawforge --app <name> bootstrap
@@ -1926,16 +1926,16 @@
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> bootstrap
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge --app <name> bootstrap
-  fixture L1 (f620c8a): the legacy launcher variable: clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
+  fixture L1 (f620c8a): the legacy launcher variable: ./clawforge --app <name> bootstrap  (from the checkout root)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge --app <name> bootstrap  (from the checkout root)
   tool form: —
 
 === deploy: remote secrets --apply command ===
   checkout gate shim (cwd: checkout root): ./clawforge --app <name> secrets --apply
   checkout gate shim (cwd: docs): ../clawforge --app <name> secrets --apply
-  checkout gate shim (cwd: apps/demo): clawforge --project-root '/clawforge-checkout/apps/<name>' secrets --apply
+  checkout gate shim (cwd: apps/demo): ./clawforge --app <name> secrets --apply  (from the checkout root)
   checkout gate, handed over by the init shim: ./clawforge --app <name> secrets --apply
-  checkout gate, handed over by the monorepo MCP launcher: clawforge --project-root '/clawforge-checkout/apps/<name>' secrets --apply
+  checkout gate, handed over by the monorepo MCP launcher: ./clawforge --app <name> secrets --apply  (from the checkout root)
   MCP launcher (installed): no variables — the entry default: clawforge --app <name> secrets --apply
   defaultLaunch: global install: clawforge --app <name> secrets --apply
   defaultLaunch: checkout copy: ./clawforge --app <name> secrets --apply
@@ -1949,8 +1949,8 @@
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> secrets --apply
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> secrets --apply
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge --app <name> secrets --apply
-  fixture L1 (f620c8a): the legacy launcher variable: clawforge --project-root '/clawforge-checkout/apps/<name>' secrets --apply
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: clawforge --project-root '/clawforge-checkout/apps/<name>' secrets --apply
+  fixture L1 (f620c8a): the legacy launcher variable: ./clawforge --app <name> secrets --apply  (from the checkout root)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge --app <name> secrets --apply  (from the checkout root)
   tool form: —
 
 === cron: posix target line ===
@@ -3221,9 +3221,9 @@
 === help prose: new-app bootstrap ===
   checkout gate shim (cwd: checkout root): ./clawforge --app <name> bootstrap
   checkout gate shim (cwd: docs): ../clawforge --app <name> bootstrap
-  checkout gate shim (cwd: apps/demo): clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
+  checkout gate shim (cwd: apps/demo): ./clawforge --app <name> bootstrap  (from the checkout root)
   checkout gate, handed over by the init shim: ./clawforge --app <name> bootstrap
-  checkout gate, handed over by the monorepo MCP launcher: clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
+  checkout gate, handed over by the monorepo MCP launcher: ./clawforge --app <name> bootstrap  (from the checkout root)
   MCP launcher (installed): no variables — the entry default: clawforge --app <name> bootstrap
   defaultLaunch: global install: clawforge --app <name> bootstrap
   defaultLaunch: checkout copy: ./clawforge --app <name> bootstrap
@@ -3237,8 +3237,8 @@
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> bootstrap
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> bootstrap
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge --app <name> bootstrap
-  fixture L1 (f620c8a): the legacy launcher variable: clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: clawforge --project-root '/clawforge-checkout/apps/<name>' bootstrap
+  fixture L1 (f620c8a): the legacy launcher variable: ./clawforge --app <name> bootstrap  (from the checkout root)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge --app <name> bootstrap  (from the checkout root)
   tool form: —
 
 === help prose: remove-app list ===
@@ -3267,9 +3267,9 @@
 === help prose: remove-app destroy ===
   checkout gate shim (cwd: checkout root): ./clawforge --app <name> destroy
   checkout gate shim (cwd: docs): ../clawforge --app <name> destroy
-  checkout gate shim (cwd: apps/demo): clawforge --project-root '/clawforge-checkout/apps/<name>' destroy
+  checkout gate shim (cwd: apps/demo): ./clawforge --app <name> destroy  (from the checkout root)
   checkout gate, handed over by the init shim: ./clawforge --app <name> destroy
-  checkout gate, handed over by the monorepo MCP launcher: clawforge --project-root '/clawforge-checkout/apps/<name>' destroy
+  checkout gate, handed over by the monorepo MCP launcher: ./clawforge --app <name> destroy  (from the checkout root)
   MCP launcher (installed): no variables — the entry default: clawforge --app <name> destroy
   defaultLaunch: global install: clawforge --app <name> destroy
   defaultLaunch: checkout copy: ./clawforge --app <name> destroy
@@ -3283,8 +3283,8 @@
   fixture G1 (710cf66): the legacy variable alone: ./clawforge --app <name> destroy
   fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge --app <name> destroy
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge --app <name> destroy
-  fixture L1 (f620c8a): the legacy launcher variable: clawforge --project-root '/clawforge-checkout/apps/<name>' destroy
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: clawforge --project-root '/clawforge-checkout/apps/<name>' destroy
+  fixture L1 (f620c8a): the legacy launcher variable: ./clawforge --app <name> destroy  (from the checkout root)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge --app <name> destroy  (from the checkout root)
   tool form: —
 
 === help prose: completion completion bash (install) ===

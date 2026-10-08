@@ -364,10 +364,10 @@ const PROSE_ROOT = "/clawforge-prose-check";
 }
 {
   const previous = invocation();
-  const demo = { ...checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/apps/demo` }), app: { state: "selected", name: "demo", by: "cwd" } as const };
+  const demo = { ...checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/apps/demo` }), app: { state: "selected", name: "demo", by: "flag" } as const };
   installFrame(demo);
   const prose = renderProse("run {clawforge --app X destroy}");
-  checkTrue("prose default names another deployment with --project-root", prose.includes("--project-root") && prose.includes(`${PROSE_ROOT}/apps/X`));
+  check("prose default names another deployment with --project-root only for installed entries; checkout retains its rooted shim", prose.split(" "), ["run", SHIM_PROGRAM, "--app", "X", "destroy", "", "(from", "the", "checkout", "root)"]);
   setInvocation(previous);
 }
 {

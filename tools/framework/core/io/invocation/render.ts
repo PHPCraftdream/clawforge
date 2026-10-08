@@ -250,7 +250,8 @@ export function renderAdviceParts(
   // stands — the --project-root selector points the cwd-resolving program at it, so the
   // row neither re-roots nor carries the paste-conflict note. Unknown root keeps the old
   // re-rooted row byte for byte.
-  const projectRoot = cwdConflict && frame.places.checkoutRoot !== undefined
+  // O2 is an installed-entry selector; checkout keeps its available rooted shim (§2.3).
+  const projectRoot = cwdConflict && frame.places.checkoutRoot !== undefined && modeOf(frame.launch) !== "checkout"
     ? `${frame.places.checkoutRoot}/apps/${targetApp}`
     : undefined;
   const rooted = advice.at === "checkout-root" || (cwdConflict && projectRoot === undefined);
@@ -319,10 +320,6 @@ export function renderAdviceParts(
         ?? handed;
     }
   }
-  // --project-root belongs to the installed entry, not tools/clawforge.ts.
-  // A checkout-shim conflict therefore invokes that entry before it delegates
-  // to the selected checkout gate with the consumed selector and named app.
-  if (projectRoot !== undefined) program = "clawforge";
   // Arguments quote by the frame's shells, not by the program's spelling: a frame that
   // also pastes into cmd.exe and PowerShell takes the double-quote rule, a POSIX-only
   // frame the POSIX one.

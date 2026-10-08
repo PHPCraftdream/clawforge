@@ -174,6 +174,26 @@ const SELF_CASES: SelfCase[] = [
     hits: ["1:ctx.transport.readFile(:try"],
   },
   {
+    name: "an invalid return inside a bare block terminates the path as a swallow",
+    source: "try { return await ctx.transport.readFile(path); } catch (e) { { return undefined; } throw e; }",
+    hits: ["1:ctx.transport.readFile(:try"],
+  },
+  {
+    name: "a promise expression body that is only partly the typed outcome is a hit",
+    source: "const raw = await ctx.transport.readFile(path).catch((error) => (fatal(error) ? readIfExists(ctx.transport, path) : undefined));",
+    hits: ["1:ctx.transport.readFile(:promise"],
+  },
+  {
+    name: "a promise .catch whose whole expression body is the typed outcome is fine",
+    source: "const raw = await ctx.transport.readFile(path).catch(() => readIfExists(ctx.transport, path));",
+    hits: [],
+  },
+  {
+    name: "a returned die() call terminates the path safely",
+    source: "try { return await ctx.transport.readFile(path); } catch (e) { return die(msg(e)); }",
+    hits: [],
+  },
+  {
     name: "a .catch( inside a string literal is not a handler",
     source: "const sample = \"files().catch(() => [])\";\ntry { return await ctx.transport.readFile(path); } catch (error) { throw error; }",
     hits: [],

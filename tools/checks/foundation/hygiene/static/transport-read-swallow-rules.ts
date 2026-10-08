@@ -127,9 +127,6 @@ const hasWord = (text: string, word: string): boolean => {
 
 const TYPED_HELPERS = ["readIfExists", "probeExists", "listIfExists"];
 
-/** The typed read outcome a surviving catch may return instead of throwing (S3.4). */
-const TYPED_OUTCOME = /\b(?:readIfExists|probeExists|listIfExists)\s*\(/;
-
 /** Index just past the depth-0 `;` ending the statement at `from` (or the text's end). */
 function statementEnd(text: string, from: number): number {
   let depth = 0;
@@ -142,69 +139,80 @@ function statementEnd(text: string, from: number): number {
   return text.length;
 }
 
-/** Path check (the path rule documented above): logs and assignments continue a path, `if`
- *  without `else` hands the fall-through to the following statements, and a path survives
- *  only by throwing, `die(` or returning the typed read outcome; falling off the handler's
- *  end swallows. Branch and bare blocks are recursed INTO, so a conditional rethrow buried
- *  in a nested block with a swallowing inner path is still a hit, and a returned value
- *  counts as the typed outcome only when the WHOLE returned expression is the typed call. */
-function safePaths(text: string): boolean {
+/** Path check (the path rule documented above): tri-state. A path is "safe" when it
+ *  terminated by throwing, `die(` or returning the typed read outcome; "swallow" when it
+ *  terminated by RETURNING anything else (an invalid outcome - the handler answers while
+ *  discarding the error); "open" when it falls through to the following statements. The
+ *  tri-state is the point: a bare block that ends in an invalid return TERMINATES its path,
+ *  so `catch (e) { { return undefined; } throw e; }` is a swallow, not a fall-through an
+ *  unreachable `throw` after the block can rescue. Logs and assignments leave a path open,
+ *  `if` without `else` hands the fall-through to the following statements, and branch and
+ *  bare blocks are recursed INTO, so a conditional rethrow buried in a nested block with a
+ *  swallowing inner path is still a hit. A returned value counts as the typed outcome only
+ *  when the WHOLE returned expression is the typed call - block returns and promise
+ *  expression bodies (stripped of the arrow head, wrapped as a return) share one rule. */
+type PathOutcome = "safe" | "swallow" | "open";
+
+function returnOutcome(stmt: string): PathOutcome {
+  const ret = stmt.match(/^\s*return\s+(?:await\s+)?/);
+  if (ret === null) return "open";
+  // the typed outcome counts only when the WHOLE returned expression is the typed call
+  const exprAt = ret[0].length;
+  const openParen = stmt.indexOf("(", exprAt);
+  const closeParen = openParen < 0 ? -1 : matchingCloser(stmt, openParen);
+  const helper = openParen < 0 ? "" : stmt.slice(exprAt, openParen).trim();
+  const tail = closeParen < 0 ? "x" : stmt.slice(closeParen + 1).trim();
+  if (TYPED_HELPERS.includes(helper) && (tail === "" || tail === ";")) return "safe";
+  return "swallow";
+}
+
+function safePaths(text: string): PathOutcome {
   let i = 0;
   for (;;) {
     while (i < text.length && isSpace(text[i])) i += 1;
-    if (i >= text.length) return false;
+    if (i >= text.length) return "open";
     if (text.startsWith("if", i) && (text[i + 2] === "(" || isSpace(text[i + 2]))) {
       const open = text.indexOf("(", i);
       const close = matchingCloser(text, open);
-      if (close < 0) return false;
+      if (close < 0) return "swallow";
       let j = close + 1;
       while (j < text.length && isSpace(text[j])) j += 1;
       const branchEnd = text[j] === "{" ? matchingCloser(text, j) + 1 : statementEnd(text, j);
-      if (!safePaths(text.slice(j, branchEnd))) return false;
+      const branch = safePaths(text.slice(j, branchEnd));
+      if (branch === "swallow") return "swallow";
       let k = branchEnd;
       while (k < text.length && isSpace(text[k])) k += 1;
       if (text.startsWith("else", k) && (text[k + 4] === "{" || isSpace(text[k + 4]))) {
-        // both branches terminate: every path out of the if/else terminates
         let e = k + 4;
         while (e < text.length && isSpace(text[e])) e += 1;
-        if (text[e] === "{") {
-          const elseClose = matchingCloser(text, e);
-          return elseClose >= 0 && safePaths(text.slice(e + 1, elseClose));
-        }
-        return safePaths(text.slice(e));
+        const elseEnd = text[e] === "{" ? matchingCloser(text, e) + 1 : statementEnd(text, e);
+        const other = safePaths(text.slice(e, elseEnd));
+        if (other === "swallow") return "swallow";
+        if (branch === "safe" && other === "safe") return "safe"; // both branches terminate
+        i = elseEnd; // a falling-through branch resumes after the if/else
+      } else {
+        i = branchEnd; // no else: the fall-through path resumes with the following statements
       }
-      i = branchEnd; // no else: the fall-through path continues with the following statements
-      continue;
-    }
-    if (text[i] === "{") {
+    } else if (text[i] === "{") {
       const close = matchingCloser(text, i);
-      if (close < 0) return false;
-      if (safePaths(text.slice(i + 1, close))) return true; // every path inside terminates
-      i = close + 1; // a fall-through path continues after the block
-      continue;
+      if (close < 0) return "swallow";
+      const inner = safePaths(text.slice(i + 1, close));
+      if (inner !== "open") return inner; // the block terminated, safe or swallow
+      i = close + 1; // a fall-through path resumes after the block
+    } else {
+      const end = statementEnd(text, i);
+      const stmt = text.slice(i, end);
+      if (hasWord(stmt, "throw") || stmt.includes("die(")) return "safe";
+      const outcome = returnOutcome(stmt);
+      if (outcome !== "open") return outcome;
+      i = end;
     }
-    const end = statementEnd(text, i);
-    const stmt = text.slice(i, end);
-    const ret = stmt.match(/^\s*return\s+(?:await\s+)?/);
-    if (ret) {
-      // the typed outcome counts only when the WHOLE returned expression is the typed call
-      const exprAt = i + ret[0].length;
-      const openParen = text.indexOf("(", exprAt);
-      const closeParen = openParen < 0 ? -1 : matchingCloser(text, openParen);
-      const helper = openParen < 0 ? "" : text.slice(exprAt, openParen).trim();
-      const tail = closeParen < 0 ? "x" : text.slice(closeParen + 1, end).trim();
-      if (!TYPED_HELPERS.includes(helper) || (tail !== "" && tail !== ";")) return false;
-      return true;
-    }
-    if (hasWord(stmt, "throw") || stmt.includes("die(")) return true;
-    i = end;
-    continue;
   }
 }
 
 /** try/catch handler body: swallows unless every path terminates (see the path rule). */
 export function handlerSwallows(handler: string): boolean {
-  return !safePaths(handler);
+  return safePaths(handler) !== "safe";
 }
 
 /** `.catch(` handler: strip the arrow/function head, recurse into a block body; a bare
@@ -218,8 +226,12 @@ export function promiseHandlerSwallows(handler: string): boolean {
     const close = matchingCloser(t, open);
     return close < 0 || handlerSwallows(t.slice(open + 1, close));
   }
-  return !(t.startsWith("die(") || TYPED_OUTCOME.test(t));
+  // The expression body is judged by the SAME whole-expression rule as a block return:
+  // wrapped as a return statement, it survives only as die(...) or the typed read outcome
+  // in full - a conditional like `e ? readIfExists(t, p) : undefined` is a swallow.
+  return !(t.startsWith("die(") || returnOutcome("return " + t + ";") === "safe");
 }
+
 export function analyze(source: string): Hit[] {
   const code = codeOnly(source);
   const hits: Hit[] = [];

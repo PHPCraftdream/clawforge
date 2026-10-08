@@ -342,6 +342,14 @@ export function countEnvRead(): void { envTextReads += 1; }
 export function envReads(): number { return envTextReads; }
 export function resetEnvReads(): void { envTextReads = 0; }
 
+/** The one counted text read of the deployment .env (stage 7 tails): loadEnv, provisioning
+ *  and LocalScope.readText all go through here, so a zero read count in a check covers every
+ *  product reader of the file, not just the ones a check knows by name. Throws ENOENT like
+ *  a bare readFile did. */
+export function readEnvFileText(): Promise<string> {
+  countEnvRead();
+  return readFile(envFile(), "utf8");
+}
 export async function loadEnv(): Promise<Env> {
   const file = envFile();
   try {
@@ -349,8 +357,7 @@ export async function loadEnv(): Promise<Env> {
   } catch {
     die(`${file} not found. Run ${commandLine(["bootstrap"])} first.`);
   }
-  countEnvRead();
-  const env = parseEnv(await readFile(file, "utf8"));
+  const env = parseEnv(await readEnvFileText());
   if (!shellOnlyEnvWarned) {
     const warning = shellOnlyEnvWarning(env, process.env, file);
     if (warning !== undefined) {

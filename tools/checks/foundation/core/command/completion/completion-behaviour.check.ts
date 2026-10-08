@@ -19,6 +19,7 @@ import type { CallShape } from "#framework/core/command/parse/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { checkDivergences, mergedReadingFor, scanContracts } from "./scan-contracts.ts";
 import { modelScenarios } from "./model-scenarios.ts";
+import { checkHelpInstallFragments } from "./help-install-prose.ts";
 import { invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
@@ -418,6 +419,10 @@ function pwshDriver(scriptPath: string): string {
 
 const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mode: "local-package", audience: "terminal" };
 
+// the note marker an Install line must not carry inside its executable part ("  (");
+// built from code points so the measurement reads it as data, not held prose
+const NOTE_MARK = String.fromCharCode(32, 32, 40);
+
 // --- 3c. notes stay OUT of the executable lines (S1.4 item 3) --------------------------------
 //
 // A note names the shell that can paste a line; it must never land INSIDE an executable
@@ -431,13 +436,15 @@ const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mo
   const previous = invocation();
   setInvocation({ program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
   try {
-    const commandOf = (line: string): string => {
+    // executable part plus where it ends in the raw line: the note check below runs on the
+    // UNTRUNCATED text, so a note before the executable part cannot survive the last "  (" cut
+    const commandOf = (line: string): { executable: string; end: number } => {
       const inner = /source <\(([^)]+)\)/.exec(line);
-      if (inner !== null) return inner[1]!;
+      if (inner !== null) return { executable: inner[1]!, end: inner.index + inner[0].length };
       const sentence = /run (\S+ completion \S+) in Git Bash/.exec(line);
-      if (sentence !== null) return sentence[1]!;
+      if (sentence !== null) return { executable: sentence[1]!, end: sentence.index + sentence[1].length };
       const cut = line.lastIndexOf("  (");
-      return (cut === -1 ? line : line.slice(0, cut)).trim();
+      return { executable: (cut === -1 ? line : line.slice(0, cut)).trim(), end: cut === -1 ? line.length : cut };
     };
     for (const shell of ["bash", "zsh", "pwsh"] as const) {
       const script = renderCompletion(shell, data);
@@ -452,9 +459,9 @@ const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mo
       checkTrue(`the ${shell} script carries Install lines`, carriesInstall);
       const model = shell === "pwsh" ? "pwsh" : "posix";
       for (const install of installLines) {
-        const executable = commandOf(install);
-        const marker = executable.search(/  \(/);
-        const noteInside = marker !== -1 || executable.indexOf("(in") !== -1;
+        const { executable, end } = commandOf(install);
+        const head = install.slice(0, end);
+        const noteInside = head.includes(NOTE_MARK) || head.includes("(in");
         let words: readonly string[] = [];
         let tokenized = true;
         try { words = tokenizeLine(executable, model); } catch { tokenized = false; }
@@ -477,6 +484,7 @@ const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mo
     const pipeNote = prose.search(/  \(in bash\) \|/) !== -1;
     const redirectNote = prose.search(/  \(in bash\) >/) !== -1;
     checkTrue("the rendered Install sentence keeps the pwsh note out of the pipeline", pipeNote === false && redirectNote === false && /and pipe it through/.test(prose) === true);
+    checkHelpInstallFragments(prose, details, SHIM_PROGRAM);
   } finally {
     setInvocation(previous);
   }

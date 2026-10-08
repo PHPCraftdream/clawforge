@@ -9,9 +9,9 @@
 // file. Commands opt in by declaring preparesEnvironment.
 
 import { randomBytes } from "node:crypto";
-import { readFile, access } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { log, registerSecret } from "../core/io/log.ts";
-import { readEnvValue, upsertEnvLine } from "../core/env.ts";
+import { readEnvFileText, readEnvValue, upsertEnvLine } from "../core/env.ts";
 import { envFile, deploymentName } from "../runtime/deployment.ts";
 import { deploymentEnv } from "./deployment/scaffold.ts";
 import { createPrivateFile, protectPrivateFile, replacePrivateFile } from "../security/privacy/private-file.ts";
@@ -47,7 +47,7 @@ async function ensureEnvFile(): Promise<boolean> {
 /** Generates the gateway token once and keeps it: regenerating would break every client
  *  that already stored it. */
 async function ensureToken(): Promise<{ token: string; wrote: boolean }> {
-  const content = await readFile(envFile(), "utf8");
+  const content = await readEnvFileText();
   const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN");
   if (current !== undefined && current.trim() !== "") return { token: current.trim(), wrote: false };
 
@@ -58,7 +58,7 @@ async function ensureToken(): Promise<{ token: string; wrote: boolean }> {
   } catch (error) {
     let persisted = false;
     try {
-      persisted = readEnvValue(await readFile(envFile(), "utf8"), "OPENCLAW_GATEWAY_TOKEN")?.trim() === token;
+      persisted = readEnvValue(await readEnvFileText(), "OPENCLAW_GATEWAY_TOKEN")?.trim() === token;
     } catch { /* retain the original persistence error */ }
     if (persisted && error !== null && typeof error === "object") provisioningWrites.set(error, true);
     throw error;

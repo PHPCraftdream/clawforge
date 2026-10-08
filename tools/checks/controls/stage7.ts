@@ -453,7 +453,7 @@ export const STAGE7_CONTROLS: readonly ControlDecl[] = [
     note: "the transport-read guard accepts a catch only when EVERY path terminates (throw/die or the typed read outcome): restoring the old any-throw-anywhere acceptance re-validates conditional rethrows with a swallowing else path, failing the table case naming it",
     product: "tools/checks/foundation/hygiene/static/transport-read-swallow-rules.ts",
     search: `export function handlerSwallows(handler: string): boolean {
-  return !safePaths(handler);
+  return safePaths(handler) !== "safe";
 }`,
     replace: `export function handlerSwallows(handler: string): boolean {
   return !new RegExp("\\\\bthrow\\\\b|\\\\bdie\\\\s*\\\\(").test(handler);
@@ -584,12 +584,12 @@ export const STAGE7_CONTROLS: readonly ControlDecl[] = [
   {
     id: "C190",
     finding: "S2.6b",
-    note: "a gate command's value grammar is declared on the body and swept by the pipeline's property check: overriding the kind's parse with an accept-everything function lets every invalid sample flow past parse - the sweep's parse-stage assertion fails naming the remove-app case",
+    note: "a gate argument's declared kind IS its grammar: swapping remove-app's <name> kinds.name for the plain text kind strips the grammar samples, so the sweep's grammar obligation (beyond the plain text kind) fails naming remove-app <name> - overriding parse in place would leave the kind and its samples intact and slip past",
     product: "tools/framework/entry/checkout-gate.ts",
     search: "value: kinds.name(\"deployment\", \"read\") }",
-    replace: "value: { ...kinds.name(\"deployment\", \"read\"), parse: (raw: string) => raw } }",
+    replace: "value: kinds.text(\"deployment name\") }",
     check: "tools/checks/foundation/core/command/pipeline/property/property.check.ts",
-    fragment: "remove-app: <name>",
+    fragment: "pins a grammar beyond the plain text kind",
   },
   {
     id: "C191",
@@ -600,5 +600,25 @@ export const STAGE7_CONTROLS: readonly ControlDecl[] = [
     replace: "{ name: \"yes\", description: \"Perform the removal instead of a dry run\", kind: \"flag\" },",
     check: "tools/checks/foundation/cli/gate-commands.check.ts",
     fragment: "confirm: true sets --yes on remove-app",
+  },
+  {
+    id: "C192",
+    finding: "rf7-tails-W1 item 6",
+    note: "an action-selection refusal carries its own recorded reason: reverting the selection record to the ordinary unknown-token reason hides the selection family from the completion contracts - the scoped entry's contract fails because it reads the SELECTION record",
+    product: "tools/framework/core/command/parse/scan.ts",
+    search: "selection = [{ reason: \"unknown-action\", token: argv[0] ?? \"\" }];",
+    replace: "selection = [{ reason: \"unknown\", token: argv[0] ?? \"\" }];",
+    check: "tools/checks/foundation/core/command/completion/completion-behaviour.check.ts",
+    fragment: "a refused action selection scopes nothing",
+  },
+  {
+    id: "C193",
+    finding: "388-5",
+    note: "the path rule is tri-state: a bare block ending in an invalid return TERMINATES its path as a swallow, so an unreachable throw after the block cannot rescue it - restoring the fall-through conflation accepts { return undefined; } throw e; and the self-check fixture fails",
+    product: "tools/checks/foundation/hygiene/static/transport-read-swallow-rules.ts",
+    search: "  if (TYPED_HELPERS.includes(helper) && (tail === \"\" || tail === \";\")) return \"safe\";\n  return \"swallow\";",
+    replace: "  if (TYPED_HELPERS.includes(helper) && (tail === \"\" || tail === \";\")) return \"safe\";\n  return \"open\";",
+    check: "tools/checks/foundation/hygiene/static/transport-read-swallow.check.ts",
+    fragment: "an invalid return inside a bare block terminates the path as a swallow",
   },
 ];

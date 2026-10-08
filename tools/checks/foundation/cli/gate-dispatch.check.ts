@@ -46,7 +46,7 @@ import { command, manual } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { selectChecks } from "#checks/kit/run.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
 
 /** Runs the real gate with a hard deadline, same as cli-help.check.ts: a hang and a slow
@@ -55,7 +55,7 @@ import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
  *  lying around. */
 async function runGate(
   args: string[],
-  { timeoutMs = CHILD_NODE_DEADLINE_MS, cwd }: { timeoutMs?: number; cwd?: string } = {},
+  { timeoutMs = Math.max(CHILD_NODE_DEADLINE_MS, 60_000), cwd }: { timeoutMs?: number; cwd?: string } = {},
 ): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
   const { code, output, timedOut } = await runProcess(
     process.execPath,
@@ -227,85 +227,89 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   check("points at help instead of dumping it", text.includes(commandLine(["help"])), true);
 }
 
+// The gate children inherit the seam (CLAWFORGE_CHECKS_APPS_DIR), so no spawn reads or writes the checkout's own apps/.
+const apps = await isolatedAppsRoot("gate-dispatch");
+try {
+
 // --- the real gate: a typo is answered as a typo, not as a missing deployment -----------
 
-{
-  const neverCreated = `gate-dispatch-check-missing-${randomBytes(4).toString("hex")}`;
-  const typo = await runGate(["--app", neverCreated, "statsu"]);
-  check("a typo exits non-zero", typo.code === 0, false);
-  check("a typo is answered as unknown, not as a missing deployment", typo.stdout.includes(unknownCommandMessage("statsu")), true);
-  check("the deployment is never mentioned for a plain typo", typo.stdout.includes(NOT_FOUND), false);
-  check("a spelling suggestion is offered", typo.stdout.includes(didYouMeanMessage("status")), true);
-  check("the full command list is not dumped for a typo", typo.stdout.includes(GROUP_HEADINGS["start-stop"]), false);
+  {
+    const neverCreated = `gate-dispatch-check-missing-${randomBytes(4).toString("hex")}`;
+    const typo = await runGate(["--app", neverCreated, "statsu"]);
+    check("a typo exits non-zero", typo.code === 0, false);
+    check("a typo is answered as unknown, not as a missing deployment", typo.stdout.includes(unknownCommandMessage("statsu")), true);
+    check("the deployment is never mentioned for a plain typo", typo.stdout.includes(NOT_FOUND), false);
+    check("a spelling suggestion is offered", typo.stdout.includes(didYouMeanMessage("status")), true);
+    check("the full command list is not dumped for a typo", typo.stdout.includes(GROUP_HEADINGS["start-stop"]), false);
 
-  // A real command name still gets the old, accurate answer: the command is fine, the
-  // deployment genuinely is not there.
-  const realCommand = await runGate(["--app", neverCreated, "status"]);
-  check("a real command name with no matching deployment still says so", realCommand.stdout.includes(NOT_FOUND), true);
-  check("and is not misreported as an unknown command", realCommand.stdout.includes(UNKNOWN_COMMAND), false);
-}
+    // A real command name still gets the old, accurate answer: the command is fine, the
+    // deployment genuinely is not there.
+    const realCommand = await runGate(["--app", neverCreated, "status"]);
+    check("a real command name with no matching deployment still says so", realCommand.stdout.includes(NOT_FOUND), true);
+    check("and is not misreported as an unknown command", realCommand.stdout.includes(UNKNOWN_COMMAND), false);
+  }
 
 // --- the real gate: --app after the command name is that command's own argument --------
 
-{
-  // new-app parses its own args through the shared declaration parser — if --app leaked
-  // through here instead of stopping at the command boundary, it would reach that parser as
-  // new-app's own first token and be refused there, by its own name, rather than silently
-  // dropped or read back out at the gate.
-  const leaked = await runGate(["new-app", "--app", "not-a-flag-here", "extra"]);
-  check(
-    "--app after the command name is new-app's own first argument, not stripped by the gate",
-    leaked.stdout.includes(unknownArgumentMessage("--app")),
-    true,
-  );
+  {
+    // new-app parses its own args through the shared declaration parser — if --app leaked
+    // through here instead of stopping at the command boundary, it would reach that parser as
+    // new-app's own first token and be refused there, by its own name, rather than silently
+    // dropped or read back out at the gate.
+    const leaked = await runGate(["new-app", "--app", "not-a-flag-here", "extra"]);
+    check(
+      "--app after the command name is new-app's own first argument, not stripped by the gate",
+      leaked.stdout.includes(unknownArgumentMessage("--app")),
+      true,
+    );
 
-  // status does not pass its own arguments through, so --app after it is refused as
-  // misplaced rather than silently acting on a different deployment.
-  const misplaced = await runGate(["status", "--app", "not-a-deployment"]);
-  check("a misplaced --app exits non-zero", misplaced.code === 0, false);
-  check(
-    "and is answered as an ordering mistake, not run against another deployment",
-    misplaced.stdout.includes(APP_ORDER),
-    true,
-  );
+    // status does not pass its own arguments through, so --app after it is refused as
+    // misplaced rather than silently acting on a different deployment.
+    const misplaced = await runGate(["status", "--app", "not-a-deployment"]);
+    check("a misplaced --app exits non-zero", misplaced.code === 0, false);
+    check(
+      "and is answered as an ordering mistake, not run against another deployment",
+      misplaced.stdout.includes(APP_ORDER),
+      true,
+    );
 
-  // exec forwards its own argv verbatim, so an identically-spelled --app after it must
-  // reach exec as an ordinary argument instead of being read as deployment selection —
-  // proven here by getting the deployment's own "not found" answer, not the order error.
-  const neverCreatedForExec = `gate-dispatch-check-exec-${randomBytes(4).toString("hex")}`;
-  const passedThrough = await runGate(["--app", neverCreatedForExec, "exec", "--", "echo", "--app", "not-a-deployment"]);
-  check(
-    "--app after a passthrough command is not treated as misplaced",
-    passedThrough.stdout.includes(APP_ORDER),
-    false,
-  );
-  check(
-    "exec still runs against the named (missing) deployment, not a --app found in its own args",
-    passedThrough.stdout.includes(NOT_FOUND),
-    true,
-  );
+    // exec forwards its own argv verbatim, so an identically-spelled --app after it must
+    // reach exec as an ordinary argument instead of being read as deployment selection —
+    // proven here by getting the deployment's own "not found" answer, not the order error.
+    const neverCreatedForExec = `gate-dispatch-check-exec-${randomBytes(4).toString("hex")}`;
+    const passedThrough = await runGate(["--app", neverCreatedForExec, "exec", "--", "echo", "--app", "not-a-deployment"]);
+    check(
+      "--app after a passthrough command is not treated as misplaced",
+      passedThrough.stdout.includes(APP_ORDER),
+      false,
+    );
+    check(
+      "exec still runs against the named (missing) deployment, not a --app found in its own args",
+      passedThrough.stdout.includes(NOT_FOUND),
+      true,
+    );
 
-  // Only a command that reads its argv VERBATIM is exempt: set declares a (non-verbatim)
-  // variadic, so a misplaced --app after it is still an ordering mistake.
-  const setMisplaced = await runGate(["set", "try", "--app", "x"]);
-  check("set try --app x is refused as a misplaced --app", setMisplaced.stdout.includes(APP_ORDER), true);
-  for (const verbatim of [["exec", "echo", "--app", "x"], ["cli", "config", "--app", "x"], ["host", "local", "echo", "--app", "x"]]) {
-    const run = await runGate(["--app", neverCreatedForExec, ...verbatim]);
-    check(`${verbatim.join(" ")}: --app belongs to the verbatim command, not misplaced`, run.stdout.includes(APP_ORDER), false);
+    // Only a command that reads its argv VERBATIM is exempt: set declares a (non-verbatim)
+    // variadic, so a misplaced --app after it is still an ordering mistake.
+    const setMisplaced = await runGate(["set", "try", "--app", "x"]);
+    check("set try --app x is refused as a misplaced --app", setMisplaced.stdout.includes(APP_ORDER), true);
+    for (const verbatim of [["exec", "echo", "--app", "x"], ["cli", "config", "--app", "x"], ["host", "local", "echo", "--app", "x"]]) {
+      const run = await runGate(["--app", neverCreatedForExec, ...verbatim]);
+      check(`${verbatim.join(" ")}: --app belongs to the verbatim command, not misplaced`, run.stdout.includes(APP_ORDER), false);
+    }
   }
-}
 
 // --- the real gate: `-h` after a bare `--` runs the command instead of printing help ----
 
-{
-  // remove-app passes nothing through, so its own parser refuses the trailing `-h` that
-  // follows the `--`; before the boundary covered both spellings, the gate answered with
-  // remove-app's help screen and exit 0 instead of ever running the command.
-  const afterSeparator = await runGate(["remove-app", "nosuch-xyz-probe", "--", "-h"]);
-  check("`-h` after a `--` runs remove-app instead of printing its help", afterSeparator.stdout.includes("Delete apps/<name>"), false);
-  check("remove-app's own parser refuses the trailing `-h`", afterSeparator.code === 0, false);
-  check("and the refusal is not silence", afterSeparator.stdout.trim().length > 0, true);
-}
+  {
+    // remove-app passes nothing through, so its own parser refuses the trailing `-h` that
+    // follows the `--`; before the boundary covered both spellings, the gate answered with
+    // remove-app's help screen and exit 0 instead of ever running the command.
+    const afterSeparator = await runGate(["remove-app", "nosuch-xyz-probe", "--", "-h"]);
+    check("`-h` after a `--` runs remove-app instead of printing its help", afterSeparator.stdout.includes("Delete apps/<name>"), false);
+    check("remove-app's own parser refuses the trailing `-h`", afterSeparator.code === 0, false);
+    check("and the refusal is not silence", afterSeparator.stdout.trim().length > 0, true);
+  }
 
 // --- --version: answers from an empty directory, no deployment or apps/ around at all -------
 //
@@ -314,28 +318,32 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
 // invocation depends on this checkout's own apps/ — an empty temp directory as cwd, spawned
 // the cross-platform way (process.execPath, no shell script), proves that.
 
-{
-  const expected = await frameworkVersion();
-  const empty = await mkdtemp(join(tmpdir(), "clawforge-version-check-"));
-  try {
-    const flag = await runGate(["--version"], { cwd: empty });
-    check("--version exits 0 from an empty directory", flag.code, 0);
-    check("--version prints clawforge <version>", flag.stdout.trim(), `clawforge ${expected}`);
+  {
+    const expected = await frameworkVersion();
+    const empty = await mkdtemp(join(tmpdir(), "clawforge-version-check-"));
+    try {
+      const flag = await runGate(["--version"], { cwd: empty });
+      check("--version exits 0 from an empty directory", flag.code, 0);
+      check("--version prints clawforge <version>", flag.stdout.trim(), `clawforge ${expected}`);
 
-    const short = await runGate(["-v"], { cwd: empty });
-    check("-v exits 0 from an empty directory", short.code, 0);
-    check("-v prints the same line as --version", short.stdout.trim(), `clawforge ${expected}`);
+      const short = await runGate(["-v"], { cwd: empty });
+      check("-v exits 0 from an empty directory", short.code, 0);
+      check("-v prints the same line as --version", short.stdout.trim(), `clawforge ${expected}`);
 
-    const bare = await runGate(["version"], { cwd: empty });
-    check("version exits 0 from an empty directory", bare.code, 0);
-    check("version prints the same line too", bare.stdout.trim(), `clawforge ${expected}`);
+      const bare = await runGate(["version"], { cwd: empty });
+      check("version exits 0 from an empty directory", bare.code, 0);
+      check("version prints the same line too", bare.stdout.trim(), `clawforge ${expected}`);
 
-    const extra = await runGate(["version", "extra-arg"], { cwd: empty });
-    check("version extra-arg exits non-zero", extra.code === 0, false);
-    check("version extra-arg is refused in the standard argv error style", extra.stdout.includes(unknownArgumentMessage("extra-arg")), true);
-  } finally {
-    await rm(empty, { recursive: true, force: true });
+      const extra = await runGate(["version", "extra-arg"], { cwd: empty });
+      check("version extra-arg exits non-zero", extra.code === 0, false);
+      check("version extra-arg is refused in the standard argv error style", extra.stdout.includes(unknownArgumentMessage("extra-arg")), true);
+    } finally {
+      await rm(empty, { recursive: true, force: true });
+    }
   }
+
+} finally {
+  await apps.dispose();
 }
 
 // --- selectChecks(): ./clawforge check's own pure filter -----------------------------------

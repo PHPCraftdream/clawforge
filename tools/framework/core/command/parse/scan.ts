@@ -112,6 +112,8 @@ export type TokenRefusalReason =
   | "unknown" | "flag-with-value" | "option-missing-value"
   | "option-repeated" | "no-slot" | "refused-token";
 
+export type ScanRefusalReason = TokenRefusalReason | "unknown-action";
+
 export type TokenTransition<A extends CommandArgument> =
   | { readonly kind: "flag"; readonly argument: A }
   | { readonly kind: "option-inline"; readonly argument: A; readonly value: string }
@@ -301,9 +303,10 @@ export function defaultActionOf(shape: CallShape): string | undefined {
   return shape.defaultAction;
 }
 
-/** One recorded token refusal of the lenient scan. */
+/** One recorded token refusal of the lenient scan. The selection record is the one producer
+ *  of "unknown-action" — the tokenizer itself only ever yields a TokenRefusalReason. */
 export interface ScanRefusal {
-  readonly reason: TokenRefusalReason;
+  readonly reason: ScanRefusalReason;
   readonly token: string;
   /** The argument the refusal is about (the pending option, the flag with a value, the repeat). */
   readonly name?: string;
@@ -352,7 +355,7 @@ export function scanCall(
         : []);
     rest = argv;
     refuse = undefined;
-    selection = [{ reason: "unknown", token: argv[0] ?? "" }];
+    selection = [{ reason: "unknown-action", token: argv[0] ?? "" }];
   }
   // isVerbatim cannot see the spec-only `verbatim` on a public CommandArgument, hence the
   // explicit option.

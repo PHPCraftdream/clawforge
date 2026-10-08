@@ -12,7 +12,7 @@ import { argumentsView } from "#src/core/command/view.ts";
 import { parseCall, type CallShape } from "#src/core/command/parse/index.ts";
 import { shapeProfile, type EffectShape } from "#src/core/command/effect.ts";
 import { serviceOf, type Context } from "#src/core/context.ts";
-import { countEnvRead, parseEnv, type Env } from "#src/core/env.ts";
+import { parseEnv, readEnvFileText, type Env } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, envFile } from "#src/runtime/deployment.ts";
 import type { Transport } from "#src/runtime/transport/transport.ts";
 import type { ValueParser } from "#src/core/values/value.ts";
@@ -448,8 +448,12 @@ export function specShape(body: CommandBody): CallShape & EffectShape {
  *  no defaults), plain file reads. */
 export function localScope(): LocalScope {
   const readText = async (path: string): Promise<string | undefined> => {
+    // The deployment .env goes through the one counted reader: a kind (or a command) that
+    // reads it directly is counted exactly like LocalScope.env, so a zero read count in a
+    // check covers every route into the file.
+    const isEnv = resolve(path) === resolve(envFile());
     try {
-      return await readFile(path, "utf8");
+      return await (isEnv ? readEnvFileText() : readFile(path, "utf8"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
@@ -458,7 +462,7 @@ export function localScope(): LocalScope {
   return {
     deployment: () => ({ name: deploymentName(), dir: deploymentDir() }),
     env: async () => {
-      countEnvRead();
+      // counted by readText above
       const text = await readText(envFile());
       return text === undefined ? undefined : parseEnv(text);
     },

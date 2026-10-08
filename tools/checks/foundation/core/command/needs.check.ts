@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specData, specOf } from "#framework/core/command/spec.ts";
-import { envReads, resetEnvReads } from "#framework/core/env.ts";
+import { envReads, readEnvFileText, resetEnvReads } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { TRANSPORT_SENTINEL, createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
@@ -156,6 +156,8 @@ try {
   };
 
   for (const unit of localUnits) {
+    // the counter is per local unit: each row must prove its own zero, never inherit one
+    resetEnvReads();
     const row = localInputs[unit.label];
     checkTrue(`${unit.label}: the local unit has an input row`, row !== undefined);
     const result = row === undefined ? undefined : await runArgv(unit.command, row(fixture.root));
@@ -180,7 +182,16 @@ try {
       execution.stage === "run" && execution.error === undefined && contacts.length === 0 && envReads() === 0);
   }
 
+  // Positive calibration (stage 7 tails): a deliberate read of the .env IS counted - the
+  // zero assertions above stay evidence, never a dead seam that no read could ever move.
+  resetEnvReads();
+  const calibrated = await readEnvFileText();
+  checkTrue("positive calibration: a deliberate .env read counts exactly once",
+    calibrated === ["this", "file", "carries", "no", "assignment"].join(" ") + "\n"
+    && envReads() === 1);
+
   const impossible: string[] = [];
+
   for (const unit of units.filter((candidate) => needsOf(candidate) !== "local")) {
     const built = validArgs(unit, fixture.root);
     const result = built.reason === undefined ? await runNamed(unit.command, built.args) : undefined;

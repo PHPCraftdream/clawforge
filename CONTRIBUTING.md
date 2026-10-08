@@ -34,6 +34,10 @@ by `--jobs <n>` / `OC_CHECK_JOBS` (default `min(4, cores/2)`, at least 1) — an
 file's full output as one block, in stable file order, as it completes. Run one file directly
 the same way it runs in the suite: `node --experimental-strip-types tools/checks/foundation/core/paths.check.ts`.
 
+Run checks with node itself (`npm run check`, the kit runner, or the direct
+counted command above) — not under `npx tsx`. tsx rewrites the module URL query, which
+breaks hook-loading checks; that is a runner artifact, not a product failure.
+
 Import the shared harness rather than writing another local `check()`/`failed` counter:
 
 ```ts

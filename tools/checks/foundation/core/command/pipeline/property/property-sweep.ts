@@ -2,7 +2,7 @@
 // the units derived from the declarations, and the case helpers. The runner gives each check
 // file its own process, so this module's fixture and tally are per-process.
 
-import { executeBody, executeCommand } from "#framework/core/command/execute.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
 import { specData } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf, commandBody, defineAction, materializeCommands, multiActionBody, type LocalFact, type ParsedCall } from "#framework/core/command/spec.ts";
@@ -152,19 +152,16 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   else for (const [action, spec] of Object.entries(data.actions)) units.push({ label: `${command} ${action}`, command, action, args: spec.arguments, rules: spec.rules ?? [], refuse: spec.refuse ?? {} });
 }
 
-// --- the gate's units (design D6): the same sweeps, one pipeline (executeBody) ---------------
+// --- the gate's units (design D6): the same sweeps, one pipeline ------------------------------
 //
-// The gate commands join the common cases derived from declarations. Their bodies are
-// `needs: "nothing"`: the sweeps below send only refusals (parse/prepare), so no gate run
-// phase ever executes and no control case exists for them (a gate control would create or
-// remove real directories).
+// The gate commands join the common cases derived from the declarations, against a capture
+// app like the spec commands: a gate control against the real bodies would create or remove
+// real directories; the capture keeps the declared arguments/rules/parse machinery and
+// observes contacts through the fixture's recording transport like any other case.
 
-export interface GateUnit {
-  readonly label: string;
+export interface GateUnit extends Unit {
   readonly name: string;
   readonly body: CommandBody;
-  readonly args: readonly ArgumentSpec[];
-  readonly rules: readonly ArgumentRule[];
 }
 
 const gateCommands = [
@@ -177,23 +174,33 @@ const gateCommands = [
 export const gateUnits: GateUnit[] = gateCommands.map((command) => {
   const data = specData(command.body);
   if (data.kind !== "single") throw new Error(`gate command ${command.name} is not a single body`);
-  return { label: command.name, name: command.name, body: command.body, args: data.arguments, rules: data.rules ?? [] };
+  return { label: command.name, command: command.name, name: command.name, body: command.body, args: data.arguments, rules: data.rules ?? [], refuse: data.refuse ?? {} };
 });
 
-export async function runGateCase(name: string, argv: string[], surface: "terminal" | "mcp") {
-  const unit = gateUnits.find((candidate) => candidate.name === name)!;
-  let output = "";
-  const execution = await withOutputSink((chunk) => { output += chunk; }, () =>
-    executeBody(name, unit.body, { kind: "argv", argv }, { surface }));
-  return { execution, output, contacts: [] as unknown[] };
+const gateCaptureCommands: Record<string, AppCommand> = {};
+for (const unit of gateUnits) {
+  const data = specData(unit.body);
+  if (data.kind !== "single") throw new Error(`gate command ${unit.name} is not a single body`);
+  gateCaptureCommands[unit.name] = materializeCommands({
+    [unit.name]: {
+      ...commandBody({
+        effect: "read", arguments: unresolved(data.arguments) as never, rules: data.rules as never, refuse: data.refuse,
+        prepare: (call) => call,
+        run: async () => 0,
+      }),
+      summary: unit.name, group: "low-level",
+    },
+  })[unit.name]!;
 }
+export const gateCaptureApp: AppDefinition = { name: "gate-capture", description: "fixture", commands: gateCaptureCommands };
 
-export async function runGateNamed(name: string, args: Record<string, unknown>, options: { confirmed?: boolean } = {}) {
-  const unit = gateUnits.find((candidate) => candidate.name === name)!;
-  let output = "";
-  const execution = await withOutputSink((chunk) => { output += chunk; }, () =>
-    executeBody(name, unit.body, { kind: "named", args }, { surface: "mcp", ...(options.confirmed === true ? { confirmed: true } : {}) }));
-  return { execution, output, contacts: [] as unknown[] };
+// The sweep units: every unit the common cases cover, spec and gate alike.
+export const sweepUnits: Unit[] = [...units, ...gateUnits];
+
+// The app a sweep unit runs against — undefined means runCase's default (the real fixture
+// app); gate units run against the gate capture.
+export function sweepOn(unit: Unit): AppDefinition | undefined {
+  return "body" in unit ? gateCaptureApp : undefined;
 }
 
 export function exampleOf(argument: ArgumentSpec): string {
@@ -239,6 +246,7 @@ export async function runNamed(command: string, args: Record<string, unknown>, o
 
 export function factsOf(unit: Unit): readonly { readonly argument: string; readonly fact: LocalFact; readonly unless?: string }[] {
   const declaration = openclawCommands[unit.command];
+  if (declaration === undefined) return [];
   const data = specData(specOf(declaration)!);
   const slice = data.kind === "single" ? data : (unit.action === undefined ? undefined : data.actions[unit.action]);
   return ((slice as { localFacts?: readonly { argument: string; fact: LocalFact; unless?: string }[] } | undefined)?.localFacts ?? []);

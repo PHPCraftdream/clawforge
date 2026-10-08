@@ -139,6 +139,10 @@ for (const unit of units) {
 // and pass 2's declaration-order conversion refuses the FIRST DECLARED argument.
 let reversed = 0;
 let reversedBindings = 0;
+// The only allowed inapplicable reasons for a reversed-binding capture row.
+const INAPPLICABLE_REASONS = ["the swapped pair shares a conflicts/oneOf rule",
+  "a required control value shares a rule with a swapped argument",
+  "a required trigger flag changes the effect (the confirm gate)"] as const;
 for (const unit of units) {
   // A shape-valid sample is a non-empty string that is not dash-shaped — a wrong JSON shape
   // would refuse in the caller-ordered pass 1 (not pass 2's conversion, which this row
@@ -186,33 +190,76 @@ for (const unit of units) {
   // every positional must be among the swapped arguments, or the argv slots would scramble.
   if (!unit.args.filter((argument) => argument.kind === "positional")
     .every((positional) => eligible.some((entry) => entry.argument.name === positional.name))) continue;
+  const swapped = new Set(eligible.map(({ argument }) => argument.name));
+  // Two names share a grammar rule when a conflicts rule names one and withs the other, or
+  // when both sit anywhere in the same oneOf rule (groups together or apart).
+  const sharesRule = (x: string, y: string): boolean => unit.rules.some((rule) =>
+    rule.rule === "conflicts" ? (rule.name === x && rule.with.includes(y)) || (rule.name === y && rule.with.includes(x))
+      : rule.rule === "oneOf" ? rule.groups.some((group) => group.includes(x)) && rule.groups.some((group) => group.includes(y))
+      : false);
+  // Inapplicable rows skip the capture with a reason from the listed set — the swap itself
+  // or a required control value would refuse at parse on both paths and say nothing about binding.
+  const pairShare = sharesRule(a.name, b.name);
+  const requiredShare = controlValues(unit).some(({ argument }) =>
+    (argument.kind === "positional" || argument.kind === "option" || argument.kind === "variadic") && argument.required === true
+    && ![a.name, b.name].includes(argument.name) && (sharesRule(argument.name, a.name) || sharesRule(argument.name, b.name)));
+  // A `requires` rule with a trigger flag: a swapped argument in the rule's `with`, or a
+  // swapped rule name, rides with its trigger flag present, or the example call refuses at
+  // parse (the property sweep's pair-rule companion). A trigger that changes the effect
+  // would raise the MCP confirm gate on the named path — such rows are inapplicable instead.
+  const requiredTriggerRules = unit.rules.filter((rule): rule is Extract<typeof rule, { rule: "requires" }> =>
+    rule.rule === "requires" && rule.any === undefined
+    && eligible.some(({ argument }) => argument.name === rule.name || rule.with.includes(argument.name)));
+  const triggersOf = (rule: { readonly name: string; readonly with: readonly string[] }): ArgumentSpec[] =>
+    unit.args.filter((trigger) => trigger.kind === "flag"
+      && (trigger.name === rule.name
+        || (rule.with.includes(trigger.name) && eligible.some(({ argument }) => argument.name === rule.name))));
+  const effectfulTrigger = requiredTriggerRules.some((rule) => {
+    const found = triggersOf(rule);
+    return found.length === 0 || found.some((trigger) => (trigger as { effect?: string }).effect !== undefined);
+  });
+  const triggers = effectfulTrigger ? [] : requiredTriggerRules.flatMap((rule) => triggersOf(rule));
+  if (pairShare || requiredShare || effectfulTrigger) {
+    const reason = pairShare ? INAPPLICABLE_REASONS[0]
+      : requiredShare ? INAPPLICABLE_REASONS[1]
+      : INAPPLICABLE_REASONS[2];
+    checkTrue(`${unit.label}: inapplicable (${reason})`, INAPPLICABLE_REASONS.includes(reason));
+    continue;
+  }
   const argvCaptured: CapturedCall[] = [];
   const namedCaptured: CapturedCall[] = [];
-  const swapped = new Set(eligible.map(({ argument }) => argument.name));
+  // The capture call must be VALID — a value sharing a conflicts/oneOf rule with the swapped
+  // pair would refuse at parse on both paths and the row would say nothing about binding;
+  // the derivation is the variadic row's.
+  const conflicting = new Set(controlValues(unit)
+    .map(({ argument }) => argument.name)
+    .filter((name) => !swapped.has(name)
+      && (sharesRule(name, a.name) || sharesRule(name, b.name))));
   const bindArgv = [
-    ...controlArgvWithout(unit, swapped),
+    ...controlArgvWithout(unit, new Set([...swapped, ...conflicting])),
     ...eligible.flatMap(({ argument }): string[] => argument.kind === "option"
       ? [`--${argument.name}`, exampleOf(argument)]
       : [exampleOf(argument)]),
+    ...triggers.map((trigger) => `--${trigger.name}`),
   ];
   const bindArgs = namedControlArgs(unit);
-  for (const { argument } of eligible) delete bindArgs[argument.name];
+  for (const name of [...swapped, ...conflicting]) delete bindArgs[name];
   const bindNamedArgs = {
     ...bindArgs,
     [b.name]: exampleOf(b),
     [a.name]: exampleOf(a),
     ...Object.fromEntries(eligible.slice(2).map(({ argument }) => [argument.name, exampleOf(argument)])),
+    ...Object.fromEntries(triggers.map((trigger) => [trigger.name, true])),
   };
-  const bindA = await runCase(unit.command, bindArgv, "terminal", captureApp(argvCaptured));
-  const bindN = await runNamed(unit.command, bindNamedArgs, captureApp(namedCaptured));
+  await runCase(unit.command, bindArgv, "terminal", captureApp(argvCaptured));
+  freshen(unit);
+  await runNamed(unit.command, bindNamedArgs, captureApp(namedCaptured));
+  freshen(unit);
   const bindArgvEntry = argvCaptured.find((entry) => entry.command === unit.command);
   const bindNamedEntry = namedCaptured.find((entry) => entry.command === unit.command);
-  // A missing entry is only legitimate when the example call itself refuses at parse (e.g.
-  // the swapped pair trips a conflicts rule); a run-stage call with no entry fails by name.
-  const capturePairPresent = bindArgvEntry !== undefined && bindNamedEntry !== undefined;
-  checkTrue(`${unit.label}: the reversed-binding capture saw both bound calls (or the example call refuses at parse)`,
-    capturePairPresent || (bindA.execution.stage === "parse" && bindN.execution.stage === "parse"));
-  if (capturePairPresent) {
+  checkTrue(`${unit.label}: the reversed-binding capture saw both bound calls`,
+    bindArgvEntry !== undefined && bindNamedEntry !== undefined);
+  if (bindArgvEntry !== undefined && bindNamedEntry !== undefined) {
     check(`${unit.label}: reversed keys bind the same values`, bindNamedEntry!.values, bindArgvEntry!.values);
     check(`${unit.label}: reversed keys bind the same given (declaration order)`, bindNamedEntry!.given, bindArgvEntry!.given);
     reversedBindings += 1;

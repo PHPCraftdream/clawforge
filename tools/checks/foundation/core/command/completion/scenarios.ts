@@ -212,19 +212,22 @@ function fragmentScenarios(data: CompletionData): CompletionScenario[] {
     }
     const unknown = [command, "--bogus", ""];
     scenarios.push({ name: `sweep: ${command} --bogus <Tab>`, words: unknown, cword: unknown.length - 1 });
-    // Two DISTINCT declared options back to back: the frozen interpreter swallows the second
-    // as the first one's value while the binder refuses it (option-missing-value) — the
-    // design-section-9 divergence family, present by construction wherever the declaration
-    // carries two or more distinct option names.
+    // Every ordered pair of distinct declared options: the frozen interpreter swallows the
+    // second as the first one's value while the binder refuses it (option-missing-value) —
+    // the design-section-9 divergence family, covered in both directions by construction.
+    // Bounded to the first 8 option names per command to keep the sweep finite.
     const optionNames = [...new Set(declared
       .filter((argument) => argument.kind === "option")
-      .map((argument) => argument.name))];
-    if (optionNames.length >= 2) {
-      const distinct = [command, `--${optionNames[0]}`, `--${optionNames[1]}`, ""];
-      scenarios.push({
-        name: `sweep: ${command} --${optionNames[0]} --${optionNames[1]} <Tab>`,
-        words: distinct, cword: distinct.length - 1,
-      });
+      .map((argument) => argument.name))].slice(0, 8);
+    for (let i = 0; i < optionNames.length; i += 1) {
+      for (let j = 0; j < optionNames.length; j += 1) {
+        if (i === j) continue;
+        const words = [command, `--${optionNames[i]}`, `--${optionNames[j]}`, ""];
+        scenarios.push({
+          name: `sweep: ${command} --${optionNames[i]} --${optionNames[j]} <Tab>`,
+          words, cword: words.length - 1,
+        });
+      }
     }
   }
   return scenarios;

@@ -40,7 +40,7 @@ export function scanContracts(
     // The contracts are about the tokenizer, not the action selector: every multi-action
     // entry is read against the merged fallback — the dashed first token refuses the action
     // selection there — exactly like the single-shape `{ arguments }` entries. The selection
-    // refusal is then part of the unknown-token count below.
+    // refusal carries its own "unknown-action" reason, so it never joins the unknown count.
     const shape = entry.shape.actions === undefined ? entry.shape : { ...entry.shape, defaultAction: undefined };
     const optionName = declared.find((argument) => argument.kind === "option")!.name;
     const flagName = declared.find((argument) => argument.kind === "flag")!.name;
@@ -74,7 +74,7 @@ export function scanContracts(
        skipped.entries.some((token) => token.argument.name === flagName && token.value === true),
        skipped.entries.some((token) => token.argument.name === optionName),
        skipped.tail],
-      [entry.shape.actions === undefined ? 1 : 2, true, true, false, false]);
+      [1, true, true, false, false]);
 
     // Same candidates, different reason: where the shape is a plain `{ arguments }` (no
     // action selection) the flags behind the refusal are the command's own — the fallback
@@ -113,6 +113,7 @@ export function scanContracts(
 
   // A multi-action entry whose first option has no scope-"" values row: the refused action
   // selection scopes nothing, the option IS pending, and the value lookup lands on no row.
+  // The SELECTION record (reason "unknown-action") is read here, not the tokenizer's.
   const scoped = registry.entries.filter((entry) => {
     if (entry.shape.actions === undefined) return false;
     const own = (entry.arguments ?? []).find((argument) => argument.kind === "option");
@@ -125,7 +126,7 @@ export function scanContracts(
     const refused = scanCall(entry.shape, ["zz", `--${scopedOptionName}`], entry.name, { fallback: entry.arguments });
     check(`${entry.name}: a refused action selection scopes nothing`,
       [refused.selected.name,
-       refused.refusals.filter((refusal) => refusal.reason === "unknown").map((refusal) => refusal.token),
+       refused.refusals.filter((refusal) => refusal.reason === "unknown-action").map((refusal) => refusal.token),
        refused.pending?.name],
       [undefined, ["zz"], scopedOptionName]);
     check(`${entry.name}: the refused selection's value lookup finds no row`,
@@ -224,8 +225,8 @@ export function mergedReadingFor(
 /** The divergences the design documents (section 9), recomputed on the model scan: a pending
  *  option followed by a declared long token (the frozen interpreter swallows it, the binder
  *  refuses it — option-missing-value), a pending option the SELECTED slice does not hold, or
- *  an action selection refused outright (a pending found through the fallback scan) — the
- *  interpreter mirrors valueOptions per command, never per action slice. */
+ *  an action selection refused outright ("unknown-action" — a pending found through the
+ *  fallback scan) — the interpreter mirrors valueOptions per command, never per action slice. */
 export function checkDivergences(
   shell: string,
   scenarios: readonly CompletionScenario[],
@@ -261,7 +262,7 @@ export function checkDivergences(
       (token.argument.kind === "flag" || token.argument.kind === "option")
       && !scanned.slice.some((argument) => argument.name === token.argument.name));
     const selectionRefused = scanned.refusals.some((refusal) =>
-      refusal.reason === "unknown" && refusal.token === between[0]);
+      refusal.reason === "unknown-action" && refusal.token === between[0]);
     if (!(pendingThenDeclaredToken || pendingOutsideSlice || boundOutsideSlice || selectionRefused)) unexplained.push(name);
   }
   check(`${shell}: every divergence is one of design section 9's two families`, unexplained, []);

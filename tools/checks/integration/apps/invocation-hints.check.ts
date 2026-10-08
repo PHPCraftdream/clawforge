@@ -20,7 +20,8 @@ import {
 } from "#framework/core/io/invocation/index.ts";
 import { command, manual, shellLine } from "#framework/core/io/invocation/advice.ts";
 import { commandLine, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
-import { renderAdvice, renderArguments, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { renderAdvice, renderArguments, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { targetFrame } from "#framework/core/io/invocation/frame.ts";
 import { die, formatError, registerSecret, UserError, reportError, info } from "#framework/core/io/log.ts";
 import { defaultInvocation } from "#framework/entry/root.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
@@ -384,11 +385,12 @@ try {
   setInvocation(MONO);
   check("a manual step is its text", renderAdvice(manual(MANUAL_TEXT)), MANUAL_TEXT);
 
-  // 8. shimInvocation: text that leaves the terminal spells the shim program itself, and a
-  //    bare-program invocation is untouched by it.
+  // 8. Stored shim text (S1.5b: the target frame, shimInvocation retired) spells the shim
+  //    program itself, and a bare-program invocation is untouched by it.
   setInvocation(GLOBAL);
-  check("the shim invocation spells the checkout program", renderAdvice(command(["status"]), shimInvocation()), STATUS);
-  check("the shim invocation names its app", renderAdvice(command(["status"]), shimInvocation("demo")), DEMO_STATUS);
+  const SHIM_TARGET = targetFrame({ kind: "checkout-shim", root: "" }, "posix");
+  check("the stored shim text spells the checkout program", renderAdvice(command(["status"]), SHIM_TARGET), STATUS);
+  check("the stored shim text names its app", renderAdvice(command(["status"], { app: "demo" }), SHIM_TARGET), DEMO_STATUS);
   check("a bare-program invocation is untouched by the shim", renderAdvice(command(["status"])), "clawforge status");
 
   // 9. The error path: die and UserError carry advice, formatError appends one rendered line

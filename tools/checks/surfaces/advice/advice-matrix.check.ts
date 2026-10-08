@@ -22,10 +22,14 @@ import { toolArguments } from "#framework/integration/mcp/call.ts";
 import { toArgv } from "#framework/integration/mcp/legacy.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type Advice, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { CWD_CONFLICT_NOTE, commandLine, renderAdvice, renderAdviceRows, renderArgument, renderFrameAdvice, renderProgram, shimInvocation, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { CWD_CONFLICT_NOTE, commandLine, renderAdvice, renderAdviceRows, renderArgument, renderFrameAdvice, renderProgram, SHIM_PROGRAM, WINDOWS_BIN_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { renderProse } from "#framework/core/io/invocation/prose.ts";
 import { currentFrame, frameOf, installFrame, invocation, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
-import { checkoutGateFrame, forShell, launchOf, spell } from "#framework/core/io/invocation/frame.ts";
+import { checkoutGateFrame, forShell, launchOf, spell, targetFrame } from "#framework/core/io/invocation/frame.ts";
+
+// The remote/stored shim text's own frame (S1.5b retired shimInvocation): the committed
+// shim spelling, POSIX-only.
+const SHIM_TARGET = targetFrame({ kind: "checkout-shim", root: "" }, "posix");
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { info, reportError, UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -426,7 +430,7 @@ for (const { label, advice } of ADVICE_ROWS) {
 // The error path, once per column: the message and formatError's advice lines both come out
 // as they were built. The message is a server command, the one thing the old rewriting would
 // have changed under a non-default invocation.
-const SERVER_BOOTSTRAP = renderAdvice(command(["bootstrap"], { app: "demo" }), shimInvocation("demo"));
+const SERVER_BOOTSTRAP = renderAdvice(command(["bootstrap"], { app: "demo" }), SHIM_TARGET);
 for (const column of MATRIX_COLUMNS) {
   if (!("invocation" in column)) continue;
   setInvocation(column.invocation);
@@ -630,10 +634,10 @@ for (const { label, error } of installedFrameRefusals()) {
   check(`${label}: the installed frame keeps the bash shim row`, error.advice.length, 2);
   const [row, shimRow] = error.advice;
   check(`${label}: row 1 spells the installed command at the root`, renderAdvice(row!, { program: "clawforge", mode: "installed", audience: "terminal" }).split(" ")[0], "clawforge");
-  const shimRender = renderAdvice(shimRow!, shimInvocation());
+  const shimRender = renderAdvice(shimRow!, SHIM_TARGET);
   checkTrue(`${label}: row 2 is the bash shim with its note`, shimRender.startsWith(SHIM_PROGRAM) && shimRender.endsWith(shimNoteSuffix));
 }
-for (const { label, error } of placeNamingRefusals(frameOf(shimInvocation()))) {
+for (const { label, error } of placeNamingRefusals(SHIM_TARGET)) {
   check(`${label}: the shim copy's build drops the bash row`, error.advice.length, 1);
 }
 

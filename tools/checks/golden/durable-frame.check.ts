@@ -24,6 +24,7 @@ import { WslTransport } from "#framework/runtime/transport/wsl.ts";
 import { SHIM, declarationFor as initDeclaration, writeShim } from "#framework/integration/deployment/init.ts";
 import { declarationFor as scaffoldDeclaration } from "#framework/integration/deployment/scaffold.ts";
 import { MCP_LAUNCHER_FILENAME, setupProjectMcp } from "#framework/integration/mcp/project.ts";
+import { bootstrapRemoteLine, remoteLine } from "#framework/commands/management/deploy/sync.ts";
 import { makeCompletionGateCommand, renderCompletion } from "#framework/integration/completion/index.ts";
 import { completionData } from "#framework/integration/completion/table.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
@@ -229,6 +230,22 @@ for (const [label, frame] of OPERATOR_FRAMES) {
   });
 }
 
+// --- deploy: the remote lines from the remote checkout's own frame (S1.5b) -------------------
+//
+// R19-10: the server line is spelled for the SERVER (./clawforge at the remote root),
+// whatever launcher ran this deploy; R18-05: the cd prefix quotes the remote path by the
+// POSIX rule. Exact bytes, a remote path with a space and a $, under every operator frame.
+
+const REMOTE_ROOT = "/srv/open claw/$site";
+const REMOTE_BOOTSTRAP = `cd '/srv/open claw/$site' && ./clawforge --app clawforge-df-fixture bootstrap`;
+const REMOTE_SECRETS = `cd '/srv/open claw/$site' && ./clawforge --app clawforge-df-fixture secrets --apply`;
+for (const [label, frame] of OPERATOR_FRAMES) {
+  await under(frame, async () => {
+    expectBytes(`${label}: deploy's remote bootstrap line`, bootstrapRemoteLine(REMOTE_ROOT, name), REMOTE_BOOTSTRAP);
+    expectBytes(`${label}: deploy's install-them-there line`, remoteLine(REMOTE_ROOT, ["secrets", "--apply"], name), REMOTE_SECRETS);
+  });
+}
+
 // --- the shim and launcher FILE writers, whole file contents and their sha256 ---------------
 
 {
@@ -318,6 +335,11 @@ const DURABLE_MODULES = [
   "tools/framework/integration/completion/pwsh.ts",
   "tools/framework/integration/deployment/init.ts",
   "tools/framework/integration/deployment/scaffold.ts",
+  // S1.5b: deploy's server-side lines spell from the remote checkout's own frame
+  // (targetFrame in deploy/{sync,arguments}.ts); the operator-side ssh tunnel line and the
+  // printed `deploy` mirror hint are spoken at the operator's own terminal, not stored.
+  "tools/framework/commands/management/deploy/sync.ts",
+  "tools/framework/commands/management/deploy/arguments.ts",
 ] as const;
 
 function ambientReads(source: string): number {

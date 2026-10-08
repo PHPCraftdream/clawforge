@@ -9,7 +9,6 @@ import { currentFrame, frameOf, invocation, type Invocation } from "./index.ts";
 import {
   handoverOf,
   modeOf,
-  checkoutLaunch,
   launchFromModeBoundary,
   forShell,
   IN_BASH_NOTE,
@@ -36,14 +35,6 @@ const gateCommands = new Set<string>();
 
 export function useGateCommands(names: readonly string[]): void {
   for (const name of names) gateCommands.add(name);
-}
-
-/** The explicit invocation for text that leaves the terminal — a file, cron, a remote
- *  server — where no CLAWFORGE_INVOCATION rides along; the shim spells its own `--app`. */
-export function shimInvocation(app?: string): Invocation {
-  const launch = checkoutLaunch();
-  const base = { program: SHIM_PROGRAM, mode: modeOf(launch), audience: "terminal" } as const;
-  return app === undefined ? base : { ...base, app: { name: app, selectedBy: "flag" } };
 }
 
 function isGateCommand(word: string | undefined): boolean {

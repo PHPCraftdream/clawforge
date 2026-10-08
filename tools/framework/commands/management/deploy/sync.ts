@@ -5,7 +5,8 @@
 // unlock it.
 
 import { log, info, die } from "#src/core/io/log.ts";
-import { renderAdvice, renderArguments, shimInvocation } from "#src/core/io/invocation/render.ts";
+import { renderAdvice, renderArguments } from "#src/core/io/invocation/render.ts";
+import { targetFrame } from "#src/core/io/invocation/frame.ts";
 import { command } from "#src/core/io/invocation/advice.ts";
 import { sshTunnelCommand } from "#src/commands/operate/expose/ssh.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
@@ -18,10 +19,9 @@ import { runRemote } from "./server.ts";
 import type { RemoteRoot } from "./server.ts";
 
 /** The pasted hints and the executed remote line share one construction: cd into the
- *  remote path, then the shim's own command for the named deployment — a fresh ssh
- *  session lands in $HOME, where the checkout's entrypoint does not resolve. */
+ *  remote path (POSIX-quoted), then the shim's own command for the named deployment. */
 export function remoteLine(remotePath: string, argv: readonly string[], name: string): string {
-  return `cd ${quoted(remotePath)} && ${renderAdvice(command([...argv], { app: name }), shimInvocation(name))}`;
+  return `cd ${quoted(remotePath)} && ${renderAdvice(command([...argv], { app: name }), targetFrame({ kind: "checkout-shim", root: "" }, "posix"))}`;
 }
 
 /** The pasted hint and the executed remote line share one construction: cd into the remote

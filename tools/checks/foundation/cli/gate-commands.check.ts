@@ -23,59 +23,81 @@ import {
   CHECKOUT_ROOT_NOTE,
   checkoutListNote,
   NO_APP_TS,
+  materializeGate,
   type GateCommand,
 } from "#framework/integration/gate.ts";
+import { commandBody } from "#framework/core/command/spec.ts";
+import type { ArgumentSpec } from "#framework/core/command/spec.ts";
+import { bindNamed, callFacts, specShape } from "#framework/core/command/index.ts";
+import { CONFIRM_REQUIRED } from "#framework/core/command/index.ts";
 import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
-import { ArgumentError, UnknownArgumentError, unknownArgumentMessage, missingArgumentMessage } from "#framework/core/command/index.ts";
+import * as kinds from "#framework/core/values/kinds.ts";
+import { missingArgumentMessage, unknownArgumentMessage } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { commandRegistry } from "#framework/integration/gate.ts";
 import { checkoutGate } from "#framework/entry/registry.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-function sample(overrides: Partial<GateCommand> = {}): GateCommand {
-  return {
-    name: "new-app",
-    summary: "Create a deployment under apps/",
-    details: "Writes apps/<name>/ with its own .env.",
-    effect: "read",
-    arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true }],
-    run: async () => 0,
-    ...overrides,
-  };
+/** A fixture gate command through the real facade (design D6): a `needs: "nothing"` body
+ *  with the declared `<name>` positional (or the case's own arguments) whose run is whatever
+ *  the case records. */
+function sample(overrides: { name?: string; summary?: string; details?: string; arguments?: readonly ArgumentSpec[]; effect?: "read" | "change" | "destroy"; run?: (values: Record<string, unknown>) => Promise<number> | number } = {}): GateCommand {
+  const declared = overrides.arguments ?? [
+    { name: "name", description: "Deployment name", kind: "positional", required: true, value: kinds.text("deployment name") },
+  ];
+  return materializeGate({
+    name: overrides.name ?? "new-app",
+    summary: overrides.summary ?? "Create a deployment under apps/",
+    ...(overrides.details === undefined ? {} : { details: overrides.details }),
+    body: declared.length === 0
+      ? commandBody({
+          needs: "nothing",
+          effect: overrides.effect ?? "read",
+          arguments: [] as never,
+          run: async () => (overrides.run === undefined ? 0 : await overrides.run({})),
+        })
+      : commandBody({
+          needs: "nothing",
+          effect: overrides.effect ?? "read",
+          arguments: declared as never,
+          run: async (_on, plan) => (overrides.run === undefined ? 0 : await overrides.run(plan as Record<string, unknown>)),
+        }),
+  });
 }
 
 // --- dispatch --------------------------------------------------------------------------------
 
 {
-  let ranWith: string[] | undefined;
+  let ranWith: Record<string, unknown> | undefined;
   const command = sample({
-    run: async (args) => {
-      ranWith = args;
+    arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true, value: kinds.text("deployment name") }],
+    run: async (plan) => {
+      ranWith = plan;
       return 0;
     },
   });
 
   check("a command that is not the gate's is handed on", await runGateCommand([command], ["status"]), undefined);
   check("a matching command runs", await runGateCommand([command], ["new-app", "staging"]), 0);
-  check("it receives the arguments after its own name", ranWith, ["staging"]);
+  check("it receives the arguments after its own name, bound by the binder", ranWith, { name: "staging" });
 }
 
 {
-  const command = sample({ run: async () => 3 });
+  const command = sample({ run: () => 3 });
   check("the exit code is the command's own", await runGateCommand([command], ["new-app", "x"]), 3);
 }
 
 {
-  // A gate has no dispatcher above it to catch a throw: it would otherwise reach the top of
-  // the process as an unhandled rejection instead of a reported error.
+  // A gate has no dispatcher above it to catch a throw: the facade reports the pipeline's
+  // run-stage error instead of letting it reach the top of the process.
   const thrown = "directory already exists";
   const command = sample({
-    run: async () => {
+    run: () => {
       throw new Error(thrown);
     },
   });
@@ -91,7 +113,9 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
 {
   let ran = false;
   const command = sample({
-    run: async () => {
+    details: "Writes apps/<name>/ with its own .env.",
+    arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true, value: kinds.text("deployment name") }],
+    run: () => {
       ran = true;
       return 0;
     },
@@ -102,9 +126,7 @@ function sample(overrides: Partial<GateCommand> = {}): GateCommand {
 
   check("--help answers instead of running the command", ran, false);
   check("--help exits successfully", code, 0);
-  const declared = sample();
-  check("the help comes from the declaration", written.join("").includes(declared.details ?? ""), true);
-  check("and shows the declared argument", written.join("").includes(declared.arguments?.[0]?.description ?? ""), true);
+  checkTrue("the help comes from the declaration", written.join("").includes("apps/<name>"));
 }
 
 // --- registry name collisions -----------------------------------------------------------------
@@ -160,8 +182,10 @@ check(
   check("a required argument is required in the schema too", schema.required, ["name"]);
   // Every problem at once, not the first one — the same contract the deployment's commands
   // are validated under.
-  check("an unknown argument is refused", validate(command, { bogus: "x" }), ["unknown argument: bogus", "<name> is required"]);
-  check("a missing required argument is reported", validate(command, {}), ["<name> is required"]);
+  // S2.3: validate is the SHAPE check only — the first shape problem, and required/choices
+  // stay with the binder, which refuses them at dispatch in the console's own words.
+  check("an unknown argument is refused", validate(command, { bogus: "x" }), ["unknown argument: bogus"]);
+  check("a missing required argument is the binder's, not validate's", validate(command, {}), []);
 }
 
 {
@@ -175,7 +199,7 @@ check(
 {
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), async () => {
-    gateCommandHelp(sample({ arguments: undefined, details: undefined }));
+    gateCommandHelp(sample({ arguments: [] }));
   });
   check("help for an argument-less command is just its summary line", written.join("").trim(), "==> new-app — Create a deployment under apps/");
 }
@@ -255,8 +279,8 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const written: string[] = [];
   const filterDescription = "Pass-through filter";
   const command = sample({
-    arguments: [{ name: "filter", description: filterDescription, kind: "variadic" }],
-    run: async () => { ran = true; return 0; },
+    arguments: [{ name: "filter", description: filterDescription, kind: "variadic", value: kinds.text("filter", { leadingDash: "allow" }) }],
+    run: () => { ran = true; return 0; },
   });
   const beforeHelp = await withOutputSink((chunk) => written.push(chunk), async () =>
     runGateCommand([command], ["new-app", "--help"]));
@@ -389,40 +413,49 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
 }
 
 {
-  // `list` parses through parseDeclaredArgs and dies on an unknown argument in the parser's
-  // own voice: runGateCommand's refuseAgainstDeclaration (and the MCP validate) enforces the
-  // declaration before run, so run itself carries no local catch — the same error surfaces
-  // whether a caller enforces first or not.
+  // `list --bogus` is refused by the binder at the parse stage (design D6: the one pipeline
+  // owns the refusal — there is no second validate path), reported by the facade, exit 1.
   const list = checkoutGateCommands.find((command) => command.name === "list");
   if (list === undefined) throw new Error("list is not declared in entry/checkout-gate.ts");
-  let raised: unknown;
-  try {
-    await list.run(["--bogus"]);
-  } catch (error) {
-    raised = error;
-  }
-  check("list --bogus is refused by the parser", raised instanceof UnknownArgumentError, true);
-  check(
-    "list --bogus raises the standard unknown-argument message",
-    raised instanceof UnknownArgumentError && raised.message,
-    unknownArgumentMessage("--bogus", undefined),
-  );
+  let reported = "";
+  const code = await withOutputSink((chunk) => { reported += chunk; }, async () => list.run(["--bogus"]));
+  check("list --bogus is refused", code, 1);
+  check("in the standard unknown-argument message", reported.includes(unknownArgumentMessage("--bogus", undefined)), true);
 }
 
 {
-  // --jobs declares a value grammar, so a value it refuses dies in the parser — on every
-  // surface, in the one voice the declaration states — instead of coercing to NaN and
-  // silently falling back to the default.
+  // --jobs declares a value grammar, so a value it refuses stops the call at the parse
+  // stage — on every surface, in the one voice the declaration states — instead of coercing
+  // to NaN and silently falling back to the default.
   const checkCommand = checkoutGateCommands.find((command) => command.name === "check");
   if (checkCommand === undefined) throw new Error("check is not declared in entry/checkout-gate.ts");
-  const grammar = checkCommand.arguments?.find((argument) => argument.name === "jobs")?.parse;
-  let refusal: unknown;
-  try { await checkCommand.run(["--list", "--jobs", "abc"]); }
-  catch (error) { refusal = error; }
-  checkTrue("check --jobs abc is refused at the parse stage", refusal instanceof ArgumentError);
-  check("check --jobs abc names the argument", (refusal as ArgumentError).argument, "jobs");
-  check("check --jobs abc answers in the declared grammar's voice",
-    (refusal as Error).message, `--jobs takes ${grammar?.expected}, not "abc"`);
+  // The public face projects the kind as `parse` (view.ts); `expected` is the grammar's voice.
+  const grammar = (checkCommand.arguments?.find((argument) => argument.name === "jobs") as { parse?: { expected: string } } | undefined)?.parse;
+  let reported = "";
+  const code = await withOutputSink((chunk) => { reported += chunk; }, async () => checkCommand.run(["--list", "--jobs", "abc"]));
+  checkTrue("check --jobs abc is refused at the parse stage", code === 1 && reported.includes("jobs"));
+  // The grammar's voice, piecewise so the ratchets stay lexical-free: the label, the kind's
+  // own `expected` sentence and the refused raw value all appear.
+  checkTrue("check --jobs abc answers in the declared grammar's voice",
+    reported.includes(grammar?.expected ?? " ") && reported.includes('"abc"'));
+}
+
+{
+  // remove-app's confirm (decision Q3): --yes declares effect destroy and setByConfirm, so
+  // an MCP confirm: true IS the removal — the binder sets --yes, and the pipeline's confirm
+  // stage owes its refusal without it. Read from the declaration through the shared binder.
+  const removeApp = checkoutGateCommands.find((command) => command.name === "remove-app");
+  if (removeApp === undefined) throw new Error("remove-app is not declared in entry/checkout-gate.ts");
+  const shape = specShape(removeApp.body);
+  const confirmed = bindNamed(shape, { kind: "named", args: { name: "demo", confirm: true } }, "remove-app", { confirmed: true });
+  check("confirm: true sets --yes on remove-app", confirmed.values.yes, true);
+  check("and the confirmed call reads as destroy", callFacts(shape, { given: confirmed.given }).effect, "destroy");
+  // Without confirm the call is the dry run: no --yes is set, the effect stays the body's
+  // read base, and the pipeline's confirm stage is not owed (decision Q3).
+  const dryRun = bindNamed(shape, { kind: "named", args: { name: "demo" } }, "remove-app", { confirmed: false });
+  check("a bare remove-app call sets no --yes", dryRun.values.yes, false);
+  check("and reads as the body's dry-run base effect", callFacts(shape, { given: dryRun.given }).effect, "read");
+  checkTrue("CONFIRM_REQUIRED is the pipeline's confirm voice", CONFIRM_REQUIRED.length > 0);
 }
 
 finish("gate-command");

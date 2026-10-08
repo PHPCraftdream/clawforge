@@ -87,7 +87,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     finding: "R18-07",
     note: "the --json refusal document's structured `next` advice is masked",
     product: "tools/framework/core/command/execute.ts",
-    search: `          next: advice.map(maskedJson),`,
+    search: `      next: advice.map(maskedJson),`,
     replace: `          next: advice,`,
     check: "tools/checks/foundation/core/command/pipeline/execute.check.ts",
     fragment: "the --json document carries the refusal's structured remedy",

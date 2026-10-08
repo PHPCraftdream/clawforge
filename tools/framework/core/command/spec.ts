@@ -28,7 +28,9 @@ export type Effect = "read" | "change" | "destroy";
 /** How far the pipeline builds for a unit: `local` touches only this machine (no Context,
  *  no .env parse, no transport); `deployment` adds the local view of the deployment plus a
  *  transport; `target` builds the full Context (the default). */
-export type Needs = "local" | "deployment" | "target";
+export type Needs = "nothing" | "local" | "deployment" | "target";
+/** A run phase's process-style result: 0 (or absent) succeeded, anything else failed. */
+export type ExitCode = number;
 
 interface ArgumentBase<N extends string> {
   readonly name: N;
@@ -173,12 +175,21 @@ export interface PrepareCall<V> extends ParsedCall<V> {
   derive<T, R = T>(argument: keyof V & string, kind: ValueKind<T, R>, raw: string): Promise<R>;
 }
 
-type On<N extends Needs> = N extends "deployment" ? DeploymentScope : N extends "local" ? LocalScope : Context;
+/** The scope a `needs: "nothing"` command runs on: there is no deployment, no .env, no
+ *  transport — a gate command sees nothing but its own prepared plan. */
+export interface NothingScope { readonly nothing: true }
+/** The one NothingScope value. */
+export const NOTHING: NothingScope = { nothing: true };
+
+type On<N extends Needs> = N extends "deployment" ? DeploymentScope
+  : N extends "local" ? LocalScope
+  : N extends "nothing" ? NothingScope
+  : Context;
 
 interface Phases<V, P, N extends Needs> {
   /** Refusals that need only the arguments and local files; absent: the plan is `call.values`. */
   readonly prepare?: (call: PrepareCall<V>, local: LocalScope) => P | Promise<P>;
-  readonly run: (on: On<N>, plan: Prepared<P>) => Promise<void>;
+  readonly run: (on: On<N>, plan: Prepared<P>) => Promise<void | ExitCode>;
 }
 
 export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Needs> extends Phases<Values<A>, P, N> {
@@ -266,7 +277,8 @@ export interface MultiBody {
 /** A group-file entry: prose and flags of the command beside its body. */
 export interface CommandEntry extends CommandBody, Pick<AppCommand, "details" | "structured" | "consoleOnly" | "exportsSecrets"> {
   readonly summary: string;
-  readonly group: CommandGroup;
+  /** Optional: a gate command's materialized entry has no help group (design D6). */
+  readonly group?: CommandGroup;
 }
 
 // --- structural checks, at module load ---------------------------------------------------------
@@ -407,6 +419,13 @@ export function multiActionBody(body: MultiBody): CommandBody {
   const actions = Object.fromEntries(names.map((name) => [name, body.actions[name][COMMAND_SPEC]]));
   const data: MultiData = { kind: "multi", effect: body.effect, action: body.action, actions, defaultAction: body.defaultAction };
   return { [COMMAND_SPEC]: data };
+}
+
+/** Gate facade support (design D6): registers a gate command's run closure so specOf reads
+ *  its body exactly like a materialized deployment command — effect profile, rules, schema
+ *  and the pipeline all read one declaration, and the second validate/help/effect path dies. */
+export function materializeGateRun(run: object, summary: string, body: CommandBody): void {
+  materialized.set(run, { ...body, summary });
 }
 
 // --- reading a body back -------------------------------------------------------------------------

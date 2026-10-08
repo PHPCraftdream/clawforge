@@ -26,7 +26,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { setManifestId } from "#framework/set/artifacts/model.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidSamplesOf, runCase, runNamed, stages, units } from "./property-sweep.ts";
+import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, gateUnits, invalidSamplesOf, runCase, runGateCase, runGateNamed, runNamed, stages, units } from "./property-sweep.ts";
 let cases = 0;
 {
   const unpacked = await unpackArtifactVerified(controlArtifact);
@@ -612,4 +612,70 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
 checkTrue("the property check derived cases from the declarations", cases > 0);
 await fixture.dispose();
 stages.print("pipeline: property");
+// --- the gate commands join the common cases (design D6, decision Q3) -------------------------
+//
+// The same sweeps the spec commands get, derived from the gate bodies: every parse-stage
+// invalid sample is refused at parse on BOTH surfaces by the one pipeline (executeBody —
+// no app, no recipes directory, no transport), a missing required argument is refused in
+// the binder's voice, and the terminal --json document is the contract's for `list --json`
+// too. No gate run phase ever executes here: every case stops at parse.
+
+for (const unit of gateUnits) {
+  const declaresJson = unit.args.some((argument) => argument.name === "json" && argument.kind === "flag");
+  const positionals = unit.args.filter((argument) => argument.kind === "positional");
+
+  for (const argument of unit.args) {
+    for (const invalid of invalidSamplesOf(argument)) {
+      const name = `${unit.label}: ${argument.kind === "positional" ? `<${argument.name}>` : argument.kind === "variadic" ? `<${argument.name}…>` : `--${argument.name}`} ${JSON.stringify(invalid)}`;
+      const preceding = argument.kind === "positional" ? positionals.slice(0, positionals.indexOf(argument)) : positionals;
+      const parts = argument.kind === "positional" ? (bindsAsFlag(invalid) ? ["--", invalid] : [invalid])
+        : argument.kind === "variadic"
+          ? [...(bindsAsFlag(invalid) ? ["--"] : []), ...Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => invalid)]
+          : [`--${argument.name}`, invalid];
+      const argv = [...parts];
+      const terminal = await runGateCase(unit.name, argv, "terminal");
+      cases += 1;
+      stages.case(name, terminal.execution.stage, terminal.execution.error);
+      check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+      checkTrue(`${name}: console error is an ArgumentError`, terminal.execution.error instanceof ArgumentError);
+      check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument.name);
+      if (declaresJson) {
+        const document = JSON.parse(terminal.output) as { error?: { message?: unknown } };
+        checkTrue(`${name}: --json gets the error document (gate, Q3)`, typeof document.error?.message === "string");
+      } else check(`${name}: no --json document without a json flag`, terminal.output, "");
+
+      if (invalid === "") continue;
+      const mcp = await runGateNamed(unit.name, {
+        ...Object.fromEntries(preceding.map((other) => [other.name, exampleOf(other)])),
+        [argument.name]: argument.kind === "variadic" ? Array.from({ length: (argument as { count?: number }).count ?? 1 }, () => invalid) : invalid,
+        ...(declaresJson ? { json: true } : {}),
+      });
+      cases += 1;
+      stages.case(name, mcp.execution.stage, mcp.execution.error);
+      check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+      checkTrue(`${name}: MCP error is an ArgumentError`, mcp.execution.error instanceof ArgumentError);
+      check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
+      check(`${name}: MCP prints no document`, mcp.output, "");
+      check(`${name}: one voice on both surfaces`, (mcp.execution.error as Error).message, (terminal.execution.error as Error).message);
+    }
+  }
+
+  // Missing required arguments, in the binder's voice, on both surfaces.
+  const required = unit.args.filter((argument) => argument.kind === "positional" && argument.required === true);
+  for (const argument of required) {
+    const name = `${unit.label}: missing required <${argument.name}>`;
+    const mcp = await runGateNamed(unit.name, {});
+    cases += 1;
+    stages.case(name, mcp.execution.stage, mcp.execution.error);
+    check(`${name}: MCP stops at the parse stage`, mcp.execution.stage, "parse");
+    check(`${name}: MCP error names the argument`, (mcp.execution.error as ArgumentError).argument, argument.name);
+    const terminal = await runGateCase(unit.name, [], "terminal");
+    cases += 1;
+    stages.case(name, terminal.execution.stage, terminal.execution.error);
+    check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+    check(`${name}: console error names the argument`, (terminal.execution.error as ArgumentError).argument, argument.name);
+    check(`${name}: one voice on both surfaces`, (mcp.execution.error as Error).message, (terminal.execution.error as Error).message);
+  }
+}
+
 finish("pipeline: property — every declared value rule refuses at parse");

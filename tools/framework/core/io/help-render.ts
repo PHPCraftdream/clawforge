@@ -21,6 +21,8 @@ export interface HelpDeclaration {
   readonly arguments?: readonly CommandArgument[];
   /** Only what `argumentScopes` reads of the declaration (a gate command has none). */
   readonly run?: unknown;
+  /** Structured commands get the envelope note under their full help. */
+  readonly structured?: boolean;
 }
 
 /** Column an argument's description starts at, wide enough for the longest label this
@@ -200,9 +202,10 @@ export const STRUCTURED_ENVELOPE_HELP =
   "next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the " +
   "command's own output, unaltered).";
 
-/** One command's full `--help` body plus the destructive-state note entry/cli.ts's console
- *  path appends after it. */
-export function renderFullCommandHelp(name: string, command: AppCommand, source?: Frame | Invocation): void {
+/** One command's full `--help` body plus the destructive-state note the console path appends
+ *  after it. Any HelpDeclaration renders — an AppCommand, a gate command (design D6: one
+ *  help body for every declaration), the registry's entries. */
+export function renderFullCommandHelp(name: string, command: HelpDeclaration, source?: Frame | Invocation): void {
   renderCommandHelp(name, command, source);
   const note = effectNote(command);
   if (note !== undefined) {

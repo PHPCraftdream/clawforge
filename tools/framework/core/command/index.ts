@@ -15,8 +15,9 @@ export * from "#src/core/command/effect.ts";
 // added here by hand — the architecture ratchet `preparedOutsideCommand` backs this up.
 export {
   CommandDeclarationError,
-  type ArgumentRule, type ArgumentSpec, type DeploymentScope, type Effect,
-  type LocalScope, type PrepareCall, type Values,
-  commandBody, defineAction, materializeCommands, multiActionBody, runOnContext,
+  type ArgumentRule, type ArgumentSpec, type DeploymentScope, type Effect, type ExitCode,
+  type LocalScope, type NothingScope, type PrepareCall, type Values,
+  commandBody, defineAction, materializeCommands, materializeGateRun, multiActionBody, NOTHING,
+  runOnContext,
   specData, specOf, specShape,
 } from "#src/core/command/spec.ts";

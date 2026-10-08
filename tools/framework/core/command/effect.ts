@@ -42,13 +42,11 @@ export function callFactsFor(command: AppCommand, argv: readonly string[]): Call
   return changed === undefined ? { effect } : { effect, changed };
 }
 
-/** The effect-relevant part of a command declaration — an AppCommand, a gate command and the
- *  MCP tool's Declared all satisfy it. `run` is only a marker: specOf answers a body only
- *  while the command's run is a materialized one. */
+/** The effect-relevant part of a command declaration — an AppCommand and the MCP tool's
+ *  Declared all satisfy it. `run` is only a marker: specOf answers a body only while the
+ *  command's run is a materialized one (gate commands included, design D6 — no second
+ *  `effect` field: the facade's body is the one declaration). */
 export interface EffectDeclaration {
-  /** A gate command's declared effect (an AppCommand's lives in its spec body); when present,
-   *  the same shape rules read the profile from it. */
-  readonly effect?: Effect;
   readonly destructive?: boolean;
   readonly readOnlyWhen?: (args: string[]) => boolean;
   readonly requiresConfirmationWhen?: (args: string[]) => boolean;
@@ -60,11 +58,6 @@ export interface EffectDeclaration {
 export function effectProfile(command: EffectDeclaration): EffectProfile {
   const entry = specOf(command);
   if (entry !== undefined) return shapeProfile(specShape(entry));
-  // A gate command's effect is the whole declaration: the same shape rules as a spec body's —
-  // a read flag (remove-app's dry-run default has none yet) would soften alwaysDestroys.
-  if (command.effect !== undefined) {
-    return shapeProfile({ effect: command.effect, arguments: command.arguments as readonly ArgumentSpec[] });
-  }
   const destructive = command.destructive === true;
   return {
     destructive,

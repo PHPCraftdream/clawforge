@@ -1752,13 +1752,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "filter": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Only run checks whose relative path contains this text"
-          },
           "list": {
             "type": "boolean",
             "description": "Print the matching check paths instead of running them"
@@ -1770,6 +1763,13 @@
           "require": {
             "type": "string",
             "description": "Capabilities that must fail a check instead of skipping it"
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only run checks whose relative path contains this text"
           }
         }
       }
@@ -1792,7 +1792,7 @@
     },
     {
       "name": "remove-app",
-      "description": "Delete apps/<name> (destructive)\n\nFull text: call help with command=remove-app.",
+      "description": "Delete apps/<name> (destructive for some actions)\n\nFull text: call help with command=remove-app.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1806,12 +1806,11 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Must be true: destroys state"
+            "description": "Confirm a destructive action"
           }
         },
         "required": [
-          "name",
-          "confirm"
+          "name"
         ]
       }
     },

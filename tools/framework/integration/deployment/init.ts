@@ -17,11 +17,11 @@ import { serializeInvocation } from "../../core/io/invocation/index.ts";
 import { renderAdvice } from "../../core/io/invocation/render.ts";
 import { command } from "../../core/io/invocation/advice.ts";
 import { commandLine, SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
-import type { CommandArgument } from "../../core/app.ts";
-import type { GateCommand } from "../gate.ts";
+import { commandBody } from "../../core/command/spec.ts";
+import type { ArgumentSpec } from "../../core/command/spec.ts";
+import { materializeGate, type GateCommand } from "../gate.ts";
 import { log, info, die } from "../../core/io/log.ts";
 import { createName, type DeploymentName } from "../../core/values/names.ts";
-import { parseDeclaredArgs } from "../../core/command/index.ts";
 import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
@@ -287,14 +287,14 @@ export interface InitPlacement {
   readonly ancestor?: string;
 }
 
-export const INIT_ARGUMENTS: CommandArgument[] = [
+export const INIT_ARGUMENTS = [
   {
     name: "local",
     summary: "Print the npm command for editor types",
     description: "Print the npm command for editor types (also in an already initialised directory)",
     kind: "flag",
   },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** Fixed parts of init's own messages, exported so checks assert the same text the product
  *  prints instead of restating it. */
@@ -308,9 +308,8 @@ export function makeInitGateCommand(
   appRoot: string,
   placement: InitPlacement = {},
 ): GateCommand {
-  return {
+  return materializeGate({
     name: "init",
-    effect: "change",
     summary: "Initialise this directory as an OpenClaw deployment",
     details:
       "Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) " +
@@ -321,19 +320,22 @@ export function makeInitGateCommand(
       "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
       `${INIT_REFUSES_NOTE} — run this once, then {clawforge bootstrap}. ` +
       "`init {--local}` in an already initialised directory only prints the editor-types npm line and writes nothing.",
-    arguments: INIT_ARGUMENTS,
-    run: async (args) => {
-      const parsed = parseDeclaredArgs(INIT_ARGUMENTS, args);
-      const localTypesOnly = placement.localTypesOnly === true;
-      const ancestor = placement.ancestor;
-      if (localTypesOnly && ancestor !== appRoot) {
-        for (const line of await localTypesLines()) info(line);
+    body: commandBody({
+      needs: "nothing",
+      effect: "change",
+      arguments: INIT_ARGUMENTS,
+      run: async (_on, plan) => {
+        const localTypesOnly = placement.localTypesOnly === true;
+        const ancestor = placement.ancestor;
+        if (localTypesOnly && ancestor !== appRoot) {
+          for (const line of await localTypesLines()) info(line);
+          return 0;
+        }
+        await initApp(appRoot, { local: plan.local });
         return 0;
-      }
-      await initApp(appRoot, { local: parsed.local === true });
-      return 0;
-    },
-  };
+      },
+    }),
+  });
 }
 
 /** `--local`: editors resolve `@clawforge/framework` only from a node_modules the app has.

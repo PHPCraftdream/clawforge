@@ -133,9 +133,9 @@ is unchanged.
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `check` | `[<filter…>] [--list] [--jobs <n>] [--require <cap,...>]` | Run the framework's own checks (no instance needed) (checkout only) |
+| `check` | `[--list] [--jobs <n>] [--require <cap,...>] [<filter…>]` | Run the framework's own checks (no instance needed) (checkout only) |
 | `new-app` | `<name>` | Create a deployment under apps/ (checkout only) |
-| `remove-app` | `<name> [--yes]` | Delete apps/<name> (destructive) (checkout only) |
+| `remove-app` | `<name> [--yes]` | Delete apps/<name> (destructive for some actions) (checkout only) |
 | `list` | `[--json] [--no-status]` | Overview of every deployment under apps/ (checkout only) |
 | `version` | `[--json] [--verbose]` | Print clawforge's own version (also: --version, -v) |
 | `completion` | `<shell>` | Print a shell completion script (bash, zsh or pwsh) to stdout |

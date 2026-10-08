@@ -2,7 +2,7 @@
 // the units derived from the declarations, and the case helpers. The runner gives each check
 // file its own process, so this module's fixture and tally are per-process.
 
-import { executeCommand } from "#framework/core/command/execute.ts";
+import { executeBody, executeCommand } from "#framework/core/command/execute.ts";
 import { specData } from "#framework/core/command/index.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specOf, commandBody, defineAction, materializeCommands, multiActionBody, type LocalFact, type ParsedCall } from "#framework/core/command/spec.ts";
@@ -11,6 +11,11 @@ import type { AppCommand, AppDefinition } from "#framework/core/app.ts";
 import { checkTrue } from "#checks/kit/harness.ts";
 import { createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
+import { makeVersionGateCommand } from "#framework/integration/version.ts";
+import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
+import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
+import type { CommandBody } from "#framework/core/command/spec.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
@@ -145,6 +150,50 @@ for (const [command, declaration] of Object.entries(openclawCommands)) {
   const data = specData(entry);
   if (data.kind === "single") units.push({ label: command, command, args: data.arguments, rules: data.rules ?? [], refuse: data.refuse ?? {} });
   else for (const [action, spec] of Object.entries(data.actions)) units.push({ label: `${command} ${action}`, command, action, args: spec.arguments, rules: spec.rules ?? [], refuse: spec.refuse ?? {} });
+}
+
+// --- the gate's units (design D6): the same sweeps, one pipeline (executeBody) ---------------
+//
+// The gate commands join the common cases derived from declarations. Their bodies are
+// `needs: "nothing"`: the sweeps below send only refusals (parse/prepare), so no gate run
+// phase ever executes and no control case exists for them (a gate control would create or
+// remove real directories).
+
+export interface GateUnit {
+  readonly label: string;
+  readonly name: string;
+  readonly body: CommandBody;
+  readonly args: readonly ArgumentSpec[];
+  readonly rules: readonly ArgumentRule[];
+}
+
+const gateCommands = [
+  ...checkoutGateCommands,
+  makeVersionGateCommand(),
+  makeCompletionGateCommand([...checkoutGateCommands, makeVersionGateCommand()], true),
+  makeInitGateCommand("<app-root>"),
+];
+
+export const gateUnits: GateUnit[] = gateCommands.map((command) => {
+  const data = specData(command.body);
+  if (data.kind !== "single") throw new Error(`gate command ${command.name} is not a single body`);
+  return { label: command.name, name: command.name, body: command.body, args: data.arguments, rules: data.rules ?? [] };
+});
+
+export async function runGateCase(name: string, argv: string[], surface: "terminal" | "mcp") {
+  const unit = gateUnits.find((candidate) => candidate.name === name)!;
+  let output = "";
+  const execution = await withOutputSink((chunk) => { output += chunk; }, () =>
+    executeBody(name, unit.body, { kind: "argv", argv }, { surface }));
+  return { execution, output, contacts: [] as unknown[] };
+}
+
+export async function runGateNamed(name: string, args: Record<string, unknown>, options: { confirmed?: boolean } = {}) {
+  const unit = gateUnits.find((candidate) => candidate.name === name)!;
+  let output = "";
+  const execution = await withOutputSink((chunk) => { output += chunk; }, () =>
+    executeBody(name, unit.body, { kind: "named", args }, { surface: "mcp", ...(options.confirmed === true ? { confirmed: true } : {}) }));
+  return { execution, output, contacts: [] as unknown[] };
 }
 
 export function exampleOf(argument: ArgumentSpec): string {

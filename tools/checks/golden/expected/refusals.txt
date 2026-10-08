@@ -182,6 +182,38 @@ error: <shell> takes one of bash, zsh, pwsh, not "fish"
 === invalid choice: completion fish (gate) — sole deployment (./clawforge --app demo) ===
 error: <shell> takes one of bash, zsh, pwsh, not "fish"
 
+=== flag value: list --json --no-status=x (gate) — checkout root (./clawforge) ===
+{
+  "error": {
+    "message": "--no-status is a flag and takes no value"
+  }
+}
+error: --no-status is a flag and takes no value
+
+=== flag value: list --json --no-status=x (gate) — named deployment (./clawforge --app demo) ===
+{
+  "error": {
+    "message": "--no-status is a flag and takes no value"
+  }
+}
+error: --no-status is a flag and takes no value
+
+=== flag value: list --json --no-status=x (gate) — installed command (clawforge) ===
+{
+  "error": {
+    "message": "--no-status is a flag and takes no value"
+  }
+}
+error: --no-status is a flag and takes no value
+
+=== flag value: list --json --no-status=x (gate) — sole deployment (./clawforge --app demo) ===
+{
+  "error": {
+    "message": "--no-status is a flag and takes no value"
+  }
+}
+error: --no-status is a flag and takes no value
+
 === <command> --help without a deployment: status --help — checkout root (./clawforge) ===
 ==> status — Show containers, image, health probes and data usage
     Usage: ./clawforge status [--json]

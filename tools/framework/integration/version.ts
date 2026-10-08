@@ -6,19 +6,8 @@ import { isWithin } from "../core/paths.ts";
 import { frameworkPackage } from "../core/env.ts";
 import { emit } from "../core/io/output.ts";
 import { die } from "../core/io/log.ts";
-import { parseDeclaredArgs } from "../core/command/index.ts";
-import type { GateCommand } from "./gate.ts";
-import type { CommandArgument } from "../core/app.ts";
-
-export const VERSION_ARGUMENTS: CommandArgument[] = [
-  {
-    name: "json",
-    summary: "Emit {name, version, source, path} instead of text",
-    description: "Emit { name, version, source, path } instead of the one-line text",
-    kind: "flag",
-  },
-  { name: "verbose", description: "Also print which copy runs and where", kind: "flag" },
-];
+import { commandBody, type ArgumentSpec } from "../core/command/spec.ts";
+import { materializeGate, type GateCommand } from "./gate.ts";
 
 export const VERSION_COMMAND_NAME = "version";
 
@@ -54,27 +43,39 @@ export function classifyCopy(packageDir: string, appRoot?: string): { source: Ve
 }
 
 /** `appRoot`: the deployment this run serves, to tell its own dependency from the global copy. */
+export const VERSION_ARGUMENTS = [
+  {
+    name: "json",
+    summary: "Emit {name, version, source, path} instead of text",
+    description: "Emit { name, version, source, path } instead of the one-line text",
+    kind: "flag",
+  },
+  { name: "verbose", description: "Also print which copy runs and where", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
+
 export function makeVersionGateCommand(appRoot?: string): GateCommand {
-  return {
+  return materializeGate({
     name: VERSION_COMMAND_NAME,
-    effect: "read",
     summary: `Print clawforge's own version (also: ${VERSION_ALIASES.join(", ")})`,
     details:
       "Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. " +
       "{--verbose} / {--json} also say which copy runs: global, local (the app's own dependency) or checkout, and its path.",
-    arguments: VERSION_ARGUMENTS,
     aliases: VERSION_ALIASES,
-    run: async (args) => {
-      const parsed = parseDeclaredArgs(VERSION_ARGUMENTS, args);
-      const pkg = await frameworkPackage();
-      if (pkg?.version === undefined) die("cannot determine the framework version — package.json is missing or unreadable");
-      const copy = classifyCopy(pkg.dir, appRoot);
-      if (parsed.json === true) emit(`${JSON.stringify({ name: "clawforge", version: pkg.version, ...copy })}\n`);
-      else if (parsed.verbose === true) emit(`clawforge ${pkg.version}\nsource: ${copy.source}\npath: ${copy.path}\n`);
-      else emit(`clawforge ${pkg.version}\n`);
-      return 0;
-    },
-  };
+    body: commandBody({
+      needs: "nothing",
+      effect: "read",
+      arguments: VERSION_ARGUMENTS,
+      run: async (_on, plan) => {
+        const pkg = await frameworkPackage();
+        if (pkg?.version === undefined) die("cannot determine the framework version — package.json is missing or unreadable");
+        const copy = classifyCopy(pkg.dir, appRoot);
+        if (plan.json === true) emit(`${JSON.stringify({ name: "clawforge", version: pkg.version, ...copy })}`+"\n");
+        else if (plan.verbose === true) emit(`clawforge ${pkg.version}`+`\nsource: ${copy.source}\npath: ${copy.path}\n`);
+        else emit(`clawforge ${pkg.version}`+"\n");
+        return 0;
+      },
+    }),
+  });
 }
 
 export const versionGateCommand: GateCommand = makeVersionGateCommand();

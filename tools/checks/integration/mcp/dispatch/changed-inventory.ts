@@ -34,7 +34,7 @@ export interface ChangedInventoryUnit {
   readonly baseEffect: "read" | "change" | "destroy";
   /** The unit's DECLARED needs (S2.6a): a single body's data.needs, an action slice its
    *  own ActionData.needs (default "target"); preparesEnvironment stays single-body only. */
-  readonly needs: "local" | "deployment" | "target";
+  readonly needs: "nothing" | "local" | "deployment" | "target";
   /** The unit's DECLARED preparesEnvironment: a single body's data.preparesEnvironment;
    *  action slices always derive false (see needs). */
   readonly preparesEnvironment: boolean;

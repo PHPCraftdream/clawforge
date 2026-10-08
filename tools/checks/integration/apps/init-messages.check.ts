@@ -55,12 +55,8 @@ try {
   {
     const gate = makeInitGateCommand("D:/root", { localTypesOnly: true, ancestor: "D:/elsewhere" });
     let refusal = "";
-    try {
-      await gate.run!(["--bogus"]);
-      refusal = "no error";
-    } catch (error) {
-      refusal = error instanceof Error ? error.message : String(error);
-    }
+    const refusedCode = await withOutputSink((chunk) => { refusal += chunk; }, async () => gate.run!(["--bogus"]));
+    checkTrue("init --bogus exits non-zero on the local-types-only path", refusedCode === 1);
     check("init --bogus is refused at parse on the local-types-only path", refusal.includes("unknown argument: --bogus"), true);
     const printed: string[] = [];
     let happyError: unknown;

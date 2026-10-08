@@ -5,6 +5,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* The gate commands (`check`, `new-app`, `remove-app`, `list`, `version`, `completion`, `init`) run through the same pipeline as every other command, declared once: the argument kinds, rules, effect and confirm come from their spec bodies. `remove-app` over MCP removes with one `confirm: true` (without it the call stays the dry run and needs no confirmation), its tool schema no longer requires `confirm`, and its list marker is `*` (destructive for some flags) instead of `!`. A gate argument refusal under `--json` prints the same `{"error": …}` document every other command prints. `help <gate-command>` and `--help` show the effect note.
 * `mcp-setup` works when the target location is unsupported or unreachable.
 * MCP no longer asks for confirm on `recipe import`/`recipe new`, which only add files.
 

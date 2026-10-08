@@ -20,12 +20,12 @@ import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
 import { commandRegistry, renderHelp, type CommandRegistry, type GateCommand } from "../gate.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
-import { formatError, maskSecrets } from "../../core/io/log.ts";
+import { CommandFailedError, formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
-import { executeCommand, type Execution, type CommandIo } from "../../core/command/execute.ts";
+import { executeBody, executeCommand, type Execution, type CommandIo } from "../../core/command/execute.ts";
 import { type CallInput } from "../../core/command/parse/index.ts";
 import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
-import { gateConfirmationRefusal, maskStructuredOutput, maskStructuredResult, toolEnvelope } from "./call.ts";
+import { maskStructuredOutput, maskStructuredResult, toolEnvelope } from "./call.ts";
 import { validate, toArgv } from "./legacy.ts";
 import { specOf } from "../../core/command/spec.ts";
 import { frameworkVersion } from "../../commands/management/lock.ts";
@@ -109,13 +109,16 @@ async function captureRun(
   );
 }
 
-/** The same capture as captureRun, for a command that runs without a Context. A non-zero
- *  exit is the failure here — a gate command reports by returning a code, like a process,
- *  rather than by throwing. */
-async function captureGateRun(
+/** The same capture as captureRun, for a gate command (design D6): the one pipeline
+ *  (executeBody) on a named call — the binder binds the arguments, the confirm stage owes
+ *  its refusal, and a non-zero ExitCode is the run-stage failure, exactly like the process
+ *  verdict it replaces. */
+async function captureGateBody(
+  name: string,
   command: GateCommand,
-  argv: string[],
-): Promise<{ output: string; failure?: string }> {
+  input: CallInput,
+  confirmed: boolean,
+): Promise<{ output: string; failure?: string; execution: Execution }> {
   const chunks: string[] = [];
 
   return withOutputSink(
@@ -123,14 +126,13 @@ async function captureGateRun(
       chunks.push(chunk);
     },
     async () => {
-      try {
-        const code = await command.run(argv);
-        const output = chunks.join("").trim();
-        return code === 0 ? { output } : { output, failure: `${command.name} failed (exit ${code})` };
-      } catch (error) {
-        const failure = formatError(error);
-        return { output: chunks.join("").trim(), failure };
-      }
+      const execution = await executeBody(name, command.body, input, { surface: "mcp", confirmed });
+      const output = chunks.join("").trim();
+      if (execution.error === undefined) return { output, execution };
+      const failure = execution.stage === "run" && execution.error instanceof CommandFailedError
+        ? `${name} failed (exit ${execution.error.exitCode})`
+        : formatError(execution.error);
+      return { output, failure, execution };
     },
   );
 }
@@ -241,22 +243,13 @@ async function handleGateToolCall(
     replyError(id, -32602, `unknown tool: ${name}`);
     return;
   }
-  const problems = validate(gateCommand, args, { name });
-  if (problems.length > 0) {
-    reply(id, {
-      isError: true,
-      content: [{ type: "text", text: maskSecrets(problems[0] ?? "") }],
-    });
+  // The one pipeline (design D6): the binder refuses the call from the declaration, and the
+  // confirm stage owes the same refusal a deployment command's does — before anything runs.
+  const { output, failure, execution } = await captureGateBody(name, gateCommand, { kind: "named", args }, args.confirm === true);
+  if (execution.error !== undefined && (execution.stage === "parse" || execution.stage === "confirm")) {
+    reply(id, { isError: true, content: [{ type: "text", text: maskSecrets((execution.error as Error).message) }] });
     return;
   }
-  // A destructive gate command owes the same confirmation a deployment command's confirm
-  // stage does — before the command runs at all: a gate command has no pipeline behind it.
-  const refusal = gateConfirmationRefusal(name, gateCommand, args);
-  if (refusal !== undefined) {
-    reply(id, { isError: true, content: [{ type: "text", text: maskSecrets(refusal) }] });
-    return;
-  }
-  const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));
   // The mask follows the answer, not the exit status: a healthy gate command's output gets
   // the same treatment as its failure.
   reply(id, {

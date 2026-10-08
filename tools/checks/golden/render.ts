@@ -209,6 +209,10 @@ async function refusals(): Promise<string> {
   parts.push(await underEveryInvocation("missing required: new-app (gate)", async () => { await runGateCommand(gateCommands, ["new-app"]); }));
   // completion's `shell` positional carries choices, and bind refuses a bad value before run.
   parts.push(await underEveryInvocation("invalid choice: completion fish (gate)", async () => { await runGateCommand(gateCommands, ["completion", "fish"]); }));
+  // Decision Q3: a gate argument refusal with the command's own --json given prints the same
+  // {"error":…} document every other command's refusal prints (the pipeline is one now).
+  parts.push(await underEveryInvocation("flag value: list --json --no-status=x (gate)", async () => { await runGateCommand(gateCommands, ["list", "--json", "--no-status=x"]); }));
+
 
   const helpWithoutApp = async () => { await runApp(genericApp, ["status", "--help"], []); };
   parts.push(await underEveryInvocation("<command> --help without a deployment: status --help", helpWithoutApp));

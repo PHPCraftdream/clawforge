@@ -615,8 +615,11 @@ function conforms(
     const { log, registerSecret } = await import(${JSON.stringify(moduleUrl("core/io/log"))});
     const leaked = ${JSON.stringify(secret)}; registerSecret(leaked);
     await useDeployment(${JSON.stringify(redactionRoot)});
-    const gateEcho = { name: "gate-echo", summary: "prints the token and succeeds", run: async () => { emit("gate says " + leaked + "\\n"); return 0; } };
-    const gateFail = { name: "gate-fail", summary: "prints the token and fails", run: async () => { emit("gate refused " + leaked + "\\n"); return 7; } };
+    const { commandBody } = await import(${JSON.stringify(moduleUrl("core/command/spec"))});
+    const { materializeGate } = await import(${JSON.stringify(moduleUrl("integration/gate"))});
+    const gate = (name, summary, run) => materializeGate({ name, summary, body: commandBody({ needs: "nothing", effect: "read", arguments: [], run }) }); // gate commands are spec bodies (D6)
+    const gateEcho = gate("gate-echo", "prints the token and succeeds", async () => { emit("gate says " + leaked + "\\n"); return 0; });
+    const gateFail = gate("gate-fail", "prints the token and fails", async () => { emit("gate refused " + leaked + "\\n"); return 7; });
     await serveMcp({
       name: "redaction",
       // Matches docker-compose.yml's real service name — mcp-creds (below) now runs

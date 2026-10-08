@@ -4,8 +4,7 @@
 // bridge lives in legacy.ts.
 
 import { maskSecrets, UserError } from "../../core/io/log.ts";
-import { effectProfile, tokenize } from "../../core/command/index.ts";
-import { ConfirmationRequiredError } from "../../core/command/errors.ts";
+import { tokenize } from "../../core/command/index.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Execution } from "../../core/command/execute.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
@@ -188,12 +187,4 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
   if (safePayload === undefined) return maskSecrets(output);
   if (!output.includes(machineOutput)) return maskSecrets(output);
   return maskSecrets(output.split(machineOutput).join(safePayload));
-}
-
-/** The refusal a destructive gate command's tool call owes before anything runs — the same
- *  confirmation rule the deployment path enforces in the pipeline's confirm stage
- *  (core/command/execute.ts), read from the gate command's declared effect. */
-export function gateConfirmationRefusal(commandName: string, command: Declared, args: Record<string, unknown>): string | undefined {
-  if (args.confirm === true) return undefined;
-  return effectProfile(command).destructive === true ? new ConfirmationRequiredError(commandName).message : undefined;
 }

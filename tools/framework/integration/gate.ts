@@ -14,12 +14,14 @@
 import { info, log, reportError, UserError } from "../core/io/log.ts";
 import { command, changeDirectory, manual, type Advice } from "../core/io/invocation/advice.ts";
 import { commandLine, renderAdvice } from "../core/io/invocation/render.ts";
-import { bind, tokenize, tokenizeLenient, type CallShape } from "../core/command/parse/index.ts";
+import { tokenize, tokenizeLenient, type CallShape } from "../core/command/parse/index.ts";
 import { defaultActionOf } from "../core/command/parse/scan.ts";
 import { closestCommand, UnknownArgumentError } from "../core/command/errors.ts";
-import { specOf, specShape } from "../core/command/spec.ts";
-import type { ArgumentSpec, Effect } from "../core/command/spec.ts";
-import { destructiveSymbol, effectNote, helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
+import { materializeGateRun, specOf, specShape, type CommandBody } from "../core/command/spec.ts";
+import { executeBody } from "../core/command/execute.ts";
+import { argumentsView } from "../core/command/view.ts";
+import { CommandFailedError } from "../core/io/log.ts";
+import { destructiveSymbol, helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage, usageTopLine } from "../core/io/help-render.ts";
 import { DISPATCHER_COMMANDS } from "../core/app.ts";
 import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 import { VERSION_ALIASES } from "./version.ts";
@@ -43,31 +45,61 @@ export interface GateCommand {
   readonly summary: string;
   /** The longer explanation, shown by `--help` and folded into the tool description. */
   readonly details?: string;
-  /** Declared the same way an AppCommand's are, and used for the same three things. */
-  readonly arguments?: CommandArgument[];
   /** Alternative first-token spellings the gate rewrites onto this command (e.g. --version);
    *  completion offers them at the top level. */
   readonly aliases?: readonly string[];
-  /** What a call does to state, declared once like an AppCommand's: the MCP tool's confirm
-   *  field, its requirement, the help list marker, the --help note and the docs marker all
-   *  derive from it (core/command/effect.ts). */
-  readonly effect: Effect;
-  /** No Context — there is no deployment yet. Returns the exit code. */
+  /** The spec body (needs "nothing", design D6): arguments with typed value kinds, rules,
+   *  effect and the run phases — ONE declaration feeding the binder, help, the MCP schema
+   *  and the pipeline. The old second validate/help/effect path is gone. */
+  readonly body: CommandBody;
+  /** The body's arguments projected the way an AppCommand's are (help, MCP schema, registry). */
+  readonly arguments?: CommandArgument[];
+  /** The common pipeline (executeBody), with the gate's terminal reporting parity: an
+   *  unknown argument earns the --help pointer, every other refusal prints bare, and a
+   *  non-zero ExitCode passes through as the exit code. */
   readonly run: (args: string[]) => Promise<number>;
+}
+
+/** Builds the GateCommand facade over a `commandBody({ needs: "nothing", ... })` (design D6):
+ *  the run closure goes through executeBody, and materializeGateRun stamps the body onto it
+ *  so specOf — the effect profile, the help renderer, the schema — reads the one declaration. */
+export function materializeGate(gate: {
+  readonly name: string;
+  readonly summary: string;
+  readonly details?: string;
+  readonly aliases?: readonly string[];
+  readonly body: CommandBody;
+}): GateCommand {
+  const command: GateCommand = {
+    name: gate.name,
+    summary: gate.summary,
+    ...(gate.details === undefined ? {} : { details: gate.details }),
+    ...(gate.aliases === undefined ? {} : { aliases: gate.aliases }),
+    body: gate.body,
+    arguments: argumentsView(gate.body) as CommandArgument[],
+    run: async (args) => {
+      const execution = await executeBody(gate.name, gate.body, { kind: "argv", argv: args }, { surface: "terminal" });
+      if (execution.error === undefined) return execution.exitCode ?? 0;
+      // A non-zero ExitCode is the command's own verdict: its code, silently, like the
+      // process it stands in for. Everything else reports.
+      if (execution.error instanceof CommandFailedError) return execution.error.exitCode;
+      // Same parity as the app-command dispatcher (entry/cli.ts): only an unknown argument
+      // earns the --help pointer; every other refusal prints bare.
+      if (execution.error instanceof UnknownArgumentError) reportUnknownArgument(gate.name, execution.error);
+      else reportError(execution.error);
+      return 1;
+    },
+  };
+  materializeGateRun(command.run, gate.summary, gate.body);
+  return command;
 }
 
 /** The `--help` screen for one gate command, from its declaration — the same renderer
  *  entry/cli.ts uses for an AppCommand, so a gate command's `choices` and value names show
  *  up here too instead of only on the deployment's own commands. */
 export function gateCommandHelp(command: GateCommand): void {
-  renderCommandHelp(command.name, command);
-  // The same effect note a deployment command's --help carries, from the same declared
-  // effect (R18: remove-app's destroy used to show only over MCP).
-  const note = effectNote(command);
-  if (note !== undefined) {
-    info("");
-    info(note);
-  }
+  // The one full-help renderer for any body (design D6) — the effect note included (R18).
+  renderFullCommandHelp(command.name, command);
 }
 
 /** Lines for the command list in the gate's `help`, so a gate command appears beside the
@@ -94,17 +126,9 @@ export async function runGateCommand(
     gateCommandHelp(command);
     return 0;
   }
-
-  try {
-    refuseAgainstDeclaration(command, args);
-    return await command.run(args);
-  } catch (error) {
-    // Same parity as the app-command dispatcher (entry/cli.ts): only an unknown argument
-    // earns the --help pointer; every other refusal prints bare.
-    if (error instanceof UnknownArgumentError) reportUnknownArgument(command.name, error);
-    else reportError(error);
-    return 1;
-  }
+  // The facade's run is the common pipeline (executeBody); parse refusals, rules, confirm,
+  // the effect and the --json document all come from the declaration.
+  return command.run(args);
 }
 
 /** The tokens before the first bare `--`; everything after belongs to the command's
@@ -127,15 +151,7 @@ export function requestsShortHelp(args: readonly string[]): boolean {
   return requestsHelp(args) || beforeBareDoubleDash(args).includes("-h");
 }
 
-/** `required` and `choices`, enforced once here against the command's declaration — the same
- *  facts the MCP tool's validate refuses from (mcp/call.ts), in the parser's own voice. A
- *  gate command's own parseDeclaredArgs stays syntactic. */
-function refuseAgainstDeclaration(command: GateCommand, args: readonly string[]): void {
-  const declared = command.arguments ?? [];
-  bind(declared as readonly ArgumentSpec[], tokenize(declared, args), { command: command.name });
-}
-
-/** The syntactic half of refuseAgainstDeclaration, for the dispatcher's own commands (help,
+/** The syntactic scan for the dispatcher's own commands (help,
  *  control-mcp): a token the declaration has no slot for is refused; `choices` stay with the
  *  command, whose own answer to an unknown name is richer than a choices refusal. */
 export function refuseUnknownTokens(entry: RegistryEntry | undefined, args: readonly string[]): void {

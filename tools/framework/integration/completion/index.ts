@@ -9,7 +9,8 @@
 // only once a shell asks for `--app`'s value — never baked into the generated text, and via
 // whichever of the system-wide command or the checkout shim was typed. Output never carries a machine path.
 
-import { parseDeclaredArgs } from "../../core/command/index.ts";
+import { commandBody } from "../../core/command/spec.ts";
+import type { ArgumentSpec } from "../../core/command/spec.ts";
 import * as kinds from "../../core/values/kinds.ts";
 import { installLineParts } from "../../core/io/invocation/render.ts";
 import { emitRaw } from "../../core/io/output.ts";
@@ -17,8 +18,7 @@ import { openclawCommands } from "../../commands/interface/index.ts";
 import { bashCompletionLines, renderBash } from "./bash.ts";
 import { renderPwsh } from "./pwsh.ts";
 import { completionData, type CompletionData } from "./table.ts";
-import { commandRegistry, type GateCommand } from "../gate.ts";
-import type { CommandArgument } from "../../core/app.ts";
+import { commandRegistry, materializeGate, type GateCommand } from "../gate.ts";
 
 export type CompletionShell = "bash" | "zsh" | "pwsh";
 
@@ -26,11 +26,11 @@ export const COMPLETION_SHELLS: readonly CompletionShell[] = ["bash", "zsh", "pw
 
 export const COMPLETION_COMMAND_NAME = "completion";
 
-export const COMPLETION_ARGUMENTS: CommandArgument[] = [
-  // Both carriers stay: completion/table.ts and the MCP schema read `choices`; `parse` is the
-  // kind. The checkArguments ambiguity guard is spec-body-only — a gate command may carry both.
-  { name: "shell", description: "bash, zsh or pwsh", kind: "positional", required: true, choices: COMPLETION_SHELLS, parse: kinds.choice(COMPLETION_SHELLS) },
-];
+export const COMPLETION_ARGUMENTS = [
+  // One carrier now: the kind is the grammar, and argumentsView projects its `choices` for
+  // completion/table.ts and the MCP schema exactly as the dual carrier used to.
+  { name: "shell", description: "bash, zsh or pwsh", kind: "positional", required: true, value: kinds.choice(COMPLETION_SHELLS) },
+] as const satisfies readonly ArgumentSpec[];
 
 /** The zsh script is the bash script, byte for byte, behind zsh's own header: `bashcompinit`
  *  shims COMP_WORDS/COMP_CWORD for exactly this old-style `complete -F` shape, so both shells
@@ -67,9 +67,8 @@ export function renderCompletion(shell: CompletionShell, data: CompletionData): 
  *  caller's gate has an `--app` selector (the monorepo gate does; the installed
  *  single-deployment one doesn't). */
 export function makeCompletionGateCommand(siblings: readonly GateCommand[], appFlag: boolean): GateCommand {
-  return {
+  return materializeGate({
     name: COMPLETION_COMMAND_NAME,
-    effect: "read",
     summary: "Print a shell completion script (bash, zsh or pwsh) to stdout",
     details:
       "Generated from the live command declarations — names, flags, and a multi-action " +
@@ -81,13 +80,15 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
       "Completes the built-in commands only: a command a deployment declares itself is not offered, " +
       "since the script is generated without loading any deployment.\n" +
       "No deployment is resolved, no .env is read, no lock is touched.",
-    arguments: COMPLETION_ARGUMENTS,
-    run: async (args) => {
-      // required and choices are enforced by runGateCommand against this same declaration.
-      const shell = parseDeclaredArgs(COMPLETION_ARGUMENTS, args).shell as CompletionShell;
-      const model = completionData(commandRegistry({ deployment: openclawCommands, gate: siblings, appName: "clawforge" }), appFlag);
-      emitRaw(renderCompletion(shell, model));
-      return 0;
-    },
-  };
+    body: commandBody({
+      needs: "nothing",
+      effect: "read",
+      arguments: COMPLETION_ARGUMENTS,
+      run: async (_on, plan) => {
+        const model = completionData(commandRegistry({ deployment: openclawCommands, gate: siblings, appName: "clawforge" }), appFlag);
+        emitRaw(renderCompletion(plan.shell, model));
+        return 0;
+      },
+    }),
+  });
 }

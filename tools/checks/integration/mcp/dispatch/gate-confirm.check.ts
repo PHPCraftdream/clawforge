@@ -16,6 +16,7 @@ import { runProcess } from "#checks/kit/spawn.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { CONFIRM_REQUIRED } from "#framework/core/command/index.ts";
 import { effectNote } from "#framework/core/io/help-render.ts";
+import { effectProfile } from "#framework/core/command/index.ts";
 import { commandRegistry, dispatcherHelpLines, HELP_ENTRY_SUMMARY, gateCommandHelp } from "#framework/integration/gate.ts";
 import { HELP_TOOL_SUMMARY, helpTool } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -42,22 +43,30 @@ try {
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { checkoutGate, installedGate } = await import(${JSON.stringify(moduleUrl("entry/registry"))});
+    const { commandBody } = await import(${JSON.stringify(moduleUrl("core/command/spec"))});
+    const { materializeGate } = await import(${JSON.stringify(moduleUrl("integration/gate"))});
+    const { effectProfile } = await import(${JSON.stringify(moduleUrl("core/command/index"))});
+    const kinds = await import(${JSON.stringify(moduleUrl("core/values/kinds"))});
     const { writeFile } = await import("node:fs/promises");
-    const checkout = checkoutGate().filter((command) => command.effect !== "read").map((command) => ({ ...command, run: async () => 0 }));
-    const installed = installedGate(${JSON.stringify(root)}).filter((command) => command.effect !== "read").map((command) => ({ ...command, run: async () => 0 }));
+    const destructive = (command) => effectProfile(command).destructive;
+    const checkout = checkoutGate().filter(destructive);
+    const installed = installedGate(${JSON.stringify(root)}).filter(destructive);
     const gates = [...new Map([...checkout, ...installed].map((command) => [command.name, command])).values()];
     await serveMcp(
       { name: "fixture", description: "fixture", commands: {} },
-      [...gates, {
+      [...gates, materializeGate({
         name: "remove-fixture",
-        effect: "destroy",
         summary: "Delete the fixture's marker",
-        arguments: [
-          { name: "name", description: "Fixture name", kind: "positional", required: true },
-          { name: "yes", description: "Perform the removal", kind: "flag" },
-        ],
-        run: async () => { await writeFile(${JSON.stringify(marker)}, "removed" + String.fromCharCode(10)); return 0; },
-      }],
+        body: commandBody({
+          needs: "nothing",
+          effect: "destroy",
+          arguments: [
+            { name: "name", description: "Fixture name", kind: "positional", required: true, value: kinds.text("fixture name") },
+            { name: "yes", description: "Perform the removal", kind: "flag" },
+          ],
+          run: async () => { await writeFile(${JSON.stringify(marker)}, "removed" + String.fromCharCode(10)); return 0; },
+        }),
+      })],
     );
   `;
   const serverScript = join(root, "server.mjs");
@@ -81,7 +90,7 @@ try {
   checkTrue("tools/list declares confirm for the destructive gate command", listed?.inputSchema?.properties?.confirm !== undefined);
   checkTrue("and it is required, the command having no read form", listed?.inputSchema?.required?.includes("confirm") === true);
 
-  const gateCommands = [...new Map([...checkoutGate(), ...installedGate(root)].filter((command) => command.effect !== "read").map((command) => [command.name, command])).values()];
+  const gateCommands = [...new Map([...checkoutGate(), ...installedGate(root)].filter((command) => effectProfile(command).destructive).map((command) => [command.name, command])).values()];
   const gateNames = gateCommands.map((command) => command.name);
   const consoleHelp = new Map<string, string>();
   for (const command of gateCommands) {

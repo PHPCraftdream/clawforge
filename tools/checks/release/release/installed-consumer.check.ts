@@ -13,9 +13,9 @@
 // the point here is the packed tarball and the consumer's package.json, not npm's resolver,
 // and a check that needs the registry cannot run on a machine without one.
 
-import { mkdtemp, mkdir, readdir, readFile, writeFile, rm, cp, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, writeFile, rm, cp, access, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
@@ -45,13 +45,29 @@ const DEFAULT_CONSUMER_PACKAGE = {
   type: "commonjs",
 };
 
-const packageRoot = resolve(monorepoRoot, "tools", "framework");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const base = await mkdtemp(join(tmpdir(), "clawforge-installed-check-"));
+// Declared here so the finally can clean up even when the failure happens before the
+// assignment inside the try block.
+let packRoot: string | undefined;
 
 try {
-  // --- pack the real thing (prepack builds dist) ------------------------------------------
-  const packed = await run(npm, ["pack", "--pack-destination", base], packageRoot);
+  // --- pack the real thing from a temp copy of the packing tree ---------------------------
+  // npm runs the package's prepack, which builds dist/. Packing a temp copy (same layout as
+  // system-install.check.ts) means that dist/ lands in the temp tree, never in the checkout.
+  packRoot = await mkdtemp(join(tmpdir(), "clawforge-pack-"));
+  await mkdir(join(packRoot, "tools"), { recursive: true });
+  await cp(resolve(monorepoRoot, "tools", "framework"), join(packRoot, "tools", "framework"), {
+    recursive: true,
+    filter: (entry) => {
+      const name = basename(entry);
+      return name !== "dist" && name !== "node_modules";
+    },
+  });
+  await cp(resolve(monorepoRoot, "tsconfig.json"), join(packRoot, "tsconfig.json"));
+  await cp(resolve(monorepoRoot, "tools", "build-framework-package.ts"), join(packRoot, "tools", "build-framework-package.ts"));
+  await symlink(resolve(monorepoRoot, "node_modules"), join(packRoot, "node_modules"), "junction"); // type is used on Windows only, ignored elsewhere
+  const packed = await run(npm, ["pack", "--pack-destination", base], join(packRoot, "tools", "framework"));
   const tarballs = packed.code === 0 ? (await readdir(base)).filter((entry) => entry.endsWith(".tgz")) : [];
 
   if (tarballs.length === 0) {
@@ -172,6 +188,11 @@ assert.equal((await importHookModule(hook)).verify(), "second");
     if (stripless.code !== 0) process.stderr.write(`    ${stripless.output.trim().split("\n").slice(0, 5).join("\n    ")}\n`);
   }
 } finally {
+  if (packRoot !== undefined) {
+    // The link to the checkout's node_modules goes first, on its own and without following it.
+    await rm(join(packRoot, "node_modules"), { force: true });
+    await rm(packRoot, { recursive: true, force: true });
+  }
   await rm(base, { recursive: true, force: true });
 }
 

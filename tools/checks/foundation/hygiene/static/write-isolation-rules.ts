@@ -3,9 +3,9 @@
 // classifying write-shaped CALLS, not specific spellings. Shared by
 // write-isolation.check.ts (real-tree scan) and its table-driven self-check.
 
-export type Classification = "CLEAN" | "ANCHORED";
+export type Classification = "CLEAN" | "ANCHORED" | "UNKNOWN";
 
-export type Hit = { call: string; target: string; classification: Classification };
+export type Hit = { call: string; target: string; classification: Classification; approximation?: boolean };
 
 const WRITE_NAMES = "writeFile|appendFile|mkdir|rm|rename|cp|copyFile|symlink|createWriteStream";
 
@@ -15,7 +15,7 @@ const WRITE_CALL = new RegExp(`(?:(fs|fsp|fsPromises)\\s*\\.\\s*)?\\b(${WRITE_NA
 
 // Calls whose write target is the LAST path argument (cp/rename copy from a read-only
 // source; symlink's link path is its second argument), so the destination is classified.
-const DEST_SECOND = new Set(["cp", "rename", "symlink"]);
+const DEST_SECOND = new Set(["cp", "copyFile", "rename", "symlink"]);
 
 // const/let NAME = <single-line RHS> — the only shape fixed-point propagation follows.
 const DECL = /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\b[^=\n]*=\s*([^\n;]+)/g;
@@ -128,23 +128,11 @@ function isCleanSignal(expr: string, clean: ReadonlySet<string>): boolean {
 }
 
 function isAnchoredSignal(expr: string, origin: string): boolean {
-  // maskLiterals blanks string CONTENTS, so a file-local URL is recognized here by its
-  // masked SHAPE ("new URL(<quoted blanks>, import.meta.url)") and confirmed against the
-  // original text at the same offsets (maskLiterals preserves offsets): only a "./" first
-  // segment is file-local and stripped; an upward "../" escape stays and anchors.
-  let stripped = expr;
-  for (const m of expr.matchAll(/new\s+URL\(\s*(['"])\s*\1\s*,\s*import\.meta\.url\s*\)/g)) {
-    const orig = origin.slice(m.index, m.index + m[0].length);
-    if (reHits(/new\s+URL\(\s*(['"])\.\/[^'"]*\1/, orig)) stripped = stripped.replace(m[0], " ");
-  }
-  if (ANCHORED_TOKEN.test(stripped)) return true;
-  for (const s of stripped.match(/(["'])(?:(?!\1)[\s\S])*?\1/g) ?? []) {
-    const v = s.slice(1, -1);
-    if (v.startsWith("./") || v.startsWith("../") || v.includes("apps/")) return true;
-  }
+  if (ANCHORED_TOKEN.test(expr)) return true;
+  // Relative components in join(tempRoot, './file') do not anchor the root.
   // A bare relative string literal as the whole target ("tools/clawforge.ts") is
   // checkout-relative; absolute paths (/tmp/..., C:\...) and unclassifiable shapes are not.
-  const bare = expr.trim().match(/^(["'])([\s\S]*)\1$/);
+  const bare = origin.trim().match(/^(["'])([\s\S]*)\1$/);
   if (bare !== null) {
     const v = bare[2];
     if (!v.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(v) && !v.startsWith("file:")) return true;
@@ -173,24 +161,168 @@ function cleanIdents(masked: string): Set<string> {
   return clean;
 }
 
-/**
- * CLEAN if the expression references a clean signal (tmpdir(/mkdtemp(/isolatedAppsRoot/
- * apps.root or a propagated clean identifier). Otherwise ANCHORED if it mentions
- * monorepoRoot/process.cwd()/import.meta/repoRoot/checksRoot, or a string literal starting
- * "./"/"../", containing "apps/", or a bare relative string literal. A bare identifier that
- * cannot be tied to either side defaults to CLEAN — documented conservative direction: a
- * variable you cannot tie to the checkout is not evidence of a checkout write.
- */
+/** Standalone classification has no lexical binding context: unresolved is UNKNOWN.
+ * checkoutWriteHits uses source-order scoped propagation instead. */
 export function classifyTarget(expr: string, clean: ReadonlySet<string>, origin: string): Classification {
-  if (isCleanSignal(expr, clean)) return "CLEAN";
   if (isAnchoredSignal(expr, origin)) return "ANCHORED";
-  return "CLEAN";
+  if (isCleanSignal(expr, clean)) return "CLEAN";
+  return "UNKNOWN";
 }
 
-/** Write-shaped calls whose target path is anchored at the physical checkout. */
+/** Source-order lexical approximation. Object/destructuring braces are not scopes.
+ * Path constructors follow their base, not leaf tokens. Bound unknown return values and
+ * untraceable parameters are reported separately; unbound path bases fail enforcement.
+ * Branch joins, imported returns, member property selection beyond sandbox roots,
+ * regex-literal masking and closure invocation timing are not modeled. Named helper
+ * calls are joined conservatively by spelling; shadowed helper names may over-report.
+ * resolve/join follow only the first path argument (absolute later segments and '..'
+ * escapes are an explicit approximation, not a filesystem containment proof).
+ * checkoutWriteHits keeps the old anchored-token rule as a floor under this evaluator
+ * (anchoredFloor): only an evaluator-proven CLEAN escapes it. */
+function scopedClassifier(source: string, masked: string): (expr: string, origin: string, at: number) => Classification | "UNBOUND" {
+  type Scope = { start: number; end: number; parent?: Scope };
+  type Binding = { name: string; scope: Scope; at: number; end: number; rhs: string; origin: string; callers?: Binding[] };
+  const root: Scope = { start: 0, end: masked.length };
+  const scopes = [root];
+  const stack = [root];
+  const braceStack: boolean[] = [];
+  for (let i = 0; i < masked.length; i++) {
+    if (masked[i] === "{") {
+      const prefix = masked.slice(0, i).trimEnd();
+      const block = reHits(/(?:=>|\)|\b(?:try|else|finally|do))$/, prefix) || reHits(/\bfunction\s+[\w$]+\s*\([^{}]*\)[^{}]*$/, prefix) || prefix === "" || reHits(/[;{}]$/, prefix);
+      braceStack.push(block);
+      if (block) {
+        const scope: Scope = { start: i, end: masked.length, parent: stack[stack.length - 1] };
+        scopes.push(scope); stack.push(scope);
+      }
+    } else if (masked[i] === "}" && braceStack.pop() && stack.length > 1) stack.pop()!.end = i;
+  }
+  const scopeAt = (at: number): Scope => scopes.filter((s) => s.start <= at && at <= s.end).at(-1) ?? root;
+  const bindings: Binding[] = [];
+  // Balanced RHS extraction handles multiline resolve/join and object/array literals.
+  const rhsEnd = (from: number): number => {
+    let depth = 0;
+    for (let i = from; i < masked.length; i++) {
+      const c = masked[i];
+      if ("([{".includes(c)) depth++;
+      else if (")]}".includes(c)) { if (depth === 0) return i; depth--; }
+      if (depth === 0 && (c === ";" || c === "\n" || c === ",")) return i;
+    }
+    return masked.length;
+  };
+  for (const m of masked.matchAll(/\b(const|let)\s+([A-Za-z_$][\w$]*(?:\s*:[^=;\n]+)?|\{[^}]*\}|\[[^\]]*\])\s*=/g)) {
+    const at = m.index;
+    const from = at + m[0].length;
+    const end = rhsEnd(from);
+    const pattern = m[2];
+    const names = pattern.startsWith("{") || pattern.startsWith("[")
+      ? pattern.slice(1, -1).split(",").map((part) => part.trim().split(":").at(-1)?.trim()).filter((n): n is string => n !== undefined && reHits(/^[A-Za-z_$][\w$]*$/, n))
+      : [pattern.split(":")[0].trim()];
+    for (const name of names) {
+      let rhs = masked.slice(from, end);
+      let origin = source.slice(from, end);
+      if (pattern.startsWith("{") && rhs.trim().startsWith("{")) {
+        const part = pattern.slice(1, -1).split(",").find((p) => p.trim().split(":").at(-1)?.trim() === name);
+        const key = part?.trim().split(":")[0].trim();
+        const property = rhs.match(new RegExp(`\\b${key}\\s*:\\s*([^,}]+)`));
+        if (property !== null) { const offset = property.index! + property[0].indexOf(property[1]); origin = origin.slice(offset, offset + property[1].length); rhs = property[1]; }
+      }
+      if (pattern.startsWith("[") && rhs.trim().startsWith("[")) {
+        const index = pattern.slice(1, -1).split(",").findIndex((p) => p.trim() === name);
+        const values = rhs.trim().slice(1, -1).split(",");
+        const originals = origin.trim().slice(1, -1).split(",");
+        if (values[index] !== undefined) { rhs = values[index]; origin = originals[index]; }
+      }
+      bindings.push({ name, scope: scopeAt(at), at, end, rhs, origin });
+    }
+  }
+  for (const m of masked.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)(?:\s*:[^;\n]+)?\s*(?:;|\n)/g)) {
+    bindings.push({ name: m[1], scope: scopeAt(m.index), at: m.index, end: m.index + m[0].length, rhs: "", origin: "" });
+  }
+  // Assignments bind to the nearest visible declaration, never a same-named sibling.
+  for (const m of masked.matchAll(/\b([A-Za-z_$][\w$]*)\s*=(?!=|>)/g)) {
+    const at = m.index;
+    if (bindings.some((b) => b.at <= at && at < b.end)) continue;
+    let scope: Scope | undefined = scopeAt(at);
+    let declaration: Binding | undefined;
+    while (scope !== undefined) {
+      declaration = bindings.find((b) => b.name === m[1] && b.scope === scope && b.at < at);
+      if (declaration !== undefined) break;
+      scope = scope.parent;
+    }
+    if (declaration === undefined) continue;
+    const from = at + m[0].length;
+    const end = rhsEnd(from);
+    bindings.push({ name: m[1], scope: declaration.scope, at, end, rhs: masked.slice(from, end), origin: source.slice(from, end) });
+  }
+  // Named local helpers: parameter provenance comes from actual local call arguments.
+  for (const m of masked.matchAll(/\b(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)[^{]*\{/g)) {
+    const scope = scopes.find((s) => s.start === m.index + m[0].length - 1);
+    if (scope === undefined) continue;
+    const params = m[2].split(",").map((p) => p.trim().split(":")[0].trim());
+    params.forEach((name, index) => {
+      if (!reHits(/^[\w$]+$/, name)) return;
+      const calls: Binding[] = [];
+      for (const call of masked.matchAll(new RegExp(`\\b${m[1]}\\s*\\(`, "g"))) {
+        if (call.index >= m.index && call.index < scope.start) continue;
+        const range = extractArgRange(masked, call.index + call[0].length - 1, index);
+        if (range !== undefined) calls.push({ name, scope, at: call.index, end: range[1], rhs: masked.slice(...range), origin: source.slice(...range) });
+      }
+      // Keep multiple caller values for a pessimistic join at parameter evaluation.
+      bindings.push({ name, scope, at: scope.start, end: scope.start, rhs: "", origin: "", callers: calls });
+    });
+  }
+  const evaluate = (expr: string, origin: string, at: number, seen: Set<Binding>): Classification | "UNBOUND" => {
+    const leading = expr.length - expr.trimStart().length;
+    expr = expr.trim(); origin = origin.slice(leading).trim();
+    if (reHits(/^await\s/, expr)) return evaluate(expr.slice(6), origin.slice(6), at, seen);
+    if (reHits(/^(?:mkdtemp|tmpdir|isolatedAppsRoot)\s*\(/, expr)) return "CLEAN";
+    const constructor = expr.match(/^(?:(?:path|nodePath)\.)?(resolve|join|dirname|fileURLToPath)\s*\(/);
+    if (constructor !== null) {
+      const range = extractArgRange(expr, constructor[0].length - 1, 0);
+      return range === undefined ? "UNKNOWN" : evaluate(expr.slice(...range), origin.slice(...range), at, seen);
+    }
+    if (reHits(/^(?:monorepoRoot|process\.cwd\(\)|import\.meta\.url)$/, expr) || reHits(/^new\s+URL\([\s\S]*import\.meta\.url/, expr)) return "ANCHORED";
+    if (reHits(/^['"]/, expr)) return isAnchoredSignal(expr, origin) ? "ANCHORED" : "CLEAN";
+    const identifier = expr.match(/^([A-Za-z_$][\w$]*)(?:\.([\w$]+))?$/);
+    if (identifier === null) return "UNKNOWN";
+    const name = identifier[1];
+    let scope: Scope | undefined = scopeAt(at);
+    let binding: Binding | undefined;
+    while (scope !== undefined) {
+      binding = bindings.filter((b) => b.name === name && b.scope === scope && b.at < at).sort((a, b) => b.at - a.at)[0];
+      if (binding !== undefined) break;
+      scope = scope.parent;
+    }
+    if (binding === undefined) {
+      if (reHits(/\bimport\b[\s\S]*?\b/, masked) && reHits(new RegExp(`\\bimport\\s+(?:[^;]*?\\b${name}\\b)[^;]*?from`), masked)) return "UNKNOWN";
+      // Arrow parameters, loop bindings and unsupported declarations are bound unknowns.
+      if (reHits(new RegExp(`\\b(?:const|let)\\s+${name}\\b`), masked)) return "UNKNOWN";
+      if (reHits(new RegExp(`(?:\\b(?:for|catch)\\s*\\([^)]*\\b${name}\\b|\\([^)]*\\b${name}\\b[^)]*\\)\\s*(?::[^=]+)?=>)`), masked)) return "UNKNOWN";
+      return "UNBOUND";
+    }
+    if (seen.has(binding)) return "UNKNOWN";
+    const next = new Set([...seen, binding]);
+    if (binding.callers !== undefined) {
+      const results = binding.callers.map((b) => evaluate(b.rhs, b.origin, b.at, next));
+      return results.includes("ANCHORED") ? "ANCHORED" : results.length > 0 && results.every((r) => r === "CLEAN") ? "CLEAN" : "UNKNOWN";
+    }
+    return evaluate(binding.rhs, binding.origin, binding.at, next);
+  };
+  return (expr, origin, at) => evaluate(expr, origin, at, new Set());
+}
+
+/** Lower bound: the evaluator only models exact shapes, so any other target that merely
+ * mentions an anchored token (template, concatenation, conditional, imported root) is
+ * ANCHORED unless the evaluator proved it CLEAN. */
+function anchoredFloor(classification: Classification | "UNBOUND", target: string): Classification | "UNBOUND" {
+  return classification !== "CLEAN" && reHits(ANCHORED_TOKEN, target) ? "ANCHORED" : classification;
+}
+
+/** Write-shaped calls with checkout or unresolved target provenance. */
 export function checkoutWriteHits(source: string): Hit[] {
   const masked = maskLiterals(source);
-  const clean = cleanIdents(masked);
+  const classify = scopedClassifier(source, masked);
   const hits: Hit[] = [];
   for (const m of masked.matchAll(WRITE_CALL)) {
     const receiver = m[1];
@@ -198,19 +330,22 @@ export function checkoutWriteHits(source: string): Hit[] {
     const at = m.index ?? 0;
     const before = masked[at - 1] ?? "";
     // Object-method call (transport.writeFile) or a declaration, not an fs call site.
-    if (receiver === undefined && (/[$\w.]/.test(before) || reHits(/function\s*$/, masked.slice(Math.max(0, at - 9), at)))) continue;
+    if (receiver === undefined && (reHits(/[$\w.]/, before) || reHits(/function\s*$/, masked.slice(Math.max(0, at - 9), at)))) continue;
     const open = at + m[0].length - 1;
     const index = DEST_SECOND.has(bareName) ? 1 : 0;
     const range = extractArgRange(masked, open, index);
     if (range === undefined) continue;
-    const target = masked.slice(range[0], range[1]).trim();
+    const after = masked.slice(extractArgRange(masked, open, 0)?.[1] ?? range[1]);
+    // Object method declarations are not calls (typed or inferred parameters).
+    if (reHits(/^\)\s*(?::[^\n{]+)?\s*\{/, after) || reHits(/\basync\s*$/, masked.slice(Math.max(0, at - 10), at))) continue;
+    const target = masked.slice(range[0], range[1]);
     if (target.length === 0) continue;
     // maskLiterals preserves offsets 1:1, so the same range in the original source is the
     // unmasked text of the target — needed to confirm "./" vs "../" in new URL(...).
     const origin = source.slice(range[0], range[1]);
-    const classification = classifyTarget(target, clean, origin);
-  
-    if (classification === "ANCHORED") hits.push({ call: bareName + (m[3] ?? ""), target, classification });
+    const classification = classify(target, origin, at);
+    const floored = anchoredFloor(classification, target);
+    if (floored !== "CLEAN") hits.push({ call: bareName + (m[3] ?? ""), target: origin.trim(), classification: floored === "UNBOUND" ? "UNKNOWN" : floored, approximation: floored === "UNKNOWN" });
   }
   return hits;
 }

@@ -12,7 +12,8 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 const found = await discoverChecks();
 const exclusive = found.filter((entry) => entry.exclusive).map((entry) => entry.label);
 
-check("the dist rebuild runs alone", exclusive.includes("foundation/packaging/build-output.check.ts"), true);
+check("a check that drops a scratch deployment into apps/ runs alone", exclusive.includes("golden/golden.check.ts"), true);
+check("the package build check runs pooled: it builds into a temp dir, not the checkout's dist/", exclusive.includes("foundation/packaging/build-output.check.ts"), false);
 check("an ordinary check stays in the parallel pool", exclusive.includes("foundation/core/env.check.ts"), false);
 
 const { pooled, alone } = splitExclusive(found);

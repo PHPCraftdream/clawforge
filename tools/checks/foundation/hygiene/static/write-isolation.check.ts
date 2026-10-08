@@ -9,7 +9,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { analyze, type Hit } from "./write-isolation-rules.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
@@ -134,9 +134,44 @@ const SELF_CASES: SelfCase[] = [
     name: "file-local new URL(./, import.meta.url) fixture write",
     source: `await writeFile(new URL("./fixtures/f.txt", import.meta.url), "x");`,
     createApp: false,
-    writes: [],
+    writes: ["writeFile[ANCHORED]"],
   },
 ];
+
+for (const [name, source, expected] of [
+  ["reviewer B resolve alias", `const p=resolve(monorepoRoot,'.claude'); writeFile(resolve(p,'file'), 'x');`, "ANCHORED"],
+  ["direct alias", `const p=monorepoRoot; writeFile(p,'x');`, "ANCHORED"],
+  ["let assignment", `let p; p=join(monorepoRoot,'.claude'); writeFile(p,'x');`, "ANCHORED"],
+  ["destructuring", `const {root:p}={root:monorepoRoot}; writeFile(p,'x');`, "ANCHORED"],
+  ["array destructuring anchored", `const [p]=[monorepoRoot]; writeFile(p,'x');`, "ANCHORED"],
+  ["array destructuring clean", `const [p]=[tmpdir()]; writeFile(p,'x');`, "CLEAN"],
+  ["unknown direct", `writeFile(missing,'x');`, "UNKNOWN"],
+  ["anchored helper caller", `function put(root) { writeFile(resolve(root,'f'),'x'); } put(monorepoRoot);`, "ANCHORED"],
+  ["clean helper caller", `function put(root) { writeFile(resolve(root,'f'),'x'); } put(tmpdir());`, "CLEAN"],
+  ["root not leaf", `const p=tmpdir(); writeFile(join(p,monorepoRoot),'x');`, "CLEAN"],
+  ["destructuring distinct properties", `const {safe:p}={safe:tmpdir(),bad:monorepoRoot}; writeFile(p,'x');`, "CLEAN"],
+  ["unknown", `writeFile(resolve(missing,'file'),'x');`, "UNKNOWN"],
+  ["unknown helper", `function helper(root) { writeFile(root,'x'); }`, "UNKNOWN"],
+  ["clean alias", `const p=tmpdir(); writeFile(resolve(p,'file'),'x');`, "CLEAN"],
+  ["clean let", `let p=tmpdir(); p=join(p,'fixture'); writeFile(p,'x');`, "CLEAN"],
+  ["clean destructuring", `const {root:p}=await isolatedAppsRoot('p'); writeFile(p,'x');`, "CLEAN"],
+  ["scope shadow", `const p=tmpdir(); { const p=monorepoRoot; writeFile(p,'x'); }`, "ANCHORED"],
+  ["scope sibling", `{ const p=tmpdir(); } { writeFile(p,'x'); }`, "UNKNOWN"],
+  ["copy destination clean", `copyFile(monorepoRoot,join(tmpdir(),'file'));`, "CLEAN"],
+  ["copy destination anchored", `copyFile(tmpdir(),join(monorepoRoot,'file'));`, "ANCHORED"],
+  ["floor: template literal", "writeFile(`${monorepoRoot}/x`,'x');", "ANCHORED"],
+  ["floor: concatenation", `writeFile(monorepoRoot + '/x','x');`, "ANCHORED"],
+  ["floor: conditional", `writeFile(cond ? monorepoRoot : t,'x');`, "ANCHORED"],
+  ["floor: imported checksRoot", `import { checksRoot } from '../run.ts'; writeFile(resolve(checksRoot,'x'),'x');`, "ANCHORED"],
+  ["floor: imported repoRoot", `import { repoRoot } from './root.ts'; writeFile(join(repoRoot,'x'),'x');`, "ANCHORED"],
+] as const) {
+  check(`write-isolation literal: ${name}`, analyze(source).writes.map((hit) => hit.classification), expected === "CLEAN" ? [] : [expected]);
+}
+
+check("unbound direct and base are enforced, not approximated",
+  analyze(`writeFile(missing,'x'); writeFile(resolve(missing,'f'),'x');`).writes.map((h) => h.approximation), [false, false]);
+check("bound helper unknown is disclosed, not CLEAN",
+  analyze(`function put(root) { writeFile(root,'x'); }`).writes.map((h) => h.approximation), [true]);
 
 for (const selfCase of SELF_CASES) {
   const result = analyze(selfCase.source);
@@ -181,13 +216,20 @@ for (const file of files) {
   if (result.createAppWithoutIsolation) createAppOffenders.push(rel);
 }
 
-const unexpectedWrites = writeHits.filter((entry) => !ALLOW.includes(entry.file));
+// Bound but unresolved helper/return provenance is disclosed, never labeled CLEAN.
+const approximations = writeHits.filter((entry) => entry.hit.approximation);
+const unexpectedWrites = writeHits.filter((entry) => !entry.hit.approximation && !ALLOW.includes(entry.file));
 
 check(
-  "write-isolation: no checkout-anchored write in tools/checks",
-  unexpectedWrites.map((entry) => `${entry.file} [${entry.hit.call} ${entry.hit.target}]`),
+  "write-isolation: no checkout-anchored or unresolved write in tools/checks",
+  unexpectedWrites.map((entry) => `${entry.file} [${entry.hit.classification} ${entry.hit.call} ${entry.hit.target}]`),
   [],
 );
+// Shrink-only ratchet: the unresolved count may not exceed the recorded total, and a decrease
+// must be recorded (equality) so a stale ceiling cannot hide later growth.
+const recorded = JSON.parse(await readFile(resolve(repoRoot, "tools", "checks", "architecture", "baseline.json"), "utf8")) as { writeTargetsUnresolved: { readonly total: number } };
+checkTrue("write-isolation: unresolved write targets only shrink (writeTargetsUnresolved in baseline.json)", approximations.length <= recorded.writeTargetsUnresolved.total);
+checkTrue("write-isolation: unresolved write targets match the recorded total (lower writeTargetsUnresolved in baseline.json when it shrinks)", approximations.length === recorded.writeTargetsUnresolved.total);
 check(
   "write-isolation: no createApp outside an isolated apps sandbox",
   createAppOffenders.filter((file) => !ALLOW.includes(file)),
@@ -195,6 +237,6 @@ check(
 );
 
 console.log(
-  `write-isolation: ${scanned} files scanned (${files.length} found, 1 guard self-check excluded), ${writeHits.length} anchored writes, ${createAppOffenders.length} unisolated createApp, ${ALLOW.length} allow entries (must stay 0)`,
+  `write-isolation: ${scanned} files scanned (${files.length} found, 1 guard self-check excluded), ${unexpectedWrites.filter((e) => e.hit.classification === "ANCHORED").length} confirmed anchored writes, ${unexpectedWrites.filter((e) => e.hit.classification === "UNKNOWN").length} unbound targets, ${approximations.length} unknown approximations (recorded ${recorded.writeTargetsUnresolved.total}), ${createAppOffenders.length} unisolated createApp, ${ALLOW.length} allow entries (must stay 0)`,
 );
 finish("write-isolation");

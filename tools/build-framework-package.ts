@@ -6,12 +6,15 @@
 // .ts sources), so installed-as-dependency needs one. Node strips types for the JS build;
 // tsgo emits the declaration graph; both use published .js import paths.
 //
-// Output goes to tools/framework/dist/ — git-ignored, regenerated on demand, never hand-edited.
+// Output goes to tools/framework/dist/ by default — git-ignored, regenerated on demand, never
+// hand-edited. `build(outDir)` takes another root (the build-output check builds into an OS
+// temp dir so running a check never writes into the checkout); executing this file directly
+// (`npm run build`, the package's prepack) builds into the default.
 
 import { readdir, readFile, writeFile, mkdir, rm, copyFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve, dirname, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripTypeScriptTypes } from "node:module";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
@@ -55,13 +58,13 @@ function rewriteSpecifiers(code: string, fileDir: string, sourceRoot = framework
 }
 
 /** Rewrites generated declaration imports to published JavaScript paths. */
-function rewriteDeclarationSpecifiers(code: string, fileDir: string): string {
-  return rewriteSpecifiers(code, fileDir, distDir);
+function rewriteDeclarationSpecifiers(code: string, fileDir: string, outDir: string): string {
+  return rewriteSpecifiers(code, fileDir, outDir);
 }
 
 /** Runs the repository's existing tsgo to emit the declaration graph. */
-function emitDeclarations(): void {
-  const result = spawnSync(process.execPath, [tsgo, "--project", declarationConfig], {
+function emitDeclarations(outDir: string): void {
+  const result = spawnSync(process.execPath, [tsgo, "--project", declarationConfig, "--outDir", outDir], {
     cwd: resolve(frameworkDir, "../.."),
     encoding: "utf8",
   });
@@ -77,11 +80,11 @@ function emitDeclarations(): void {
 }
 
 /** Applies publication path rewrites to every emitted declaration. */
-async function rewriteDeclarations(): Promise<void> {
-  const files = await collectFiles(distDir, ".d.ts");
+async function rewriteDeclarations(outDir: string): Promise<void> {
+  const files = await collectFiles(outDir, ".d.ts");
   for (const file of files) {
     const source = await readFile(file, "utf8");
-    await writeFile(file, rewriteDeclarationSpecifiers(source, dirname(file)), "utf8");
+    await writeFile(file, rewriteDeclarationSpecifiers(source, dirname(file), outDir), "utf8");
   }
 }
 
@@ -100,12 +103,14 @@ async function collectFiles(dir: string, suffix: string): Promise<string[]> {
   return files;
 }
 
-async function build(): Promise<void> {
-  await rm(distDir, { recursive: true, force: true });
-  await mkdir(distDir, { recursive: true });
+/** Builds the package into `outDir` (default tools/framework/dist/), replacing whatever is there. */
+export async function build(outDir: string = distDir): Promise<void> {
+  outDir = resolve(outDir);
+  await rm(outDir, { recursive: true, force: true });
+  await mkdir(outDir, { recursive: true });
 
-  emitDeclarations();
-  await rewriteDeclarations();
+  emitDeclarations(outDir);
+  await rewriteDeclarations(outDir);
 
   const files = await collectTsFiles(frameworkDir);
   for (const file of files) {
@@ -113,7 +118,7 @@ async function build(): Promise<void> {
     const stripped = stripTypeScriptTypes(source, { mode: "strip" });
     const rewritten = rewriteSpecifiers(stripped, dirname(file));
     const rel = relative(frameworkDir, file).replace(/\.ts$/, ".js");
-    const outFile = resolve(distDir, rel);
+    const outFile = resolve(outDir, rel);
     await mkdir(dirname(outFile), { recursive: true });
 
     // The shebang travels unchanged (bin.ts's own comment says why): this compiled bin.js
@@ -122,10 +127,13 @@ async function build(): Promise<void> {
     await writeFile(outFile, rewritten, "utf8");
   }
 
-  await copyFile(resolve(frameworkDir, "docker-compose.yml"), resolve(distDir, "docker-compose.yml"));
-  await copyFile(resolve(frameworkDir, ".env.example"), resolve(distDir, ".env.example"));
+  await copyFile(resolve(frameworkDir, "docker-compose.yml"), resolve(outDir, "docker-compose.yml"));
+  await copyFile(resolve(frameworkDir, ".env.example"), resolve(outDir, ".env.example"));
 
-  process.stderr.write(`built ${files.length} file(s) into ${distDir}\n`);
+  process.stderr.write(`built ${files.length} file(s) into ${outDir}\n`);
 }
 
-await build();
+// Only when executed directly (`npm run build`, prepack) — importing this module builds nothing.
+if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? "")).href) {
+  await build();
+}

@@ -8,11 +8,12 @@
 
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { diffSnapshots, snapshotCheckout, type AppsEntry, type CheckoutSnapshot } from "../run.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { runProcess } from "../spawn.ts";
 import { parseCaseSkips } from "./gate.ts";
 
 // --- parseCaseSkips: the same shape the runner already prints for skipped files ---------------
@@ -123,103 +124,107 @@ check(
   [],
 );
 
-// --- snapshotCheckout on a real temp dir: a write inside an existing app must be caught ---------
+// --- All filesystem witnesses live in one throwaway git repository, never the checkout. -------
 
-{
-  const root = await mkdtemp(join(tmpdir(), "clawforge-runguard-"));
-  try {
-    const apps = join(root, "apps");
-    await mkdir(join(apps, "existing"), { recursive: true });
-    await writeFile(join(apps, "existing", "data.env"), "alpha\n");
-    const before = await snapshotCheckout(apps);
-    await writeFile(join(apps, "existing", "data.env"), "beta\n");
-    const after = await snapshotCheckout(apps);
-    check("a clean temp apps/ snapshot diffs to nothing", diffSnapshots(before, before), []);
-    const kind = (entry: AppsEntry | undefined): string => (entry === undefined ? "?" : `${entry.size}B ${entry.hash?.slice(0, 8)}`);
-    const was = before.apps.find((entry) => entry.path === "existing/data.env");
-    const now = after.apps.find((entry) => entry.path === "existing/data.env");
-    check(
-      "a rewrite inside apps/existing is named by the recursive walk",
-      diffSnapshots(before, after),
-      [`apps/ changed: existing/data.env (${kind(was)} → ${kind(now)})`],
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-}
+const root = await mkdtemp(join(tmpdir(), "clawforge-runguard-"));
+try {
+  const git = await runProcess("git", ["init", "-q"], { cwd: root, timeoutMs: 30_000 });
+  if (git.code !== 0) throw new Error("throwaway git init failed: " + git.output);
+  await writeFile(join(root, ".gitignore"), ".claude/\n*.token\nnode_modules/\ntools/framework/dist/\n");
+  const apps = join(root, "apps");
+  await mkdir(join(apps, "existing"), { recursive: true });
+  await writeFile(join(apps, "existing", "data.env"), "alpha\n");
+  const before = await snapshotCheckout(root);
+  await writeFile(join(apps, "existing", "data.env"), "beta\n");
+  const after = await snapshotCheckout(root);
+  check("a clean temp snapshot diffs to nothing", diffSnapshots(before, before), []);
+  check("a rewrite inside apps/existing is named by the recursive walk", diffSnapshots(before, after),
+    ["apps/ changed: existing/data.env (6B b6a98d9c → 5B f2c82dec)"]);
 
-{
-  // A leftover INSIDE an existing ignored directory: git collapses a wholly-ignored
-  // directory to one `!! dir/` line in both passes, so only a walk of the directory's
-  // files catches the new file (rf6-fix33). Real root — the ignored pass runs against
-  // this checkout's git. The fixture cleans up after itself and says so: the guard now
-  // sees inside .claude/, so a leftover here would fail the next run's diff.
-  const claudeDir = resolve(monorepoRoot, ".claude");
-  const existing = resolve(claudeDir, "settings.local.json");
+  const large = join(apps, "existing", "large.bin");
+  await writeFile(large, Buffer.alloc(65537, 65));
+  const beforeLarge = await snapshotCheckout(root);
+  await writeFile(large, Buffer.alloc(65537, 66));
+  const afterLarge = await snapshotCheckout(root);
+  check("65537 A to B bytes change despite identical size", { entries: afterLarge.apps.filter((entry) => entry.path === "existing/large.bin"), changes: diffSnapshots(beforeLarge, afterLarge).length },
+    { entries: [file("existing/large.bin", 65537, "29683b6ad0ba6b29316e012afeb0c176df5ec24773beb5193f7a60f7c855b0a1")], changes: 1 });
+  check("65537 A bytes have an independent full SHA256", beforeLarge.apps.find((entry) => entry.path === "existing/large.bin")?.hash,
+    "ac72112c832fa4683b15ebff51a8f5f2ca08226c0d59bdb9ac739c2cdc28a05c");
+  check("65537 B bytes have an independent full SHA256", afterLarge.apps.find((entry) => entry.path === "existing/large.bin")?.hash,
+    "29683b6ad0ba6b29316e012afeb0c176df5ec24773beb5193f7a60f7c855b0a1");
+
+  // Keep this binding explicit: a temp-copy mutation restoring monorepoRoot must fail
+  // the does-not-touch-checkout assertion BEFORE any write or cleanup can reach it.
+  const claudeDir = resolve(root, ".claude");
   const scratch = resolve(claudeDir, "clawforge-deploy-policy-scratch");
-  const hadExisting = existsSync(existing);
-  try {
-    if (!hadExisting) {
-      await mkdir(claudeDir, { recursive: true });
-      await writeFile(existing, "{}\n");
-    }
-    const before = await snapshotCheckout();
-    await mkdir(scratch, { recursive: true });
-    await writeFile(resolve(scratch, "unrelated.secrets.env"), "SECRET\n");
-    const after = await snapshotCheckout();
-    const changed = diffSnapshots(before, after)
-      .filter((line) => { const tokens = line.split(" "); return tokens[0] === "git" && tokens[1] === "ignored"; })
-      .flatMap((line) => {
-        const payload = line.split(": ").slice(1).join(": ");
-        return payload.split(" ")[0] === "!!" ? [payload.slice(3)] : [];
-      });
-    check("a leftover inside an existing ignored directory is named", changed, [".claude/clawforge-deploy-policy-scratch/unrelated.secrets.env"]);
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-    if (!hadExisting) await rm(existing, { force: true });
-    checkTrue("the .claude fixture cleaned up after itself", !existsSync(scratch) && (hadExisting || !existsSync(existing)));
+  const isolated = scratch.startsWith(root + sep) && !scratch.startsWith(monorepoRoot + sep);
+  checkTrue("does not touch checkout: ignored scratch is inside the throwaway repo", isolated);
+  if (isolated) {
+    await mkdir(claudeDir, { recursive: true });
+    await writeFile(join(claudeDir, "settings.local.json"), "{}\n");
+    const beforeScratch = await snapshotCheckout(root);
+    await mkdir(scratch);
+    await writeFile(join(scratch, "unrelated.secrets.env"), "SECRET\n");
+    const afterScratch = await snapshotCheckout(root);
+    check("a leftover inside an existing ignored directory is named",
+      afterScratch.ignoredStatus?.split("\n").filter((line) => !beforeScratch.ignoredStatus?.split("\n").includes(line)),
+      ["!! .claude/clawforge-deploy-policy-scratch/unrelated.secrets.env"]);
+
+    const token = join(claudeDir, "preexisting.token");
+    await writeFile(token, "AAAA");
+    const beforeToken = await snapshotCheckout(root);
+    await writeFile(token, "BBBB");
+    const afterToken = await snapshotCheckout(root);
+    check("existing ignored AAAA to BBBB changes despite identical name and size", { entries: afterToken.ignored?.filter((entry) => entry.path === ".claude/preexisting.token"), changes: diffSnapshots(beforeToken, afterToken).length },
+      { entries: [file(".claude/preexisting.token", 4, "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd")], changes: 1 });
+    check("ignored AAAA has an independent full SHA256", beforeToken.ignored?.find((entry) => entry.path === ".claude/preexisting.token")?.hash,
+      "63c1dd951ffedf6f7fd968ad4efa39b8ed584f162f46e715114ee184f8de9201");
+    check("ignored BBBB has an independent full SHA256", afterToken.ignored?.find((entry) => entry.path === ".claude/preexisting.token")?.hash,
+      "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd");
+
+    // A directly ignored filename forces the NUL porcelain path parser, not just recursion.
+    const spaced = join(root, "space quoted ü.token");
+    await writeFile(spaced, "AAAA");
+    const beforeSpace = await snapshotCheckout(root);
+    await writeFile(spaced, "BBBB");
+    const afterSpace = await snapshotCheckout(root);
+    check("ignored paths with spaces and Unicode retain their content witness", { entries: afterSpace.ignored?.filter((entry) => entry.path === spaced.slice(root.length + 1)), changes: diffSnapshots(beforeSpace, afterSpace).length },
+      { entries: [file("space quoted ü.token", 4, "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd")], changes: 1 });
+    checkTrue("the temp snapshot records ignored space", afterSpace.ignoredStatus !== undefined);
+    checkTrue("every ignored status line is an ignored entry", (afterSpace.ignoredStatus ?? "").split("\n").every((line) => line.slice(0, 3).trimEnd() === "!!"));
+    check("pruned generated roots stay absent", afterSpace.ignored?.some((entry) => entry.path.startsWith("node_modules/") || entry.path.startsWith("tools/framework/dist/")), false);
   }
-}
 
-{
-  // The real guard pass: the ignored status is recorded for THIS checkout, every line is an
-  // ignored entry, and the pruned generated roots never appear in it.
-  const live = await snapshotCheckout();
-  checkTrue("the live snapshot records the checkout's ignored space", live.ignoredStatus !== undefined);
-  check(
-    "every ignored line is an ignored entry",
-    (live.ignoredStatus ?? "").split("\n").every((line) => line === "" || line.startsWith("!!")),
-    true,
-  );
-  check(
-    "and the pruned roots are absent from it",
-    ["node_modules/", "apps/", "tools/framework/dist/"].some((root) => (live.ignoredStatus ?? "").includes(root)),
-    false,
-  );
-}
-
-await requires("symlink", "the walk records a symlink under apps/ without following it", async () => {
-  const linkRoot = await mkdtemp(join(tmpdir(), "clawforge-runguard-link-"));
-  try {
-    const apps = join(linkRoot, "apps");
-    await mkdir(join(apps, "real"), { recursive: true });
-    await writeFile(join(apps, "real", "data.env"), "alpha\n");
-    await writeFile(join(apps, "outside.env"), "beta\n");
-    const before = await snapshotCheckout(apps);
-    await symlink(join(apps, "outside.env"), join(apps, "linked"), "file");
-    const after = await snapshotCheckout(apps);
-    const alias = after.apps.find((entry) => entry.path === "linked");
-    checkTrue("a symlink under apps/ is recorded with its target string", alias !== undefined && alias.link !== undefined && alias.link.endsWith("outside.env"));
-    check("a symlink created between snapshots is named by the diff", diffSnapshots(before, after), ["apps/ gained: linked"]);
+  await requires("symlink", "the walk records symlinks without following them", async () => {
+    const outside = join(root, "outside.env");
+    await writeFile(outside, "alpha\n");
+    const beforeLink = await snapshotCheckout(root);
+    await symlink(outside, join(apps, "linked"), "file");
+    const afterLink = await snapshotCheckout(root);
+    check("an app symlink stores its exact target", afterLink.apps.find((entry) => entry.path === "linked"), { path: "linked", link: outside });
+    check("a symlink created between snapshots is named", { entries: afterLink.apps.filter((entry) => entry.path === "linked"), changes: diffSnapshots(beforeLink, afterLink).length }, { entries: [{ path: "linked", link: outside }], changes: 1 });
     const dirLink = join(apps, "linked-dir");
-    await symlink(join(apps, "real"), dirLink, "dir");
-    const withDirLink = await snapshotCheckout(apps);
-    check("a directory symlink is recorded as one entry, not walked through", withDirLink.apps.some((entry) => entry.path === "linked-dir" && entry.link !== undefined) && !withDirLink.apps.some((entry) => entry.path === "linked-dir/data.env"), true);
-    await rm(dirLink, { force: true });
-    check("a symlink removed between snapshots is named by the diff", diffSnapshots(withDirLink, await snapshotCheckout(apps)), ["apps/ lost: linked-dir"]);
-  } finally {
-    await rm(linkRoot, { recursive: true, force: true });
-  }
-});
+    await symlink(join(apps, "existing"), dirLink, "dir");
+    const withDirLink = await snapshotCheckout(root);
+    checkTrue("a directory symlink is never walked", withDirLink.apps.some((entry) => entry.path === "linked-dir" && entry.link !== undefined) && !withDirLink.apps.some((entry) => entry.path.startsWith("linked-dir/")));
+    await rm(dirLink);
+    check("a removed directory symlink is named", diffSnapshots(withDirLink, await snapshotCheckout(root)), ["apps/ lost: linked-dir"]);
+    const ignoredLink = join(root, "linked.token");
+    await symlink(outside, ignoredLink, "file");
+    const beforeTarget = await snapshotCheckout(root);
+    await writeFile(outside, "beta\n");
+    const afterTarget = await snapshotCheckout(root);
+    check("an ignored symlink stores its target, not its content", afterTarget.ignored?.find((entry) => entry.path === "linked.token"), { path: "linked.token", link: outside });
+    check("neither apps nor ignored symlinks follow target rewrites", diffSnapshots(beforeTarget, afterTarget), []);
+  });
+} finally {
+  await rm(root, { recursive: true, force: true });
+}
+checkTrue("the created throwaway repository was removed", !existsSync(root));
+
+// Comparing hashes must not use the abbreviated display hash as equality.
+check("full hash differences sharing an eight-character prefix are detected",
+  diffSnapshots(snapshot({ apps: [file("x", 4, "12345678aaaa")] }), snapshot({ apps: [file("x", 4, "12345678bbbb")] })).length,
+  1);
 
 finish("run guard");

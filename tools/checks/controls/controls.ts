@@ -5,6 +5,7 @@
 // a skip. Invariant I11: an evidence-bearing check ships with a control.
 
 import { STAGE7_CONTROLS } from "./stage7.ts";
+import { STAGE7_ACCEPT_CONTROLS } from "./stage7-accept.ts";
 
 export interface ControlDecl {
   readonly id: string;
@@ -306,4 +307,5 @@ export const CONTROLS: readonly ControlDecl[] = [
     fragment: "law: quoting round-trip",
   },
   ...STAGE7_CONTROLS,
+  ...STAGE7_ACCEPT_CONTROLS,
 ];

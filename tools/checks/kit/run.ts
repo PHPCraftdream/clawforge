@@ -6,7 +6,7 @@
 
 import { availableParallelism } from "node:os";
 import { createHash } from "node:crypto";
-import { open, readdir, readlink, readFile, stat } from "node:fs/promises";
+import { open, readdir, readlink, lstat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -119,21 +119,17 @@ export function selectChecks(labels: readonly string[], filters: readonly string
 
 // --- the checkout is left as the run found it (R33-02) ----------------------------------------
 
-/** One path below apps/: a file with its size and (when small enough) content hash, or a
- *  directory marker — a deleted directory would otherwise be invisible to the walk. */
+/** One path below apps/: a fully hashed file, link target, or directory marker. */
 export interface AppsEntry {
   /** Path relative to apps/, forward slashes, "" for the root itself (never recorded). */
   readonly path: string;
   readonly directory?: true;
   readonly size?: number;
-  /** sha256 of the content, only for files up to the {@link hashCapBytes} cap. */
+  /** SHA256 of the entire file, streamed with bounded memory. */
   readonly hash?: string;
   /** Target string of a symlink or Windows junction entry, read without following the link. */
   readonly link?: string;
 }
-
-/** Files larger than this are sized but not hashed — snapshots stay cheap on big outputs. */
-const hashCapBytes = 64 * 1024;
 
 function kindOf(entry: AppsEntry): string {
   if (entry.link !== undefined) return `link ${entry.link}`;
@@ -149,6 +145,8 @@ export interface CheckoutSnapshot {
    *  cannot see ignored space — .claude/, secrets/, data/, *.token — exactly where a check
    *  that dies mid-write would leave its fixture behind, unnoticed. */
   readonly ignoredStatus: string | undefined;
+  /** Content and link targets in existing ignored space; same exclusions as ignoredStatus. */
+  readonly ignored?: readonly AppsEntry[];
 }
 
 // Ignored space the guard does not chase: node_modules and tools/framework/dist are build
@@ -166,7 +164,7 @@ function diffStatusLines(before: string, after: string, prefix: string): readonl
   return [...gained.map((line) => `${prefix}gained: ${line}`), ...lost.map((line) => `${prefix}lost: ${line}`)];
 }
 
-function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[]): readonly string[] {
+function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[], prefix = "apps/"): readonly string[] {
   const beforeByPath = new Map(before.map((entry) => [entry.path, entry]));
   const afterByPath = new Map(after.map((entry) => [entry.path, entry]));
   const gained: string[] = [];
@@ -180,18 +178,23 @@ function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[]):
     }
     const beforeKind = kindOf(was);
     const afterKind = kindOf(entry);
-    if (beforeKind !== afterKind) changed.push(`${path} (${beforeKind} → ${afterKind})`);
+    if (was.directory !== entry.directory || was.size !== entry.size || was.hash !== entry.hash || was.link !== entry.link) {
+      changed.push(`${path} (${beforeKind} → ${afterKind})`);
+    }
   }
   for (const path of beforeByPath.keys()) if (!afterByPath.has(path)) lost.push(path);
   const changes: string[] = [];
-  if (gained.length > 0) changes.push(`apps/ gained: ${gained.sort().join(", ")}`);
-  if (lost.length > 0) changes.push(`apps/ lost: ${lost.sort().join(", ")}`);
-  if (changed.length > 0) changes.push(`apps/ changed: ${changed.sort().join(", ")}`);
+  if (gained.length > 0) changes.push(`${prefix} gained: ${gained.sort().join(", ")}`);
+  if (lost.length > 0) changes.push(`${prefix} lost: ${lost.sort().join(", ")}`);
+  if (changed.length > 0) changes.push(`${prefix} changed: ${changed.sort().join(", ")}`);
   return changes;
 }
 
 export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot): readonly string[] {
   const changes = [...diffEntries(before.apps, after.apps)];
+  if (before.ignored !== undefined && after.ignored !== undefined) {
+    changes.push(...diffEntries(before.ignored, after.ignored, "git ignored content"));
+  }
   if (before.gitStatus !== undefined && after.gitStatus !== undefined && before.gitStatus !== after.gitStatus) {
     changes.push(...diffStatusLines(before.gitStatus, after.gitStatus, "git status "));
   }
@@ -201,80 +204,66 @@ export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot)
   return changes;
 }
 
-/** Enumerates the files under one collapsed "!! dir/" line (rf6-fix33): git collapses a wholly
- *  ignored directory to a single line in both passes — --ignored=matching with -uall
- *  included — so a leftover INSIDE an existing .claude/ or secrets/ never reached the diff.
- *  Directories themselves are not listed; their files are. A symlink is recorded by target,
- *  never followed, the same rule the apps/ walk above applies.
- */
-async function listIgnoredFiles(absolute: string, display: string): Promise<readonly string[]> {
-  let entries;
+/** Hash every byte using a fixed-size buffer, independent of file size. */
+async function hashFile(path: string): Promise<string> {
+  const handle = await open(path, "r");
   try {
-    entries = await readdir(absolute, { withFileTypes: true });
-  } catch {
-    return []; // vanished between git and the walk: the next pass's diff tells that story
+    const hash = createHash("sha256");
+    const buffer = Buffer.alloc(64 * 1024);
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) return hash.digest("hex");
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+  } finally {
+    await handle.close();
   }
-  const lines: string[] = [];
-  for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-    if (entry.isSymbolicLink() || entry.isFile()) lines.push(`!! ${display}${entry.name}`);
-    else if (entry.isDirectory()) lines.push(...(await listIgnoredFiles(join(absolute, entry.name), `${display}${entry.name}/`)));
-  }
-  return lines;
 }
 
-// Recursively lists everything below `root` (default: the real checkout's apps/), so a write
-// INSIDE an existing app — invisible to top-level names and to --porcelain — is still caught.
-export async function snapshotCheckout(root: string = resolve(monorepoRoot, "apps")): Promise<CheckoutSnapshot> {
+/** lstat before recursion: symlinks (including directory links) record targets only. */
+async function snapshotPath(absolute: string, display: string, entries: AppsEntry[]): Promise<void> {
+  const info = await lstat(absolute).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (info === undefined) return;
+  if (info.isSymbolicLink()) entries.push({ path: display, link: await readlink(absolute) });
+  else if (info.isDirectory()) {
+    entries.push({ path: display, directory: true });
+    for (const name of (await readdir(absolute)).sort()) {
+      await snapshotPath(join(absolute, name), display === "" ? name : display + "/" + name, entries);
+    }
+  } else if (info.isFile()) entries.push({ path: display, size: info.size, hash: await hashFile(absolute) });
+}
+
+/** Injectable checkout root governs both apps/ and git/ignored observations. */
+export async function snapshotCheckout(checkoutRoot: string = monorepoRoot): Promise<CheckoutSnapshot> {
   const apps: AppsEntry[] = [];
-  const walk = async (dir: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return; // absent root or unreadable subdir records nothing
-    }
-    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      const rel = relative(root, join(dir, entry.name)).split("\\").join("/");
-      if (entry.isSymbolicLink()) {
-        apps.push({ path: rel, link: await readlink(join(dir, entry.name)) }); // recorded by target, never followed: no recursion, no cycles
-      } else if (entry.isDirectory()) {
-        apps.push({ path: rel, directory: true });
-        await walk(join(dir, entry.name));
-      } else if (entry.isFile()) {
-        const size = (await stat(join(dir, entry.name))).size;
-        const file: AppsEntry = { path: rel, size, ...(size <= hashCapBytes ? { hash: createHash("sha256").update(await readFile(join(dir, entry.name))).digest("hex") } : {}) };
-        apps.push(file);
-      }
-    }
-  };
-  await walk(root);
-  // Ignored output (dist/ rebuilds, scratch prefixes) never shows in --porcelain; an absent
-  // git only means the comparison is skipped, with a visible note below.
-  const git = await runProcess("git", ["status", "--porcelain"], { cwd: monorepoRoot, timeoutMs: 30_000 });
+  await snapshotPath(resolve(checkoutRoot, "apps"), "", apps);
+  const git = await runProcess("git", ["status", "--porcelain"], { cwd: checkoutRoot, timeoutMs: 30_000 });
+  // NUL-delimited porcelain disables Git quoting, preserving spaces, Unicode and newlines.
   const ignored = await runProcess(
     "git",
-    ["status", "--porcelain", "--ignored=matching", "--", ...IGNORED_STATUS_EXCLUDES.map((entry) => `:(exclude)${entry}`)],
-    { cwd: monorepoRoot, timeoutMs: 30_000 },
+    ["status", "--porcelain", "-z", "--ignored=matching", "--", ...IGNORED_STATUS_EXCLUDES.map((entry) => ":(exclude)" + entry)],
+    { cwd: checkoutRoot, timeoutMs: 30_000 },
   );
-  // Only the ignored entries: the tracked and untracked halves are gitStatus's story, and
-  // a file changing mid-run must not be reported twice by one guard. The pathspec excludes
-  // prune the walk; git's own collapsed line for a wholly-ignored directory is walked to
-  // its files, so the guard is file-granular inside .claude/ and friends (rf6-fix33) — and
-  // a pruned root still can never read as a new leftover.
-  const ignoredEntries = ignored.error === undefined
-    ? [
-      ...(await (async (): Promise<readonly string[]> => {
-        const expanded: string[] = [];
-        for (const line of ignored.stdout.split("\n").filter((entry) => entry.startsWith("!!"))) {
-          const path = line.slice("!! ".length);
-          if (IGNORED_STATUS_EXCLUDES.some((root) => path === `${root}/` || path.startsWith(`${root}/`))) continue;
-          expanded.push(...(path.endsWith("/") ? await listIgnoredFiles(resolve(monorepoRoot, path), path) : [line]));
-        }
-        return expanded;
-      })()),
-    ].join("\n")
-    : undefined;
-  return { apps, gitStatus: git.error === undefined ? git.stdout : undefined, ignoredStatus: ignoredEntries };
+  const ignoredEntries: AppsEntry[] = [];
+  const ignoredAvailable = ignored.error === undefined && ignored.code === 0 && !ignored.timedOut;
+  if (ignoredAvailable) {
+    for (const record of ignored.stdout.split("\0")) {
+      if (record.charCodeAt(0) !== 33 || record.charCodeAt(1) !== 33 || record.charCodeAt(2) !== 32) continue;
+      const path = record.slice(3).replace(/\/$/, "");
+      if (IGNORED_STATUS_EXCLUDES.some((root) => path === root || path.startsWith(root + "/"))) continue;
+      await snapshotPath(resolve(checkoutRoot, path), path, ignoredEntries);
+    }
+  }
+  const ignoredFiles = ignoredEntries.filter((entry) => entry.directory !== true);
+  return {
+    apps: apps.filter((entry) => entry.path !== ""),
+    gitStatus: git.error === undefined && git.code === 0 && !git.timedOut ? git.stdout : undefined,
+    ignoredStatus: ignoredAvailable ? ignoredFiles.map((entry) => "!! " + entry.path).sort().join("\n") : undefined,
+    ignored: ignoredAvailable ? ignoredEntries : undefined,
+  };
 }
 
 /** The outcome of deciding + (maybe) running one entry: `skipped` names why when the file was

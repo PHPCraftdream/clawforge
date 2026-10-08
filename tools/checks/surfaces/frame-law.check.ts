@@ -14,7 +14,13 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { runFrameLaw } from "./frame-law-counter.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const { violations, reached, attempted, setupFailures, stageCounts, finalRuns } = runFrameLaw();
+const { violations, reached, attempted, setupFailures, stageCounts, finalRuns, quotingWitnesses } = runFrameLaw();
+
+for (const witness of quotingWitnesses) {
+  checkTrue(`frame law: ${witness.key} reaches resolver`, witness.reached);
+  checkTrue(`frame law: ${witness.key} resolves the exact program, argv and app`, witness.matched);
+}
+check("frame law: new quoting resolver witnesses", quotingWitnesses.length, 7);
 
 // Every violation prints with a stable format — the negative controls read these lines.
 for (const [key, reason] of violations) {

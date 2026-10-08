@@ -162,6 +162,96 @@ function tokenizeCmd(line: string): string[] {
   return words;
 }
 
+/** cmd's own split of a line with the RAW text kept: the same rule as tokenizeCmd (a `"`
+ *  always toggles, `^` escapes the next char, & | < > end a word outside quotes), but the
+ *  quote characters stay in the word — cmd hands the program its command line verbatim,
+ *  so `"a""&calc"` is one raw word whose `&` sits inside the quotes. */
+export function cmdRawWords(line: string): string[] {
+  const words: string[] = [];
+  let word = "";
+  let quoted = false;
+  let escaped = false;
+  let started = false;
+  const flush = () => {
+    if (started) words.push(word);
+    word = "";
+    started = false;
+  };
+  for (const char of line) {
+    if (escaped) {
+      word += char;
+      escaped = false;
+    } else if (char === "^") {
+      escaped = true;
+      started = true;
+    } else if (char === '"') {
+      quoted = !quoted;
+      word += char;
+      started = true;
+    } else if (!quoted && (SHELL_SPACES.includes(char) || char === "&" || char === "|" || char === "<" || char === ">")) {
+      flush();
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  flush();
+  return words;
+}
+
+/** The program side of a cmd paste: how the MSVCRT / Node startup code splits the command
+ *  line cmd hands over. Whitespace outside quotes separates arguments; a run of 2n
+ *  backslashes before a `"` is n backslashes and the quote is a delimiter, 2n+1 is n
+ *  backslashes and a literal quote; backslashes elsewhere are literal; inside quotes a
+ *  doubled `""` is one literal `"` and the quote state stays open. */
+export function msvcrtArgv(commandLine: string): string[] {
+  const args: string[] = [];
+  let at = 0;
+  const text = commandLine;
+  for (;;) {
+    while (at < text.length && (text[at] === "\u0020" || text[at] === "\t")) at += 1;
+    if (at >= text.length) break;
+    let arg = "";
+    let quoted = false;
+    while (at < text.length && (quoted || (text[at] !== "\u0020" && text[at] !== "\t"))) {
+      if (text[at] === "\\") {
+        let run = 0;
+        while (text[at] === "\\") {
+          run += 1;
+          at += 1;
+        }
+        if (text[at] === '"') {
+          arg += "\\".repeat(Math.floor(run / 2));
+          if (run % 2 === 1) {
+            arg += '"';
+            at += 1;
+          }
+        } else arg += "\\".repeat(run);
+      } else if (text[at] === '"') {
+        if (quoted && text[at + 1] === '"') {
+          arg += '"';
+          at += 2;
+        } else {
+          quoted = !quoted;
+          at += 1;
+        }
+      } else {
+        arg += text[at];
+        at += 1;
+      }
+    }
+    args.push(arg);
+  }
+  return args;
+}
+
+/** The words the PROGRAM receives from a paste: posix and pwsh read the shell's own words
+ *  (tokenizeLine); under cmd the raw words go through msvcrtArgv — tokenizeCmd's words
+ *  have already lost the quoting the program still sees. */
+export function programArgv(line: string, shell: Shell): string[] {
+  return shell === "cmd" ? msvcrtArgv(cmdRawWords(line).join("\u0020")) : tokenizeLine(line, shell);
+}
+
 /** pwsh words: single quotes fully literal, double quotes literal but `$name` /
  *  `$env:name` sequences are kept as one unbroken run — expansion happens in pwsh at run
  *  time, so the model records the reference, not a value. A backtick escapes the next

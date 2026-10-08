@@ -11,14 +11,14 @@
 // check:requires windows-host
 
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync, rmSync } from "node:fs";
 
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { installLineParts, renderAdviceParts } from "#framework/core/io/invocation/render.ts";
 import { command, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { pasteShells, SHIM_PROGRAM, type Frame, type Host, type HostPlatform, type Launch, type Places } from "#framework/core/io/invocation/frame.ts";
-import { parsePaste, type Shell } from "#checks/kit/shells.ts";
+import { parsePaste, programArgv, type Shell } from "#checks/kit/shells.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { installFrame, setInvocation } from "#framework/core/io/invocation/index.ts";
 import { handoverOf } from "#framework/core/io/invocation/frame.ts";
@@ -60,6 +60,8 @@ const DOCS = join(ROOT, "docs");
 const DEMO = join(ROOT, "apps", "demo");
 const CONFIG = join(DEMO, "config");
 const BIN = join(ROOT, "node_modules", ".bin");
+const MARKER_NAME = "calc-ran.txt";
+const MARKER = join(ROOT, MARKER_NAME);
 const PRINTER = join(ROOT, "printer.cjs");
 const NODE = JSON.stringify(process.execPath);
 const shStub = (id: string): string => ["#!/bin/sh", NL, "exec ", NODE, " ", JSON.stringify(PRINTER), " ", JSON.stringify(id), ' "$@"'].join("");
@@ -69,6 +71,8 @@ const STUBS: readonly (readonly [string, string])[] = [
   ["printer.cjs", `process.stdout.write(JSON.stringify({ stub: process.argv[2], cwd: process.cwd(), argv: process.argv.slice(3) }));`],
   ["clawforge", shStub(fwd(join(ROOT, "clawforge")))],
   ["clawforge.cmd", cmdStub("%~f0")],
+  // A second command a quoting bug would let cmd run: first on PATH, it only leaves a marker.
+  ["calc.cmd", `@echo ran> "%~dp0${MARKER_NAME}"`],
   ["clawforge.ps1", psStub("$PSCommandPath")],
   ["apps/demo/clawforge", shStub(fwd(join(DEMO, "clawforge")))],
   ["node_modules/.bin/clawforge", shStub(fwd(join(BIN, "clawforge")))],
@@ -103,6 +107,8 @@ interface RealCase {
   readonly frame: Frame;
   /** Where the line pastes, under the stub root. */
   readonly paste: string;
+  /** The argv the program must receive, stated independently of the model's tokenization. */
+  readonly intendedArgv?: readonly string[];
 }
 
 const shim = (root: string): Launch => ({ kind: "checkout-shim", root });
@@ -161,17 +167,14 @@ const pathFor = (shell: "bash" | "pwsh" | "cmd"): NodeJS.ProcessEnv => {
   return { ...process.env, PATH: list };
 };
 
+/** The line goes to cmd verbatim: node's shell mode runs cmd /d /s /c with the text unquoted
+ *  and unmangled, so cmd's own tokenizer — and a second command after an unquoted
+ *  metacharacter, which a batch file would swallow — is exactly what the paste meets. */
 async function runCmd(line: string, paste: string): Promise<ProcessResult> {
-  if (!line.includes('"')) return runProcess("cmd", ["/d", "/s", "/c", line], { cwd: paste, env: pathFor("cmd"), timeoutMs: TIMEOUT_MS });
-  // A line with inner double quotes: node's argument quoting would mangle them, so the
-  // line goes in a batch file — cmd's own tokenizer, and the lines carry no %, so batch
-  // and interactive tokenization agree.
-  const batch = join(ROOT, "paste.cmd");
-  await writeFile(batch, ["@echo off", line, ""].join(String.fromCharCode(13) + NL), "utf8");
-  return runProcess("cmd", ["/d", "/c", batch], { cwd: paste, env: pathFor("cmd"), timeoutMs: TIMEOUT_MS });
+  return runProcess(line, [], { cwd: paste, env: pathFor("cmd"), timeoutMs: TIMEOUT_MS, shell: true });
 }
 
-async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advice, frame: Frame, paste: string): Promise<void> {
+async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advice, frame: Frame, paste: string, intendedArgv?: readonly string[]): Promise<void> {
   const model: Shell = shell === "bash" ? "posix" : shell;
   // A shell-named advice re-transitions to its own shell before spelling (S1.4); the
   // note ("(in bash)") is the product's annotation, never paste text.
@@ -193,15 +196,22 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
     // A stored line pastes at the target's own root — the writer's target-frame rule.
     pasteBase = frame.launch.kind !== "system" && frame.launch.kind !== "verbatim" && frame.launch.root !== "" ? frame.launch.root : (frame.cwd.kind === "dir" ? frame.cwd.path : paste);
   } else {
-    spelled = renderAdviceParts(advice, frame)[0]?.line ?? "";
+    // A quoting split names the shell each variant is spelled for (AdviceRowPart.shell).
+    spelled = renderAdviceParts(advice, frame).find((part) => part.shell === undefined || part.shell === model)?.line ?? "";
   }
   const pasted = parsePaste(spelled, model);
-  checkTrue(`${name}: the model parses the rendered line`, pasted.words.length > 0);
-  if (pasted.words.length === 0) return;
+  // What the PROGRAM receives: under cmd, the raw words through the program-side parser.
+  const words = programArgv(spelled, model);
+  checkTrue(`${name}: the model parses the rendered line`, words.length > 0);
+  if (words.length === 0) return;
   // A `cd <path> &&` prefix moves the paste directory before the command runs.
   const pasteDir = pasted.cd === undefined ? pasteBase : resolve(pasteBase, pasted.cd);
   // The shell starts where the operator pastes; a cd inside the line does the moving.
   const spawnCwd = pasted.cd === undefined ? pasteBase : paste;
+  if (shell === "pwsh" && intendedArgv !== undefined) {
+    spelled = `function clawforge { ConvertTo-Json -Compress -InputObject @{ stub = '${join(ROOT, "clawforge.ps1").replaceAll("'", "''")}'; cwd = (Get-Location).Path; argv = @($args) } }; ${spelled}`;
+  }
+  rmSync(MARKER, { force: true });
   const run = shell === "bash"
     ? await runProcess("bash", ["-c", spelled], { cwd: spawnCwd, env: pathFor(shell), timeoutMs: TIMEOUT_MS })
     : shell === "pwsh"
@@ -211,6 +221,7 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
           ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(spelled, "utf16le").toString("base64")],
           { cwd: spawnCwd, env: pathFor(shell), timeoutMs: TIMEOUT_MS })
       : await runCmd(spelled, spawnCwd);
+  checkTrue(`${name}: no second command ran`, !existsSync(MARKER));
   if (run.code !== 0) {
     // A real-shell failure is a product bug, a model bug, or an owner decision. An owner
     // decision is RECORDED, never silent: the case name must sit in
@@ -233,7 +244,7 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
     checkTrue(`${name}: the stub answered JSON (got ${JSON.stringify(run.stdout.slice(0, 80))})`, false);
     return;
   }
-  const [program, ...modelArgv] = pasted.words;
+  const [program, ...modelArgv] = words;
   checkTrue(`${name}: the model spelled a stub program`, program !== undefined);
   if (program === undefined) return;
   // The stub the model chose is the one that ran: a bare PATH word runs one of the root's
@@ -253,12 +264,46 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
     try { return realpathSync.native(a).toLowerCase() === realpathSync.native(b).toLowerCase(); } catch { return false; }
   };
   checkTrue(`${name}: the stub ran in the paste directory`, answer.cwd !== undefined && sameDir(answer.cwd, pasteDir));
-  check(`${name}: the shell saw the model's argv`, answer.argv ?? [], modelArgv);
+  if (intendedArgv !== undefined) check(`${name}: intended-argv`, answer.argv ?? [], intendedArgv);
+  else check(`${name}: the shell saw the model's argv`, answer.argv ?? [], modelArgv);
 }
 
-for (const realCase of CASES) {
+const QUOTING_CASES: readonly RealCase[] = [
+  { name: "R1-A-1: pwsh-named fallback exact argv in bash", shell: "bash",
+    advice: command(["completion", "pwsh", "a$b'c", 'double"quote'], { shell: "pwsh" }),
+    frame: frameOf(shim(ROOT), false, DOCS, atRoot), paste: ROOT,
+    intendedArgv: ["completion", "pwsh", "a$b'c", 'double"quote'] },
+  { name: "R1-A-1: dollar + apostrophe root", shell: "pwsh", advice: command(["status"], { app: "aux" }),
+    frame: { ...case4(false), places: { checkoutRoot: join(ROOT, "literal $ quote'") } }, paste: ROOT,
+    intendedArgv: ["--project-root", `${join(ROOT, "literal $ quote'")}/apps/aux`, "status"] },
+  ...(["bash", "cmd"] as const).map((shell) => ({
+    name: `R1-A-1: dollar + apostrophe root, ${shell}`, shell, advice: command(["status"], { app: "aux" }),
+    frame: { ...case4(shell === "bash"), places: { checkoutRoot: join(ROOT, "literal $ quote'") } }, paste: ROOT,
+    intendedArgv: ["--project-root", `${join(ROOT, "literal $ quote'")}/apps/aux`, "status"],
+  })),
+  ...(["bash", "cmd", "pwsh"] as const).flatMap((shell) => {
+    const frame = frameOf({ kind: "system" }, shell === "bash", ROOT);
+    // One row per word: the argv the program must receive is the word itself.
+    const word = (name: string, value: string): RealCase => ({
+      name: `R1-A-1: ${name}, ${shell}`, shell, frame, paste: ROOT,
+      advice: command(["logs", "--grep", value]), intendedArgv: ["logs", "--grep", value],
+    });
+    return [
+      word("embedded doublequote", 'double"quote'),
+      word("apostrophe-only", "'"),
+      word("spaces + apostrophe path", `${fwd(ROOT)}/space quote'/file`),
+      // cmd toggles on every quote: the metacharacter after the embedded quote must stay quoted.
+      word("quote then ampersand", 'a"&calc'),
+      word("trailing backslash path", "C:\\dir\\"),
+      word("spaced trailing backslash path", `${ROOT}${BS}`),
+      word("backslash before quote", 'a\\"b'),
+    ];
+  }),
+];
+
+for (const realCase of [...CASES, ...QUOTING_CASES]) {
   await requires(realCase.shell, `real shell: ${realCase.name}`, async () => {
-    await drive(realCase.name, realCase.shell, realCase.advice, realCase.frame, realCase.paste);
+    await drive(realCase.name, realCase.shell, realCase.advice, realCase.frame, realCase.paste, realCase.intendedArgv);
   });
 }
 

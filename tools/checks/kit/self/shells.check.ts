@@ -7,7 +7,7 @@
 // containment checks instead of spaced literal expectations.
 
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { parsePaste, tokenizeLine, type Shell } from "#checks/kit/shells.ts";
+import { cmdRawWords, msvcrtArgv, parsePaste, programArgv, tokenizeLine, type Shell } from "#checks/kit/shells.ts";
 
 const tokens = (line: string, shell: Shell): string[] => tokenizeLine(line, shell);
 
@@ -76,6 +76,20 @@ check("cmd.percent.var.stays.one.word.in.quotes", tokens("echo\u0020\"%PATH%\"\u
 check("cmd.bare.metachar.ends.a.word", tokens("copy\u0020a\u0020>\u0020b", "cmd"), ["copy", "a", "b"]);
 check("cmd.paste.ignores.the.posix.cd.shape", parsePaste("cd\u0020x\u0020&&\u0020y", "cmd"), { words: ["cd", "x", "y"] });
 check("cmd.unbalanced.quote.folds.rest", tokens("echo\u0020\"oops", "cmd"), ["echo", "oops"]);
+
+// cmd keeps its toggle rule (a quote ALWAYS toggles); the program side is a separate step.
+check("cmd.doubled.quote.keeps.metachar.inside.quotes", tokens("echo\u0020\"a\"\"&calc\"", "cmd"), ["echo", "a&calc"]);
+check("cmd.raw.words.keep.the.doubled.quotes", cmdRawWords("echo\u0020\"a\"\"&calc\""), ["echo", "\"a\"\"&calc\""]);
+check("cmd.raw.words.backslash.quote.toggles.and.exposes.the.metachar", cmdRawWords("echo\u0020\"a\\\"&calc\""), ["echo", "\"a\\\"", "calc\""]);
+check("msvcrt.doubled.quote.inside.quotes.is.one.literal.quote", msvcrtArgv("\"a\"\"&calc\""), ["a\"&calc"]);
+check("msvcrt.trailing.backslash.run.doubled.before.closing.quote", msvcrtArgv("\"C:\\dir\\\\\""), ["C:\\dir\\"]);
+check("msvcrt.backslash.run.doubled.before.doubled.quote", msvcrtArgv("\"a\\\\\"\"b\""), ["a\\\"b"]);
+check("msvcrt.odd.backslash.run.makes.a.literal.quote", msvcrtArgv("a\\\"b"), ["a\"b"]);
+check("msvcrt.backslashes.elsewhere.are.literal", msvcrtArgv("C:\\dir\\x"), ["C:\\dir\\x"]);
+check("msvcrt.empty.quoted.argument.is.one.empty.word", msvcrtArgv("a\u0020\"\"\u0020b"), ["a", "", "b"]);
+check("msvcrt.unquoted.whitespace.separates.arguments", msvcrtArgv("a\u0020\tb"), ["a", "b"]);
+check("cmd.program.argv.runs.the.model.then.the.program.parser", programArgv("clawforge\u0020\"a\"\"&calc\"\u0020\"C:\\dir\\\\\"", "cmd"), ["clawforge", "a\"&calc", "C:\\dir\\"]);
+check("posix.program.argv.is.the.shell.words", programArgv("ls\u0020'a\u0020b'", "posix"), ["ls", "a\u0020b"]);
 
 // --- pwsh -------------------------------------------------------------------------------------
 

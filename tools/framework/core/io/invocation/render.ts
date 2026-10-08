@@ -60,12 +60,44 @@ function posixArgument(word: string): string {
 /** One word's quoting for a frame that also pastes into cmd.exe and PowerShell: double
  *  quotes are the only spelling all three parse. POSIX shells still expand `$` and
  *  backticks inside them, so a word carrying one is single-quoted instead: it pastes
- *  safely into POSIX shells and PowerShell (cmd.exe keeps single quotes literally, an
- *  accepted limit for a value that cannot be spelled safely there). Never throws: this
+ *  safely into POSIX shells and PowerShell (cmd.exe keeps single quotes literally — an
+ *  accepted limit in a mixed frame for a `$`/backtick/backslash word without `'` or `"`;
+ *  a word that also carries `'` or `"` splits per shell, and cmd's own line double-quotes it,
+ *  see renderAdviceParts). Never throws: this
  *  runs while an error is reported. */
 function shellArgument(word: string): string {
+  return shellArgumentForShell(word);
+}
+
+/** One word for a line only cmd.exe pastes. cmd reads the line twice: its own tokenizer, in
+ *  which EVERY `"` toggles quoting (so a `&` after an embedded quote would run a second
+ *  command), then the program's MSVCRT/Node argv parser. Spelled for both: the word is
+ *  wrapped in double quotes, an embedded `"` is written `""` (cmd toggles twice and stays
+ *  quoted; MSVCRT reads `""` inside quotes as one literal quote), and a run of backslashes
+ *  before a `"` or before the closing quote is doubled. `$` and `'` are ordinary to cmd,
+ *  so they need no other spelling. `%` stays the accepted limit: cmd expands `%VAR%`
+ *  inside double quotes and no spelling prevents it. */
+function cmdArgument(word: string): string {
+  let out = '"';
+  let backslashes = 0;
+  for (const char of word) {
+    if (char === "\\") {
+      backslashes += 1;
+      continue;
+    }
+    out += char === '"' ? `${"\\".repeat(backslashes * 2)}""` : `${"\\".repeat(backslashes)}${char}`;
+    backslashes = 0;
+  }
+  return `${out}${"\\".repeat(backslashes * 2)}"`;
+}
+
+/** `shell` is set only when the frame names exactly one shell; a mixed frame (shell
+ *  undefined) keeps the shared double-quote rule, with POSIX-active words single-quoted. */
+function shellArgumentForShell(word: string, shell?: Shell): string {
   if (/^<.*>$/.test(word)) return word;
   if (SAFE_WORD.test(word)) return word;
+  if (shell === "cmd") return cmdArgument(word);
+  if (shell === "pwsh" && (POSIX_ACTIVE.test(word) || word.includes('"'))) return `'${word.replaceAll("'", "''")}'`;
   if (POSIX_ACTIVE.test(word)) return shellQuote(word);
   return `"${word.replaceAll('"', '\\"')}"`;
 }
@@ -129,6 +161,14 @@ export function renderFrameAdvice(
 export interface AdviceRowPart {
   readonly line: string;
   readonly note?: string;
+  /** The ONE shell this row is spelled for — set on a per-shell variant (the quoting split
+   *  and an alternatives row one shell covers); absent when the row pastes in every shell the
+   *  frame names. An alternatives row covering several, not all, shells names them only in
+   *  its note. Callers route by this field, never by the note's prose. */
+  readonly shell?: Shell;
+  /** The row is the POSIX line standing in where the frame's shells have no spelling: it
+   *  pastes in bash whatever `shell` says (the note names that shell, IN_BASH_NOTE). */
+  readonly inBash?: true;
 }
 
 export function renderAdviceParts(
@@ -156,7 +196,7 @@ export function renderAdviceParts(
       if (texts.length === 0) {
         // No shell of the frame spells a line (cmd with a $-path cd): the POSIX text
         // stands in — bash, the documented checkout path on Windows — and the note names it.
-        return [{ line: advice.text, note: IN_BASH_NOTE }];
+        return [{ line: advice.text, note: IN_BASH_NOTE, inBash: true }];
       }
       // A row whose spelling shells are not the frame's FULL shell set is shell-specific:
       // it names the shells it is for, in frame order (the primary included — a line only
@@ -166,10 +206,11 @@ export function renderAdviceParts(
         // Full coverage stays unlabelled; partial coverage names its shells. An advice
         // note COMBINES with the shell label (label first) — never replaces it.
         const shellNote = shells.length === frame.shells.length ? undefined : `for ${shells.join(", ")}`;
+        const only = shells.length === 1 && shellNote !== undefined ? { shell: shells[0]! } : {};
         if (i === 0 && advice.note !== undefined) {
-          return { line, note: shellNote === undefined ? advice.note : `${shellNote}; ${advice.note}` };
+          return { line, note: shellNote === undefined ? advice.note : `${shellNote}; ${advice.note}`, ...only };
         }
-        return shellNote === undefined ? { line } : { line, note: shellNote };
+        return shellNote === undefined ? { line } : { line, note: shellNote, ...only };
       });
       return parts;
     }
@@ -203,6 +244,7 @@ export function renderAdviceParts(
   const rooted = advice.at === "checkout-root" || (cwdConflict && projectRoot === undefined);
   let note = advice.note ?? (cwdConflict && projectRoot === undefined ? CWD_CONFLICT_NOTE : undefined);
   let program = handed;
+  let inBash = false;
   if (rooted) {
     // The re-rooted frame spells in the frame's primary shell, or — a bash shim under
     // [cmd, pwsh] — in none: there the POSIX spelling stands in (Git Bash, the documented
@@ -233,6 +275,7 @@ export function renderAdviceParts(
     // shim itself and carries no note.
     if (primary === undefined) {
       note = note === undefined ? IN_BASH_NOTE : `${note}, ${IN_BASH_NOTE}`;
+      inBash = true;
     }
   } else {
     // O4: a hint printed from a subdirectory of its launch root spells the entry relative
@@ -255,6 +298,7 @@ export function renderAdviceParts(
       // note names that shell, like the rooted branch.
       if (primary === undefined) {
         note = note === undefined ? IN_BASH_NOTE : `${note}, ${IN_BASH_NOTE}`;
+        inBash = true;
       }
     }
     if (launchRoot !== undefined && launchRoot !== "" && from !== undefined) {
@@ -266,7 +310,22 @@ export function renderAdviceParts(
   // Arguments quote by the frame's shells, not by the program's spelling: a frame that
   // also pastes into cmd.exe and PowerShell takes the double-quote rule, a POSIX-only
   // frame the POSIX one.
-  const posixOnly = f.shells.length === 1 && f.shells[0] === "posix";
+  const words = [program, ...advice.argv, ...(projectRoot === undefined ? [] : [projectRoot])];
+  // A word that ends in a backslash splits too: cmd's program-side parser needs the run
+  // doubled before the closing quote, which PowerShell and POSIX would read literally.
+  if (!inBash && f.shells.length > 1 && words.some((word) => word.includes('"') || word.endsWith("\\") || (POSIX_ACTIVE.test(word) && word.includes("'")))) {
+    // One variant per shell: no spelling of such a word pastes in all of them. Each part
+    // names its shell structurally (AdviceRowPart.shell), the note keeps its prose.
+    return f.shells.flatMap((shell) => renderAdviceParts(advice, { ...f, shells: [shell] }, options, asTyped).map((part): AdviceRowPart => ({
+      ...part, note: part.note === undefined ? `for ${shell}` : `for ${shell}; ${part.note}`, shell,
+    })));
+  }
+  // A bash fallback names the actual paste shell, regardless of advice.shell (D6/O1).
+  const posixOnly = inBash || (f.shells.length === 1 && f.shells[0] === "posix");
+  // A word quotes for ONE shell only when the frame names one; a mixed frame keeps the
+  // shared double-quote rule.
+  const only = f.shells.length === 1 ? f.shells[0] : undefined;
+  const shellArgument = (word: string): string => shellArgumentForShell(word, only);
   const quote = (word: string): string => (posixOnly ? posixArgument(word) : shellArgument(word));
   // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
   // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
@@ -290,7 +349,8 @@ export function renderAdviceParts(
   }
   for (const argument of advice.argv) parts.push(quote(argument));
   const line = parts.join(" ");
-  return [note === undefined ? { line } : { line, note }];
+  const row: AdviceRowPart = note === undefined ? { line } : { line, note };
+  return [inBash ? { ...row, inBash: true } : row];
 }
 
 /** The rows as text: each part's note appended in the `  (note)` suffix style. The rendered

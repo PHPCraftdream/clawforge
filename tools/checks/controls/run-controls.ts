@@ -186,7 +186,9 @@ async function runOne(
   if (matches !== 1) return done("stale", false, { reason: `stale control: the edit no longer matches (${matches} matches)`, productHashBefore: beforeHash, productHashAfter: beforeHash });
   if (baseline === undefined) return done("invalid-baseline", false, { reason: "invalid control: no baseline run", productHashBefore: beforeHash, productHashAfter: beforeHash });
   if (baseline.code !== 0 || baseline.timedOut || baseline.spawnError !== undefined || failLines(baseline.output).length > 0) {
-    return done("invalid-baseline", false, { reason: "invalid control: the check does not pass cleanly on the unedited copy", productHashBefore: beforeHash, productHashAfter: beforeHash });
+    // Say why: a load-induced timeout and a real failure need different fixes.
+    const why = baseline.timedOut ? "timed out" : baseline.spawnError ?? `exit ${baseline.code}`;
+    return done("invalid-baseline", false, { reason: `invalid control: the check does not pass cleanly on the unedited copy (${why})`, failLines: failLines(baseline.output).slice(0, 5), productHashBefore: beforeHash, productHashAfter: beforeHash });
   }
   await writeFile(productPath, text.replaceAll(control.search, control.replace));
   const run = await runCheckFile(tempRoot, control.check, options.timeoutMs);

@@ -12,9 +12,9 @@
 // ("frameLawViolations"); the architecture check re-measures the same loop.
 
 import { dirname, resolve as pathResolve } from "node:path";
-import { renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
+import { renderAdviceParts } from "#framework/core/io/invocation/render.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
-import { forShell, frameFromInvocation, handoverOf, IN_BASH_NOTE, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
+import { forShell, frameFromInvocation, handoverOf, resolvesByCwd, SHIM_PROGRAM } from "#framework/core/io/invocation/frame.ts";
 import {
   findCheckoutRootIn,
   frameworkOwner,
@@ -24,13 +24,14 @@ import {
 } from "#framework/entry/resolve.ts";
 import { FRAME_PRODUCERS, SELECTION_CASES } from "#checks/golden/frames.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES } from "#checks/golden/advice.ts";
-import { parsePaste, type Shell } from "#checks/kit/shells.ts";
+import { parsePaste, programArgv, type Shell } from "#checks/kit/shells.ts";
 import { basename } from "node:path";
 import { stageTally } from "#checks/kit/deployment-fixture.ts";
 
 // --- the fake layout (the law's own tree; paths spelled like golden/matrix.ts's) ------------
 
 const ROOT = "/clawforge-checkout";
+const quoteRoot = "/law literal $ quote'";
 const APP_LOCAL = "/home/u/app-local";
 const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@clawforge/framework/entry/bin.js`;
 const SELF = "/usr/local/lib/node_modules/@clawforge/framework/dist/entry/bin.js";
@@ -60,6 +61,11 @@ const FILES: Record<string, string> = {
   ["/opt/claw forge/clawforge"]: "#!/bin/sh" + String.fromCharCode(10),
   [`${ROOT}/apps/staging/app.ts`]: "export default {}\n",
   [LOCAL_ENTRY]: "// local package entry\n",
+  [`${quoteRoot}/clawforge`]: "#!/bin/sh\n",
+  [`${quoteRoot}/tools/clawforge.ts`]: "// gate\n",
+  [`${quoteRoot}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
+  [`${quoteRoot}/apps/demo/app.ts`]: "export default {}",
+  [`${quoteRoot}/apps/x/app.ts`]: "export default {}",
 };
 const DIRS: readonly string[] = [
   `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/x`, `${ROOT}/apps/staging`, `${ROOT}/docs`,
@@ -168,23 +174,6 @@ function resolveProgram(program: string, pasteDir: string, launch: string, decla
 const sameWords = (a: readonly string[], b: readonly string[]): boolean =>
   JSON.stringify(a) === JSON.stringify(b);
 
-const NOTE_OPEN = [" ", " ", "("].join("");
-
-/** The renderer appends paste notes as trailing "  (…)" groups; the law reads the command
- *  words only, and reports the note text (the "in bash" fallback names its shell). */
-function stripNote(line: string): { readonly command: string; readonly note?: string } {
-  let text = line;
-  const notes: string[] = [];
-  for (;;) {
-    if (!text.endsWith(")")) break;
-    const open = text.lastIndexOf(NOTE_OPEN);
-    if (open < 0) break;
-    notes.unshift(text.slice(open + NOTE_OPEN.length, -1));
-    text = text.slice(0, open);
-  }
-  return { command: text, note: notes.length === 0 ? undefined : notes.join(", ") };
-}
-
 export interface FrameLawMeasurement {
   /** Violation key → reason. Keys are `<producer> | <row> | <shell>` and
    *  `selection <label> | <producer>`. */
@@ -200,6 +189,7 @@ export interface FrameLawMeasurement {
   /** Pipeline-stage case accounting: before final run versus resolved final run. */
   readonly stageCounts: ReadonlyArray<{ readonly stage: string; readonly count: number }>;
   readonly finalRuns: number;
+  readonly quotingWitnesses: readonly { key: string; reached: boolean; matched: boolean }[];
 }
 
 /** The full law measurement: every clawforge-kind row of ADVICE_ROWS (plus the synthetic
@@ -276,13 +266,16 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
         try {
           // The law tests the line PRODUCTION emits from the original multi-shell frame;
           // only a row that names its own shell (advice.shell) re-renders for that shell.
-          const line = renderFrameAdvice(filled, filled.shell !== undefined ? forShell(producer.frame, shell) : producer.frame);
-          const { command: clean, note } = stripNote(line);
-          // The bash-shim fallback (O1, accepted): the note names the shell the line
-          // pastes in — so the law pastes it THERE, as bash, and holds it to the same
-          // resolution as the posix key of the same row.
-          const noteWords = note === undefined ? [] : note.split(",").map((part) => part.trim());
-          const pasteShell: Shell = shell !== "posix" && noteWords.includes(IN_BASH_NOTE) ? "posix" : shell;
+          const parts = renderAdviceParts(filled, filled.shell !== undefined ? forShell(producer.frame, shell) : producer.frame);
+          // Route by the part's own structure: a per-shell variant names its shell
+          // (AdviceRowPart.shell), a shell-free row pastes everywhere.
+          const part = parts.find((row) => row.shell === undefined || row.shell === shell);
+          if (part === undefined) { setupFailures.push(`${key}: no rendered variant for shell`); continue; }
+          const clean = part.line;
+          // The bash-shim fallback (O1, accepted): the part says it pastes in bash
+          // (AdviceRowPart.inBash) — so the law pastes it THERE, as bash, and holds it to
+          // the same resolution as the posix key of the same row.
+          const pasteShell: Shell = shell !== "posix" && part.inBash === true ? "posix" : shell;
           if (pasteShell === "pwsh" && (clean.startsWith("'") || clean.startsWith("\""))) {
             record(key, "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)");
             continue;
@@ -302,7 +295,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
             }
             resolvedPasteDir = resolved;
           }
-          const words = pasted.words;
+          const words = programArgv(clean, pasteShell);
           const program = words[0] ?? "";
           const tokenArgv = words.slice(1);
           // The pasted words must reassemble the FILLED advice argv (a leading --app pair is
@@ -516,5 +509,66 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
     }
   }
 
-  return { violations, reached, attempted, setupFailures, stageCounts: tally.counts(), finalRuns };
+  // --- the quoting witnesses ---------------------------------------------------------------
+  // They stay a separate loop (not QUOTE_ROW rows of the producer matrix): the matrix lays
+  // every row across every producer, and a `$`/`'`/`"` word would add per-producer violation
+  // keys (spaced hand-set programs, pwsh program quoting) the decrease-only baseline does not
+  // hold; the project-root row also needs a checkout whose path carries the characters, which
+  // no producer frame has. Each witness states its EXPECTED program and argv independently of
+  // the render, runs the pasted words through the real resolver and checks the deployment.
+  const quotingWitnesses: { key: string; reached: boolean; matched: boolean }[] = [];
+  const quoteFrame: import("#framework/core/io/invocation/frame.ts").Frame = {
+    launch: { kind: "system" }, host: { kind: "operator", platform: "win32" },
+    shells: ["posix", "cmd", "pwsh"], cwd: { kind: "dir", path: `${quoteRoot}/apps/demo` },
+    places: { checkoutRoot: quoteRoot }, app: { state: "selected", name: "demo", by: "cwd" }, audience: "terminal",
+  };
+  const fallbackFrame: import("#framework/core/io/invocation/frame.ts").Frame = {
+    ...quoteFrame, launch: { kind: "checkout-shim", root: ROOT }, places: { checkoutRoot: ROOT },
+    cwd: { kind: "dir", path: ROOT }, app: { state: "none" },
+  };
+  const quotingRows = [
+    // The case-4 selector names a checkout whose path carries `$` and `'`.
+    { label: "law: quoting dollar + apostrophe project-root", advice: command(["status"], { app: "x" }), frame: quoteFrame,
+      program: "clawforge", args: ["--project-root", `${quoteRoot}/apps/x`, "status"], root: `${quoteRoot}/apps/x` },
+    // An embedded quote, a metacharacter behind it, a trailing backslash and a backslash before a quote.
+    { label: "law: quoting embedded doublequote argv",
+      advice: command(["status", "--reason", 'double"quote', 'a"&calc', "C:\\dir\\", 'a\\"b']), frame: quoteFrame,
+      program: "clawforge", args: ["status", "--reason", 'double"quote', 'a"&calc', "C:\\dir\\", 'a\\"b'], root: `${quoteRoot}/apps/demo` },
+    { label: "law: quoting pwsh-named fallback", advice: command(["completion", "pwsh", "a$b'c", 'double"quote'], { shell: "pwsh" }), frame: fallbackFrame,
+      program: "./clawforge", args: ["completion", "pwsh", "a$b'c", 'double"quote'], root: ROOT },
+  ];
+  for (const row of quotingRows) {
+    const parts = renderAdviceParts(row.advice, row.frame);
+    for (const shell of row.advice.shell === undefined ? row.frame.shells : ["pwsh"] as const) {
+      const key = `${row.label} | ${shell}`;
+      attempted++;
+      const witness = { key, reached: false, matched: false };
+      quotingWitnesses.push(witness);
+      const part = parts.find((p) => p.shell === undefined || p.shell === shell);
+      if (part === undefined) { setupFailures.push(`${key}: no rendered variant`); tally.case(key, "parse"); continue; }
+      const words = programArgv(part.line, part.inBash === true ? "posix" : shell);
+      let stage: import("#framework/core/command/execute.ts").Stage = "context";
+      let resolved = false;
+      if (row.advice.shell !== undefined) {
+        // The fallback goes directly to the checkout gate; no installed decision is used.
+        const final = resolveCheckoutEntry({ root: ROOT, cwd: ROOT, argv: words.slice(1), launch: row.frame.launch, ocApp: undefined, handedOver: false,
+          fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [] });
+        stage = final.kind === "run" || final.kind === "gate-command" ? "run" : "context";
+        resolved = final.kind === "gate-command" && sameWords([final.name, ...final.args], row.advice.argv) && final.app === undefined;
+      } else {
+        const decision = resolveInstalledEntry({ cwd: row.frame.cwd.kind === "dir" ? row.frame.cwd.path : ROOT,
+          rawArgv: words.slice(1), platform: "win32", fs, frame: row.frame });
+        stage = decision.kind === "run" ? "run" : "context";
+        resolved = decision.kind === "run" && sameWords(decision.argv, row.advice.argv)
+          && fakePath(decision.appRoot) === row.root && fs.exists(`${row.root}/app.ts`);
+      }
+      reached++;
+      witness.reached = true;
+      // The program and the exact argv the shell hands over come from the row, not the render.
+      witness.matched = resolved && words[0] === row.program && sameWords(words.slice(1), row.args);
+      if (!witness.matched) record(key, "quoting witness: the pasted program, argv or deployment differs from the independent expectation");
+      tally.case(key, stage);
+    }
+  }
+  return { violations, reached, attempted, setupFailures, stageCounts: tally.counts(), finalRuns, quotingWitnesses };
 }

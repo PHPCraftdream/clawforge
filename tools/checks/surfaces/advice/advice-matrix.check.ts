@@ -9,7 +9,7 @@
 import type { CommandArgument } from "#framework/core/app.ts";
 import {
   ArgumentError, UnknownActionError, UnknownArgumentError,
-  parseCall, specOf, specShape, tokenize,
+  parseCall, specOf, specShape, tokenize, type CallShape,
 } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
@@ -531,20 +531,12 @@ function canon(value: Record<string, unknown>): string {
   return JSON.stringify(value, Object.keys(value).sort());
 }
 
-/** The values a parser reads out of an argv — tokenize plus the record parseDeclaredArgs builds. */
-function parsedValues(declared: readonly CommandArgument[] | undefined, argv: readonly string[], verbatim: boolean): Record<string, unknown> {
-  const entries = tokenize(declared ?? [], argv, undefined, verbatim).entries;
-  const values: Record<string, unknown> = {};
-  for (const { argument, value } of entries) {
-    if (argument.kind === "variadic") {
-      const list = values[argument.name];
-      if (Array.isArray(list)) list.push(value as string);
-      else values[argument.name] = [value as string];
-    } else {
-      values[argument.name] = value;
-    }
-  }
-  return values;
+/** Strict normalized values include defaults and the selected action, not flat tokens. */
+function parsedValues(declared: Declared, argv: readonly string[]): Record<string, unknown> {
+  const body = specOf(declared as { readonly run?: unknown });
+  const shape = body === undefined ? { arguments: declared.arguments ?? [] } as CallShape : specShape(body);
+  const call = parseCall(shape, argv);
+  return { ...call.values, ...(call.action === undefined ? {} : { action: call.action }) };
 }
 
 /** P5 — the tool form: the golden's cell must be exactly the first step the lookup
@@ -574,9 +566,8 @@ for (const { label, advice } of ADVICE_ROWS) {
     checkTrue(`${label}: no carryable argv, no step`, cell === PLACEHOLDER);
   } else {
   const round = toArgv(declared, stepArguments);
-  const verbatim = (declared.arguments ?? []).some((argument) => "verbatim" in argument && argument.verbatim === true);
-  const direct = parsedValues(declared.arguments, filled.slice(1), verbatim);
-  const reparsed = parsedValues(declared.arguments, round, verbatim);
+  const direct = parsedValues(declared, filled.slice(1));
+  const reparsed = parsedValues(declared, round);
   check(`${label}: the step's argv reparses to the same values`, canon(reparsed), canon(direct));
   }
 }

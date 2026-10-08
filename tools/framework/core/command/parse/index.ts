@@ -465,6 +465,25 @@ export function selectAction<A extends CommandArgument>(shape: CallShape<A>, inp
  *  any other word is an unknown action. A flag that another action declares is refused as
  *  belonging to it. The action selection itself is selectAction's (this file, above). */
 export function parseCall(shape: CallShape, argv: readonly string[], command = ""): ParsedCall<Record<string, unknown>> {
+  return bindArgv(shape, argv, command).call;
+}
+
+/** Strict argv → named input: retain raw strings for MCP, not the kinds' converted values.
+ *  Selection, tokenization, kinds, required arguments and rules are parseCall's own path. */
+export function inverseCall(shape: CallShape, argv: readonly string[], command = ""): Record<string, unknown> {
+  const { call, tokens } = bindArgv(shape, argv, command);
+  const raw: ParsedArgs = {};
+  for (const { argument, value } of tokens.entries) {
+    if (argument.kind === "variadic") {
+      const list = raw[argument.name] as string[] | undefined;
+      if (list === undefined) raw[argument.name] = [value as string];
+      else list.push(value as string);
+    } else raw[argument.name] = value;
+  }
+  return { ...(call.action === undefined ? {} : { action: call.action }), ...raw };
+}
+
+function bindArgv(shape: CallShape, argv: readonly string[], command: string): { call: ParsedCall<Record<string, unknown>>; tokens: Tokens } {
   const chosen = selectAction(shape, { kind: "argv", argv }, command);
   const declared = chosen.slice;
   const action = chosen.selected.name;
@@ -472,7 +491,7 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
   const tokens = tokenize(declared, chosen.rest, action === undefined ? undefined : { action, siblings: chosen.siblings }, isVerbatim(declared), chosen.refuse);
   const values = bind(declared, tokens, context);
   enforceRules(declared, chosen.rules, values, context);
-  return { values, ...(action === undefined ? {} : { action }), given: tokens.given };
+  return { call: { values, ...(action === undefined ? {} : { action }), given: tokens.given }, tokens };
 }
 
 /** The one binder for both surfaces (argv via parseCall, named here): ONE check order, and

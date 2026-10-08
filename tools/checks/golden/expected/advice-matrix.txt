@@ -42,7 +42,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge new-app <name>
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge new-app <name>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge new-app <name>
-  tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
+  tool form: —
 
 === explicit app: status ===
   checkout gate shim (cwd: checkout root): ./clawforge --app demo status
@@ -88,7 +88,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge logs --tail <n>
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo logs --tail <n>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo logs --tail <n>
-  tool form: {"tool":"logs","arguments":{"tail":"<n>"}}
+  tool form: —
 
 === note: up ===
   checkout gate shim (cwd: checkout root): ./clawforge up  (after the change)
@@ -1238,7 +1238,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge backup
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo backup
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo backup
-  tool form: {"tool":"backup","arguments":{}}
+  tool form: {"tool":"backup","arguments":{"action":"create"}}
 
 === problem code: BACKUP_UNREADABLE ===
   checkout gate shim (cwd: checkout root): ./clawforge backup list
@@ -1353,7 +1353,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo upgrade --image <image>  (before the first deployment, `bootstrap` instead; `lock` after to pin)
-  tool form: {"tool":"upgrade","arguments":{"image":"<image>"},"note":"before the first deployment, `bootstrap` instead; `lock` after to pin"}
+  tool form: —
 
 === image pin: lock for another image ===
   checkout gate shim (cwd: checkout root): ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
@@ -1376,7 +1376,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo upgrade --image <image>  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))
-  tool form: {"tool":"upgrade","arguments":{"image":"<image>"},"note":"moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's)"}
+  tool form: —
 
 === recipe incomplete (set validate) ===
   checkout gate shim (cwd: checkout root): ./clawforge set validate  (after adding the missing file)
@@ -1491,7 +1491,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge provision-agent <recipe>
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo provision-agent <recipe>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo provision-agent <recipe>
-  tool form: {"tool":"provision-agent","arguments":{"recipe":"<recipe>"}}
+  tool form: —
 
 === forget remedy ===
   checkout gate shim (cwd: checkout root): ./clawforge set forget --kind cron-job --name <name>
@@ -1514,7 +1514,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge set forget --kind cron-job --name <name>
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo set forget --kind cron-job --name <name>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo set forget --kind cron-job --name <name>
-  tool form: {"tool":"set","arguments":{"action":"forget","kind":"cron-job","name":"<name>"}}
+  tool form: —
 
 === plugin reinstall ===
   checkout gate shim (cwd: checkout root): ./clawforge cli plugins install <package> --force
@@ -1629,7 +1629,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge new-app <name>
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge new-app <name>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge new-app <name>
-  tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
+  tool form: —
 
 === refusal: missing deployment, others available ===
   checkout gate shim (cwd: checkout root): available: demo, staging — pick one with --app <name> (or OC_APP), or create one with:
@@ -1675,7 +1675,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge new-app <name>
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge new-app <name>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge new-app <name>
-  tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
+  tool form: —
 
 === refusal: empty directory without app.ts ===
   checkout gate shim (cwd: checkout root): ./clawforge new-app demo
@@ -1767,7 +1767,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge new-app <name>
   fixture L1 (f620c8a): the legacy launcher variable: ./clawforge new-app <name>
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ./clawforge new-app <name>
-  tool form: {"tool":"new-app","arguments":{"name":"<name>"}}
+  tool form: —
 
 === refusal: init inside a ClawForge checkout (2) ===
   checkout gate shim (cwd: checkout root): ./clawforge new-app <name>  (in bash)
@@ -2043,7 +2043,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge remove-app
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge remove-app
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge remove-app
-  tool form: {"tool":"remove-app","arguments":{}}
+  tool form: —
 
 === help prose: backup help pull ===
   checkout gate shim (cwd: checkout root): ./clawforge help pull
@@ -2112,7 +2112,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge backup
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo backup
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo backup
-  tool form: {"tool":"backup","arguments":{}}
+  tool form: {"tool":"backup","arguments":{"action":"create"}}
 
 === help prose: verify pull --share ===
   checkout gate shim (cwd: checkout root): ./clawforge pull --share
@@ -2917,7 +2917,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge cli
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo cli
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo cli
-  tool form: {"tool":"cli","arguments":{}}
+  tool form: —
 
 === help prose: cli-start mcp-serve ===
   checkout gate shim (cwd: checkout root): ./clawforge mcp-serve
@@ -3009,7 +3009,7 @@
   fixture G3 (a841c16): v1 checkout + legacy: ./clawforge cli
   fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo cli
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo cli
-  tool form: {"tool":"cli","arguments":{}}
+  tool form: —
 
 === help prose: cli-stop mcp-serve ===
   checkout gate shim (cwd: checkout root): ./clawforge mcp-serve

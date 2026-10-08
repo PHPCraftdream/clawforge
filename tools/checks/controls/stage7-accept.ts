@@ -290,4 +290,33 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     check: "tools/checks/surfaces/advice/advice-anchor.check.ts",
     fragment: "R1-A-2 external cwd retains frame by-cwd selection",
   },
+  {
+    id: "C270", finding: "R3-B-1",
+    note: "Restore flat merged tokenization; invalid recipe new Advice must emit no machine step.",
+    product: "tools/framework/integration/mcp/call.ts",
+    search: "    return commandBinding.inverseCall(shape, argv.slice(1), argv[0]);",
+    replace: `    const declared = command.arguments ?? [];
+    const verbatim = declared.some((argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true);
+    const entries = commandBinding.tokenize(declared, argv.slice(1), undefined, verbatim).entries;
+    const result: Record<string, unknown> = {};
+    for (const { argument, value } of entries) {
+      if (argument.kind === "variadic") {
+        const list = result[argument.name];
+        if (Array.isArray(list)) list.push(value);
+        else result[argument.name] = [value];
+      } else result[argument.name] = value;
+    }
+    return result;`,
+    check: "tools/checks/integration/mcp/dispatch/mcp-envelope.check.ts",
+    fragment: "R3-B-1 recipe new r3-name r3-extra: no machine step",
+  },
+  {
+    id: "C271", finding: "R3-B-1 raw projection",
+    note: "Restore legacy and variadic conversion in the outgoing raw projection.",
+    product: "tools/framework/core/command/parse/index.ts",
+    search: "...raw };",
+    replace: "...toParsedArgs(tokens.entries) };",
+    check: "tools/checks/integration/mcp/dispatch/mcp-envelope.check.ts",
+    fragment: "R3-B-1 legacy numeric: exact raw named arguments",
+  },
 ];

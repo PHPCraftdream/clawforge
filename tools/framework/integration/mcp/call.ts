@@ -4,7 +4,8 @@
 // bridge lives in legacy.ts.
 
 import { maskSecrets, UserError } from "../../core/io/log.ts";
-import { tokenize } from "../../core/command/index.ts";
+import * as commandBinding from "../../core/command/index.ts";
+import type { CallShape } from "../../core/command/index.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
 import type { Execution } from "../../core/command/execute.ts";
 import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
@@ -38,26 +39,13 @@ function changedFact(command: Declared, fields: { changed?: unknown }, args: str
  *  the argv does not parse against the declaration — a step is never guessed. */
 export function toolArguments(command: Declared, argv: readonly string[]): Record<string, unknown> | undefined {
   if (argv.length === 0) return undefined;
-  const verbatim = (command.arguments ?? []).some(
-    (argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true,
-  );
-  let entries;
   try {
-    entries = tokenize(command.arguments ?? [], argv.slice(1), undefined, verbatim).entries;
+    const body = commandBinding.specOf(command as { readonly run?: unknown });
+    const shape = body === undefined ? { arguments: command.arguments ?? [] } as CallShape : commandBinding.specShape(body);
+    return commandBinding.inverseCall(shape, argv.slice(1), argv[0]);
   } catch {
     return undefined;
   }
-  const result: Record<string, unknown> = {};
-  for (const { argument, value } of entries) {
-    if (argument.kind === "variadic") {
-      const list = result[argument.name];
-      if (Array.isArray(list)) list.push(value as string);
-      else result[argument.name] = [value as string];
-    } else {
-      result[argument.name] = value;
-    }
-  }
-  return result;
 }
 
 /** The only advice a step can be built from: a clawforge one for this deployment. A

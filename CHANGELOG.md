@@ -5,6 +5,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* `mcp-setup` works when the target location is unsupported or unreachable.
+* MCP no longer asks for confirm on `recipe import`/`recipe new`, which only add files.
 
 * Deploy prints the server's own `./clawforge` command lines whatever local launcher ran it.
 * Completion Install: lines are spelled from the target shell's own frame: a script generated from a checkout subdirectory stores `./clawforge`, never `../clawforge`, and the bash/zsh Install lines spell npm's wrapper with forward slashes even when the command ran under the Windows wrapper.

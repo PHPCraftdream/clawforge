@@ -89,13 +89,16 @@ async function mcpConfig(ctx: Context): Promise<string> {
   return `${JSON.stringify({ mcpServers: await mcpServerEntries(ctx) }, null, 2)}\n`;
 }
 
-/** The command body; mcpSetup(ctx, args) stays for callers that already hold a Context. */
+/** The command body; mcpSetup(ctx, args) stays for callers that already hold a Context.
+ *  Q8: `needs: "local"` — runMcpSetup reads only the deployment directory and writes the
+ *  project MCP files, so an unsupported or unreachable target must not refuse it. */
 export const MCP_SETUP = commandBody({
   effect: "change",
+  needs: "local",
   arguments: MCP_SETUP_ARGUMENTS,
-  async run(ctx, values) {
+  async run(_on, values) {
     const { client, json, rewriteLauncher } = setupOptions(values);
-    await runMcpSetup(ctx, client, json, rewriteLauncher);
+    await runMcpSetup(client, json, rewriteLauncher);
   },
 });
 
@@ -113,7 +116,7 @@ export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
   await runOnContext(MCP_SETUP, ctx, args);
 }
 
-async function runMcpSetup(ctx: Context, client: McpClient, json: boolean, rewriteLauncher: boolean): Promise<void> {
+async function runMcpSetup(client: McpClient, json: boolean, rewriteLauncher: boolean): Promise<void> {
   const installed = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
   const changedFiles = await setupProjectMcp(deploymentDir(), installed ? "installed" : "monorepo", client, { rewriteLauncher });
   if (json || isCaptured()) { emit(`${JSON.stringify({ client, changed: changedFiles.length > 0, files: changedFiles }, null, 2)}\n`); return; }

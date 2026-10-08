@@ -32,11 +32,9 @@ export interface ChangedInventoryUnit {
   readonly sliceArguments: readonly ArgumentSpec[];
   readonly sliceRules: readonly ArgumentRule[];
   readonly baseEffect: "read" | "change" | "destroy";
-  /** The unit's DECLARED needs: a single body's data.needs; an action slice carries neither
-   *  needs nor preparesEnvironment (ActionData/MultiData have no fields for them and the
-   *  multi runner scopes actions to the plain context), so the slice value ?? the multi
-   *  body's is always the default "target". */
-  readonly needs: "target" | "deployment";
+  /** The unit's DECLARED needs (S2.6a): a single body's data.needs, an action slice its
+   *  own ActionData.needs (default "target"); preparesEnvironment stays single-body only. */
+  readonly needs: "local" | "deployment" | "target";
   /** The unit's DECLARED preparesEnvironment: a single body's data.preparesEnvironment;
    *  action slices always derive false (see needs). */
   readonly preparesEnvironment: boolean;
@@ -89,7 +87,7 @@ export function buildChangedInventory(root?: string): readonly ChangedInventoryU
     const body = specOf(declaration);
     if (!body) throw new Error(`cannot build ${command}: missing command body`);
     const data = specData(body);
-    const slices = data.kind === "single" ? [{ label: command, action: undefined as string | undefined, args: data.arguments, rules: data.rules ?? [], effect: data.effect }] : Object.entries(data.actions).map(([action, item]) => ({ label: `${command} ${action}`, action, args: item.arguments ?? [], rules: item.rules ?? [], effect: item.effect ?? data.effect }));
+    const slices = data.kind === "single" ? [{ label: command, action: undefined as string | undefined, args: data.arguments, rules: data.rules ?? [], effect: data.effect, needs: data.needs }] : Object.entries(data.actions).map(([action, item]) => ({ label: `${command} ${action}`, action, args: item.arguments ?? [], rules: item.rules ?? [], effect: item.effect ?? data.effect, needs: item.needs }));
     for (const slice of slices) {
       const targets: Array<{ effect: "change" | "destroy"; flag?: ArgumentSpec & { kind: "flag" } }> = [];
       if (slice.effect !== "read") targets.push({ effect: slice.effect });
@@ -98,7 +96,7 @@ export function buildChangedInventory(root?: string): readonly ChangedInventoryU
         const args = buildArgs(command, slice.args, slice.rules, target.flag, slice.action, root);
         try { bindNamed(specShape(body), { kind: "named", ...(slice.action ? { action: slice.action } : {}), args: { ...(slice.action ? { ...args, action: slice.action } : args), ...(target.effect === "destroy" ? { confirm: true } : {}) } }, command, { confirmed: true }); }
         catch (error) { throw new Error(`cannot build ${slice.label} ${target.effect} variant`, { cause: error }); }
-        units.push({ label: `${slice.label}${target.flag ? ` [--${target.flag.name}]` : " [base effect]"}`, command, ...(slice.action ? { action: slice.action } : {}), effect: target.effect, args, sliceArguments: slice.args, sliceRules: slice.rules, baseEffect: slice.effect, needs: data.kind === "single" ? data.needs : "target", preparesEnvironment: data.kind === "single" ? data.preparesEnvironment : false });
+        units.push({ label: `${slice.label}${target.flag ? ` [--${target.flag.name}]` : " [base effect]"}`, command, ...(slice.action ? { action: slice.action } : {}), effect: target.effect, args, sliceArguments: slice.args, sliceRules: slice.rules, baseEffect: slice.effect, needs: slice.needs, preparesEnvironment: data.kind === "single" ? data.preparesEnvironment : false });
       }
     }
   }
@@ -138,8 +136,12 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
       // - recover-env (needs "deployment" -> "target"): execute gives deployment-needs
       //   commands a deploymentScope that never consults app.settings, so the context seam
       //   cannot refuse the call and the case would reach run instead of its built-for
-      //   context stage. Every other unit keeps its real needs.
-      const body = commandBody({ effect: unit.baseEffect, arguments: [...unit.sliceArguments], rules: [...unit.sliceRules], needs: unit.needs === "deployment" ? "target" : unit.needs, ...(unit.preparesEnvironment ? { preparesEnvironment: true } : {}), ...(mode === "prepare" ? { prepare: async () => { throw new UserError("prepare refusal"); } } : {}), run: async () => {}, structured: true });
+      //   context stage. The same holds for a needs "local" unit (S2.6a). Only the
+      //   context-forcing mode substitutes: there such a unit never builds the Context that
+      //   mode's seam refuses, so it is probed at "target"; every other mode keeps the
+      //   unit's DECLARED needs — run mode therefore exercises local units on their real
+      //   scope, and deployment units on their deploymentScope.
+      const body = commandBody({ effect: unit.baseEffect, arguments: [...unit.sliceArguments], rules: [...unit.sliceRules], needs: mode === "context" && unit.needs !== "target" ? "target" : unit.needs, ...(unit.preparesEnvironment ? { preparesEnvironment: true } : {}), ...(mode === "prepare" ? { prepare: async () => { throw new UserError("prepare refusal"); } } : {}), run: async () => {}, structured: true });
       return [name, { summary: unit.command, group: "change", structured: true, ...body }];
     })));
     const app = { name: "fixture", description: "changed inventory", commands, ...(mode === "context" ? { settings: () => { throw new UserError("context refusal"); } } : {}) };

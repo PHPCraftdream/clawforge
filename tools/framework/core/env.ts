@@ -334,6 +334,14 @@ export function shellOnlyEnvWarning(fileEnv: Env, shellEnv: Readonly<Record<stri
 
 let shellOnlyEnvWarned = false;
 
+// Check-only read counter (stage 7 S2.6a): every text read of the deployment's .env goes
+// through here (loadEnv) or through LocalScope.env (core/command/spec.ts). A check resets
+// the counter and asserts zero, proving a needs-"local" unit never reads or parses the .env.
+let envTextReads = 0;
+export function countEnvRead(): void { envTextReads += 1; }
+export function envReads(): number { return envTextReads; }
+export function resetEnvReads(): void { envTextReads = 0; }
+
 export async function loadEnv(): Promise<Env> {
   const file = envFile();
   try {
@@ -341,6 +349,7 @@ export async function loadEnv(): Promise<Env> {
   } catch {
     die(`${file} not found. Run ${commandLine(["bootstrap"])} first.`);
   }
+  countEnvRead();
   const env = parseEnv(await readFile(file, "utf8"));
   if (!shellOnlyEnvWarned) {
     const warning = shellOnlyEnvWarning(env, process.env, file);

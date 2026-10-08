@@ -12,7 +12,7 @@ import { argumentsView } from "#src/core/command/view.ts";
 import { parseCall, type CallShape } from "#src/core/command/parse/index.ts";
 import { shapeProfile, type EffectShape } from "#src/core/command/effect.ts";
 import { serviceOf, type Context } from "#src/core/context.ts";
-import { parseEnv, type Env } from "#src/core/env.ts";
+import { countEnvRead, parseEnv, type Env } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, envFile } from "#src/runtime/deployment.ts";
 import type { Transport } from "#src/runtime/transport/transport.ts";
 import type { ValueParser } from "#src/core/values/value.ts";
@@ -25,7 +25,10 @@ import { UserError } from "#src/core/io/log.ts";
 
 /** What a call does to state: read < change < destroy. */
 export type Effect = "read" | "change" | "destroy";
-export type Needs = "deployment" | "target";
+/** How far the pipeline builds for a unit: `local` touches only this machine (no Context,
+ *  no .env parse, no transport); `deployment` adds the local view of the deployment plus a
+ *  transport; `target` builds the full Context (the default). */
+export type Needs = "local" | "deployment" | "target";
 
 interface ArgumentBase<N extends string> {
   readonly name: N;
@@ -170,7 +173,7 @@ export interface PrepareCall<V> extends ParsedCall<V> {
   derive<T, R = T>(argument: keyof V & string, kind: ValueKind<T, R>, raw: string): Promise<R>;
 }
 
-type On<N extends Needs> = N extends "deployment" ? DeploymentScope : Context;
+type On<N extends Needs> = N extends "deployment" ? DeploymentScope : N extends "local" ? LocalScope : Context;
 
 interface Phases<V, P, N extends Needs> {
   /** Refusals that need only the arguments and local files; absent: the plan is `call.values`. */
@@ -193,10 +196,13 @@ export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Need
   readonly preparesEnvironment?: N extends "target" ? true : never;
 }
 
-export interface ActionSpec<A extends readonly ArgumentSpec[], P> extends Phases<Values<A>, P, "target"> {
+export interface ActionSpec<A extends readonly ArgumentSpec[], P, N extends Needs = "target"> extends Phases<Values<A>, P, N> {
   readonly summary: string;
   /** Absent: the body's effect. */
   readonly effect?: Effect;
+  /** Default "target" — an action that only touches this machine declares "local", and the
+   *  pipeline then builds no Context, no .env parse and no transport for it. */
+  readonly needs?: N;
   readonly arguments?: A;
   /** Exact argv tokens (before a bare `--`) refused with this reason, ahead of tokenizing: not an
    *  argument, so absent from help, the MCP schema and the declared arguments. */
@@ -218,6 +224,7 @@ interface ActionData extends PhaseData {
   readonly kind: "action";
   readonly summary: string;
   readonly effect?: Effect;
+  readonly needs: Needs;
   readonly arguments: readonly ArgumentSpec[];
   readonly refuse?: Readonly<Record<string, string>>;
   readonly rules?: readonly ArgumentRule[];
@@ -379,13 +386,13 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
 }
 
 /** One action of a multi-action command. */
-export function defineAction<const A extends readonly ArgumentSpec[], P = Values<A>>(action: ActionSpec<A, P>): Action {
+export function defineAction<const A extends readonly ArgumentSpec[], P = Values<A>, N extends Needs = "target">(action: ActionSpec<A, P, N>): Action {
   checkArguments(`action ${action.summary}`, action.arguments ?? []);
   if (action.rules !== undefined) checkRules(`action ${action.summary}`, action.arguments ?? [], action.rules);
   if (action.localFacts !== undefined) checkLocalFacts(`action ${action.summary}`, action.arguments ?? [], action.localFacts);
   checkEffectConflicts(`action ${action.summary}`, action.arguments ?? [], action.rules ?? []);
   const data: ActionData = {
-    kind: "action", summary: action.summary, effect: action.effect, arguments: action.arguments ?? [], refuse: action.refuse, rules: action.rules, localFacts: action.localFacts, ...phasesOf(action),
+    kind: "action", summary: action.summary, effect: action.effect, needs: action.needs ?? "target", arguments: action.arguments ?? [], refuse: action.refuse, rules: action.rules, localFacts: action.localFacts, ...phasesOf(action),
   };
   return { [COMMAND_SPEC]: data };
 }
@@ -432,6 +439,7 @@ export function localScope(): LocalScope {
   return {
     deployment: () => ({ name: deploymentName(), dir: deploymentDir() }),
     env: async () => {
+      countEnvRead();
       const text = await readText(envFile());
       return text === undefined ? undefined : parseEnv(text);
     },
@@ -512,6 +520,13 @@ export async function preparedPlan(phases: PhaseData & { readonly arguments?: re
   return prepared(phases.prepare === undefined ? resolved : await phases.prepare(prepareCallOf(settled, byName, local), local));
 }
 
+/** The selected unit's needs: a single body's own, a multi body's chosen action's. The
+ *  pipeline's one reader — no surface re-derives it and no command keeps a hand list. */
+export function unitNeeds(data: SingleData | MultiData, action: string | undefined): Needs {
+  if (data.kind === "single") return data.needs;
+  return action === undefined ? "target" : data.actions[action]?.needs ?? "target";
+}
+
 /** Parse, prepare, run — on a context the caller already has: no environment preparation,
  *  no confirmation, no --json contract, exactly like calling the command's function directly.
  *  An ArgumentError escaping `run` (it cannot be built there) is raised as the invariant's
@@ -521,7 +536,8 @@ export async function runOnContext(body: CommandBody, ctx: Context, args: readon
   const call = parseCall(specShape(body), args, command);
   const phases = data.kind === "single" ? data : data.actions[call.action!];
   const plan = await preparedPlan(phases, call);
-  const on = data.kind === "single" && data.needs === "deployment" ? deploymentScopeOn(ctx) : ctx;
+  const needs = unitNeeds(data, call.action);
+  const on = needs === "deployment" ? deploymentScopeOn(ctx) : needs === "local" ? localScope() : ctx;
   try {
     await (phases.run as (on: unknown, plan: unknown) => Promise<void>)(on, plan);
   } catch (error) {

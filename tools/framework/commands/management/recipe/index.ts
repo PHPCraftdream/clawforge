@@ -195,6 +195,10 @@ export const RECIPE = multiActionBody({
     }),
     import: defineAction({
       summary: "Copy a recipe directory into recipes/",
+      // Q1: the action only adds files under recipes/ — `change`, so MCP asks no confirm —
+      // and Q8/needs: "local": it runs with no Context, no .env parse and no transport.
+      effect: "change",
+      needs: "local",
       arguments: [SOURCE_ARGUMENT, {
         name: "new-name",
         summary: "Use this name instead of the source name",
@@ -221,6 +225,9 @@ export const RECIPE = multiActionBody({
     }),
     new: defineAction({
       summary: "Scaffold a recipes/<name>/ skeleton",
+      // Q1 + Q8, as import: repository-side only, so `change` and `needs: "local"`.
+      effect: "change",
+      needs: "local",
       arguments: [NEW_NAME_ARGUMENT, {
         name: "with-hooks",
         summary: "add commented prepare.ts/verify.ts stubs",

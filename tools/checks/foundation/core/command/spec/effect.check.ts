@@ -69,7 +69,8 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   recipe: [
     [[], "read"], [["list"], "read"], [["status", "x"], "read"], [["logs", "x"], "read"],
     [["install", "x"], "destroy"], [["install", "x", "--dry-run"], "read"], [["remove", "x"], "destroy"], [["remove", "x", "--dry-run"], "read"],
-    [["import", "x"], "destroy"], [["new", "x"], "destroy"], [["verify", "x"], "destroy"], [["verify", "x", "--dry-run"], "destroy"],
+    // Q1 (S2.6a): import/new only add files — `change`, like `needs: "local"`.
+    [["import", "x"], "change"], [["new", "x"], "change"], [["verify", "x"], "destroy"], [["verify", "x", "--dry-run"], "destroy"],
     [["onboard", "x"], "destroy"], [["diagnose", "x"], "destroy"],
     // the operand is declared required per action: a bare action word is refused at parse
     [["status"], "read"], [["logs"], "read"], [["install"], "destroy"], [["remove"], "destroy"], [["import"], "destroy"],

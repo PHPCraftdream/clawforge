@@ -10,7 +10,7 @@ import type { AppCommand, AppDefinition } from "#src/core/app.ts";
 import { callFacts, callFactsFor, legacyPreparesEnvironment, type CallFacts, type EffectShape } from "#src/core/command/effect.ts";
 import { ArgumentError, ConfirmationRequiredError, LateArgumentError, UnknownArgumentError } from "#src/core/command/errors.ts";
 import { bindNamed, isVerbatim, parseCall, selectAction, tokenize, type CallInput, type CallShape } from "#src/core/command/parse/index.ts";
-import { localScope, preparedPlan, specData, specOf, specShape, type DeploymentScope, type ParsedCall } from "#src/core/command/spec.ts";
+import { localScope, preparedPlan, specData, specOf, specShape, unitNeeds, type DeploymentScope, type LocalScope, type ParsedCall } from "#src/core/command/spec.ts";
 import { createContext, type Context, type ContextOptions } from "#src/core/context.ts";
 import { maskSecrets, UserError, CommandFailedError } from "#src/core/io/log.ts";
 import { renderCurrentAdviceRows } from "#src/core/io/invocation/render.ts";
@@ -191,17 +191,22 @@ export async function executeCommand(app: AppDefinition, name: string, input: Ca
       return failed("prepare", error, facts, shape, call.action, call.given.includes("json"));
     }
     io.observe?.("prepare");
+    const needs = unitNeeds(data, call.action);
     try {
-      if (data.kind === "single" && data.preparesEnvironment && facts.effect !== "read") environmentWrote = (await ensureEnvironment()).wrote;
+      if (data.kind === "single" && data.preparesEnvironment && needs === "target" && facts.effect !== "read") environmentWrote = (await ensureEnvironment()).wrote;
     } catch (error) {
       return failed("environment", error, facts, shape, call.action, call.given.includes("json"));
     }
     io.observe?.("environment");
-    let on: Context | DeploymentScope;
+    // Needs are the selected unit's own: `local` stops after prepare — no .env parse, no
+    // transport, no Context; the recipes directory was already selected above.
+    let on: Context | DeploymentScope | LocalScope;
     try {
-      on = data.kind === "single" && data.needs === "deployment"
+      on = needs === "deployment"
         ? await deploymentScope(app, io)
-        : await createContext(contextOptions(app, io));
+        : needs === "local"
+          ? localScope()
+          : await createContext(contextOptions(app, io));
     } catch (error) {
       return failed("context", error, facts, shape, call.action, call.given.includes("json"));
     }

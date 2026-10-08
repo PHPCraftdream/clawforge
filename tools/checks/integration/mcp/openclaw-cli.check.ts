@@ -148,8 +148,8 @@ check(
   await withModelApproval(true, () => openclawCli(ctx, ["cron", "add", "--name", "x"]));
   check(
     "a scope-refused call is approved and retried once",
-    calls.map((c) => c.slice(0, 2).join(" ")),
-    ["cron add", "agent --agent", "cron add"],
+    calls.map((c) => c.slice(0, 2)),
+    [["cron", "add"], ["agent", "--agent"], ["cron", "add"]],
   );
   check(
     "the approval that was actually sent carries the refused request's id",
@@ -286,7 +286,7 @@ check(
     const optedIn = ctxWith(answer);
     let optedInOutput = "";
     await withOutputSink(() => {}, async () => accept(optedIn.ctx, ["--json", "--with-model"]), (chunk) => { optedInOutput += chunk; });
-    check("accept with --with-model performs one approval and one retry", optedIn.calls.map((args) => args.slice(0, 2).join(" ")), ["cron list", "agent --agent", "cron list"]);
+    check("accept with --with-model performs one approval and one retry", optedIn.calls.map((args) => args.slice(0, 2)), [["cron", "list"], ["agent", "--agent"], ["cron", "list"]]);
     check("accept with --with-model passes after approval", (JSON.parse(optedInOutput) as { passed: number }).passed, 1);
 
     const after = ctxWith(() => refused);

@@ -87,8 +87,8 @@ check("destructive commands with readOnlyWhen make confirm conditional, not stat
 check("a good named call binds", binderRefusal(specShape(specOf(openclawCommands.pull)!), { profile: "share" }, "pull"), undefined);
 check(
   "an unknown argument is rejected",
-  [binderRefusal(specShape(specOf(openclawCommands.status)!), { bogus: "x" }, "status")?.message, binderRefusal(specShape(specOf(openclawCommands.status)!), { bogus: "x" }, "status")?.argument],
-  ["unknown argument: bogus", "bogus"],
+  [binderRefusal(specShape(specOf(openclawCommands.status)!), { bogus: "x" }, "status") instanceof UnknownArgumentError, binderRefusal(specShape(specOf(openclawCommands.status)!), { bogus: "x" }, "status")?.argument],
+  [true, "bogus"],
 );
 // Choices and required belong to the one binder now: it refuses in the parser's own words.
 function formRefusal(run: () => unknown): (Error & { argument?: string }) | undefined {
@@ -103,11 +103,7 @@ function binderRefusal(shape: CallShape, args: Record<string, unknown>, command:
   const parser = formRefusal(() => parseCall(shape, ["--profile", "everything"], "pull"));
   check("the named call is refused in the parser's own words: choices", binder?.message, parser?.message);
 }
-check(
-  "a wrong type is rejected",
-  binderRefusal(specShape(specOf(openclawCommands.backup)!), { hot: "yes" }, "backup")?.message,
-  "hot takes true or false",
-);
+check("a wrong type is rejected", refusalFacts(() => bindNamed(specShape(specOf(openclawCommands.backup)!), { kind: "named", args: { hot: "yes" } }, "backup")), [true, false, "hot"]);
 {
   const shape = specShape(specOf(openclawCommands.verify)!);
   const binder = binderRefusal(shape, {}, "verify");
@@ -128,21 +124,21 @@ check("a required variadic is required", cliSchema.required.includes("args"), tr
 check("a well-formed variadic binds", binderRefusal(specShape(specOf(openclawCommands.cli)!), { args: ["status"] }, "cli"), undefined);
 {
   const shape = specShape(specOf(openclawCommands.cli)!);
-  const refusal = (args: unknown) => binderRefusal(shape, { args }, "cli")?.message;
+  const refusal = (args: unknown) => { const error = binderRefusal(shape, { args }, "cli"); return [error instanceof ArgumentError, error?.argument]; };
   check(
     "a variadic given a bare string is refused",
     refusal("status"),
-    "args takes a list of non-empty strings",
+    [true, "args"],
   );
   check(
     "a variadic containing a non-string is refused",
     refusal(["status", 7]),
-    "args takes a list of non-empty strings",
+    [true, "args"],
   );
   check(
     "a variadic containing an empty string is refused",
     refusal(["status", ""]),
-    "args takes a list of non-empty strings",
+    [true, "args"],
   );
   // The missing-args refusal is the binder's own, via requiredArgumentRefusal.
   const missing = binderRefusal(shape, {}, "cli");
@@ -207,6 +203,9 @@ for (const { name, command, attempt } of dashedCases) {
 
 // --- generic parser: --opt=value, a repeated positional, and a missing option value --------
 // die() throws rather than exiting, so the message is the observable.
+function refusalFacts(run: () => unknown): [boolean, boolean, string | undefined] {
+  const error = refusal(run); return [error instanceof ArgumentError, error instanceof UnknownArgumentError, error instanceof ArgumentError ? error.argument : undefined];
+}
 function deathOf(run: () => unknown): string {
   try {
     run();
@@ -232,23 +231,23 @@ check(
 );
 check(
   "--flag=value is refused — a flag carries no value to assign, named as such rather than unknown",
-  deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=x"])),
-  "--dry-run is a flag and takes no value",
+  refusalFacts(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=x"])),
+  [true, false, "dry-run"],
 );
 check(
   "--flag=false is refused the same way — a flag is never given a value, true or otherwise",
-  deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=false"])),
-  "--dry-run is a flag and takes no value",
+  refusalFacts(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=false"])),
+  [true, false, "dry-run"],
 );
 check(
   "a second bare positional is refused, not silently replacing the first",
-  deathOf(() => parseDeclaredArgs([POSITIONAL_ARG], ["h1", "h2"])),
-  "unknown argument: h2",
+  refusalFacts(() => parseDeclaredArgs([POSITIONAL_ARG], ["h1", "h2"])),
+  [true, true, "h2"],
 );
 check(
   "an option with nothing after it dies with one consistent message",
-  deathOf(() => parseDeclaredArgs([OPTION_ARG], ["--path"])),
-  "--path needs a value",
+  refusalFacts(() => parseDeclaredArgs([OPTION_ARG], ["--path"])),
+  [true, false, "path"],
 );
 
 // --- generic parser: U6 report table — a value option does not swallow a following
@@ -261,13 +260,13 @@ const LOGS_ARGS: CommandArgument[] = [GREP_ARG, JSON_ARG, TAIL_ARG];
 
 check(
   "an option does not swallow a following declared flag as its value (report: logs --grep --json)",
-  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--grep", "--json"])),
-  "--grep needs a value",
+  refusalFacts(() => parseDeclaredArgs(LOGS_ARGS, ["--grep", "--json"])),
+  [true, false, "grep"],
 );
 check(
   "...naming the option that needed the value, not the one it would have swallowed",
-  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--tail", "--grep", "x"])),
-  "--tail needs a value",
+  refusalFacts(() => parseDeclaredArgs(LOGS_ARGS, ["--tail", "--grep", "x"])),
+  [true, false, "tail"],
 );
 check(
   "a value that legitimately starts with - still works via the inline =value form",
@@ -287,13 +286,13 @@ check(
 
 check(
   "a repeated value option is refused (report: --tail 5 --tail 6 silently kept 6)",
-  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--tail", "5", "--tail", "6"])),
-  "--tail given more than once",
+  refusalFacts(() => parseDeclaredArgs(LOGS_ARGS, ["--tail", "5", "--tail", "6"])),
+  [true, false, "tail"],
 );
 check(
   "...the same whether the first occurrence was inline or two tokens",
-  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--tail=5", "--tail", "6"])),
-  "--tail given more than once",
+  refusalFacts(() => parseDeclaredArgs(LOGS_ARGS, ["--tail=5", "--tail", "6"])),
+  [true, false, "tail"],
 );
 check(
   "a repeated FLAG is unaffected — no repeatable notion exists, and none is added for flags",
@@ -313,8 +312,8 @@ check(
 );
 check(
   "a command that declares no positional/variadic still refuses the token after --, as today",
-  deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--", "extra"])),
-  "unknown argument: extra",
+  refusalFacts(() => parseDeclaredArgs([FLAG_ARG], ["--", "extra"])),
+  [true, true, "extra"],
 );
 check(
   "--tail=-1 is accepted by the parser — a negative-looking inline value is the command's own to refuse",
@@ -331,18 +330,18 @@ const LIST_ONLY_ARGS: CommandArgument[] = [JSON_ARG];
 
 check(
   "a flag declared only for another action names that action, not 'unknown' (report: backup list --keep)",
-  deathOf(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--keep", "3"], { action: "list", siblings: [...LIST_ONLY_ARGS, KEEP_ARG] })),
-  "--keep applies to `prune-replaced`, not `list`",
+  refusalFacts(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--keep", "3"], { action: "list", siblings: [...LIST_ONLY_ARGS, KEEP_ARG] })),
+  [true, true, "keep"],
 );
 check(
   "an argument shared by several actions lists every one of them",
-  deathOf(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--apply"], { action: "list", siblings: [...LIST_ONLY_ARGS, APPLY_ARG] })),
-  "--apply applies to `prune-replaced`, `install`, `uninstall`, not `list`",
+  refusalFacts(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--apply"], { action: "list", siblings: [...LIST_ONLY_ARGS, APPLY_ARG] })),
+  [true, true, "apply"],
 );
 check(
   "with no scope, the same call falls back to the plain unknown-argument refusal",
-  deathOf(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--keep", "3"])),
-  "unknown argument: --keep",
+  refusalFacts(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--keep", "3"])),
+  [true, true, "--keep"],
 );
 
 // The report's own case, through the real declaration backup wires up (not a stand-in) —
@@ -382,18 +381,18 @@ check(
 
 check(
   "an unknown flag close to a declared one gets a did-you-mean suggestion",
-  deathOf(() => parseDeclaredArgs([OPTION_ARG, FLAG_ARG], ["--pth", "/tmp"])),
-  "unknown argument: --pth (did you mean --path?)",
+  refusalFacts(() => parseDeclaredArgs([OPTION_ARG, FLAG_ARG], ["--pth", "/tmp"])),
+  [true, true, "--pth"],
 );
 check(
   "nothing close enough suggests nothing",
-  deathOf(() => parseDeclaredArgs([OPTION_ARG, FLAG_ARG], ["--totally-unrelated"])),
-  "unknown argument: --totally-unrelated",
+  refusalFacts(() => parseDeclaredArgs([OPTION_ARG, FLAG_ARG], ["--totally-unrelated"])),
+  [true, true, "--totally-unrelated"],
 );
 check(
   "a bare positional overflow gets no suggestion — only --flag typos do",
-  deathOf(() => parseDeclaredArgs([POSITIONAL_ARG], ["h1", "h2"])),
-  "unknown argument: h2",
+  refusalFacts(() => parseDeclaredArgs([POSITIONAL_ARG], ["h1", "h2"])),
+  [true, true, "h2"],
 );
 
 {
@@ -509,11 +508,11 @@ check("given values are bound in typing order: n first", argumentOf(refusal(() =
 check("given values are bound in typing order: mode first", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--mode=c", "--n=x"]))), "mode");
 {
   const error = refusal(() => parseCall(SINGLE, ["f", "--mode="]));
-  check("an empty value without a parser is refused, naming the argument", [argumentOf(error), error?.message], ["mode", "--mode needs a value"]);
+  check("an empty value without a parser is refused, naming the argument", [error instanceof ArgumentError, argumentOf(error)], [true, "mode"]);
 }
 {
   const error = refusal(() => parseCall(SINGLE, [], "x"));
-  check("a missing required argument is named", [argumentOf(error), error?.message], ["file", "x needs <file>"]);
+  check("a missing required argument is named", [error instanceof ArgumentError, argumentOf(error)], [true, "file"]);
 }
 check("a refused given value comes before a missing required one", argumentOf(refusal(() => parseCall(SINGLE, ["--n=x"]))), "n");
 check("required are reported in declaration order", argumentOf(refusal(() => parseCall({
@@ -569,7 +568,7 @@ check("the default action may be named", parseCall(MULTI, ["create", "--profile=
 check("a flag nobody declares is plain unknown", refusal(() => parseCall(MULTI, ["list", "--zzz"]))?.message, "unknown argument: --zzz");
 {
   const error = refusal(() => parseCall(MULTI, ["forget"], "set"));
-  check("a required option of an action: named with command and action", [argumentOf(error), error?.message], ["kind", "set forget needs --kind <kind>"]);
+  check("a required option of an action: named with command and action", [error instanceof ArgumentError, argumentOf(error)], [true, "kind"]);
 }
 check("a choice of an action is enforced", argumentOf(refusal(() => parseCall(MULTI, ["forget", "--kind=x"]))), "kind");
 

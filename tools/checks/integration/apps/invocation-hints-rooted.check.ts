@@ -9,7 +9,7 @@ import { frameFromInvocation } from "#framework/core/io/invocation/frame.ts";
 import type { Invocation } from "#framework/core/io/invocation/index.ts";
 import { INVOCATION_ENV, parseInvocation } from "#framework/core/io/invocation/index.ts";
 
-import { monorepoRoot } from "#framework/core/env.ts";
+import { appsRootFor, monorepoRoot } from "#framework/core/env.ts";
 import { checkoutGateFrame } from "#framework/core/io/invocation/frame.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
@@ -57,6 +57,7 @@ const fixture = await createDeploymentFixture();
 try {
   const root = fixture.root;
   const checkoutRoot = monorepoRoot;
+  const appsRoot = appsRootFor(checkoutRoot);
   const appRoot = resolve(monorepoRoot, "apps", "demo");
   const owner = frameworkOwner({ self: resolve(root, "global", "entry", "bin.js"), appRoot, launchArgv: ["--app", "demo", "status"], argv: ["status"], handedOver: false, platform: "linux", fs: {
     exists: (path) => path === resolve(checkoutRoot, "tools", "clawforge.ts") || path === resolve(appRoot, "app.ts") || path === resolve(checkoutRoot, "apps", "demo", "app.ts"),
@@ -73,18 +74,19 @@ try {
       return { pid: 1, output: [], stdout: "", stderr: "", status: 0, signal: null, error: undefined } as ReturnType<typeof spawnSync>;
     };
     spawnDelegated(owner.entry, [...owner.args], owner.delegated, spawnFrame, runner as typeof spawnSync);
-    checkTrue("delegated spawn passes selected app to final gate", captured !== undefined && captured.args.slice(2).join(" ") === owner.args.join(" "));
+    check("delegated spawn passes selected app to final gate", captured?.args.slice(2), owner.args);
     checkTrue("delegated spawn inherits cwd", captured !== undefined && captured.options.cwd === undefined);
     const finalInvocation = captured === undefined ? undefined : parseInvocation(String(captured.options.env?.[INVOCATION_ENV]));
     checkTrue("delegated spawn serializes selected app", finalInvocation?.app?.name === "demo" && finalInvocation.app.selectedBy === "flag");
     const final = resolveCheckoutEntry({ root: checkoutRoot, cwd: process.cwd(), argv: owner.args, ocApp: undefined, handedOver: true, launch: frame.launch, handedProgram: owner.entry, fs: {
-      exists: (path) => path === resolve(checkoutRoot, "tools", "clawforge.ts") || path === resolve(checkoutRoot, "apps", "openclaw", "app.ts") || path === resolve(checkoutRoot, "apps", "demo", "app.ts"),
-      isDirectory: (path) => path === resolve(checkoutRoot, "apps") || path === resolve(checkoutRoot, "apps", "demo"),
-      readdir: (path) => path === resolve(checkoutRoot, "apps") ? ["demo"] : [],
+      exists: (path) => path === resolve(checkoutRoot, "tools", "clawforge.ts") || path === resolve(appsRoot, "openclaw", "app.ts") || path === resolve(appsRoot, "demo", "app.ts"),
+      isDirectory: (path) => path === appsRoot || path === resolve(appsRoot, "demo"),
+      readdir: (path) => path === appsRoot ? ["demo"] : [],
       readFile: (path) => path === resolve(checkoutRoot, "tools", "framework", "package.json") ? JSON.stringify({ name: "@clawforge/framework" }) : undefined,
       realpath: (path) => path,
     }, gateCommands: [], deploymentCommands: ["status"], variadicCommands: [] });
-    checkTrue("delegated spawn passes the selected app to the final gate", final.kind === "run" && final.appName === "demo" && final.argv.join(" ") === "status");
+    checkTrue("delegated spawn passes the selected app to the final gate", final.kind === "run" && final.appName === "demo");
+    check("delegated spawn preserves the final argv", final.kind === "run" ? final.argv : undefined, ["status"]);
   }
 } finally {
   await fixture.dispose();

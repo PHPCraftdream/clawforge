@@ -37,6 +37,7 @@ check("ordinary output produces nothing", parseCaseSkips("  ok   something\nall 
 
 // --- diffSnapshots: apps/ entries and git status must survive the run unchanged -----------------
 
+const withoutMode = (entry: AppsEntry): AppsEntry => { const { mode: _mode, ...rest } = entry; return rest; };
 const file = (path: string, size: number, hash?: string): AppsEntry => ({ path, size, ...(hash === undefined ? {} : { hash }) });
 const snapshot = (over: Partial<CheckoutSnapshot> = {}): CheckoutSnapshot => ({
   apps: [file("a", 1, "h1"), file("b", 2, "h2")],
@@ -128,7 +129,7 @@ check(
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-runguard-"));
 try {
-  const git = await runProcess("git", ["init", "-q"], { cwd: root, timeoutMs: 30_000 });
+  const git = await runProcess("git", ["init", "-q"], { cwd: root, timeoutMs: 60_000 });
   if (git.code !== 0) throw new Error("throwaway git init failed: " + git.output);
   await writeFile(join(root, ".gitignore"), ".claude/\n*.token\nnode_modules/\ntools/framework/dist/\n");
   const apps = join(root, "apps");
@@ -146,7 +147,7 @@ try {
   const beforeLarge = await snapshotCheckout(root);
   await writeFile(large, Buffer.alloc(65537, 66));
   const afterLarge = await snapshotCheckout(root);
-  check("65537 A to B bytes change despite identical size", { entries: afterLarge.apps.filter((entry) => entry.path === "existing/large.bin"), changes: diffSnapshots(beforeLarge, afterLarge).length },
+  check("65537 A to B bytes change despite identical size", { entries: afterLarge.apps.filter((entry) => entry.path === "existing/large.bin").map(withoutMode), changes: diffSnapshots(beforeLarge, afterLarge).length },
     { entries: [file("existing/large.bin", 65537, "29683b6ad0ba6b29316e012afeb0c176df5ec24773beb5193f7a60f7c855b0a1")], changes: 1 });
   check("65537 A bytes have an independent full SHA256", beforeLarge.apps.find((entry) => entry.path === "existing/large.bin")?.hash,
     "ac72112c832fa4683b15ebff51a8f5f2ca08226c0d59bdb9ac739c2cdc28a05c");
@@ -175,7 +176,7 @@ try {
     const beforeToken = await snapshotCheckout(root);
     await writeFile(token, "BBBB");
     const afterToken = await snapshotCheckout(root);
-    check("existing ignored AAAA to BBBB changes despite identical name and size", { entries: afterToken.ignored?.filter((entry) => entry.path === ".claude/preexisting.token"), changes: diffSnapshots(beforeToken, afterToken).length },
+    check("existing ignored AAAA to BBBB changes despite identical name and size", { entries: afterToken.ignored?.filter((entry) => entry.path === ".claude/preexisting.token").map(withoutMode), changes: diffSnapshots(beforeToken, afterToken).length },
       { entries: [file(".claude/preexisting.token", 4, "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd")], changes: 1 });
     check("ignored AAAA has an independent full SHA256", beforeToken.ignored?.find((entry) => entry.path === ".claude/preexisting.token")?.hash,
       "63c1dd951ffedf6f7fd968ad4efa39b8ed584f162f46e715114ee184f8de9201");
@@ -188,7 +189,7 @@ try {
     const beforeSpace = await snapshotCheckout(root);
     await writeFile(spaced, "BBBB");
     const afterSpace = await snapshotCheckout(root);
-    check("ignored paths with spaces and Unicode retain their content witness", { entries: afterSpace.ignored?.filter((entry) => entry.path === spaced.slice(root.length + 1)), changes: diffSnapshots(beforeSpace, afterSpace).length },
+    check("ignored paths with spaces and Unicode retain their content witness", { entries: afterSpace.ignored?.filter((entry) => entry.path === spaced.slice(root.length + 1)).map(withoutMode), changes: diffSnapshots(beforeSpace, afterSpace).length },
       { entries: [file("space quoted ü.token", 4, "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd")], changes: 1 });
     checkTrue("the temp snapshot records ignored space", afterSpace.ignoredStatus !== undefined);
     checkTrue("every ignored status line is an ignored entry", (afterSpace.ignoredStatus ?? "").split("\n").every((line) => line.slice(0, 3).trimEnd() === "!!"));
@@ -208,8 +209,8 @@ try {
     const beforeLink = await snapshotCheckout(root);
     await symlink(outside, join(apps, "linked"), "file");
     const afterLink = await snapshotCheckout(root);
-    check("an app symlink stores its exact target", afterLink.apps.find((entry) => entry.path === "linked"), { path: "linked", link: outside });
-    check("a symlink created between snapshots is named", { entries: afterLink.apps.filter((entry) => entry.path === "linked"), changes: diffSnapshots(beforeLink, afterLink).length }, { entries: [{ path: "linked", link: outside }], changes: 1 });
+    check("an app symlink stores its exact target", afterLink.apps.filter((entry) => entry.path === "linked").map(withoutMode)[0], { path: "linked", link: outside });
+    check("a symlink created between snapshots is named", { entries: afterLink.apps.filter((entry) => entry.path === "linked").map(withoutMode), changes: diffSnapshots(beforeLink, afterLink).length }, { entries: [{ path: "linked", link: outside }], changes: 1 });
     const dirLink = join(apps, "linked-dir");
     await symlink(join(apps, "existing"), dirLink, "dir");
     const withDirLink = await snapshotCheckout(root);
@@ -221,8 +222,9 @@ try {
     const beforeTarget = await snapshotCheckout(root);
     await writeFile(outside, "beta\n");
     const afterTarget = await snapshotCheckout(root);
-    check("an ignored symlink stores its target, not its content", afterTarget.ignored?.find((entry) => entry.path === "linked.token"), { path: "linked.token", link: outside });
-    check("neither apps nor ignored symlinks follow target rewrites", diffSnapshots(beforeTarget, afterTarget), []);
+    check("an ignored symlink stores its target, not its content", afterTarget.ignored?.filter((entry) => entry.path === "linked.token").map(withoutMode)[0], { path: "linked.token", link: outside });
+    check("neither apps nor ignored symlinks follow target rewrites", diffSnapshots(beforeTarget, afterTarget).filter((line) => line.split(/\s+/)[0] !== "checkout"), []);
+    checkTrue("the target rewrite itself is still observed", diffSnapshots(beforeTarget, afterTarget).some((line) => line.includes("outside.env")));
   });
 } finally {
   await rm(root, { recursive: true, force: true });

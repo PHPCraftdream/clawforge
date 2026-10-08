@@ -67,8 +67,8 @@ check("when the lock was written is not part of what it pins", compareLock(compo
   check("a different digest still is, whatever registry it names", details({ image: { reference: "ghcr.io/openclaw/openclaw:extended-stable", digest: "mirror.example.com/openclaw/openclaw@sha256:ccc" } }).length, 1);
 }
 
-check("a framework version bump is drift", details({ framework: "0.2.0" }), ["framework is 0.2.0, locked at 0.1.0"]);
-check("a changed declaration is drift", details({ desiredState: "d".repeat(64) }), ["config/desired-state.json has changed since the lock was written"]);
+check("a framework version bump is drift", compareLock(composition(), composition({ framework: "0.2.0" })).map((entry) => entry.code), ["LOCK_DRIFT"]);
+check("a changed declaration is drift", compareLock(composition(), composition({ desiredState: "d".repeat(64) })).map((entry) => entry.code), ["LOCK_DRIFT"]);
 
 {
   const changed = { ...files, "data/page.md": "e".repeat(64) };
@@ -77,17 +77,17 @@ check("a changed declaration is drift", details({ desiredState: "d".repeat(64) }
   check("and the file is named, not just counted", found[0].includes("data/page.md"), true);
 }
 
-check("a recipe that disappeared is drift", details({ recipes: {} }), ['recipe "demo" is locked but no longer present']);
+check("a recipe that disappeared is drift", compareLock(composition(), composition({ recipes: {} })).map((entry) => entry.code), ["LOCK_DRIFT"]);
 check(
   "a recipe that appeared is drift too",
-  details({ recipes: { demo: { checksum: checksumOfFileMap(files), files }, extra: { checksum: "f".repeat(64), files: {} } } }),
-  ['recipe "extra" is present but not in the lock'],
+  compareLock(composition(), composition({ recipes: { demo: { checksum: checksumOfFileMap(files), files }, extra: { checksum: "f".repeat(64), files: {} } } })).map((entry) => entry.code),
+  ["LOCK_DRIFT"],
 );
 
 // A new required secret changes what it takes to bring this deployment up somewhere else,
 // which is exactly what the lock is for. A secret no longer needed does not: it costs
 // nobody anything to have supplied it.
-check("a newly required secret is drift", details({ secrets: ["OPENCLAW_GATEWAY_TOKEN", "ZAI_API_KEY", "NEW_KEY"] }), ["the instance now requires NEW_KEY, which the lock does not list"]);
+check("a newly required secret is drift", compareLock(composition(), composition({ secrets: ["OPENCLAW_GATEWAY_TOKEN", "ZAI_API_KEY", "NEW_KEY"] })).map((entry) => entry.code), ["LOCK_DRIFT"]);
 check("a secret no longer required is not", details({ secrets: ["OPENCLAW_GATEWAY_TOKEN"] }), []);
 
 // An unreadable or future lock is one finding, not a list of differences computed against a

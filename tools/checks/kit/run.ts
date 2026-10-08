@@ -27,6 +27,10 @@ export interface RunChecksOptions {
    *  absence must fail a file that requires them, instead of skipping it — merged with
    *  OC_CHECK_REQUIRE. */
   readonly require?: readonly string[];
+  readonly checkoutRoot?: string;
+  readonly entries?: readonly LabeledCheck[];
+  readonly probe?: Pick<CapabilityProbe, "missing">;
+  readonly runFile?: typeof runCheckFile;
 }
 
 function defaultJobs(): number {
@@ -129,6 +133,8 @@ export interface AppsEntry {
   readonly hash?: string;
   /** Target string of a symlink or Windows junction entry, read without following the link. */
   readonly link?: string;
+  readonly mode?: number;
+  readonly unreadable?: string;
 }
 
 function kindOf(entry: AppsEntry): string {
@@ -147,6 +153,7 @@ export interface CheckoutSnapshot {
   readonly ignoredStatus: string | undefined;
   /** Content and link targets in existing ignored space; same exclusions as ignoredStatus. */
   readonly ignored?: readonly AppsEntry[];
+  readonly tree?: readonly AppsEntry[];
 }
 
 // Ignored space the guard does not chase: node_modules is installed dependency space, apps/ is
@@ -179,8 +186,9 @@ function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[], 
     }
     const beforeKind = kindOf(was);
     const afterKind = kindOf(entry);
-    if (was.directory !== entry.directory || was.size !== entry.size || was.hash !== entry.hash || was.link !== entry.link) {
-      changed.push(`${path} (${beforeKind} → ${afterKind})`);
+    if (was.directory !== entry.directory || was.size !== entry.size || was.hash !== entry.hash || was.link !== entry.link || was.mode !== entry.mode || was.unreadable !== entry.unreadable) {
+      const detail = was.mode !== entry.mode ? ` mode ${was.mode?.toString(8)} → ${entry.mode?.toString(8)}` : "";
+      changed.push(`${path} (${beforeKind} → ${afterKind}${detail}${was.unreadable !== entry.unreadable ? ` readability ${was.unreadable ?? "readable"} → ${entry.unreadable ?? "readable"}` : ""})`);
     }
   }
   for (const path of beforeByPath.keys()) if (!afterByPath.has(path)) lost.push(path);
@@ -193,6 +201,7 @@ function diffEntries(before: readonly AppsEntry[], after: readonly AppsEntry[], 
 
 export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot): readonly string[] {
   const changes = [...diffEntries(before.apps, after.apps)];
+  if (before.tree !== undefined && after.tree !== undefined) changes.push(...diffEntries(before.tree, after.tree, "checkout content"));
   if (before.ignored !== undefined && after.ignored !== undefined) {
     changes.push(...diffEntries(before.ignored, after.ignored, "git ignored content"));
   }
@@ -222,48 +231,88 @@ async function hashFile(path: string): Promise<string> {
 }
 
 /** lstat before recursion: symlinks (including directory links) record targets only. */
-async function snapshotPath(absolute: string, display: string, entries: AppsEntry[]): Promise<void> {
-  const info = await lstat(absolute).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (info === undefined) return;
-  if (info.isSymbolicLink()) entries.push({ path: display, link: await readlink(absolute) });
-  else if (info.isDirectory()) {
-    entries.push({ path: display, directory: true });
-    for (const name of (await readdir(absolute)).sort()) {
-      await snapshotPath(join(absolute, name), display === "" ? name : display + "/" + name, entries);
-    }
-  } else if (info.isFile()) entries.push({ path: display, size: info.size, hash: await hashFile(absolute) });
+export interface SnapshotOptions {
+  readonly beforeRead?: (path: string) => void;
 }
 
-/** Injectable checkout root governs both apps/ and git/ignored observations. */
-export async function snapshotCheckout(checkoutRoot: string = monorepoRoot): Promise<CheckoutSnapshot> {
+interface WalkOptions extends SnapshotOptions {
+  readonly clean?: ReadonlySet<string>;
+  readonly prune?: boolean;
+  readonly ignoredRoots?: readonly string[];
+}
+
+async function snapshotPath(absolute: string, display: string, entries: AppsEntry[], options: WalkOptions = {}): Promise<void> {
+  let mode: number | undefined;
+  try {
+    const info = await lstat(absolute);
+    mode = info.mode;
+    if (info.isSymbolicLink()) entries.push({ path: display, mode, link: await readlink(absolute) });
+    else if (info.isDirectory()) {
+      entries.push({ path: display, mode, directory: true });
+      for (const name of (await readdir(absolute)).sort()) {
+        const path = display === "" ? name : display + "/" + name;
+        if (options.prune && (path === ".git" || [...IGNORED_STATUS_EXCLUDES, ...(options.ignoredRoots ?? [])].some((root) => path === root || path.startsWith(root + "/")))) continue;
+        await snapshotPath(join(absolute, name), path, entries, options);
+      }
+    } else if (info.isFile()) {
+      options.beforeRead?.(absolute);
+      if (options.clean?.has(display)) entries.push({ path: display, mode });
+      else entries.push({ path: display, mode, size: info.size, hash: await hashFile(absolute) });
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return;
+    if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
+      entries.push({ path: display, mode, unreadable: code });
+      return;
+    }
+    throw error;
+  }
+}
+
+export function porcelainRecords(text: string): { status: string; path: string; source?: string }[] {
+  const fields = text.split("\0");
+  const records: { status: string; path: string; source?: string }[] = [];
+  for (let i = 0; i < fields.length; i += 1) {
+    const field = fields[i];
+    if (field.length < 4) continue;
+    const status = field.slice(0, 2);
+    const path = field.slice(3);
+    const source = /[RC]/.test(status) ? fields[++i] : undefined;
+    records.push({ status, path, ...(source === undefined ? {} : { source }) });
+  }
+  return records;
+}
+
+export async function snapshotCheckout(checkoutRoot: string = monorepoRoot, options: SnapshotOptions = {}): Promise<CheckoutSnapshot> {
   const apps: AppsEntry[] = [];
-  await snapshotPath(resolve(checkoutRoot, "apps"), "", apps);
-  const git = await runProcess("git", ["status", "--porcelain"], { cwd: checkoutRoot, timeoutMs: 30_000 });
-  // NUL-delimited porcelain disables Git quoting, preserving spaces, Unicode and newlines.
-  const ignored = await runProcess(
-    "git",
-    ["status", "--porcelain", "-z", "--ignored=matching", "--", ...IGNORED_STATUS_EXCLUDES.map((entry) => ":(exclude)" + entry)],
-    { cwd: checkoutRoot, timeoutMs: 30_000 },
-  );
+  await snapshotPath(resolve(checkoutRoot, "apps"), "", apps, options);
+  const excludes = ["--", ...IGNORED_STATUS_EXCLUDES.map((entry) => ":(exclude)" + entry), ":(exclude).git"];
+  const git = await runProcess("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", ...excludes], { cwd: checkoutRoot, timeoutMs: 60_000 });
+  const ignored = await runProcess("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", ...excludes], { cwd: checkoutRoot, timeoutMs: 60_000 });
+  const tracked = await runProcess("git", ["ls-files", "-z", ...excludes], { cwd: checkoutRoot, timeoutMs: 60_000 });
+  const available = git.error === undefined && git.code === 0 && !git.timedOut;
+  const records = porcelainRecords(git.stdout);
+  const dirty = new Set(records.flatMap((entry) => entry.source === undefined ? [entry.path] : [entry.path, entry.source]));
+  const clean = new Set(available && tracked.code === 0 && !tracked.timedOut ? tracked.stdout.split("\0").filter((path) => path !== "" && !dirty.has(path)) : []);
   const ignoredEntries: AppsEntry[] = [];
   const ignoredAvailable = ignored.error === undefined && ignored.code === 0 && !ignored.timedOut;
+  const ignoredRoots = porcelainRecords(ignored.stdout).filter((entry) => entry.status === "!!").map((entry) => entry.path.replace(/\/$/, ""));
   if (ignoredAvailable) {
-    for (const record of ignored.stdout.split("\0")) {
-      if (record.charCodeAt(0) !== 33 || record.charCodeAt(1) !== 33 || record.charCodeAt(2) !== 32) continue;
-      const path = record.slice(3).replace(/\/$/, "");
+    for (const path of ignoredRoots) {
       if (IGNORED_STATUS_EXCLUDES.some((root) => path === root || path.startsWith(root + "/"))) continue;
-      await snapshotPath(resolve(checkoutRoot, path), path, ignoredEntries);
+      await snapshotPath(resolve(checkoutRoot, path), path, ignoredEntries, options);
     }
   }
+  const tree: AppsEntry[] = [];
+  await snapshotPath(checkoutRoot, "", tree, { ...options, clean, prune: true, ignoredRoots: ignoredAvailable ? ignoredRoots : [] });
   const ignoredFiles = ignoredEntries.filter((entry) => entry.directory !== true);
   return {
     apps: apps.filter((entry) => entry.path !== ""),
-    gitStatus: git.error === undefined && git.code === 0 && !git.timedOut ? git.stdout : undefined,
+    gitStatus: available ? records.map((entry) => JSON.stringify(entry)).sort().join("\n") : undefined,
     ignoredStatus: ignoredAvailable ? ignoredFiles.map((entry) => "!! " + entry.path).sort().join("\n") : undefined,
     ignored: ignoredAvailable ? ignoredEntries : undefined,
+    tree: tree.filter((entry) => entry.path !== ""),
   };
 }
 
@@ -273,10 +322,10 @@ type Outcome = CheckResult & { readonly skipped?: readonly Capability[] };
 
 /** Probes `entry.requires` once, then runs, skips or fails it — a file whose requirement is
  *  unmet is never spawned at all. */
-async function runEntry(entry: LabeledCheck, probe: CapabilityProbe, forced: ReadonlySet<Capability>): Promise<Outcome> {
+async function runEntry(entry: LabeledCheck, probe: Pick<CapabilityProbe, "missing">, forced: ReadonlySet<Capability>, runFile: typeof runCheckFile): Promise<Outcome> {
   const missing = await probe.missing(entry.requires);
   const gate = gateFor(missing, forced);
-  if (gate.kind === "run") return runCheckFile(entry.file, entry.label);
+  if (gate.kind === "run") return runFile(entry.file, entry.label);
   if (gate.kind === "skip") return { label: entry.label, ok: true, output: "", durationMs: 0, skipped: gate.missing };
   return { label: entry.label, ok: false, output: "", durationMs: 0, reason: `unmet requirement: ${gate.missing.join(", ")}` };
 }
@@ -333,7 +382,7 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
     return 1;
   }
 
-  const labeled = await discoverChecks();
+  const labeled = options.entries ?? await discoverChecks();
   const matching = new Set(selectChecks(labeled.map((entry) => entry.label), filters));
   const selected = labeled.filter((entry) => matching.has(entry.label));
 
@@ -372,13 +421,13 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
   };
   // Exclusive files (see the discover half above) run alone once the parallel pool has drained. A file
   // whose requirement is unmet is never started, in either group.
-  const probe = new CapabilityProbe();
-  const run = (entry: LabeledCheck): Promise<Outcome> => runEntry(entry, probe, forced);
-  const before = await snapshotCheckout();
+  const probe = options.probe ?? new CapabilityProbe();
+  const run = (entry: LabeledCheck): Promise<Outcome> => runEntry(entry, probe, forced, options.runFile ?? runCheckFile);
+  const before = await snapshotCheckout(options.checkoutRoot);
   const { pooled, alone } = splitExclusive(selected);
   await runPooled(pooled, jobs, run, report);
   await runPooled(alone, 1, run, report);
-  const after = await snapshotCheckout();
+  const after = await snapshotCheckout(options.checkoutRoot);
   const changed = diffSnapshots(before, after);
   if (before.gitStatus === undefined || after.gitStatus === undefined) {
     process.stderr.write("  note: git unavailable — the checkout was not compared against the pre-run snapshot\n");

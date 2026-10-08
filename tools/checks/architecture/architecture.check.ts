@@ -26,7 +26,7 @@ import { COMPLETION_ARGUMENTS } from "#framework/integration/completion/index.ts
 import { commandRegistry } from "#framework/integration/gate.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specData, specOf } from "#framework/core/command/index.ts";
-import { measureProseHeld } from "./prose-held.ts";
+import { measureProseHeld, measureProseHeldFlow, PROSE_EQUALITY, PROSE_MATCHER, PROSE_PIN } from "./prose-held.ts";
 import { grammarCallsInRun, kindCastsOutsideValues, stage7S25Boundaries } from "./command-layer/kind-casts.ts";
 import { runFrameLaw } from "#checks/surfaces/frame-law-counter.ts";
 import { CONTROLS } from "#checks/controls/controls.ts";
@@ -67,6 +67,7 @@ interface Baseline {
   readonly proseEquality: { readonly comment: string; readonly total: number };
   readonly proseFlags: PerFileMetric;
   readonly proseHeld: { readonly comment: string; readonly total: number };
+  readonly proseHeldFlow: PerFileMetric;
   readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
   readonly adhocSkips: { readonly comment: string; readonly total: number; readonly exempt: Record<string, ExemptLines> };
   readonly rawArgvScans: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
@@ -468,7 +469,6 @@ report(ratchet("imageStringOps.total", baseline.imageStringOps.total, imageTotal
 // 6. Prose pins in checks — stage 5 and the cross-cutting I9: checks assert structure
 // (codes, argv, JSON fields); prose belongs in goldens and renderer checks. The generated
 // golden surfaces and this ratchet's own directory are excluded.
-const PROSE_PIN = /includes\((?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\)/;
 const proseAfter = new Map<string, number>();
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");
@@ -482,8 +482,6 @@ report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
 // startsWith/endsWith/indexOf, a regex, or an equality with a literal that carries a space,
 // nor split one pin across a string join (`includes("a" + " b")`).
 // Equality ratchet: growth means the prose moved into another operator instead of structure.
-const PROSE_MATCHER =
-  /\.(startsWith|endsWith|indexOf)\((?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')|includes\([^\n]*(`|") \+ (`|")/;
 let matcherCount = 0;
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");
@@ -499,7 +497,6 @@ report(ratchet("proseMatchers", baseline.proseMatchers.total, matcherCount, [], 
 // (equality operator required), so rewriting a === pin into check() lowers proseMatchers
 // while the prose stays. Equality ratchet: growth fails; the sites are not being converted
 // now, this records the honest count.
-const PROSE_EQUALITY = /\bcheck\([^\n]*,\s*(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\s*\)/;
 let proseEqualityCount = 0;
 for (const file of checkFiles) {
   const content = await readFile(resolve(root, file), "utf8");
@@ -507,16 +504,19 @@ for (const file of checkFiles) {
 }
 report(ratchet("proseEquality", baseline.proseEquality.total, proseEqualityCount, [], []));
 
+// 6d. Original lexical held-prose measurement (HEAD behavior, independent of flow).
 let proseHeldCount = 0;
-const proseHeldLines: Record<string, number> = {};
 for (const file of checkFiles) {
-  const count = measureProseHeld(await readFile(resolve(root, file), "utf8"));
-  proseHeldCount += count;
-  if (count > 0) proseHeldLines[file] = count;
+  const held = measureProseHeld(await readFile(resolve(root, file), "utf8"));
+  proseHeldCount += held;
+  if (held > 0) process.stderr.write(`    proseHeld: ${held} in ${file}` + String.fromCharCode(10));
 }
 report(ratchet("proseHeld", baseline.proseHeld.total, proseHeldCount, [], []));
-for (const [file, count] of Object.entries(proseHeldLines)) process.stderr.write(`    proseHeld: ${count} in ${file}` + String.fromCharCode(10));
 
+// 6e. Stage7 S4 R2-C-4: independent dataflow superset, including direct literals.
+const proseFlowAfter = new Map<string, number>(); let proseFlowCount = 0;
+for (const file of checkFiles) { const count = measureProseHeldFlow(await readFile(resolve(root, file), "utf8")); proseFlowCount += count; if (count > 0) proseFlowAfter.set(file, count); }
+report(perFileRatchet("proseHeldFlow", baseline.proseHeldFlow.files, proseFlowAfter)); report(ratchet("proseHeldFlow.total", baseline.proseHeldFlow.total, proseFlowCount, [], []));
 // 7. Retired symbols — stage 5 (rf5-completion C1): names the command registry made
 // structural that must not reappear anywhere under tools/ outside this check's own directory
 // (excluded so the guard can name them here). A new occurrence fails the build.

@@ -70,6 +70,12 @@ async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefi
   return undefined;
 }
 
+/** Retain the rejection object: containment refusals must reject, not return an empty bundle. */
+async function rejectedError(run: () => Promise<unknown>): Promise<unknown> {
+  try { await run(); } catch (error) { return error; }
+  return undefined;
+}
+
 /** Creates a symlink, answering false instead of throwing — Windows without developer mode
  *  (or privileges) refuses, and the alias group must skip, not fail, there. A directory
  *  link falls back to an NTFS junction, which Windows creates without either: the policy
@@ -216,16 +222,17 @@ try {
   const escapeLinked = await trySymlink(resolve(tempRoot, "holding", "outsider.env"), resolve(escapingDir, "agent", "escape.md"));
   await requires("symlink", "a symlink escaping the recipe directory is refused before any file is read", async () => {
     if (!escapeLinked) return;
-    const walkRefusal = await rejectionOf(() => withOutputSink(() => {}, () => collectPortableAgentBundleFiles(escapingDir)));
-    check("the walker refuses a symlink escaping the recipe directory", /outside the recipe directory/.test(walkRefusal ?? ""), true);
-    check("the refusal carries none of the bytes on the other side of the link", walkRefusal?.includes(MARKER) ?? true, false);
+    const readers = [
+      () => collectPortableAgentBundleFiles(escapingDir),
+      () => agentBundleChecksums(escapingDir),
+      () => loadRecipeAgentBundle("escaping"),
+    ];
+    for (const [index, reader] of readers.entries()) {
+      const refusal = await rejectedError(() => withOutputSink<unknown>(() => {}, reader));
+      check(`escaping symlink reader ${index} rejects rather than returning a bundle`, refusal instanceof Error, true);
+      check(`escaping symlink reader ${index} never exposes private bytes`, refusal instanceof Error && refusal.message.includes(MARKER), false);
+    }
 
-    const checksumRefusal = await rejectionOf(() => withOutputSink(() => {}, () => agentBundleChecksums(escapingDir)));
-    check("the checksum map refuses the same escaping symlink", /outside the recipe directory/.test(checksumRefusal ?? ""), true);
-
-    const provisionRefusal = await rejectionOf(() => withOutputSink(() => {}, () => loadRecipeAgentBundle("escaping")));
-    check("direct provisioning refuses the same escaping symlink before reading anything", /outside the recipe directory/.test(provisionRefusal ?? ""), true);
-    check("its refusal carries none of the bytes on the other side of the link either", provisionRefusal?.includes(MARKER) ?? true, false);
   });
 
   // --- Group C2: the WALK ROOT itself is the escape — agent/ a symlink out of the recipe --

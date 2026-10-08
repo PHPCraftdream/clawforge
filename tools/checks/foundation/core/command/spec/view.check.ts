@@ -4,7 +4,7 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { argumentsView, specData, specOf, specShape, bindNamed, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, type ArgumentSpec } from "#framework/core/command/index.ts";
+import { argumentsView, specData, specOf, specShape, bindNamed, defineAction, multiActionBody, commandBody, scopeByAction, argumentScopes, missingArgumentMessage, APPLIES_TO, didYouMeanSuffix, UNKNOWN_ARGUMENT, ArgumentError, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import * as kinds from "#framework/core/values/kinds.ts";
 import { missingArtifactRefusal } from "#framework/core/values/plan.ts";
@@ -32,14 +32,19 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   // The refusal with its error-name label stripped (stage 7 S2.5: the resolve refusal at prepare).
   const refusalAfterLabel = async (argv: string[]): Promise<string> => (await outcome(argv)).slice("ArgumentError: ".length);
 
-  check(
-    "set build --set is refused at parse, naming the actions that take it",
-    (await outcome(["build", "--set", "x.tar.gz"])).includes("--set applies to `validate`, `try`, not `build`"),
-    true,
-  );
-  check("set build --kind is refused at parse", (await outcome(["build", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
-  check("set validate --kind is refused at parse", (await outcome(["validate", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
-  check("set forget --json is refused at parse", (await outcome(["forget", "--json"])).includes("--json applies to `build`"), true);
+  // Assert refusal identity and the declared argument, not its diagnostic wording.
+  for (const [action, flag, value, argument] of [
+    ["build", "--set", "x.tar.gz", "set"],
+    ["build", "--kind", "agent", "kind"],
+    ["validate", "--kind", "agent", "kind"],
+    ["forget", "--json", undefined, "json"],
+  ] as const) {
+    let failure: unknown;
+    try { await setRun({} as Parameters<typeof setRun>[0], value === undefined ? [action, flag] : [action, flag, value]); }
+    catch (error) { failure = error; }
+    check(`set ${action} ${flag} refuses the scoped argument`,
+      [failure instanceof ArgumentError, failure instanceof ArgumentError ? failure.argument : undefined], [true, argument]);
+  }
   check(
     // Stage 7 S2.5: the missing artifact is the localFile kind's resolve refusal at prepare,
     // an ArgumentError naming the argument — no longer run's artifact reader.

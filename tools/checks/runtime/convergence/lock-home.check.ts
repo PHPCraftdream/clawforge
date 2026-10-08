@@ -88,12 +88,12 @@ async function run(ctx: Context): Promise<string> {
   const chown = calls.find((call) => call.command === "chown" || (call.command === "sudo" && call.args.includes("chown")));
   check("the directory is handed over after being created", chown !== undefined, true);
 
-  const argv = [chown?.command ?? "", ...(chown?.args ?? [])].join(" ");
+  const argv = [chown?.command ?? "", ...(chown?.args ?? [])];
   check("with numeric ids", argv.includes("1000:1001"), true);
   // The failure mode in one assertion: a substitution reaching the target is evaluated
   // wherever the target evaluates it, which under sudo is root's shell.
-  check("and no command substitution left for the target to evaluate", argv.includes("$("), false);
-  check("nor a shell wrapped around it", argv.includes("sh -c"), false);
+  check("and no command substitution left for the target to evaluate", argv.some((arg) => arg.includes("$(")), false);
+  check("nor a shell wrapped around it", argv.includes("sh"), false);
 }
 
 {

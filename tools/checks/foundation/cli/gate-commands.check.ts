@@ -37,7 +37,7 @@ import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion/index.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
 import * as kinds from "#framework/core/values/kinds.ts";
-import { missingArgumentMessage, unknownArgumentMessage } from "#framework/core/command/index.ts";
+import { missingArgumentMessage, unknownArgumentMessage, UnknownArgumentError } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { commandRegistry } from "#framework/integration/gate.ts";
 import { checkoutGate } from "#framework/entry/registry.ts";
@@ -184,7 +184,10 @@ check(
   // are validated under.
   // S2.3: validate is the SHAPE check only — the first shape problem, and required/choices
   // stay with the binder, which refuses them at dispatch in the console's own words.
-  check("an unknown argument is refused", validate(command, { bogus: "x" }), ["unknown argument: bogus"]);
+  let refused: unknown;
+  try { bindNamed(specShape(command.body), { kind: "named", args: { bogus: "x" } }, command.name); }
+  catch (error) { refused = error; }
+  check("an unknown argument is refused", [refused instanceof UnknownArgumentError, refused instanceof UnknownArgumentError ? refused.argument : undefined], [true, "bogus"]);
   check("a missing required argument is the binder's, not validate's", validate(command, {}), []);
 }
 

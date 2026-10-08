@@ -1,5 +1,5 @@
 // Image references — one grammar, owned here as a value: [registry[:port]/]repo[:tag]
-// [@sha256:<64 lowercase hex>]. A registry port's colon is always followed by a slash, never
+// [@algorithm:<hex>]. A registry port's colon is always followed by a slash, never
 // read as a tag. Call sites parse once and pass the value on; .env, the recreated container
 // and every report get the same format() string. Also registry digest resolution and
 // exit-code readback for the `upgrade` command.
@@ -8,8 +8,37 @@ import { UserError } from "../../core/io/log.ts";
 import { ValueError, type ValueParser } from "../../core/values/value.ts";
 import type { Transport } from "../transport/transport.ts";
 
-const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const DIGEST = /^[A-Za-z][A-Za-z0-9]*(?:[+._-][A-Za-z][A-Za-z0-9]*)*:[0-9A-Fa-f]{32,}$/;
+const SHA256 = /^sha256:[0-9a-f]{64}$/;
+const SHA512 = /^sha512:[0-9a-f]{128}$/;
+
+function validDigest(value: string): boolean {
+  if (!DIGEST.test(value)) return false;
+  if (value.startsWith("sha256:")) return SHA256.test(value);
+  if (value.startsWith("sha512:")) return SHA512.test(value);
+  return true;
+}
 const TAG = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
+// Docker path components: separators cannot lead, trail, or mix without an alphanumeric run.
+const REPOSITORY = /^[a-z0-9]+(?:(?:\.|_{1,2}|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:\.|_{1,2}|-+)[a-z0-9]+)*)*$/;
+const DNS_COMPONENT = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+
+function validRegistry(value: string): boolean {
+  if (value.startsWith("[")) {
+    const match = /^(\[[0-9A-Fa-f:]+\])(?::[0-9]+)?$/.exec(value);
+    if (match === null) return false;
+    // URL validates compressed IPv6 and the number/width of its groups, not just its alphabet.
+    try {
+      return new URL(`http://${match[1]}/`).hostname.startsWith("[");
+    } catch {
+      return false;
+    }
+  }
+  const match = /^([^:]+)(?::[0-9]+)?$/.exec(value);
+  if (match === null) return false;
+  const host = match[1];
+  return host.length <= 253 && host.split(".").every((part) => DNS_COMPONENT.test(part));
+}
 
 /** A parsed image reference. `registry` is a host with an optional port. */
 export interface ImageRef {
@@ -30,14 +59,14 @@ function splitReference(value: string): ImageRef | undefined {
   if (at >= 0) {
     rest = value.slice(0, at);
     digest = value.slice(at + 1);
-    if (!DIGEST.test(digest)) return undefined;
+    if (!validDigest(digest)) return undefined;
   }
   let registry: string | undefined;
   const slash = rest.indexOf("/");
   if (slash > 0) {
     const head = rest.slice(0, slash);
-    if (head.includes(".") || head.includes(":") || head === "localhost") {
-      if (head.startsWith("-")) return undefined;
+    if (head.includes(".") || head.includes(":") || head.startsWith("[") || head === "localhost") {
+      if (!validRegistry(head)) return undefined;
       registry = head;
       rest = rest.slice(slash + 1);
     }
@@ -50,13 +79,13 @@ function splitReference(value: string): ImageRef | undefined {
     repository = rest.slice(0, colon);
     if (!TAG.test(tag) || repository === "") return undefined;
   }
-  if (repository === "" || repository.startsWith("-") || repository.includes(":") || repository.includes("@")) return undefined;
+  if (!REPOSITORY.test(repository)) return undefined;
   return { registry, repository, tag, digest };
 }
 
 /** The grammar refusal, shared with the checks that prove it names the input. */
 export function invalidImageReference(value: string): string {
-  return `"${value}" is not a valid image reference — expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]`;
+  return `"${value}" is not a valid image reference — expected [registry[:port]/]repo[:tag][@algorithm:<at least 32 hex characters>] (sha256: exactly 64 lowercase hex; sha512: exactly 128 lowercase hex)`;
 }
 
 /** Parses a reference, throwing a UserError that names the input on anything else. */
@@ -95,20 +124,20 @@ export function withDigest(ref: ImageRef, digest: string): ImageRef {
   return { ...ref, digest };
 }
 
-/** The sha256 digest a value carries — bare (`sha256:…`, Docker's own answer) or as part of
- *  a reference — or undefined when it names no exact content. A value that carries no
+/** The digest a reference carries, or a bare sha256 digest (Docker's own answer)
+ *  — or undefined when it names no exact content. A value that carries no
  *  well-formed digest but ends in `@sha256:…` still yields that suffix: content comparison
  *  is lexical, and a pin already recorded in a non-canonical spelling must keep comparing
  *  equal to itself. Only parse() enforces the grammar. */
 export function digestOf(value: string): string | undefined {
-  if (DIGEST.test(value)) return value;
+  if (SHA256.test(value)) return value;
   const parsed = tryParse(value);
   if (parsed !== undefined) return parsed.digest;
   const at = value.lastIndexOf("@sha256:");
   return at >= 0 ? value.slice(at + 1) : undefined;
 }
 
-/** Whether a value pins exact content — `repo[@:tag]@sha256:…` — rather than a moving tag.
+/** Whether a value pins exact content — `repo[:tag]@algorithm:…` — rather than a moving tag.
  *  The grammar decides, like parse(): a malformed digest pins nothing (digestOf keeps the
  *  lexical suffix for comparing a spelling already on record). */
 export function hasDigest(value: string): boolean {
@@ -137,8 +166,8 @@ export function sameContent(a: string, b: string): boolean {
 export async function resolveImageDigest(transport: Transport, reference: string): Promise<string | undefined> {
   const result = await transport.exec("docker", ["buildx", "imagetools", "inspect", reference], { allowFailure: true });
   const digest = result.code === 0 ? /^Digest:\s+(\S+)/m.exec(result.stdout)?.[1] : undefined;
-  // The registry's word is checked against the grammar before it is pinned into .env.
-  if (digest === undefined || !DIGEST.test(digest)) return undefined;
+  // Registry resolution accepts only canonical SHA256, independently of reference grammar.
+  if (digest === undefined || !SHA256.test(digest)) return undefined;
   const ref = tryParse(reference);
   return ref === undefined ? undefined : format(withDigest(ref, digest));
 }

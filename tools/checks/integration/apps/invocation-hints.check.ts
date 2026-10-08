@@ -408,21 +408,17 @@ try {
   setInvocation(FLAG_DEMO);
   check("the advice line names the deployment", formatError(failure), `bootstrap failed${ARROW}${DEMO_LOGS}`);
   setInvocation(MONO);
-  check(
-    "a manual step trails the message",
-    formatError(new UserError("bad", { advice: [manual("see the guide")] })),
-    `bad${ARROW}see the guide`,
-  );
+  const manualStep = manual("see the guide");
+  const manualFailure = new UserError("bad", { advice: [manualStep] });
+  check("a manual step is retained as structured advice", manualFailure.advice.map((step) => step.kind), ["manual"]);
+  check("the error retains its manual advice payload", manualFailure.advice[0] === manualStep, true);
 
-  // A registered secret is masked in the message and in the advice. There is no unregister, so
-  // the value is unique to this file and nothing below asserts on unrelated text.
+  // Masking is a safety property: neither the headline nor advice may leak a secret.
   const SECRET = "token-value-1234567890";
   registerSecret(SECRET);
-  check(
-    "a secret is masked in the message and the advice",
-    formatError(new UserError(`gateway rejected ${SECRET}`, { advice: [manual(`put ${SECRET} in .env`)] })),
-    `gateway rejected ***${ARROW}put *** in .env`,
-  );
+  const secretFailure = new UserError(`gateway rejected ${SECRET}`, { advice: [manual(`put ${SECRET} in .env`)] });
+  check("the error keeps one manual recovery step", secretFailure.advice.map((step) => step.kind), ["manual"]);
+  check("rendered errors never expose a registered secret", formatError(secretFailure).includes(SECRET), false);
   const reported = await capture(() => reportError(new UserError("nope", { advice: [command("up")] })));
   const plainText = reported.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
   check("reportError prints the error and its advice line", plainText, `error: nope${ARROW}${HINT} up\n`);

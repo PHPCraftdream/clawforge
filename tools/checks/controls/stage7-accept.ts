@@ -1,7 +1,8 @@
 // Negative controls for the stage-7 S4 acceptance fixes: R1-A quoting (per-shell argument
 // spelling, the pwsh and bash-fallback rules, cmd's two-parser quoting) and R1-C checkout
-// write isolation. Kept beside stage7.ts so that file stays as it was; controls.ts spreads
-// this list right after it.
+// write isolation, and the round-2 fixes (R2-B value kinds, R2-C write isolation, tails V).
+// Kept beside stage7.ts so that file stays as it was; controls.ts spreads this list right
+// after it.
 
 import type { ControlDecl } from "./controls.ts";
 
@@ -91,5 +92,68 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     search: "  rename: { targets: [0, 1] },",
     replace: "  rename: { targets: [1] },",
     check: "tools/checks/foundation/hygiene/static/write-isolation.check.ts", fragment: "write-isolation literal: rename source anchored",
+  },
+  {
+    id: "C206", finding: "rf7-tails-V",
+    note: "Restore the dist exclusion; the dist self-check must fail.", product: "tools/checks/kit/run.ts",
+    search: "const IGNORED_STATUS_EXCLUDES = [\"node_modules\", \"apps\", \"worktrees\", \".rush\"];",
+    replace: "const IGNORED_STATUS_EXCLUDES = [\"node_modules\", \"apps\", \"worktrees\", \"tools/framework/dist\", \".rush\"];",
+    check: "tools/checks/kit/capabilities/run-guard.check.ts", fragment: "a new file under tools/framework/dist is reported",
+  },
+  {
+    id: "C207", finding: "rf7-tails-V",
+    note: "One more unresolved (parameter-bound) write target in a scanned check; the writeTargetsUnresolved ratchet must fail.", product: "tools/checks/foundation/core/command/needs.check.ts",
+    search: "finish(\"needs\");",
+    replace: "finish(\"needs\");\nexport function controlC207(target: string): Promise<void> { return writeFile(target, \"x\"); } // control C207: one more unresolved write target",
+    check: "tools/checks/foundation/hygiene/static/write-isolation.check.ts", fragment: "unresolved write targets only shrink",
+  },
+  {
+    id: "C208", finding: "rf7-tails-V",
+    note: "Bypass the counted reader in inspect's declared state; the dynamic count assertion must fail.", product: "tools/framework/commands/orchestration/inspect/declared.ts",
+    search: "suspiciousEnvLines(await readEnvFileText())",
+    replace: "suspiciousEnvLines(await readFile(envFile(), \"utf8\"))",
+    check: "tools/checks/foundation/core/command/needs.check.ts", fragment: "reads the .env through the counted reader exactly once",
+  },
+  {
+    id: "C209", finding: "rf7-tails-V",
+    note: "Bypass the counted reader in the secrets apply path; the static sweep must fail.", product: "tools/framework/commands/management/secrets.ts",
+    search: "let content = await readEnvFileText();",
+    replace: "let content = await readFile(envFile(), \"utf8\");",
+    check: "tools/checks/foundation/core/command/needs.check.ts", fragment: "no product file reads envFile() past the counted reader",
+  },
+  {
+    id: "C225", finding: "R2-B-1",
+    note: "Drop text's control-character refusal; the sweep's NUL case for verify <archive> must stop past parse.", product: "tools/framework/core/values/kinds.ts",
+    search: "  }, invalid, { controls: refused });",
+    replace: "  }, invalid, { controls: /(?!)/ });",
+    check: "tools/checks/foundation/core/command/pipeline/property/property-control-chars.check.ts", fragment: "verify: <archive> \"a\\u0000b\": MCP stops at the parse stage",
+  },
+  {
+    id: "C226", finding: "R2-B-4",
+    note: "Restore the function-valued description; the backup install scheduler control must stop short of the transport sentinel.", product: "tools/checks/kit/deployment-fixture.ts",
+    search: "    { description: FIXTURE_TRANSPORT_DESCRIPTION },",
+    replace: "    {},",
+    check: "tools/checks/foundation/core/command/pipeline/property/property.check.ts", fragment: "backup install: control reaches the transport sentinel",
+  },
+  {
+    id: "C227", finding: "R2-B-1",
+    note: "Bypass the uniform kind wrapper; bootstrap --break-foreign-lock with a NUL must stop past parse.", product: "tools/framework/core/values/kinds.ts",
+    search: "controls.test(raw)) throw",
+    replace: "controls.test(\"\")) throw",
+    check: "tools/checks/foundation/core/command/pipeline/property/property-control-chars.check.ts", fragment: "bootstrap: --break-foreign-lock \"a\\u0000b\": MCP stops at the parse stage",
+  },
+  {
+    id: "C228", finding: "R2-B-1",
+    note: "Let multi-line text accept every control character; exec <args…> with a NUL must stop past parse.", product: "tools/framework/core/values/kinds.ts",
+    search: "options.lines === \"multi\" ? CONTROL_BUT_LINES : CONTROL;",
+    replace: "options.lines === \"multi\" ? /(?!)/ : CONTROL;",
+    check: "tools/checks/foundation/core/command/pipeline/property/property-control-chars.check.ts", fragment: "exec: <args…> \"a\\u0000b\": MCP stops at the parse stage",
+  },
+  {
+    id: "C229", finding: "R2-B-1",
+    note: "Print the raw value in the control-character refusal; the refusal must never carry a raw control character.", product: "tools/framework/core/values/kinds.ts",
+    search: "not \"${shown(raw)}\"",
+    replace: "not \"${raw}\"",
+    check: "tools/checks/foundation/core/command/pipeline/property/property-control-chars.check.ts", fragment: "the message carries no raw control character",
   },
 ];

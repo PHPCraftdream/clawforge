@@ -21,7 +21,7 @@ import { ArgumentError, appliesToMessage, bindNamed, bindsAsFlag, parseCall, req
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { specOf, specData } from "#framework/core/command/spec.ts";
 import { toolArguments } from "#framework/integration/mcp/call.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import {
   app, captureApp, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidSamplesOf, runCase, runNamed, stages, units,
 } from "../pipeline/property/property-sweep.ts";
@@ -582,7 +582,9 @@ if (dispatch !== undefined && dispatch.single !== undefined) {
     "await serveMcp({ name: 'binder-table-dispatch', commands: openclawCommands });",
   ].join("\n");
   const request = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: dispatch.command, arguments: dispatch.args } });
-  const result = await runProcess(process.execPath, ["--input-type=module", "-e", script], { input: request + "\n", timeoutMs: 180000 });
+  const apps = await isolatedAppsRoot("binder-dispatch");
+  const result = await runProcess(process.execPath, ["--input-type=module", "-e", script], { cwd: apps.root, input: request + "\n", timeoutMs: 180000 })
+    .finally(() => apps.dispose());
   checkTrue("the dispatch server finished", !result.timedOut && result.code === 0);
   const line = result.stdout.split("\n").find((candidate) => candidate.trim() !== "");
   const text = line === undefined ? undefined : (JSON.parse(line) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text;

@@ -149,12 +149,13 @@ export interface CheckoutSnapshot {
   readonly ignored?: readonly AppsEntry[];
 }
 
-// Ignored space the guard does not chase: node_modules and tools/framework/dist are build
-// output a check may regenerate mid-run, apps/ is the deployment tree the walk above already
-// covers, worktrees/ holds whole sibling checkouts on hosts that have one, and .rush/ is the
-// orchestration harness state (locks, sessions) that concurrent rush runs rewrite. The excludes
+// Ignored space the guard does not chase: node_modules is installed dependency space, apps/ is
+// the deployment tree the walk above already covers, worktrees/ holds whole sibling checkouts on
+// hosts that have one, and .rush/ is the orchestration harness state (locks, sessions) that
+// concurrent rush runs rewrite. tools/framework/dist is observed like any other ignored space: no
+// check writes it (build-output and the release pack checks build into OS temp). The excludes
 // prune before git walks, so the ignored pass stays as cheap as the tracked one.
-const IGNORED_STATUS_EXCLUDES = ["node_modules", "apps", "worktrees", "tools/framework/dist", ".rush"];
+const IGNORED_STATUS_EXCLUDES = ["node_modules", "apps", "worktrees", ".rush"];
 
 function diffStatusLines(before: string, after: string, prefix: string): readonly string[] {
   const beforeLines = new Set(before.split("\n"));

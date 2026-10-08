@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { envFile, secretStoreFile } from "#src/runtime/deployment.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { parseEnv, readEnvFileText } from "#src/core/env.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState, ConnectionFactObservation, SecretStoreObservation } from "#src/service/inspection.ts";
 import type { SecretStatus } from "#src/service/secrets.ts";
@@ -117,7 +117,7 @@ export async function observeConnectionFacts(
   if (facts === undefined) return undefined;
   let raw: string;
   try {
-    raw = await readFile(envFile(), "utf8");
+    raw = await readEnvFileText();
   } catch {
     // No .env — fresh-clone shape, not a finding.
     return undefined;

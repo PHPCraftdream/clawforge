@@ -1,4 +1,4 @@
-// check:exclusive — packs tools/framework, whose prepack rebuilds dist/, which other checks read.
+// Packs and installs a temp copy into a scratch prefix; prepack writes dist/ only there.
 // The system-wide install, end to end: `npm run install:system` into a scratch prefix, then the
 // installed `clawforge` run the way a shell runs it (a .cmd through cmd.exe on Windows) in each
 // kind of app folder — a fresh one with no install of its own, one pinning its own local

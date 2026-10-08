@@ -6,7 +6,7 @@ import { readFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { die } from "#src/core/io/log.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { parseEnv, readEnvFileText } from "#src/core/env.ts";
 import { envFile, secretsDir } from "#src/runtime/deployment.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
@@ -61,7 +61,7 @@ export async function localSecretValues(): Promise<{ name: string; value: string
       if (value !== "") found.push({ name: `${key} (${source})`, value });
     }
   };
-  const env = await readSecretSource(envFile());
+  const env = await readSecretSource(envFile(), readEnvFileText);
   if (env !== undefined) collect(".env", env);
   let entries: Dirent[];
   try {
@@ -93,9 +93,9 @@ export async function localSecretValues(): Promise<{ name: string; value: string
 
 /** Reads one secret source for the scan. Only a missing file is tolerable (pre-bootstrap
  *  has none yet); any other read error would silently shrink the scan, so it stops instead. */
-async function readSecretSource(source: string): Promise<Record<string, string> | undefined> {
+async function readSecretSource(source: string, read: () => Promise<string> = () => readFile(source, "utf8")): Promise<Record<string, string> | undefined> {
   try {
-    return parseEnv(await readFile(source, "utf8"));
+    return parseEnv(await read());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     die(

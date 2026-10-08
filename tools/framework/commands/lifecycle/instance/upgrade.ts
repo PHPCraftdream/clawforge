@@ -1,13 +1,12 @@
 // `upgrade`: digest-pinned image upgrade with backup, health/doctor gates and rollback.
 
-import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { refreshContext, type Context } from "#src/core/context.ts";
 import { envFile } from "#src/runtime/deployment.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { parseEnv, readEnvFileText } from "#src/core/env.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
@@ -154,7 +153,7 @@ async function runDoctorLint(ctx: Context): Promise<{ ok: true } | { ok: false; 
  *  to): pinning records a fact just proven, not a decision. */
 export async function pinImageReference(digestReference: string): Promise<void> {
   const path = envFile();
-  const content = upsertEnvValue(await readFile(path, "utf8"), "OPENCLAW_IMAGE", digestReference);
+  const content = upsertEnvValue(await readEnvFileText(), "OPENCLAW_IMAGE", digestReference);
   await replacePrivateFile(path, content);
 }
 
@@ -287,7 +286,7 @@ export const UPGRADE = commandBody({
   const target = await resolveUpgradeTarget(ctx, options.image, resolveImageDigest);
   // The one string both the recreate and the .env write use, and every report names.
   const pinnedReference = target.pin ?? target.targetDigest;
-  const preparedEnv = await readFile(envFile(), "utf8");
+  const preparedEnv = await readEnvFileText();
   const previousReference = parseEnv(preparedEnv).OPENCLAW_IMAGE ?? ctx.settings.image;
 
   const identity = await ctx.runtime.runningImageIdentity?.();
@@ -337,7 +336,7 @@ export const UPGRADE = commandBody({
       die("the running image changed while preparing upgrade — refusing before backup or recreation; retry the command");
     }
     const refreshed = await refreshContext(ctx);
-    if (await readFile(envFile(), "utf8") !== preparedEnv || (refreshed !== undefined && (refreshed.changed.length > 0 || refreshed.targetChanges.length > 0))) {
+    if (await readEnvFileText() !== preparedEnv || (refreshed !== undefined && (refreshed.changed.length > 0 || refreshed.targetChanges.length > 0))) {
       die("deployment settings changed while preparing upgrade — refusing before backup or recreation; retry the command");
     }
     // Even a no-op must be decided against the authoritative predecessor.

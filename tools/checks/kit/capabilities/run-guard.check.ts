@@ -192,7 +192,14 @@ try {
       { entries: [file("space quoted ü.token", 4, "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd")], changes: 1 });
     checkTrue("the temp snapshot records ignored space", afterSpace.ignoredStatus !== undefined);
     checkTrue("every ignored status line is an ignored entry", (afterSpace.ignoredStatus ?? "").split("\n").every((line) => line.slice(0, 3).trimEnd() === "!!"));
-    check("pruned generated roots stay absent", afterSpace.ignored?.some((entry) => entry.path.startsWith("node_modules/") || entry.path.startsWith("tools/framework/dist/")), false);
+    check("pruned generated roots stay absent", afterSpace.ignored?.some((entry) => entry.path.startsWith("node_modules/")), false);
+
+    // dist is no longer pruned: a file written there between snapshots is reported.
+    const beforeDist = await snapshotCheckout(root);
+    await mkdir(join(root, "tools", "framework", "dist", "entry"), { recursive: true });
+    await writeFile(join(root, "tools", "framework", "dist", "entry", "bin.js"), "AAAA");
+    const afterDist = await snapshotCheckout(root);
+    check("a new file under tools/framework/dist is reported", diffSnapshots(beforeDist, afterDist).some((line) => line.includes("tools/framework/dist/entry/bin.js")), true);
   }
 
   await requires("symlink", "the walk records symlinks without following them", async () => {

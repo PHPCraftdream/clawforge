@@ -26,6 +26,9 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { setManifestId } from "#framework/set/artifacts/model.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { TRANSPORT_SENTINEL } from "#checks/kit/deployment-fixture.ts";
+import { withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import type { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, gateUnits, invalidSamplesOf, runCase, runNamed, stages, sweepOn, sweepUnits, units } from "./property-sweep.ts";
 let cases = 0;
 {
@@ -115,6 +118,15 @@ for (const unit of sweepUnits) {
 // The sweep runs on the kit deployment fixture (a valid temp deployment, recording transport)
 // and records every case's pipeline stage in a StageTally; the histogram at the end shows
 // where cases actually stopped, and a valid control stopping before run fails the check.
+// R2-B-4 — the recording transport answers `description`, so a scheduler control with --apply
+// on a pinned linux scheduler reaches the guarded body's first transport contact (host
+// independent: the platform is pinned, never read). The fixture root and path separators are normalized out.
+const SCHEDULER_FIRST_CONTACT: Readonly<Record<string, string>> = {
+  "backup install": "mkdirp <root>/data-locks",
+  "backup uninstall": "exec mkdir -p,<root>/data-locks [object Object]",
+  "watch install": "mkdirp <root>/data-locks",
+  "watch uninstall": "exec mkdir -p,<root>/data-locks [object Object]",
+};
 for (const unit of sweepUnits) {
   const lead = unit.action === undefined ? [] : [unit.action];
   const factsByName = new Map(factsOf(unit).map((entry) => [entry.argument, entry.fact]));
@@ -186,6 +198,41 @@ for (const unit of sweepUnits) {
     }
   }
 }
+
+// The scheduler controls, run with --apply on a PINNED linux scheduler (never the host's): the
+// crontab path is taken with the fixture transport (description "local"), the body runs and
+// reaches its first transport contact, where the sentinel ends the run. The substitute local
+// runner must never be called — a local scheduler spawn must never run.
+const schedulersSeen = new Set<string>();
+for (const label of Object.keys(SCHEDULER_FIRST_CONTACT)) {
+  const unit = units.find((candidate) => candidate.label === label);
+  checkTrue(`${label}: the scheduler unit is declared`, unit !== undefined);
+  if (unit === undefined) continue;
+  schedulersSeen.add(label);
+  const factsByName = new Map(factsOf(unit).map((entry) => [entry.argument, entry.fact]));
+  const argv = [...(unit.action === undefined ? [] : [unit.action]), ...controlValues(unit).flatMap(({ argument, value }) => {
+    const fact = factsByName.get(argument.name);
+    if (fact !== undefined) {
+      const real = controlValueOf(fact);
+      return argument.kind === "variadic" ? Array.from({ length: Array.isArray(value) ? value.length : 1 }, () => real) : argument.kind === "positional" ? [real] : [`--${argument.name}`, real];
+    }
+    return argument.kind === "positional" || argument.kind === "variadic" ? (Array.isArray(value) ? value : [value]) : [`--${argument.name}`, value as string];
+  }), "--apply"];
+  let spawned = 0;
+  const substitute: typeof spawnLocal = async () => {
+    spawned += 1;
+    throw new Error("a local scheduler spawn must never run");
+  };
+  const terminal = await withScheduleRunner(substitute, () => runCase(unit.command, argv, "terminal"), "linux");
+  cases += 1;
+  const name = `${label}: control reaches the transport sentinel`;
+  stages.control(name, terminal.execution.stage);
+  check(`${name}: stage`, terminal.execution.stage, "run");
+  check(`${name}: error`, (terminal.execution.error as Error | undefined)?.message, TRANSPORT_SENTINEL);
+  check(`${name}: first contact`, terminal.contacts[0]?.replaceAll(fixture.root, "<root>").replaceAll("\\", "/"), SCHEDULER_FIRST_CONTACT[label]);
+  check(`${name}: the scheduler runner was never called`, spawned, 0);
+}
+check("every scheduler control was seen", [...schedulersSeen].sort(), Object.keys(SCHEDULER_FIRST_CONTACT).sort());
 
 // Missing required arguments, derived from the declaration (requiredness is declared once,
 // so the parser refuses at parse on every surface — a hand-written prepare-stage usage line
@@ -619,10 +666,12 @@ stages.print("pipeline: property");
 // (negative control C190: remove-app's <name> kind -> text), unless the argument is
 // declared text AND listed as plain.
 const PLAIN_TEXT_GATE_ARGUMENTS = new Set(["check --require", "check <filter…>"]);
+// oxlint-disable-next-line no-control-regex -- Raw C0/DEL samples are refused by plain text too.
+const RAW_CONTROL = /[\u0000-\u001f\u007f]/;
 for (const unit of gateUnits) {
   for (const argument of unit.args) {
     if (argument.kind === "flag") continue;
-    const beyond = invalidSamplesOf(argument).some((sample) => sample !== "" && !bindsAsFlag(sample));
+    const beyond = invalidSamplesOf(argument).some((sample) => sample !== "" && !bindsAsFlag(sample) && !RAW_CONTROL.test(sample));
     if (beyond) continue;
     const label = `${unit.label} ${argument.kind === "variadic" ? `<${argument.name}…>` : argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`}`;
     check(`${label} pins a grammar beyond the plain text kind`, PLAIN_TEXT_GATE_ARGUMENTS.has(label), true);

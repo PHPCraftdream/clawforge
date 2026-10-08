@@ -18,7 +18,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { specOf, specData } from "#framework/core/command/spec.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { exampleOf, fixture, runCase, runNamed, stages } from "#checks/foundation/core/command/pipeline/property/property-sweep.ts";
 import type { ArgumentSpec, CallShape } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
@@ -211,7 +211,9 @@ if (dispatchCases.length > 0) {
   const requests = dispatchCases.map((dispatchCase, index) => JSON.stringify({
     jsonrpc: "2.0", id: index + 1, method: "tools/call", params: { name: dispatchCase.command, arguments: { action: dispatchCase.word } },
   }));
-  const result = await runProcess(process.execPath, ["--input-type=module", "-e", script], { input: requests.join("\n") + "\n", timeoutMs: 180000 });
+  const apps = await isolatedAppsRoot("call-dispatch");
+  const result = await runProcess(process.execPath, ["--input-type=module", "-e", script], { cwd: apps.root, input: requests.join("\n") + "\n", timeoutMs: 180000 })
+    .finally(() => apps.dispose());
   checkTrue("the dispatch server finished", !result.timedOut && result.code === 0);
   if (result.timedOut || result.code !== 0) process.stderr.write(["dispatch server stderr:", result.stderr, ""].join(String.fromCharCode(10)));
   const byId = new Map(result.stdout.split("\n").filter((line) => line.trim() !== "").map((line) => {

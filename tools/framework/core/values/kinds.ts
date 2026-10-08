@@ -1,7 +1,8 @@
 // One constructor per declared value kind. Each wraps the parser the command uses today, so
 // a refusal stays byte-identical; the kind adds the declaration (`choices`, the invalid
 // generator) the binder and the property sweep read. Parsers run at call time only — the
-// runtime imports here (image-ref) carry no transport work into the value modules.
+// runtime imports here (image-ref) carry no transport work into the value modules. Every
+// kind refuses control characters at parse, before its own grammar runs.
 
 import { parseInterval, sinceValue } from "#src/core/values/durations.ts";
 import { nameValue, newNameValue, countValue, portValue, regexValue, ValueError, type ValueParser } from "#src/core/values/value.ts";
@@ -17,10 +18,28 @@ import { resolve as resolvePath } from "node:path";
 
 const takesNot = (expected: string) => (raw: string): string => `takes ${expected}, not "${raw}"`;
 
-function kindOf<T, R = T>(kind: KindName, parser: ValueParser<T>, invalid: readonly InvalidSample[], extra?: { choices?: readonly string[]; resolve?: (value: T, local: LocalScope) => Promise<R> }): ValueKind<T, R> {
+// oxlint-disable-next-line no-control-regex -- Control characters are exactly what these kinds refuse.
+const CONTROL = /[\u0000-\u001f\u007f]/;
+// Every C0 control and DEL except TAB (U+0009) and LF (U+000A).
+// oxlint-disable-next-line no-control-regex -- Control characters are exactly what these kinds refuse.
+const CONTROL_BUT_LINES = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+
+/** A raw value with its control characters escaped, for a refusal that must stay printable. */
+// oxlint-disable-next-line no-control-regex -- Control characters are exactly what this escapes.
+const shown = (raw: string): string => raw.replace(/[\u0000-\u001f\u007f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+
+function kindOf<T, R = T>(kind: KindName, parser: ValueParser<T>, invalid: readonly InvalidSample[], extra?: { choices?: readonly string[]; resolve?: (value: T, local: LocalScope) => Promise<R>; controls?: RegExp }): ValueKind<T, R> {
+  const { controls = CONTROL, ...declared } = extra ?? {};
   // invalidExample restates invalid[0]: the sweep and the parser's own self-description
   // must never name different refusals.
-  return { kind, ...parser, invalidExample: invalid[0]?.raw ?? parser.invalidExample, ...extra, invalid } as ValueKind<T, R>;
+  return {
+    kind, ...parser, invalidExample: invalid[0]?.raw ?? parser.invalidExample, ...declared, invalid,
+    // Control characters never reach a process argument, a path or a file line (I5, R2-B-1).
+    parse(raw: string) {
+      if (typeof raw === "string" && controls.test(raw)) throw new ValueError(`takes ${parser.expected}, not "${shown(raw)}"`);
+      return parser.parse(raw);
+    },
+  } as ValueKind<T, R>;
 }
 
 /** A closed list. The binder refuses via `choices` before `parse` runs; this `parse` is
@@ -76,6 +95,7 @@ export function port(): ValueKind<number> {
 export function pattern(): ValueKind<RegExp> {
   return kindOf("pattern", regexValue(), [
     { raw: "(", stage: "parse", why: "an unclosed group" },
+    { raw: "a\u0000b", stage: "parse", why: "a control character" },
     // Not "" — the empty pattern is a valid RegExp (regexValue), so it would be a sample the
     // sweep could not refuse.
   ]);
@@ -179,8 +199,7 @@ export function id(kind: string, example: string): ValueKind<string> {
     example,
     invalidExample: "../x",
     parse(raw) {
-      // oxlint-disable-next-line no-control-regex -- Control characters cannot name a path segment.
-      if (raw === "" || raw.length > 200 || raw[0] === "-" || /[\\/]/.test(raw) || raw === "." || raw === ".." || /[\u0000-\u001f]/.test(raw)) {
+      if (raw === "" || raw.length > 200 || raw[0] === "-" || /[\\/]/.test(raw) || raw === "." || raw === "..") {
         throw new ValueError(`takes an ${kind} id, not "${raw}"`);
       }
       return raw;
@@ -238,9 +257,6 @@ export function receiptId(): ValueKind<string> {
   ]);
 }
 
-// oxlint-disable-next-line no-control-regex -- Control characters are exactly what these kinds refuse.
-const CONTROL = /[\u0000-\u001f\u007f]/;
-
 /** A host id as recorded by the lock (`DESKTOP-1:win32`, `srv:linux-4026531836`, and
  *  suffix-less entries from before the platform suffix): only empty and control characters
  *  are refused — any stricter grammar would make someone else's lock unsolvable (I14). */
@@ -251,7 +267,6 @@ export function hostId(): ValueKind<string> {
     invalidExample: "",
     parse(raw) {
       if (raw === "") throw new ValueError("needs a value");
-      if (CONTROL.test(raw)) throw new ValueError(takesNot("a recorded host id")(raw));
       return raw;
     },
   }, [
@@ -269,7 +284,7 @@ export function sshDestination(): ValueKind<string> {
     invalidExample: "-oProxyCommand=x",
     parse(raw) {
       if (raw === "") throw new ValueError("needs a value");
-      if (raw[0] === "-" || /\s/.test(raw) || CONTROL.test(raw)) {
+      if (raw[0] === "-" || /\s/.test(raw)) {
         throw new ValueError(takesNot("an ssh destination (user@host)")(raw));
       }
       return raw;
@@ -319,6 +334,7 @@ export function absolutePath(): ValueKind<string> {
   }, [
     { raw: "relative/x", stage: "parse", why: "not an absolute POSIX path" },
     { raw: "", stage: "parse", why: "empty" },
+    { raw: "a\u0000b", stage: "parse", why: "a control character" },
   ]);
 }
 
@@ -328,6 +344,7 @@ export function localFile(reason: string, example = "x"): ValueKind<string, Loca
   return kindOf<string, LocalArtifact>("localFile", nonEmptyGrammar(reason, example), [
     { raw: "", stage: "parse", why: "empty" },
     { raw: "absent.tar", stage: "prepare", why: "missing file" },
+    { raw: "a\u0000b", stage: "parse", why: "a control character" },
   ], {
     resolve: async (value, local) => {
       if (!(await local.exists(value)) || !(await stat(value)).isFile()) throw new UserError(missingArtifactRefusal(value));
@@ -352,6 +369,7 @@ export function localDirectory(reason: string, example = "recipes/local"): Value
   return kindOf<string, LocalRecipeSource>("localDirectory", nonEmptyGrammar(reason, example), [
     { raw: "", stage: "parse", why: "empty" },
     { raw: "absent-source", stage: "prepare", why: "missing directory" },
+    { raw: "a\u0000b", stage: "parse", why: "a control character" },
   ], {
     resolve: async (value, local) => {
       if (!(await local.exists(resolvePath(value, "recipe.json")))) throw new UserError(missingRecipeSourceRefusal(value));
@@ -378,7 +396,8 @@ export function recipeRef(): ValueKind<RecipeName, RecipeRef> {
 }
 
 /** An image reference (`upgrade --image`): the image-ref grammar, whose split already
- *  refuses leading dashes and whitespace. */
+ *  refuses leading dashes and whitespace; control characters are refused by the kind's
+ *  parse wrapper before the image-ref parser runs. */
 export function image(): ValueKind<ImageRef> {
   return kindOf("image", {
     expected: "an image reference",
@@ -394,13 +413,18 @@ export function image(): ValueKind<ImageRef> {
   }, [
     { raw: "not an image", stage: "parse", why: "whitespace" },
     { raw: "", stage: "parse", why: "empty" },
+    { raw: "a\u0000b", stage: "parse", why: "a control character" },
   ]);
 }
 
-export function text(reason: string, options: { leadingDash: "refuse" | "allow" } = { leadingDash: "refuse" }): ValueKind<string> {
+// "multi" is for argv passed through to a remote command (exec/cli/host), where a `sh -c`
+// script may span lines; TAB and LF stay accepted there, every other control character is refused.
+export function text(reason: string, options: { leadingDash: "refuse" | "allow"; lines?: "single" | "multi" } = { leadingDash: "refuse" }): ValueKind<string> {
   const refuseDash = options.leadingDash !== "allow";
+  const refused = options.lines === "multi" ? CONTROL_BUT_LINES : CONTROL;
   const invalid: InvalidSample[] = [{ raw: "", stage: "parse", why: "empty" }];
   if (refuseDash) invalid.push({ raw: "-x", stage: "parse", why: "a flag look-alike" });
+  invalid.push({ raw: "a\u0000b", stage: "parse", why: "a control character" });
   return kindOf("text", {
     expected: reason,
     example: "x",
@@ -410,5 +434,5 @@ export function text(reason: string, options: { leadingDash: "refuse" | "allow" 
       if (refuseDash && raw[0] === "-") throw new ValueError(takesNot(reason)(raw));
       return raw;
     },
-  }, invalid);
+  }, invalid, { controls: refused });
 }

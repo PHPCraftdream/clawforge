@@ -28,12 +28,14 @@ import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import { validate } from "#framework/integration/mcp/legacy.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { DATA_DIR_UNSET } from "#framework/core/env.ts";
+import { runningConnectionFactsWithoutContext } from "#framework/commands/operate/recover-env/bootstrap.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { DATA_DIR_UNSET, type Env } from "#framework/core/env.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { unknownArgumentMessage } from "#framework/core/command/errors.ts";
 import { NOT_RUNNING_CAUSE, RECOVERABLE_ONLY_FROM_RUNNING } from "#framework/commands/operate/recover-env/index.ts";
 import { unreachableProblem } from "#framework/service/inspection.ts";
-import { spawnLocal, TransportUnreachableError, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
+import { spawnLocal, TargetReadUnknownError, TransportUnreachableError, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -129,6 +131,76 @@ const seedWithoutDataDir = [
 ].join("\n");
 
 try {
+  // --- I14: unknown reads never become definite absence; later facts still win -----------
+  {
+    type Answer = ExecResult | Error;
+    const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "" });
+    const failed: ExecResult = { code: 17, stdout: "", stderr: "failure" };
+    async function probe(listing: Answer, inspections: Answer[] = []) {
+      let index = 0;
+      const transport = {
+        async exec(_command: string, args: string[]): Promise<ExecResult> {
+          const answer = args[0] === "ps" ? listing : inspections[index++];
+          if (answer instanceof Error) throw answer;
+          if (answer === undefined) throw new Error("unexpected extra inspection");
+          return answer;
+        },
+      } as unknown as Transport;
+      try {
+        return { facts: await runningConnectionFactsWithoutContext({ env: {} as Env, transport, service: "gateway" }), error: undefined };
+      } catch (error) {
+        return { facts: undefined, error };
+      }
+    }
+    const sentinel = new Error("recovery-list-sentinel");
+    const listed = await probe(sentinel);
+    check("listing sentinel is an unknown read", listed.error instanceof TargetReadUnknownError, true);
+    check("listing sentinel retains its cause", listed.error instanceof Error && listed.error.cause === sentinel, true);
+    check("listing sentinel retains its message", listed.error instanceof Error ? listed.error.message.split(" ") : [], ["could", "not", "list", "recovery", "containers", "on", "the", "target:", "recovery-list-sentinel"]);
+    check("listing unknown carries status advice", listed.error instanceof UserError ? listed.error.advice : [], [{ kind: "clawforge", argv: ["status"], note: "reports whether the target answers at all" }]);
+    const nonzeroList = await probe(failed);
+    check("nonzero listing is unknown", nonzeroList.error instanceof TargetReadUnknownError, true);
+    check("nonzero listing message", nonzeroList.error instanceof Error ? nonzeroList.error.message.split(" ") : [], ["could", "not", "list", "recovery", "containers", "on", "the", "target:", "docker", "ps", "exited", "with", "code", "17"]);
+
+    const inspectSentinel = new Error("recovery-inspect-sentinel");
+    const inspected = await probe(ok("old\n"), [inspectSentinel]);
+    check("inspection sentinel is unknown", inspected.error instanceof TargetReadUnknownError, true);
+    check("inspection sentinel retains cause", inspected.error instanceof Error && inspected.error.cause === inspectSentinel, true);
+    check("inspection sentinel retains message", inspected.error instanceof Error ? inspected.error.message.split(" ") : [], ["could", "not", "inspect", "recovery", "container", "old", "on", "the", "target:", "recovery-inspect-sentinel"]);
+    const nonzeroInspect = await probe(ok("old\n"), [failed]);
+    check("nonzero inspection is unknown", nonzeroInspect.error instanceof TargetReadUnknownError, true);
+    check("nonzero inspection message", nonzeroInspect.error instanceof Error ? nonzeroInspect.error.message.split(" ") : [], ["could", "not", "inspect", "recovery", "container", "old", "on", "the", "target:", "docker", "inspect", "exited", "with", "code", "17"]);
+    const malformed = await probe(ok("old\n"), [ok("{invalid-json-sentinel")]);
+    check("malformed JSON is unknown", malformed.error instanceof TargetReadUnknownError, true);
+    check("malformed JSON retains parse cause", malformed.error instanceof Error && malformed.error.cause instanceof SyntaxError, true);
+    for (const document of ["null", "[]", "{}", '{"State":{"Running":"false"}}']) {
+      const result = await probe(ok("old\n"), [ok(document)]);
+      check(`malformed structure ${document} is unknown`, result.error instanceof TargetReadUnknownError, true);
+      check(`malformed structure ${document} message`, result.error instanceof Error ? result.error.message.split(" ") : [], ["could", "not", "inspect", "recovery", "container", "old", "on", "the", "target:", "malformed", "recovery", "container", "inspection:", "expected", "State.Running", "boolean"]);
+      check(`malformed structure ${document} retains cause`, result.error instanceof Error && result.error.cause instanceof Error, true);
+    }
+    const retained = await probe(ok("old\nlater\n"), [inspectSentinel, failed]);
+    check("first inspection unknown is retained", retained.error instanceof Error && retained.error.cause === inspectSentinel, true);
+    for (const answer of [inspectSentinel, failed, ok("{invalid-json-sentinel"), ok("{}")]) {
+      const result = await probe(ok("old\nlater\n"), [answer, ok(JSON.stringify(goodInspect()))]);
+      check("a valid later match supersedes unknown", result.error, undefined);
+      check("a valid later match returns literal facts", result.facts, { dataDir: "/srv/data", port: "18790", composeProject: "fresh-project", image: "ghcr.io/openclaw/openclaw:extended-stable" });
+    }
+    const unreachable = new TransportUnreachableError("recovery-unreachable-sentinel", "check target");
+    const advised = new UserError("recovery-advised-sentinel", { advice: [command("status")] });
+    for (const refusal of [unreachable, advised]) {
+      check("listing preserves typed/advised refusal identity", (await probe(refusal)).error === refusal, true);
+      check("inspection preserves typed/advised refusal before later valid match", (await probe(ok("old\nlater\n"), [refusal, ok(JSON.stringify(goodInspect()))])).error === refusal, true);
+    }
+    for (const result of [await probe(ok("")), await probe(ok("stopped\n"), [ok('{"State":{"Running":false}}')])]) {
+      check("definite empty/stopped answer has no error", result.error, undefined);
+      check("definite empty/stopped answer has no facts", result.facts, undefined);
+    }
+    const sparse = await probe(ok("running\n"), [ok('{"State":{"Running":true}}')]);
+    check("valid running container without optional facts is not malformed", sparse.error, undefined);
+    check("valid running container keeps absent optional facts", sparse.facts, {});
+  }
+
   // --- (1) the real CLI dispatcher reaches recovery with no OC_DATA_DIR -----------------
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");

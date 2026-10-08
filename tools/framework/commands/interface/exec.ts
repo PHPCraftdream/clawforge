@@ -22,7 +22,7 @@ export const EXEC_ARGUMENTS = [
     kind: "variadic",
     verbatim: true,
     required: true,
-    value: kinds.text("command and arguments", { leadingDash: "allow" }),
+    value: kinds.text("command and arguments", { leadingDash: "allow", lines: "multi" }),
   },
 ] as const;
 

@@ -64,7 +64,7 @@ export const HOST_ARGUMENTS = [
     kind: "variadic",
     verbatim: true,
     required: true,
-    value: kinds.text("command and arguments to run", { leadingDash: "allow" }),
+    value: kinds.text("command and arguments to run", { leadingDash: "allow", lines: "multi" }),
   },
 ] as const satisfies readonly ArgumentSpec[];
 

@@ -19,7 +19,7 @@ export const CLI_ARGUMENTS = [
     kind: "variadic",
     verbatim: true,
     required: true,
-    value: kinds.text("arguments passed to OpenClaw's CLI", { leadingDash: "allow" }),
+    value: kinds.text("arguments passed to OpenClaw's CLI", { leadingDash: "allow", lines: "multi" }),
   },
 ] as const;
 

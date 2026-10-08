@@ -11,7 +11,8 @@
 
 import type { Env } from "#src/core/env.ts";
 import { composeProjectName, useComposeProjectOverride } from "#src/runtime/deployment.ts";
-import { TransportUnreachableError, type Transport } from "#src/runtime/transport/transport.ts";
+import { UserError } from "#src/core/io/log.ts";
+import { TargetReadUnknownError, TransportUnreachableError, type Transport } from "#src/runtime/transport/transport.ts";
 import { connectionFactsFromInspect, type ConnectionFacts } from "./facts.ts";
 
 // The two labels compose writes on every container it creates. `compose ps` filters by
@@ -21,10 +22,9 @@ const PROJECT_LABEL = "com.docker.compose.project";
 const SERVICE_LABEL = "com.docker.compose.service";
 
 /** Reads the running container's connection facts without a Context. Undefined means
- *  what runningConnectionFacts()' undefined means — not running, or the container could
- *  not be inspected — and the caller reports it in the same words. An engine that cannot
- *  be reached at all is a refusal, not a crash: the command's job is to say what cannot
- *  be recovered, and that answer has to survive a missing engine. */
+ *  definite absence: no matching containers, or valid inspected containers are stopped.
+ *  Unknown listing/inspection answers throw with advice, unless a later match supplies
+ *  facts. Unreachable targets and advised refusals propagate unchanged. */
 export async function runningConnectionFactsWithoutContext(options: {
   /** The parsed .env — read for the compose project override and nothing else. */
   env: Env;
@@ -52,15 +52,16 @@ export async function runningConnectionFactsWithoutContext(options: {
   } catch (error) {
     // An unreachable target is not a docker-not-running answer: the transport's typed
     // refusal carries the real next step (rf6-fix30) and reaches the caller as itself.
-    if (error instanceof TransportUnreachableError) throw error;
-    return undefined;
+    if (error instanceof TransportUnreachableError || (error instanceof UserError && error.advice.length > 0)) throw error;
+    throw new TargetReadUnknownError(`could not list recovery containers on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  if (listed.code !== 0) return undefined;
+  if (listed.code !== 0) throw new TargetReadUnknownError(`could not list recovery containers on the target: docker ps exited with code ${listed.code}`);
   const containerIds = listed.stdout.split(/\r?\n/).map((id) => id.trim()).filter((id) => id !== "");
 
   // `docker ps --all` puts stopped instances in this result too. A stale stopped
   // container can precede the current one, so inspect every match until a running
   // container supplies the facts; an inspect failure for one old ID does not hide it.
+  let unknown: TargetReadUnknownError | undefined;
   for (const containerId of containerIds) {
     let inspected: { code: number; stdout: string };
     try {
@@ -69,16 +70,31 @@ export async function runningConnectionFactsWithoutContext(options: {
         ["inspect", "--format", "{{json .}}", containerId],
         { allowFailure: true },
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof TransportUnreachableError || (error instanceof UserError && error.advice.length > 0)) throw error;
+      unknown ??= new TargetReadUnknownError(`could not inspect recovery container ${containerId} on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       continue;
     }
-    if (inspected.code !== 0) continue;
+    if (inspected.code !== 0) {
+      unknown ??= new TargetReadUnknownError(`could not inspect recovery container ${containerId} on the target: docker inspect exited with code ${inspected.code}`);
+      continue;
+    }
     try {
-      const facts = connectionFactsFromInspect(JSON.parse(inspected.stdout));
+      const parsed: unknown = JSON.parse(inspected.stdout);
+      // The facts parser returns undefined for both stopped containers and invalid State.
+      // Only an explicit boolean Running is a definite answer; optional facts stay optional.
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) ||
+        typeof (parsed as { State?: { Running?: unknown } }).State?.Running !== "boolean") {
+        throw new Error("malformed recovery container inspection: expected State.Running boolean");
+      }
+      const facts = connectionFactsFromInspect(parsed);
       if (facts !== undefined) return facts;
-    } catch {
-      // A malformed or stale match does not prevent trying the remaining containers.
+    } catch (error) {
+      if (error instanceof TransportUnreachableError || (error instanceof UserError && error.advice.length > 0)) throw error;
+      // Preserve the first unknown answer while still trying remaining candidates.
+      unknown ??= new TargetReadUnknownError(`could not inspect recovery container ${containerId} on the target: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
+  if (unknown !== undefined) throw unknown;
   return undefined;
 }

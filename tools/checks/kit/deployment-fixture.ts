@@ -40,6 +40,10 @@ export interface DeploymentFixture {
  *  refusals, not host effects, and an accidental real command must fail loudly, not run. */
 export const TRANSPORT_SENTINEL = "deployment fixture: the recording transport does not answer";
 
+/** The recording transport's `description` — the one data property of Transport; the
+ *  fixture's .env targets "local", and LocalTransport describes itself the same way. */
+export const FIXTURE_TRANSPORT_DESCRIPTION = "local";
+
 // Single source for the mkdtemp prefix — the self-check scans the OS temp dir by it.
 export const FIXTURE_TEMP_PREFIX = "clawforge-deployment-fixture-";
 
@@ -142,18 +146,23 @@ export async function createDeploymentFixture(options: DeploymentFixtureOptions 
   useDeployment(root);
 
   const contacts: string[] = [];
-  // One Proxy whose every method records and throws: cheap to build per fixture, and any
-  // unforeseen transport method is covered without maintaining a method list.
+  // One Proxy: data properties answer, every method records and throws — cheap to build per
+  // fixture, and any unforeseen transport method is covered without maintaining a method
+  // list. Symbols and "then" answer undefined: the transport is no iterable or thenable, and
+  // probing that is no contact.
   const transport = new Proxy(
-    {},
+    { description: FIXTURE_TRANSPORT_DESCRIPTION },
     {
-      get: (_target, property) =>
-        (...args: unknown[]): never => {
-          contacts.push(`${String(property)} ${args.map(String).join(" ")}`);
+      get: (target, property) => {
+        if (Object.hasOwn(target, property)) return target[property as keyof typeof target];
+        if (typeof property === "symbol" || property === "then") return undefined;
+        return (...args: unknown[]): never => {
+          contacts.push(`${property} ${args.map(String).join(" ")}`);
           throw new Error(TRANSPORT_SENTINEL);
-        },
+        };
+      },
     },
-  ) as Transport;
+  ) as unknown as Transport;
 
   return {
     root,

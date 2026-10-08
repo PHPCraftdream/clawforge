@@ -13,6 +13,7 @@ import { check, checkTrue, finish } from "../harness.ts";
 import { runProcess } from "../spawn.ts";
 import {
   FIXTURE_TEMP_PREFIX,
+  FIXTURE_TRANSPORT_DESCRIPTION,
   SetupError,
   TRANSPORT_SENTINEL,
   createDeploymentFixture,
@@ -100,6 +101,12 @@ check("contacts() is empty before any transport use", fixture.contacts(), []);
 
 {
   const transport = fixture.transport();
+  // Data answers without contact: a product read of `description` must see a string.
+  check("the recording transport's description is the fixture's", transport.description, FIXTURE_TRANSPORT_DESCRIPTION);
+  check("the description is a string", typeof transport.description, "string");
+  check("reading the description records no contact", fixture.contacts(), []);
+  check("the transport is no thenable", (transport as any).then, undefined);
+  check("probing then records no contact", fixture.contacts(), []);
   let thrown = "";
   try {
     await transport.exec("ls", ["-la"]);

@@ -8,7 +8,7 @@ import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
-import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
+import { parseEnv, serializeEnvLine, readEnvFileText } from "#src/core/env.ts";
 import * as kinds from "#src/core/values/kinds.ts";
 import { createName, readName } from "#src/core/values/names.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
@@ -155,7 +155,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   }
 
   if (repoSupplied.length > 0) {
-    let content = await readFile(envFile(), "utf8");
+    let content = await readEnvFileText();
     for (const entry of repoSupplied) {
       content = upsertEnvValue(content, entry.name, values[entry.name] ?? "");
     }

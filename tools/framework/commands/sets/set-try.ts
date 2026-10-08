@@ -6,15 +6,15 @@
 // reconciliation, runCheck's check kinds. New here is the throwaway home (deployment
 // directory, data path, port) so teardown removes only what this operation created.
 
-import { mkdir, writeFile, rm, readFile, cp } from "node:fs/promises";
+import { mkdir, writeFile, rm, cp } from "node:fs/promises";
 import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die, maskSecrets, registerSecret, UserError } from "#src/core/io/log.ts";
 import { format, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
-import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride, composeProjectName } from "#src/runtime/deployment.ts";
+import { parseEnv, serializeEnvLine, frameworkRoot, readEnvFileText } from "#src/core/env.ts";
+import { useDeployment, deploymentDir, composeProjectOverride, useComposeProjectOverride, composeProjectName } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
 import { readIfExists } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
@@ -187,7 +187,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   // The throwaway's createContext() clears this too (its .env has no OC_COMPOSE_PROJECT),
   // so it's restored in the same finally block a caller reusing the original Context needs.
   const previousComposeProject = composeProjectOverride();
-  const realEnv = parseEnv(await readFile(envFile(), "utf8").catch(() => ""));
+  const realEnv = parseEnv(await readEnvFileText().catch(() => ""));
   const targetLocation = (realEnv.OC_TARGET_LOCATION ?? "auto").toLowerCase();
   const targetProblem = tryTargetProblem(targetLocation);
   if (targetProblem !== undefined) die(targetProblem);

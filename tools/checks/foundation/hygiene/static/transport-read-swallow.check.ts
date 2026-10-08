@@ -346,9 +346,9 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/operate/recover-env/bootstrap.ts",
-    line: 72,
+    line: 73,
     reason:
-      "one stale candidate container that cannot be inspected is skipped so the remaining candidates are still tried; exhausted candidates answer 'no facts' upstream, which recover-env reports as a gap",
+      "inspection failure retains the first TargetReadUnknownError with cause and advice while later candidates are tried; exhaustion throws it, and only a valid later match supersedes it. The handler-local analyzer cannot follow the deferred throw after the loop",
   },
   {
     file: "tools/framework/commands/operate/watch/health.ts",

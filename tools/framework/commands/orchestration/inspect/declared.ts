@@ -12,7 +12,7 @@ import type { RecipeAgentBundle } from "#src/commands/management/provision-agent
 import { problem } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
-import { suspiciousEnvLines } from "#src/core/env.ts";
+import { suspiciousEnvLines, readEnvFileText } from "#src/core/env.ts";
 
 /** A recipe's agent bundle, in the fields inspect compares against the instance. Parsed
  *  loosely on purpose: this is reading someone else's declaration to report on it, not
@@ -73,7 +73,7 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
 
   // Re-read: ctx.settings dropped the raw text. ENOENT is a race, not a normal case.
   try {
-    for (const finding of suspiciousEnvLines(await readFile(envFile(), "utf8"))) {
+    for (const finding of suspiciousEnvLines(await readEnvFileText())) {
       problems.push(problem("ENV_LINE_INVALID", `${envFile()}: ${finding}`));
     }
   } catch (error) {

@@ -11,11 +11,10 @@
 // the deployment scope — transport from .env, no Context — and refuses a missing .env in the
 // prepare stage. recoverEnv(ctx, args) stays for the apply step, which already has a Context.
 
-import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { parseEnv, readEnvFileText } from "#src/core/env.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, parseDeclaredArgs } from "#src/core/command/index.ts";
@@ -218,7 +217,7 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
   const path = envFile();
   let raw: string | undefined;
   try {
-    raw = await readFile(path, "utf8");
+    raw = await readEnvFileText();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -262,7 +261,7 @@ export const RECOVER_ENV = commandBody({
   async run(scope, plan) {
     const { dryRun, adoptRuntime, jsonOnly } = plan as RecoveryPlan;
     const path = envFile();
-    const raw = await readFile(path, "utf8");
+    const raw = await readEnvFileText();
     const env = parseEnv(raw);
 
     let facts: ConnectionFacts | undefined;

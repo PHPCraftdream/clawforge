@@ -12,14 +12,19 @@
 // outcomes are derived from the declaration itself, never listed: a unit whose OWN
 // declaration sets preparesEnvironment repairs its .env by declaration (bootstrap), and a
 // needs "deployment" unit holds the unreachable recording transport as its scope — both die
-// at run ON the unreachable target.
+// at run ON the unreachable target. Two seam guards follow the calibration: inspect's
+// declared state reads the .env through the counted reader exactly once, and a static
+// sweep finds no product file reading envFile() past that reader.
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specData, specOf } from "#framework/core/command/spec.ts";
-import { envReads, readEnvFileText, resetEnvReads } from "#framework/core/env.ts";
+import { envReads, monorepoRoot, readEnvFileText, resetEnvReads } from "#framework/core/env.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { Problem } from "#framework/service/inspection.ts";
+import { declaredState } from "#framework/commands/orchestration/inspect/declared.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { TRANSPORT_SENTINEL, createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
@@ -189,6 +194,28 @@ try {
   checkTrue("positive calibration: a deliberate .env read counts exactly once",
     calibrated === ["this", "file", "carries", "no", "assignment"].join(" ") + "\n"
     && envReads() === 1);
+
+  // inspect's declared state re-reads the .env for suspicious lines: one counted read.
+  resetEnvReads();
+  await declaredState({ settings: { image: "needs-fixture-image" } } as unknown as Context, [] as Problem[]);
+  checkTrue("inspect declared state reads the .env through the counted reader exactly once", envReads() === 1);
+
+  // Static sweep: the counted reader is the only text read of the selected .env.
+  const offenders: string[] = [];
+  const sweep = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (entry.name === "dist" || entry.name === "node_modules") continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) { await sweep(path); continue; }
+      const rel = relative(monorepoRoot, path).split("\\").join("/");
+      if (!entry.name.endsWith(".ts") || rel === "tools/framework/core/env.ts") continue;
+      (await readFile(path, "utf8")).split("\n").forEach((line, index) => {
+        if (/\breadFile\([ \t]*envFile\(\)/.test(line)) offenders.push(`${rel}:${index + 1}`);
+      });
+    }
+  };
+  await sweep(join(monorepoRoot, "tools", "framework"));
+  check("no product file reads envFile() past the counted reader", offenders, []);
 
   const impossible: string[] = [];
 

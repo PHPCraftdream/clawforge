@@ -325,19 +325,19 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=<none> env=none
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["status"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["status","--help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["--app","x","status"] env=none
@@ -445,11 +445,11 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=<none> env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["status"] env=OC_APP=<blank>
@@ -457,7 +457,7 @@ gate: refuse: OC_APP is set but empty — unset it or name a deployment
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["status","--help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=linux layout=apps-demo-bare argv=["--app","x","status"] env=OC_APP=<blank>
@@ -485,19 +485,19 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=<none> env=none
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["status"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["status","--help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["--app","x","status"] env=none
@@ -605,11 +605,11 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=<none> env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["status"] env=OC_APP=<blank>
@@ -617,7 +617,7 @@ gate: refuse: OC_APP is set but empty — unset it or name a deployment
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["status","--help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=linux layout=apps-demo-launcher argv=["--app","x","status"] env=OC_APP=<blank>
@@ -2045,19 +2045,19 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=<none> env=none
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["status"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["status","--help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["--app","x","status"] env=none
@@ -2165,11 +2165,11 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=<none> env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["status"] env=OC_APP=<blank>
@@ -2177,7 +2177,7 @@ gate: refuse: OC_APP is set but empty — unset it or name a deployment
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["status","--help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=win32 layout=apps-demo-bare argv=["--app","x","status"] env=OC_APP=<blank>
@@ -2205,19 +2205,19 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=<none> env=none
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["status"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["status","--help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["--app","x","status"] env=none
@@ -2325,11 +2325,11 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=<none> env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["status"] env=OC_APP=<blank>
@@ -2337,7 +2337,7 @@ gate: refuse: OC_APP is set but empty — unset it or name a deployment
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["status","--help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=win32 layout=apps-demo-launcher argv=["--app","x","status"] env=OC_APP=<blank>
@@ -3765,19 +3765,19 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=<none> env=none
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["status"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["status","--help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["--app","x","status"] env=none
@@ -3885,11 +3885,11 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=<none> env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["status"] env=OC_APP=<blank>
@@ -3897,7 +3897,7 @@ gate: refuse: OC_APP is set but empty — unset it or name a deployment
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["status","--help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=darwin layout=apps-demo-bare argv=["--app","x","status"] env=OC_APP=<blank>
@@ -3925,19 +3925,19 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=<none> env=none
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["status"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["status","--help"] env=none
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["--app","x","status"] env=none
@@ -4045,11 +4045,11 @@ gate: refuse-misplaced-app-flag
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--app","x"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=<none> env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=[] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=[] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","help"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["status"] env=OC_APP=<blank>
@@ -4057,7 +4057,7 @@ gate: refuse: OC_APP is set but empty — unset it or name a deployment
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["status","--help"] env=OC_APP=<blank>
-gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=../../clawforge
+gate: run app=demo fact=demo/cwd argv=["status","--help"] prefix=../../clawforge
 handover: spawn checkout-gate delegated=false argv=["--app","demo","status","--help"]
 stray: none
 == platform=darwin layout=apps-demo-launcher argv=["--app","x","status"] env=OC_APP=<blank>

@@ -14,14 +14,14 @@ import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { CapabilityProbe, CAPABILITIES, hasBash, hasDocker, hasDockerDesktopWsl, hasGnuUserland, hasAutoTarget, hasLocalPosix, hasPosixModes, hasPosixSh, hasPwsh, hasRsync, hasSshLoopback, hasSymlink, hasWsl, isCapability, isLinuxHost, isPosixHost, isWindowsHost, pwshCommand, type Capability, type ProbeMap } from "./capabilities.ts";
 
 check(
-  "the known capability list is exactly the documented sixteen",
+  "the known capability list is exactly the documented seventeen",
   [...CAPABILITIES].sort(),
-  ["auto-target", "bash", "docker", "docker-desktop-wsl", "gnu-userland", "linux-host", "local-posix", "posix-host", "posix-modes", "posix-sh", "pwsh", "rsync", "ssh-loopback", "symlink", "windows-host", "wsl"],
+  ["auto-target", "bash", "cmd", "docker", "docker-desktop-wsl", "gnu-userland", "linux-host", "local-posix", "posix-host", "posix-modes", "posix-sh", "pwsh", "rsync", "ssh-loopback", "symlink", "windows-host", "wsl"],
 );
 check("isCapability accepts every known name", CAPABILITIES.every((capability) => isCapability(capability)), true);
 check("isCapability rejects an unknown name", isCapability("ssh"), false);
 check("isCapability rejects the empty string", isCapability(""), false);
-check("isCapability accepts the shell names", ["bash", "pwsh"].every((capability) => isCapability(capability)), true);
+check("isCapability accepts the shell names", ["bash", "cmd", "pwsh"].every((capability) => isCapability(capability)), true);
 
 // --- CapabilityProbe: each capability probed at most once, only when asked -------------------
 

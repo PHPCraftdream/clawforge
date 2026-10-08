@@ -10,6 +10,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 * MCP no longer asks for confirm on `recipe import`/`recipe new`, which only add files.
 
 * Deploy prints the server's own `./clawforge` command lines whatever local launcher ran it.
+* Running the checkout gate from inside `apps/<name>` (or below it) now selects that deployment, as `--app <name>` does — previously it always ran the default `openclaw`. `--app` and `OC_APP` still win.
+* Gate-command prose (e.g. `check --help`) no longer names the default or `OC_APP` deployment; it carries the typed `--app`, or the flag-selected deployment an MCP-serving process was started with, so the console and the served process render hints over the same deployment.
 * Completion Install: lines are spelled from the target shell's own frame: a script generated from a checkout subdirectory stores `./clawforge`, never `../clawforge`, and the bash/zsh Install lines spell npm's wrapper with forward slashes even when the command ran under the Windows wrapper.
 * The checkout-subfolder refusal prints a `cd` line each shell accepts.
 * Advice naming another deployment, printed inside a deployment by the system-wide command, runs there instead of being refused as an `--app` conflict.

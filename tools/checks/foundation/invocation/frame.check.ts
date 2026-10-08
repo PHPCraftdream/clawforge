@@ -97,6 +97,8 @@ const WINDOWS_BIN_SPELLING = ["node_modules", ".bin", "clawforge"].join("\\");
 // Narrowed roots for the literal expectations below (defaultLaunch's union).
 if (DEPLOYMENT.kind !== "deployment-shim" || BIN.kind !== "npm-bin") throw new Error("defaultLaunch misclassified the local-package cases");
 const VERBATIM = launchOf({ program: "cw", mode: "installed", audience: "terminal" });
+check("launchOf reads the committed shim's own spelling as the bash shim", launchOf({ program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" }).kind, "checkout-shim");
+check("launchOf keeps a Windows bin spelling out of the verbatim launch", launchOf({ program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" }).kind, "npm-bin");
 const LAUNCHES: readonly { readonly label: string; readonly launch: Launch }[] = [
   { label: "system", launch: SYSTEM },
   { label: "checkout-shim", launch: SHIM },

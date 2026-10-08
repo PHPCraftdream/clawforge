@@ -292,7 +292,8 @@ export const CONTROLS: readonly ControlDecl[] = [
     search: `    if (launchRoot !== undefined && launchRoot !== "" && from !== undefined) {`,
     replace: `    if (from !== undefined) { program = handed.includes("/") ? handed : SHIM_PROGRAM; } else if (false) {`,
     check: "tools/checks/surfaces/frame-law.check.ts",
-    fragment: "defaultLaunch: local package (win32) | ",
+    // S1.6: the law now resolves the deployment-directory shim paste (the fixture carries the committed shim), so the witness keys are the checkout-subdirectory shim hints the un-climb breaks
+    fragment: "checkout gate shim (cwd: docs) | command: status",
   },
   {
     id: "C31",

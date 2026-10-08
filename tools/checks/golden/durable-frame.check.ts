@@ -19,6 +19,7 @@ import { checkoutGateFrame, targetFrame, type Frame } from "#framework/core/io/i
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import { MANUAL_INSTALL_HEADER, cronLine, posixTargetInvocation, printSchedulingInstructions, schtasksCreateCommand, scheduledInvocation, scheduledTargetFrame } from "#framework/commands/operate/schedule.ts";
+import { frameworkSourceRoot } from "#framework/commands/management/deploy/arguments.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { WslTransport } from "#framework/runtime/transport/wsl.ts";
 import { SHIM, declarationFor as initDeclaration, writeShim } from "#framework/integration/deployment/init.ts";
@@ -182,6 +183,27 @@ for (const [label, frame] of OPERATOR_FRAMES) {
     });
   }
   check("the monorepo crontab invocation is byte-identical under every operator frame", [...seen.values()], [OPERATOR_FRAMES.length]);
+}
+
+// --- deploy's installed-mode refusal: durable text for the server -----------------------------
+
+{
+  const fake = await mkdtemp(join(tmpdir(), "clawforge-df-nocheckout-"));
+  const previous = process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ];
+  process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ] = fake;
+  try {
+    await under(fromSub, async () => {
+      let error: unknown;
+      try { await frameworkSourceRoot(fake); } catch (caught) { error = caught; }
+      const advice = error !== undefined && typeof error === "object" && error !== null && Array.isArray((error as { advice?: unknown }).advice) ? ((error as { advice: unknown[] }).advice)[0] as Parameters<typeof renderAdvice>[0] : undefined;
+      check("the installed-mode refusal spells the server's own bootstrap line",
+        advice === undefined ? String(advice) : renderAdvice(advice, fromSub), "./clawforge bootstrap");
+    });
+  } finally {
+    if (previous === undefined) delete process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ];
+    else process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ] = previous;
+    await rm(fake, { recursive: true, force: true });
+  }
 }
 
 // --- schtasks: the production argv builder over the production WSL client invocation --------

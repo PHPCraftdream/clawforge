@@ -51,11 +51,18 @@ const FILES: Record<string, string> = {
   // filled to app "x" name ROOT/apps/x, and the real resolver must accept it.
   [`${ROOT}/apps/x/app.ts`]: "export default {};\n",
   [`${APP_LOCAL}/app.ts`]: "export default {};\n",
+  // The deployment's own committed clawforge shim (what init writes into every
+  // deployment): a paste of it runs the deployment's installed package.
+  [`${APP_LOCAL}/clawforge`]: "#!/bin/sh\n",
   [`${APP_LOCAL}/config/desired-state.json`]: "{}\n",
+  // The hand-set spaced program (the manual verbatim producer): the fixture declares the
+  // operator's own file so the pasted word resolves like any other entry.
+  ["/opt/claw forge/clawforge"]: "#!/bin/sh" + String.fromCharCode(10),
+  [`${ROOT}/apps/staging/app.ts`]: "export default {}\n",
   [LOCAL_ENTRY]: "// local package entry\n",
 };
 const DIRS: readonly string[] = [
-  `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/x`, `${ROOT}/docs`,
+  `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/x`, `${ROOT}/apps/staging`, `${ROOT}/docs`,
   `${ROOT}/tools`, `${ROOT}/tools/framework`, `${APP_LOCAL}/config`,
   `${APP_LOCAL}/node_modules`, `${APP_LOCAL}/node_modules/.bin`,
   `${APP_LOCAL}/node_modules/@clawforge`, `${APP_LOCAL}/node_modules/@clawforge/framework`,
@@ -98,22 +105,47 @@ const QUOTE_ROW = {
  *  expected argv is the FILLED argv and the shell model never has to model a bare `<`. */
 const fillWord = (word: string): string => (/^<.*>$/.test(word) ? "x" : word);
 
+/** The deployment the paste directory itself sits in on the fake layout (apps/<name> or
+ *  below it, with an app.ts) — the gate's cwd selection, mirrored as the law's independent
+ *  expectation. */
+const cwdAppOf = (dir: string): string | undefined => {
+  const at = fakePath(dir);
+  const prefix = ROOT + "/apps/";
+  if (!at.startsWith(prefix)) return undefined;
+  const name = at.slice(prefix.length).split("/")[0]!;
+  return name !== "" && FILES[prefix + name + "/app.ts"] !== undefined ? name : undefined;
+};
+
 interface Entry {
-  readonly kind: "system" | "gate" | "installed";
+  readonly kind: "system" | "gate" | "installed" | "verbatim";
 }
 type ProgramResolution = Entry | { readonly problem: string };
 
 /** The pasted program resolves to an entry point on the fake layout: the checkout shim →
  *  the checkout gate; a clawforge bin wrapper → the installed entry; the bare system-wide
  *  command → the installed entry. Anything else is spelling drift. */
-function resolveProgram(program: string, pasteDir: string, launch: string, shell: Shell): ProgramResolution {
-  if (program === "clawforge") return { kind: "installed" };
+function resolveProgram(program: string, pasteDir: string, launch: string, declaredProgram: string, shell: Shell): ProgramResolution {
   if (launch === "verbatim") {
-    return { problem: "the hand-set verbatim program names no clawforge entry the model can resolve (the launchOf adapter, S1.3)" };
+    // A hand-set program resolves like every other — and the equality check runs BEFORE
+    // any other branch: the pasted first word must BE the declared program (a coercion to
+    // the system word must not escape validation), and the declared entry must exist on
+    // the layout (a bare word has no declared entry a fixture can vouch for — a PATH
+    // lookup is no file fact).
+    if (program !== declaredProgram) {
+      return { problem: `the pasted first word ${program} drifts from the declared hand-set program ${declaredProgram}` };
+    }
+    if (program === "clawforge") return { kind: "installed" };
+    if (!program.includes("/")) {
+      return { problem: `the hand-set bare program ${program} names no declared entry the layout can resolve (a PATH lookup is no file fact)` };
+    }
+    const at = fakePath(pathResolve(pasteDir, program));
+    return FILES[at] !== undefined ? { kind: "installed" } : { problem: `${at} is not a declared entry on the layout` };
   }
+  if (program === "clawforge") return { kind: "installed" };
   const at = fakePath(pathResolve(pasteDir, program.replaceAll("\\", "/")));
   if (at === `${ROOT}/clawforge`) return { kind: "gate" };
-  if (program === SHIM_PROGRAM && pasteDir !== ROOT) {
+  if (at === `${APP_LOCAL}/clawforge`) return { kind: "installed" };
+  if (program === SHIM_PROGRAM && pasteDir !== ROOT && at !== `${ROOT}/clawforge`) {
     return { problem: `the shim hint spells ${SHIM_PROGRAM} from the checkout root, not from the paste directory ${pasteDir} — relative spellings land in S1.2b (O4/D10)` };
   }
   // The tokenizer folds backslash escapes, so a pasted npm bin spelling arrives as one
@@ -246,14 +278,16 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
           // only a row that names its own shell (advice.shell) re-renders for that shell.
           const line = renderFrameAdvice(filled, filled.shell !== undefined ? forShell(producer.frame, shell) : producer.frame);
           const { command: clean, note } = stripNote(line);
-          // The bash-shim fallback (O1): the line itself names the shell it pastes in — a
-          // non-posix paste of it is the known npm-bin re-root violation (D1).
+          // The bash-shim fallback (O1, accepted): the note names the shell the line
+          // pastes in — so the law pastes it THERE, as bash, and holds it to the same
+          // resolution as the posix key of the same row.
           const noteWords = note === undefined ? [] : note.split(",").map((part) => part.trim());
-          if (shell !== "posix" && noteWords.includes(IN_BASH_NOTE)) {
-            record(key, "npm-bin re-root spelled the bash-only shim for a non-posix paste — the fallback note names Git Bash (D1/O1)");
+          const pasteShell: Shell = shell !== "posix" && noteWords.includes(IN_BASH_NOTE) ? "posix" : shell;
+          if (pasteShell === "pwsh" && (clean.startsWith("'") || clean.startsWith("\""))) {
+            record(key, "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)");
             continue;
           }
-          const pasted = parsePaste(clean, shell);
+          const pasted = parsePaste(clean, pasteShell);
           // The paste directory: the rendered `cd <path> &&` prefix, resolved against the
           // producer's frame cwd (the prefix is spelled relative to where the frame stands);
           // otherwise the frame's own directory — the spelling the renderer produced is
@@ -290,18 +324,22 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
             record(key, `quoting/spelling drift: the shell model tokenized ${JSON.stringify(tokenArgv)} where the advice declares ${JSON.stringify(filled.argv)}`);
             continue;
           }
-          const where = resolveProgram(program, resolvedPasteDir, producer.frame.launch.kind, shell);
+          const where = resolveProgram(program, resolvedPasteDir, producer.frame.launch.kind, producer.invocation.program, pasteShell);
           stage = "environment";
           if ("problem" in where) {
             record(key, `the pasted program does not resolve — ${where.problem}`);
             continue;
           }
           const expected = filled.app ?? handedApp;
+          // D7's expectation for a gate-command decision: the row's own app, or the
+          // hand-over's app when the hand-over was selected by flag — never the default.
+          const gateCommandApp = filled.app ?? (handed !== undefined && handed.selectedBy === "flag" ? handed.name : undefined);
           if (where.kind === "gate") {
             const decision = resolveCheckoutEntry({
               root: ROOT, cwd: resolvedPasteDir, argv: tokenArgv,
               ocApp: producer.env?.OC_APP,
               handedOver: producer.env !== undefined, launch: producer.frame.launch, handedProgram: producer.invocation.program,
+              handedApp: producer.env !== undefined ? producer.invocation.app : undefined,
               fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
             });
             reached += 1;
@@ -311,7 +349,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                 record(key, `command drift: the gate ran ${JSON.stringify(decision.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
                 continue;
               }
-              const want = expected ?? (!atRooted && !cwdConflict && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" ? producer.frame.app.name : undefined) ?? "openclaw";
+              const want = expected ?? (!atRooted && !cwdConflict ? cwdAppOf(resolvedPasteDir) : undefined) ?? "openclaw";
               if (decision.appName !== want) {
                 record(key, `deployment drift: the gate ran ${decision.appName} where the law expects ${want}`);
               }
@@ -320,8 +358,8 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                 record(key, `command drift: the gate answered ${decision.kind} ${JSON.stringify([decision.name, ...decision.args])} where the advice declares ${JSON.stringify(filled.argv)}`);
                 continue;
               }
-              if (expected !== undefined && decision.app?.name !== expected) {
-                record(key, `deployment drift: the gate command carries ${decision.app?.name ?? "no deployment"} where the law expects ${expected}`);
+              if (gateCommandApp !== undefined && decision.app?.name !== gateCommandApp) {
+                record(key, `deployment drift: the gate command carries ${decision.app?.name ?? "no deployment"} where the law expects ${gateCommandApp}`);
               }
             } else {
               record(key, `the resolver did not run the advice: ${decision.kind}`);
@@ -357,6 +395,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                 root: checkout, cwd: resolvedPasteDir, argv: owner.args,
                 ocApp: producer.env?.OC_APP,
                 handedOver: true, launch: producer.frame.launch, handedProgram: owner.entry,
+                handedApp: producer.env !== undefined ? producer.invocation.app : undefined,
                 fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
               });
               if (final.kind === "run") {
@@ -366,7 +405,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                   record(key, `command drift: the spawned gate ran ${JSON.stringify(final.argv)} where the advice declares ${JSON.stringify(filled.argv)}`);
                   continue;
                 }
-                const want = expected ?? (!atRooted && !cwdConflict && producer.frame.app.state === "selected" && producer.frame.app.by === "cwd" ? producer.frame.app.name : undefined) ?? "openclaw";
+                const want = expected ?? (!atRooted && !cwdConflict ? cwdAppOf(resolvedPasteDir) : undefined) ?? "openclaw";
                 if (final.appName !== want) {
                   record(key, `deployment drift: the spawned gate ran ${final.appName} where the law expects ${want}`);
                 }
@@ -375,8 +414,8 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
                   record(key, `command drift: the spawned gate answered ${final.kind} ${JSON.stringify([final.name, ...final.args])} where the advice declares ${JSON.stringify(filled.argv)}`);
                   continue;
                 }
-                if (expected !== undefined && final.app?.name !== expected) {
-                  record(key, `deployment drift: the spawned gate command carries ${final.app?.name ?? "no deployment"} where the law expects ${expected}`);
+                if (gateCommandApp !== undefined && final.app?.name !== gateCommandApp) {
+                  record(key, `deployment drift: the spawned gate command carries ${final.app?.name ?? "no deployment"} where the law expects ${gateCommandApp}`);
                 }
               } else {
                 record(key, `the hand-over gate did not run the advice: ${final.kind}`);
@@ -423,11 +462,33 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
     }
     const cwd = producer.frame.cwd.kind === "dir" ? producer.frame.cwd.path : ROOT;
     try {
+      // A case whose checkout carries its own apps/ (the sole case: exactly one deployment)
+      // probes a per-case view of the layout.
+      const caseApps = selection.apps;
+      const caseFs: FsProbe = caseApps === undefined ? fs : {
+        ...fs,
+        readdir: (path) => fakePath(path) === ROOT + "/apps" ? [...caseApps] : fs.readdir(path),
+        isDirectory: (path) => {
+          const at = fakePath(path);
+          const prefix = ROOT + "/apps/";
+          if (!at.startsWith(prefix) || at.slice(prefix.length).includes("/")) return fs.isDirectory(path);
+          return caseApps.includes(at.slice(prefix.length));
+        },
+        exists: (path) => {
+          const at = fakePath(path);
+          const prefix = ROOT + "/apps/";
+          if (at.startsWith(prefix) && at.endsWith("/app.ts")) {
+            const name = at.slice(prefix.length, -"/app.ts".length);
+            return !name.includes("/") && caseApps.includes(name);
+          }
+          return fs.exists(path);
+        },
+      };
       const decision = resolveCheckoutEntry({
         root: ROOT, cwd, argv: selection.argv,
         ocApp: selection.ocApp,
         handedOver: producer.env !== undefined, launch: producer.frame.launch, handedProgram: producer.invocation.program,
-        fs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
+        fs: caseFs, gateCommands: GATE_COMMAND_NAMES, deploymentCommands: DEPLOYMENT_COMMANDS, variadicCommands: [],
       });
       reached += 1;
       if (selection.ocApp !== undefined && selection.ocApp.trim() === "") {

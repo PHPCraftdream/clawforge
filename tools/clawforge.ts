@@ -79,6 +79,7 @@ const decision = resolveCheckoutEntry({
   handedOver: handedOver !== undefined,
   launch: frame.launch,
   handedProgram: handedOver?.program,
+  handedApp: handedOver?.app,
   fs: nodeFs,
   gateCommands: gateCommands.map((command) => command.name),
   deploymentCommands: Object.keys(openclawCommands),

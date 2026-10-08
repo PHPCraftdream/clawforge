@@ -5,7 +5,7 @@
 // wording is pinned by the entry matrix under tools/checks/golden/.
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { appsRootFor } from "../core/env.ts";
 import { readName, safeName, type DeploymentName } from "../core/values/names.ts";
@@ -119,6 +119,10 @@ export interface CheckoutEntryInput {
   /** The program the hand-over named (Invocation.program): the spelling resolvesByCwd
    *  checks the checkout-shim launch against. */
   readonly handedProgram?: string;
+  /** The app fact the hand-over carried (D7): a gate-command decision re-arms it when it
+   *  was selected by flag — a served MCP process renders prose under the deployment it
+   *  serves, never under the default. */
+  readonly handedApp?: InvocationApp;
   readonly fs: FsProbe;
   readonly gateCommands: readonly string[];
   readonly deploymentCommands: readonly string[];
@@ -189,6 +193,16 @@ function readDeploymentName(name: string): DeploymentName | undefined {
   }
 }
 
+/** The deployment the cwd itself sits in: apps/<name> or below it, with an app.ts — the
+ *  gate's own selection between the environment and the sole fallback (design §5, the
+ *  selection sweep's 'cwd' case). Undefined outside apps/ or above an unknown name. */
+function cwdDeploymentName(root: string, cwd: string, fs: FsProbe): DeploymentName | undefined {
+  const under = relative(resolve(appsRootFor(root)), resolve(cwd));
+  if (under === "" || under.startsWith("..") || isAbsolute(under)) return undefined;
+  const name = readDeploymentName(under.split(sep)[0]!.replaceAll("/", ""));
+  return name !== undefined && fs.exists(resolve(appsRootFor(root), name, "app.ts")) ? name : undefined;
+}
+
 /** The gate-command fact: the typed --app is the frame's fact when it is a valid name —
  *  where a command actually runs, the safeName refusal owns the invalid case. */
 function appFactMaybe(name: string, selectedBy: InvocationApp["selectedBy"], launch: Launch | undefined, handedProgram: string | undefined, deploymentDir: string, cwd: string): InvocationApp | undefined {
@@ -221,6 +235,14 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   if (appFlag.value !== undefined) {
     name = appFlag.value;
     selectedBy = "flag";
+  } else if (envName === undefined) {
+    // The cwd selects when nothing more explicit did: running the gate from apps/<name>
+    // names that deployment (the selection sweep's cwd case; --app and OC_APP win).
+    const byCwd = cwdDeploymentName(root, cwd, fs);
+    if (byCwd !== undefined) {
+      name = byCwd;
+      selectedBy = "cwd";
+    }
   }
   const rest = [...appFlag.rest];
 
@@ -236,11 +258,19 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   // same deployment `help <command>` does; an invalid name is no fact — where a command
   // actually runs, the safeName refusal below owns that case.
   if (gateCommands.includes(rest[0])) {
+    // D7: the leading --app (by flag) or the hand-over's flag app is the fact — the
+    // default and a cwd selection spell gate-command prose without an app, so the console
+    // and an MCP-served process agree on the deployment the command touches.
+    const typedApp = appFlag.value !== undefined
+      ? appFactMaybe(name, "flag", launch, handedProgram, resolve(appsRootFor(root), name), cwd)
+      : input.handedApp !== undefined && input.handedApp.selectedBy === "flag"
+        ? input.handedApp
+        : undefined;
     return {
       kind: "gate-command",
       name: rest[0],
       args: rest.slice(1),
-      app: appFactMaybe(name, selectedBy, launch, handedProgram, resolve(appsRootFor(root), name), cwd),
+      app: typedApp,
     };
   }
 

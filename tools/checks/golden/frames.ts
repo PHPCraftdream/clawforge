@@ -77,6 +77,9 @@ export interface FrameProducer {
     readonly ocApp?: string;
     readonly soleApp?: string;
     readonly cwdApp?: string;
+    /** The checkout's own apps/ for this case, when the shared layout cannot carry it
+     *  (the sole case: exactly one deployment under apps/). */
+    readonly apps?: readonly string[];
   };
 }
 
@@ -296,11 +299,13 @@ export const SELECTION_CASES: readonly {
   readonly ocApp?: string;
   readonly soleApp?: string;
   readonly cwdApp?: string;
+  /** The checkout's own apps/ for this case, when the shared layout cannot carry it. */
+  readonly apps?: readonly string[];
 }[] = [
   { label: "default", producer: "defaultLaunch: global install", argv: ["up"] },
   { label: "--app\u0020flag", producer: "checkout gate shim (cwd: checkout root)", argv: ["--app", "demo", "up"] },
   { label: "OC_APP\u0020env", producer: "checkout gate shim (cwd: docs)", argv: ["up"], ocApp: "staging" },
-  { label: "sole", producer: "defaultLaunch: checkout copy", argv: ["up"], soleApp: "demo" },
+  { label: "sole", producer: "defaultLaunch: checkout copy", argv: ["up"], soleApp: "demo", apps: ["demo"] },
   { label: "cwd", producer: "checkout gate shim (cwd: apps/demo)", argv: ["up"], cwdApp: "demo" },
   { label: "EMPTY\u0020OC_APP", producer: "MCP launcher (installed): no variables — the entry default", argv: ["up"], ocApp: "" },
 ];

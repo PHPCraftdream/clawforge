@@ -15,8 +15,8 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
+import { IN_BASH_NOTE, FROM_CHECKOUT_ROOT, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { IN_BASH_NOTE, FROM_CHECKOUT_ROOT, handoverArgv, resolveCheckoutEntry, type FsProbe } from "#framework/entry/resolve.ts";
 import { CHECKOUT_ROOT_NOTE, DISPATCHER_COMMANDS } from "#framework/integration/gate.ts";
 import { toolArguments } from "#framework/integration/mcp/call.ts";
 import { toArgv } from "#framework/integration/mcp/legacy.ts";
@@ -501,27 +501,26 @@ for (const { label, advice } of ADVICE_ROWS) {
   check("a row naming another deployment than the cwd's spells the checkout root's program", line.split(" ").slice(0, 5), ["clawforge", "--app", "delta", "bootstrap", "--check"]);
   const note = line.slice(line.lastIndexOf("(") + 1, -1);
   check("...and says where it pastes", note.split(" "), ["from", "the", "checkout", "root"]);
-  const atRoot = resolveCheckoutEntry({ root: TREE_ROOT, cwd: TREE_ROOT, argv: ["--app", "delta", "bootstrap", "--check"], ocApp: undefined, handedOver: false, fs: treeFs, gateCommands: [], deploymentCommands: ["bootstrap", "up"], variadicCommands: [] });
-  check("pasted at the root, the row's argv runs the deployment it names", atRoot.kind === "run" ? atRoot.appName : atRoot.kind, "delta");
-  const paste = handoverArgv("alpha", ["--app", "delta", "bootstrap", "--check"]);
-  check("pasted inside apps/alpha, the same argv is an app conflict — why the row re-roots", "refuse" in paste ? paste.refuse : "ok", "app-conflict");
+  // The two paste-side assertions this block used to drive by hand (the row's argv runs
+  // the named deployment at the root; inside apps/alpha it refuses as a conflict) are
+  // the frame law's cases now: the O2 rows resolve --project-root against the named
+  // deployment directory under the cwd-selected producer, every shell (S1.6).
   setInvocation(CHECKOUT_ROOT);
 }
 
-/** The gate-command decision and the run decision render the same typed `--app` the same
- *  way (rf6-fix33): `--app demo check --help` resolves as a gate command, `--app demo help
- *  check` as a run — both must carry the app fact, so a prose hint spells it identically
- *  under either spelling. */
+// The gate-command/run app-fact assertions this block drove by hand are the frame
+// law's gate-command expectations (the row's app, or a flag hand-over's — never the
+// default, D7) and its run-deployment expectations behind the stripped --app
+// selector, under every producer, row and shell (S1.6).
+
+/** The prose half of that block, restored as a direct pin: the two spellings a decision
+ *  can arrive from (gate command, run) carry the same typed --app into the frame
+ *  (clawforge.ts completes the frame from the decision; C181 holds the resolver side),
+ *  so the prose rendered under either frame is the same bytes and names the app once. */
 {
-  const gate = resolveCheckoutEntry({ root: TREE_ROOT, cwd: TREE_ROOT, argv: ["--app", "demo", "check", "--help"], ocApp: undefined, handedOver: false, fs: treeFs, gateCommands: ["check"], deploymentCommands: ["bootstrap", "up"], variadicCommands: [] });
-  const run = resolveCheckoutEntry({ root: TREE_ROOT, cwd: TREE_ROOT, argv: ["--app", "demo", "help", "check"], ocApp: undefined, handedOver: false, fs: treeFs, gateCommands: ["check"], deploymentCommands: ["bootstrap", "up"], variadicCommands: [] });
-  const appOf = (decision: ReturnType<typeof resolveCheckoutEntry>): { name: string; selectedBy: string } | undefined =>
-    decision.kind === "gate-command" || decision.kind === "run" ? (decision.app as { name: string; selectedBy: string } | undefined) : undefined;
-  check("the gate-command decision carries the app fact", appOf(gate), { name: "demo", selectedBy: "flag" });
-  check("the run decision carries the same app fact", appOf(run), { name: "demo", selectedBy: "flag" });
   const checkHelp = checkoutGateCommands.find((gate) => gate.name === "check")?.details ?? "";
-  const gateFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", ...(appOf(gate) === undefined ? {} : { app: appOf(gate) as Invocation["app"] }) };
-  const runFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", ...(appOf(run) === undefined ? {} : { app: appOf(run) as Invocation["app"] }) };
+  const gateFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", app: { name: "demo", selectedBy: "flag" } };
+  const runFrame: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal", app: { name: "demo", selectedBy: "flag" } };
   const proseWords = renderProse(checkHelp, frameOf(gateFrame)).split(" ");
   checkTrue("the check help's prose names the app under the gate-command frame", proseWords.includes("--app") && proseWords.includes("demo"));
   check("both spellings of the same typed --app render the same prose", renderProse(checkHelp, frameOf(gateFrame)), renderProse(checkHelp, frameOf(runFrame)));

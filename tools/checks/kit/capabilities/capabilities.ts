@@ -16,7 +16,7 @@ import { ENGINE_DISTRO } from "#framework/commands/interface/host/contexts.ts";
 
 export const CAPABILITIES = [
   "docker", "docker-desktop-wsl", "wsl", "posix-sh", "rsync", "symlink", "linux-host", "posix-host", "local-posix", "windows-host", "ssh-loopback", "gnu-userland", "posix-modes", "auto-target",
-  "bash", "pwsh",
+  "bash", "pwsh", "cmd",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -112,6 +112,13 @@ export async function isLinuxHost(): Promise<boolean> {
 // eslint-disable-next-line @typescript-eslint/require-await
 export async function isPosixHost(): Promise<boolean> {
   return process.platform !== "win32";
+}
+
+/** cmd.exe answers a trivial command — the third shell the frame law's spelling forms
+ *  name (S1.6 §7.2). Windows-host only: no other platform ships cmd.exe. */
+export async function hasCmd(): Promise<boolean> {
+  if (process.platform !== "win32") return false;
+  return swallow(async () => (await spawnLocal("cmd", ["/d", "/c", "exit 0"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
 }
 
 /** This process's own host, a Windows one. */
@@ -226,6 +233,7 @@ export const DEFAULT_PROBES: ProbeMap = {
   "auto-target": hasAutoTarget,
   bash: hasBash,
   pwsh: hasPwsh,
+  cmd: hasCmd,
 };
 
 /** Probes each capability at most once per instance, regardless of how many files ask —

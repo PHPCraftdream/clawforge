@@ -6,8 +6,7 @@
 // before any remote command — plus the scan's own failure and skip rules.
 
 import { existsSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { execFile, type ExecFileOptions } from "node:child_process";
 import { chmod, mkdtemp, mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,7 +20,14 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe } from "#checks/runtime/service/deploy/fixture.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const execFileAsync = promisify(execFile);
+function execFileAsync(program: string, args: string[], options: ExecFileOptions = {}): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(program, args, { ...options, encoding: "utf8", timeout: 60_000 }, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve({ stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
 
 // git writes loose objects read-only, which fs.rm cannot remove on Windows.
 async function clearReadOnly(dir: string): Promise<void> {

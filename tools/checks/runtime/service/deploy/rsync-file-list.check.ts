@@ -1,14 +1,20 @@
 // Checks local rsync filters over synthetic framework and recipe trees when available.
 
-import { execFile } from "node:child_process";
+import { execFile, type ExecFileOptions } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { promisify } from "node:util";
 import { EXCLUDES, FRAMEWORK_EXCLUDES } from "#framework/security/privacy/deploy-boundary.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
 
-const execFileAsync = promisify(execFile);
+function execFileAsync(program: string, args: string[], options: ExecFileOptions = {}): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(program, args, { ...options, encoding: "utf8", timeout: 60_000 }, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve({ stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
 
 async function sourceTree(root: string, names: readonly string[]): Promise<void> {
   await mkdir(root);

@@ -10,7 +10,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { analyze, type Hit } from "./write-isolation-rules.ts";
+import { inspectBody, sourcePath } from "./write-isolation-syntax/body.ts";
+import { closeCalleeSyntax, childBodyCapable } from "./write-isolation-syntax/index.ts";
+import { analyze, type Hit } from "./write-isolation-syntax/write-isolation-rules.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const checksRoot = resolve(repoRoot, "tools", "checks");
@@ -197,8 +199,6 @@ for (const [name, source, expected] of [
   ["default import", `import fsd from "node:fs"; fsd.writeFileSync(join(monorepoRoot,"x"),"y");`, "ANCHORED"],
   ["named promises import", `import { promises as p } from "node:fs"; await p.unlink(join(monorepoRoot,"x"));`, "ANCHORED"],
   ["require binding", `const f = require("node:fs"); f.rmSync(join(monorepoRoot,"x"));`, "ANCHORED"],
-  ["destructured binding", `const {writeFile:w}=fsp; await w(join(monorepoRoot,"x"),"y");`, "ANCHORED"],
-  ["member binding", `const w=fsp.writeFile; await w(join(monorepoRoot,"x"),"y");`, "ANCHORED"],
   ["unlink", `await unlink(join(monorepoRoot,"x"));`, "ANCHORED"],
   ["unlinkSync", `unlinkSync(join(monorepoRoot,"x"));`, "ANCHORED"],
   ["rm", `await rm(join(monorepoRoot,"x"),{recursive:true});`, "ANCHORED"],
@@ -315,28 +315,63 @@ for (const [name, source, expected] of [
   ["FAIL unknown argv del", `spawn('del',externalArgs,{cwd:monorepoRoot});`, "ANCHORED"],
   ["FAIL unknown argv rmdir", `spawn('rmdir',externalArgs,{cwd:monorepoRoot});`, "ANCHORED"],
   ["FAIL unknown argv Remove-Item", `spawn('Remove-Item',externalArgs,{cwd:monorepoRoot});`, "ANCHORED"],
-  ["FAIL unknown shell argv", `spawn('sh',['-c',command],{cwd:monorepoRoot});`, "ANCHORED"],
-  ["FAIL unknown cmd argv", `spawn('cmd',['/c',command],{cwd:monorepoRoot});`, "ANCHORED"],
+  ["FAIL unknown shell argv", `spawn('sh',['-c',command],{cwd:monorepoRoot});`, "UNKNOWN"],
+  ["FAIL unknown cmd argv", `spawn('cmd',['/c',command],{cwd:monorepoRoot});`, "UNKNOWN"],
   ["unknown argv clean cwd", `spawn('git',externalArgs,{cwd:tmpdir()});`, "CLEAN"],
   ["unknown argv unknown cwd", `spawn('git',externalArgs,{cwd:externalCwd});`, "CLEAN"],
   ["FAIL unknown argv inherited cwd", `spawn('git',externalArgs);`, "ANCHORED"],
   ["unknown program unknown argv", `spawn(program,externalArgs,{cwd:monorepoRoot});`, "CLEAN"],
-  ["harmless program unknown argv", `spawn('node',externalArgs,{cwd:monorepoRoot});`, "CLEAN"],
+  ["unknown Node argv fails closed", `spawn('node',externalArgs,{cwd:monorepoRoot});`, "UNKNOWN"],
   ["FAIL known destructive unknown program", `spawn(program,['git clean -fd'],{cwd:monorepoRoot});`, "ANCHORED"],
   ["FAIL resolved destructive unknown cwd", `const args=['clean']; spawn('git',args,{cwd:externalCwd});`, "UNKNOWN"],
   ["read-only git spread", `spawn('git',['status',...unknownArgs],{cwd:monorepoRoot});`, "CLEAN"],
   ["read-only git loop table", `for (const args of [['ls-files','-z'],['ls-files','-o']]) { spawn('git',args,{cwd:monorepoRoot}); }`, "CLEAN"],
   ["FAIL mixed git loop table", `for (const args of [['status'],['clean']]) { spawn('git',args,{cwd:monorepoRoot}); }`, "ANCHORED"],
   ["sh stdin not command fallback", `spawn('sh',['-s','--',path,mode]);`, "CLEAN"],
-  ["sh command unknown cwd", `spawn('sh',['-c',line],{cwd:externalCwd});`, "CLEAN"],
-  ["cmd command unknown cwd", `spawn('cmd',['/d','/c',line],{cwd:externalCwd});`, "CLEAN"],
+  ["sh command unknown cwd", `spawn('sh',['-c',line],{cwd:externalCwd});`, "UNKNOWN"],
+  ["cmd command unknown cwd", `spawn('cmd',['/d','/c',line],{cwd:externalCwd});`, "UNKNOWN"],
   ["FAIL known shell destructive unknown cwd", `spawn('sh',['-c','git clean -fd'],{cwd:externalCwd});`, "UNKNOWN"],
+  ["R3 computed fs", `import * as fs from 'node:fs/promises'; fs["writeFile"](join(monorepoRoot,'notes'),'lost');`, "ANCHORED"],
+  ["R3 unknown fs member", `import * as fs from 'node:fs'; fs[method](target,'lost');`, "UNKNOWN"],
+  ["R3 bound fs", `import {writeFile} from 'node:fs/promises'; const w=writeFile.bind(null); w(join(monorepoRoot,'notes'),'lost');`, "ANCHORED"],
+  ["R3 Reflect fs", `import * as fs from 'node:fs'; Reflect.apply(fs.writeFile,null,[join(monorepoRoot,'notes'),'lost']);`, "ANCHORED"],
+  ["R3 optional fs", `import * as fs from 'node:fs'; fs.writeFile?.(monorepoRoot,'lost');`, "ANCHORED"],
+  ["R3 call fs", `import * as fs from 'node:fs'; fs.writeFile.call(null,monorepoRoot,'lost');`, "ANCHORED"],
+  ["R3 apply fs", `import * as fs from 'node:fs'; fs.writeFile.apply(null,[monorepoRoot,'lost']);`, "ANCHORED"],
+  ["R3 Node eval writer", `spawnSync(process.execPath,['-e',"require('node:fs').writeFileSync('notes','LOST')"],{cwd:monorepoRoot});`, "ANCHORED"],
+  ["R3 Node print writer", `spawnSync('node',['-p',"require('node:fs').unlinkSync('notes')"],{cwd:monorepoRoot});`, "ANCHORED"],
+  ["R3 Node script writer", `spawnSync('node',['writeFile-writer.mjs'],{cwd:monorepoRoot});`, "UNKNOWN"],
+  ["R3 PowerShell writer", `spawnSync('powershell.exe',['-Command','Set-Content notes LOST'],{cwd:monorepoRoot});`, "ANCHORED"],
+  ["R3 shell writer", `spawnSync('bash',['-c','echo LOST > notes'],{cwd:monorepoRoot});`, "ANCHORED"],
+  ["R3 unknown apply", `import * as fs from 'node:fs'; fs.writeFile.apply(null,args);`, "UNKNOWN"],
+  ["R3 Reflect construct", `import * as fs from 'node:fs'; Reflect.construct(fs.writeFile,[monorepoRoot,'x']);`, "ANCHORED"],
+  ["R3 bound target", `import {writeFile} from 'node:fs'; const w=writeFile.bind(null,monorepoRoot); w('x');`, "ANCHORED"],
+  ["R3 unknown named member", `import * as fs from 'node:fs'; fs.mystery(target);`, "UNKNOWN"],
+  ["R3 computed isolated", `import * as fs from 'node:fs'; fs['writeFile'](join(tmpdir(),'notes'),'x');`, "CLEAN"],
+  ["R3 Node isolated", `spawnSync(process.execPath,['-e',"require('node:fs').writeFileSync('notes','x')"],{cwd:tmpdir()});`, "CLEAN"],
+  ["R3 prefix assertion", `import * as fs from 'node:fs'; (<any>fs.writeFile)(monorepoRoot,'x');`, "ANCHORED"],
+  ["R3 exec shell writer", `execSync('echo LOST > notes',{cwd:monorepoRoot});`, "ANCHORED"],
+  ["R3 exec unknown source", `execSync(command,{cwd:monorepoRoot});`, "UNKNOWN"],
+  ["R3 exec readonly", `execSync('echo read',{cwd:monorepoRoot});`, "CLEAN"],
+  ["R3 parenthesized fs", `import * as fs from 'node:fs'; (fs.writeFile)(monorepoRoot,'x');`, "ANCHORED"],
+  ["R3 asserted fs", `import * as fs from 'node:fs'; (fs.writeFile as any)!(monorepoRoot,'x');`, "ANCHORED"],
+  ["R3 fallback bound return", `import * as fs from 'node:fs'; const get=fs.writeFile.bind(null); const w=get(); w(monorepoRoot,'x');`, "UNKNOWN"],
+  ["R3 fallback asserted unknown", `import * as fs from 'node:fs'; (fs[method] as any)!(monorepoRoot,'x');`, "UNKNOWN"],
+  ["R3 parenthesized readonly", `import * as fs from 'node:fs'; (fs.readFile as any)!(monorepoRoot);`, "CLEAN"],
+  ["R3 asserted isolated", `import * as fs from 'node:fs'; (fs.writeFile as any)!(join(tmpdir(),'x'),'x');`, "CLEAN"],
   ["copyFile source anchored", `await copyFile(join(monorepoRoot,"a"),join(tmpdir(),"a"));`, "ANCHORED"],
 ] as const) {
   check(`write-isolation literal: ${name}`, analyze(source).writes.map((hit) => hit.classification), expected === "CLEAN" ? [] : [expected]);
 }
 
 for (const [name, source, expected] of [
+  ["destructured binding", `const {writeFile:w}=fsp; await w(join(monorepoRoot,"x"),"y");`, ["UNKNOWN", "ANCHORED"]],
+  ["member binding", `const w=fsp.writeFile; await w(join(monorepoRoot,"x"),"y");`, ["UNKNOWN", "ANCHORED"]],
+  ["R3 assigned bare alias", `import * as fs from 'node:fs'; let w; w=fs.writeFile; w(monorepoRoot,'x');`, ["UNKNOWN", "ANCHORED"]],
+  ["R3 array alias", `import * as fs from 'node:fs'; const [w]=[fs.writeFile]; w(monorepoRoot,'x');`, ["UNKNOWN", "ANCHORED"]],
+  ["R3 destructured asserted alias", `import * as fs from 'node:fs'; const {writeFile:w}=(fs as any); w(monorepoRoot,'x');`, ["UNKNOWN", "ANCHORED"]],
+  ["R3 assigned asserted alias", `import * as fs from 'node:fs'; let w; w=(fs.writeFile!); w(monorepoRoot,'x');`, ["UNKNOWN", "ANCHORED"]],
+  ["R3 bound factory return", `import * as fs from 'node:fs'; const get=()=>fs.writeFile.bind(null); const w=get(); w(monorepoRoot,'x');`, ["UNKNOWN", "UNKNOWN"]],
   ["mkdtemp anchored result", `const p=await mkdtemp(join(monorepoRoot,'p-')); writeFile(p,'x');`, ["ANCHORED", "ANCHORED"]],
   ["mkdtempSync anchored result", `const p=mkdtempSync(join(monorepoRoot,'p-')); writeFile(p,'x');`, ["ANCHORED", "ANCHORED"]],
   ["mkdtemp unknown result", `const p=mkdtemp(missing); writeFile(p,'x');`, ["UNKNOWN", "UNKNOWN"]],
@@ -359,6 +394,70 @@ for (const selfCase of SELF_CASES) {
     createAppWithoutIsolation: selfCase.createApp,
     writes: selfCase.writes,
   });
+}
+
+for (const [name, body, expected] of [
+  ["readonly", "console.log('read');", []],
+  ["writer", "require('node:fs').writeFileSync('notes','x');", ["ANCHORED"]],
+  ["destroyer", "require('node:fs').rmSync('notes');", ["ANCHORED"]],
+  ["unknown", "externalWriter();", ["UNKNOWN"]],
+] as const) {
+  const path = resolve(repoRoot, "fixture-script.mjs");
+  const snippet = `const script=resolve(monorepoRoot,'fixture-script.mjs'); spawnSync(process.execPath,['--experimental-strip-types',script],{cwd:monorepoRoot});`;
+  check(`R3 script source: ${name}`, analyze(snippet, { root: repoRoot, file: resolve(repoRoot,"probe.ts"), readSource: p => p === path ? body : undefined }).writes.map(h => h.classification), expected);
+}
+const fallbackProbe = `import * as fs from 'node:fs'; const get=fs.writeFile.bind(null); const w=get(); w(monorepoRoot,'x');`;
+check("R3 fallback fail-before", analyze(closeCalleeSyntax(fallbackProbe, false)).writes, []);
+check("R3 fallback pass-after", analyze(fallbackProbe).writes.map(h => [h.classification, h.approximation]), [["UNKNOWN", true]]);
+check("R3 body reader", inspectBody("console.log('read');"), "readonly");
+check("R3 source root evaluator", sourcePath("join(monorepoRoot,'tools','clawforge.ts')", { root: repoRoot, file: resolve(repoRoot,"probe.ts") }), resolve(repoRoot,"tools","clawforge.ts"));
+
+// Follow-up witnesses: exact reference-site and tainted-callee classifications.
+for (const [name, expression] of [
+  ["object literal", "{w:fs.writeFile}"],
+  ["array", "[fs.writeFile]"],
+  ["conditional", "cond ? fs.writeFile : other"],
+  ["logical &&", "cond && fs.writeFile"],
+  ["logical ||", "other || fs.writeFile"],
+  ["logical ??", "other ?? fs.writeFile"],
+  ["comma", "(other,fs.writeFile)"],
+  ["spread", "{...fs}"],
+  ["call argument", "external(fs.writeFile)"],
+  ["return", "()=>{return fs.writeFile;}"],
+  ["class field", "class {w=fs.writeFile;}"],
+] as const) {
+  const source = `import * as fs from 'node:fs'; const box=${expression}; box.w(monorepoRoot,'x');`;
+  check(`R3 escape: ${name}`, analyze(source).writes.map(h => h.classification), ["UNKNOWN", "UNKNOWN"]);
+}
+for (const [name, source] of [
+  ["re-export", "export {writeFile} from 'node:fs';"],
+  ["child reference", "import {spawn} from 'node:child_process'; external(spawn);"],
+] as const) check(`R3 escape: ${name}`, analyze(source).writes.map(h => h.classification), ["UNKNOWN"]);
+for (const [name, args, expected] of [
+  ["eval separator help", `['-e',"require('node:fs').writeFileSync('notes','x')",'--','--help']`, "ANCHORED"],
+  ["attached eval", `['--eval=require(\\'node:fs\\').writeFileSync(\\'notes\\',\\'x\\')','--help']`, "ANCHORED"],
+  ["attached print", `['--print=require(\\'node:fs\\').unlinkSync(\\'notes\\')']`, "ANCHORED"],
+  ["preload", `['--require','missing.cjs','-e',"console.log('read')"]`, "UNKNOWN"],
+  ["attached preload", `['--require=missing.cjs','-e',"console.log('read')"]`, "UNKNOWN"],
+  ["import preload", `['--import=missing.mjs','--help']`, "UNKNOWN"],
+  ["input type", `['--input-type=module','-e',"console.log('read')"]`, "UNKNOWN"],
+  ["script help", `['missing.mjs','--help']`, "UNKNOWN"],
+  ["version", `['--version']`, "CLEAN"],
+  ["v", `['-v']`, "CLEAN"],
+  ["help", `['--help']`, "CLEAN"],
+  ["h", `['-h']`, "CLEAN"],
+] as const) check(`R3 Node argv: ${name}`, analyze(`spawnSync('node',${args},{cwd:monorepoRoot});`).writes.map(h => h.classification), expected === "CLEAN" ? [] : [expected]);
+
+for (const [name, source] of [
+  ["shadow fs escape", "const other={}; const fs=other; import {writeFile} from 'node:fs'; external(writeFile);"],
+  ["foreign fs escape", "import fs from './foreign.ts'; import {writeFile} from 'node:fs'; external(writeFile);"],
+  ["argument then invocation", "import {writeFile} from 'node:fs'; external(writeFile)();"],
+] as const) check(`R3 boundary: ${name}`, analyze(source).writes.filter(h => h.classification === "UNKNOWN").length > 0, true);
+const argumentEscape = "import {writeFile} from 'node:fs'; external(writeFile)();";
+check("R3 boundary: argument retains reference site", analyze(argumentEscape).writes.some(h => h.target === "writeFile" && h.at === argumentEscape.lastIndexOf("writeFile") && h.approximation === true), true);
+for (const body of ["console.log('read')", "process.exit(0)"]) {
+  check(`R3 boundary: eval remains capable ${body}`, childBodyCapable("node", "'node'", ["-e", body], body), true);
+  check(`R3 boundary: eval inspected readonly ${body}`, analyze(`spawnSync('node',['-e',${JSON.stringify(body)}],{cwd:monorepoRoot});`).writes, []);
 }
 
 // --- real-tree scan -----------------------------------------------------------------------
@@ -387,7 +486,7 @@ for (const file of files) {
   const rel = relative(repoRoot, file).replaceAll("\\", "/");
   if (isSkipped(rel) || rel === GUARD_SELF) continue;
   scanned++;
-  const result = analyze(await readFile(file, "utf8"));
+  const result = analyze(await readFile(file, "utf8"), { root: repoRoot, file });
   for (const hit of result.writes) writeHits.push({ file: rel, hit });
   if (result.createAppWithoutIsolation) createAppOffenders.push(rel);
 }

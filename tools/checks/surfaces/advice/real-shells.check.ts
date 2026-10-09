@@ -82,7 +82,11 @@ const STUBS: readonly (readonly [string, string])[] = [
   ["node_modules/.bin/clawforge.cmd", cmdStub("%~f0")],
   ["node_modules/.bin/clawforge.ps1", psStub("$PSCommandPath")],
 ];
-for (const dir of [ROOT, DOCS, DEMO, CONFIG, BIN]) await mkdir(dir, { recursive: true });
+await mkdir(ROOT, { recursive: true });
+await mkdir(DOCS, { recursive: true });
+await mkdir(DEMO, { recursive: true });
+await mkdir(CONFIG, { recursive: true });
+await mkdir(BIN, { recursive: true });
 for (const [path, body] of STUBS) {
   await writeFile(join(ROOT, path), body, "utf8");
   // chmod every stub (the .bin wrapper included): on a POSIX host the sh stubs need the

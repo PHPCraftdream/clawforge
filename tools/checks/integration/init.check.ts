@@ -6,6 +6,8 @@
 
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { runProcess } from "#checks/kit/spawn.ts";
+
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -19,7 +21,7 @@ import { resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts
 import { monorepoRoot } from "#framework/core/env.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 
 /** The checkout-refusal row as the entry renders it: bin.ts's frame for the installed copy
  *  running inside a checkout — the same construction as its handed branch, frameFromInvocation
@@ -69,15 +71,10 @@ async function run(root: string): Promise<string | undefined> {
  *  inspect-formatted, so a number arrives ANSI-wrapped; compare the value, not the wrapping. */
 const plain = (output: string): string => stripVTControlCharacters(output).trim();
 
-async function runNode(root: string, file: string): Promise<{ code: number | null; output: string }> {
-  return await new Promise((resolve) => {
-    const child = spawn(process.execPath, [file], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
-    child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-    child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-    child.once("close", (code) => resolve({ code, output }));
-    child.once("error", () => resolve({ code: null, output }));
-  });
+async function runNode(_root: string, file: string): Promise<{ code: number | null; output: string }> {
+  const apps = await isolatedAppsRoot("init-node");
+  try { return await runProcess(process.execPath, [file], { cwd: apps.root, timeoutMs: 60_000 }); }
+  finally { await apps.dispose(); }
 }
 
 // mkdtemp's own random suffix mixes upper and lower case, which safeName (checked before

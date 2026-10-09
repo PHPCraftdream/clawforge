@@ -73,7 +73,7 @@ try {
   await writeFile(serverScript, script, "utf8");
 
   const run = async (requests: unknown[]): Promise<Record<string, unknown>[]> => {
-    const result = await runProcess(process.execPath, [serverScript], { input: requests.map((request) => JSON.stringify(request)).join(EOL) + EOL });
+    const result = await runProcess(process.execPath, [serverScript], { cwd: root, input: requests.map((request) => JSON.stringify(request)).join(EOL) + EOL });
     if (result.code !== 0) process.stderr.write(`fixture server exited ${result.code}: ${result.stderr}`);
     checkTrue("the fixture server ran", result.code === 0);
     return result.stdout.split(EOL).filter((line) => line.trim() !== "").map((line) => JSON.parse(line) as Record<string, unknown>);

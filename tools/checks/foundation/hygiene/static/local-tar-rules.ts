@@ -6,7 +6,7 @@
 // must wrap the next element in tarLocalPath(...) — the rf6-fix33 forward-slash invariant. Shared by
 // local-tar-owner.check.ts (real-tree scan) and its table-driven self-check.
 
-import { maskLiterals } from "./write-isolation-rules.ts";
+import { maskLiterals } from "./write-isolation-syntax/write-isolation-rules.ts";
 
 export type Classification = "LOCAL TAR SPAWN" | "UNNORMALIZED -C";
 

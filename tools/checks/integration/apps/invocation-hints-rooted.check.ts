@@ -1,4 +1,5 @@
 // rooted invocation hint assertions
+import { cp, mkdir, symlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawnSync, type SpawnSyncOptions } from "node:child_process";
 import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
@@ -16,8 +17,14 @@ import { renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
 import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { runProcess, CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 
-const GATE = resolve(monorepoRoot, "tools", "clawforge.ts");
-const SUBDIR = resolve(monorepoRoot, "docs");
+const entryApps = await isolatedAppsRoot("rooted-hints");
+const sourceRoot = await isolatedAppsRoot("rooted-hints-source");
+await cp(resolve(monorepoRoot, "tools"), resolve(sourceRoot.root, "tools"), { recursive: true });
+await cp(resolve(monorepoRoot, "package.json"), resolve(sourceRoot.root, "package.json"));
+await symlink(resolve(monorepoRoot, "node_modules"), resolve(sourceRoot.root, "node_modules"), "junction");
+const GATE = resolve(sourceRoot.root, "tools", "clawforge.ts");
+const SUBDIR = resolve(sourceRoot.root, "docs");
+await mkdir(SUBDIR);
 
 /** Runs the real gate from `cwd` — the committed shim path, exactly as gate-dispatch does. */
 function runGate(args: string[], cwd: string): Promise<string> {
@@ -27,7 +34,6 @@ function runGate(args: string[], cwd: string): Promise<string> {
 
 // entry: the real gate runs against an EMPTY apps root, so a deployment left in the checkout never selects itself
 
-const entryApps = await isolatedAppsRoot("rooted-hints");
 const docsHelp = await runGate(["help"], SUBDIR);
 check("help from docs/ spells the entry relative to that folder", docsHelp.split(["Usage:", "../clawforge", "<command>", "[options]"].join(" ")).length > 1, true);
 check("help from docs/ carries no root spelling", docsHelp.split(["Usage:", "./clawforge"].join(" ")).length > 1, false);
@@ -35,9 +41,10 @@ check("help from docs/ carries no root spelling", docsHelp.split(["Usage:", "./c
 const docsUnknown = await runGate(["frobnicate"], SUBDIR);
 check("an unknown command's hint from docs/ spells the entry relative to that folder", docsUnknown.split(["run", "../clawforge", "help"].join(" ")).length > 1, true);
 
-const rootHelp = await runGate(["help"], monorepoRoot);
+const rootHelp = await runGate(["help"], sourceRoot.root);
 check("help from the checkout root keeps the root spelling", rootHelp.split(["Usage:", "./clawforge", "<command>", "[options]"].join(" ")).length > 1, true);
 await entryApps.dispose();
+await sourceRoot.dispose();
 
 // unit frame
 

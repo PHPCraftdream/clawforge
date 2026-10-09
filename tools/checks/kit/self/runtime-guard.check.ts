@@ -81,7 +81,32 @@ try {
   const cleanTracked = await snapshotCheckout(root);
   check("renamed committed witness has clean porcelain", cleanTracked.gitStatus, "");
   const cleanEntry = new Map(cleanTracked.tree?.map((item) => [item.path, item])).get("renamed ü.txt");
-  checkTrue("clean tracked entry is mode-only, not content-hashed", cleanEntry !== undefined && cleanEntry.mode !== undefined && cleanEntry.hash === undefined && cleanEntry.size === undefined);
+  checkTrue("clean tracked entry is content-hashed", cleanEntry !== undefined && cleanEntry.mode !== undefined && cleanEntry.hash !== undefined && cleanEntry.size === 4);
+  for (const bit of ["assume-unchanged", "skip-worktree", "intent-to-add"]) {
+    for (const replacement of ["DIFFERENT SIZE AND CONTENT", "DESTROY!"]) {
+      const path = bit + (replacement.length === 8 ? "-same" : "-different") + ".txt";
+      await writeFile(join(root, path), "ORIGINAL");
+      if (bit === "intent-to-add") await git(["add", "-N", path]);
+      else {
+        await git(["add", path]);
+        await commit("Commit index-bit witness");
+        await git(["update-index", "--" + bit, path]);
+      }
+      const writer = join(root, "index-writer.cjs");
+      await writeFile(writer, `require('node:fs').writeFileSync(${JSON.stringify(join(root, path))}, ${JSON.stringify(replacement)});`);
+      const before = await snapshotCheckout(root);
+      const written = await capture([entry(writer)]);
+      const after = await snapshotCheckout(root);
+      const row = bit + (replacement.length === 8 ? " same-size" : " different-size");
+      check(row + " rewrite keeps porcelain state", before.gitStatus, after.gitStatus);
+      checkTrue(row + " rewrite is content-bearing", diffSnapshots(before, after).some((line) => line.includes(path)));
+      check(row + " runner rejects writer", written.code, 1);
+      checkTrue(row + " runner names rewrite", written.output.includes(path));
+      await rm(writer);
+      if (bit !== "intent-to-add") await git(["update-index", "--no-" + bit, path]);
+      await writeFile(join(root, path), "ORIGINAL");
+    }
+  }
   await witness("mode guard observes chmod on clean tracked entry", () => chmod(join(root, "renamed ü.txt"), 0o444), "renamed ü.txt");
   await chmod(join(root, "renamed ü.txt"), 0o666);
   await requires("symlink", "checkout symlinks never follow directories", async () => {

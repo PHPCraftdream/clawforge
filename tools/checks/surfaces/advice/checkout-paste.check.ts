@@ -39,7 +39,7 @@ export default {name:'witness',description:'witness',commands:materializeCommand
     await mkdir(join(checkout, "apps", app), { recursive: true });
     await writeFile(join(checkout, "apps", app, "app.ts"), declaration);
   }
-  const location = await runProcess("bash", ["-c", "command -v bash"], { timeoutMs });
+  const location = await runProcess("bash", ["-c", "command -v bash"], { cwd: tmpdir(), timeoutMs });
   const bashDir = location.stdout.trim().replace(/\/bash(?:\.exe)?$/, "");
   const path = `${forward(dirname(process.execPath))}:${bashDir}:/bin`;
   let serial = 0;

@@ -11,6 +11,7 @@
 // A scratch deployment is created for the duration, the same way mcp-server.check.ts does:
 // the check must not depend on whichever deployment happens to be on this machine.
 
+import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { createName } from "#framework/core/values/names.ts";
 import { resolve } from "node:path";
@@ -23,7 +24,7 @@ import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 function run(args: string[], input = ""): Promise<{ stdout: string; stderr: string }> {
-  return runProcess(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args], { input });
+  return runProcess(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args], { cwd: tmpdir(), input });
 }
 
 /** Command names as the help screen lists them: the deployment's own, indented six spaces,

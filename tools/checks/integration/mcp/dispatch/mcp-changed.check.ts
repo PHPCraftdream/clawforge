@@ -1,4 +1,4 @@
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -8,6 +8,7 @@ import type { Stage } from "#framework/core/command/execute.ts";
 import { buildChangedInventory, runChangedInventory } from "#checks/integration/mcp/dispatch/changed-inventory.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 
+const childApps = await isolatedAppsRoot("mcp-changed-child");
 const fixture = await createDeploymentFixture();
 const tally = stageTally();
 // Resolve against the monorepo root, not process.cwd(): the check is invoked from tools/,
@@ -95,7 +96,7 @@ try {
     }
     const mode = scenario.mode;
     const result = await runProcess(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
-      cwd: process.cwd(), env: { ...process.env, CASE_MODE: mode },
+      cwd: childApps.root, env: { ...process.env, CASE_MODE: mode },
       input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: scenario.call })}\n`, timeoutMs: 60_000,
     });
     const stageLine = new RegExp("PIPELINE_STAGE (parse|confirm|prepare|environment|context|run)", "g");
@@ -122,5 +123,6 @@ try {
 } finally {
   tally.print("mcp-changed");
   await fixture.dispose();
+  await childApps.dispose();
 }
 finish("mcp-changed");

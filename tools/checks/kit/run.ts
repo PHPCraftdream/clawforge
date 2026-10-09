@@ -236,7 +236,6 @@ export interface SnapshotOptions {
 }
 
 interface WalkOptions extends SnapshotOptions {
-  readonly clean?: ReadonlySet<string>;
   readonly prune?: boolean;
   readonly ignoredRoots?: readonly string[];
 }
@@ -256,11 +255,7 @@ async function snapshotPath(absolute: string, display: string, entries: AppsEntr
       }
     } else if (info.isFile()) {
       options.beforeRead?.(absolute);
-      if (options.clean?.has(display)) {
-        const handle = await open(absolute, "r");
-        await handle.close();
-        entries.push({ path: display, mode });
-      } else entries.push({ path: display, mode, size: info.size, hash: await hashFile(absolute) });
+      entries.push({ path: display, mode, size: info.size, hash: await hashFile(absolute) });
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -293,11 +288,8 @@ export async function snapshotCheckout(checkoutRoot: string = monorepoRoot, opti
   const excludes = ["--", ...IGNORED_STATUS_EXCLUDES.map((entry) => ":(exclude)" + entry), ":(exclude).git"];
   const git = await runProcess("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", ...excludes], { cwd: checkoutRoot, timeoutMs: 60_000 });
   const ignored = await runProcess("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", ...excludes], { cwd: checkoutRoot, timeoutMs: 60_000 });
-  const tracked = await runProcess("git", ["ls-files", "-z", ...excludes], { cwd: checkoutRoot, timeoutMs: 60_000 });
   const available = git.error === undefined && git.code === 0 && !git.timedOut;
   const records = porcelainRecords(git.stdout);
-  const dirty = new Set(records.flatMap((entry) => entry.source === undefined ? [entry.path] : [entry.path, entry.source]));
-  const clean = new Set(available && tracked.code === 0 && !tracked.timedOut ? tracked.stdout.split("\0").filter((path) => path !== "" && !dirty.has(path)) : []);
   const ignoredEntries: AppsEntry[] = [];
   const ignoredAvailable = ignored.error === undefined && ignored.code === 0 && !ignored.timedOut;
   const ignoredRoots = porcelainRecords(ignored.stdout).filter((entry) => entry.status === "!!").map((entry) => entry.path.replace(/\/$/, ""));
@@ -308,7 +300,7 @@ export async function snapshotCheckout(checkoutRoot: string = monorepoRoot, opti
     }
   }
   const tree: AppsEntry[] = [];
-  await snapshotPath(checkoutRoot, "", tree, { ...options, clean, prune: true, ignoredRoots: ignoredAvailable ? ignoredRoots : [] });
+  await snapshotPath(checkoutRoot, "", tree, { ...options, prune: true, ignoredRoots: ignoredAvailable ? ignoredRoots : [] });
   const ignoredFiles = ignoredEntries.filter((entry) => entry.directory !== true);
   return {
     apps: apps.filter((entry) => entry.path !== ""),

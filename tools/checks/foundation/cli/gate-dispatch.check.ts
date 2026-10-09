@@ -57,12 +57,15 @@ async function runGate(
   args: string[],
   { timeoutMs = Math.max(CHILD_NODE_DEADLINE_MS, 60_000), cwd }: { timeoutMs?: number; cwd?: string } = {},
 ): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
+  const childApps = await isolatedAppsRoot("gate-dispatch-child");
+  try {
   const { code, output, timedOut } = await runProcess(
     process.execPath,
     ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-    { cwd, timeoutMs },
+    { cwd: cwd ?? childApps.root, timeoutMs },
   );
   return { code, stdout: output, timedOut };
+  } finally { await childApps.dispose(); }
 }
 
 // --- splitLeadingAppFlag(): the pure boundary --------------------------------------------

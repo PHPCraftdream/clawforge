@@ -47,7 +47,7 @@ function startServer(name: string) {
   const proc = spawn(
     process.execPath,
     ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "control-mcp"],
-    { stdio: ["pipe", "pipe", "pipe"] },
+    { cwd: apps.root, stdio: ["pipe", "pipe", "pipe"] },
   );
   let stderr = "";
   proc.stderr.on("data", (chunk) => { stderr += String(chunk); });

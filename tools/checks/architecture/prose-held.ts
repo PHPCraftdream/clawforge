@@ -1,4 +1,5 @@
-// Narrow token measurement for held prose pins; comments and descriptions never become code.
+import { bindingSyntax } from "./self/prose-bindings.ts";
+import { assignmentOperator, DEFINING_METHODS, memberAccess, MUTATING_METHODS, templateParts } from "./self/prose-mutations.ts";
 export type Token = { kind: "id" | "str" | "regex" | "p"; text: string; at: number };
 export function tokensOf(source: string): Token[] {
   const out: Token[] = [];
@@ -28,7 +29,6 @@ export function tokensOf(source: string): Token[] {
  *  function body declared earlier is valid and still sees the outer const. */
 export function measureProseHeld(source: string): number {
   const t = tokensOf(source);
-  // token indices that begin a source line: a newline sits between the previous token and this one
   const lineStart = new Set<number>();
   for (let k = 1; k < t.length; k += 1) if (source.slice(t[k - 1]!.at, t[k]!.at).includes("\n")) lineStart.add(k);
   const allSpaced = new Set<string>();
@@ -38,8 +38,6 @@ export function measureProseHeld(source: string): number {
   const uses: Array<{ name: string; at: number; from: Scope }> = [];
   const checkGroups: Array<Array<{ name: string; at: number; from: Scope }>> = [];
   let count = 0;
-  // d.at < at applies only when resolving in the declaring scope directly (a use there before
-  // the const is a TDZ read and counts 0); a nested scope resolves in declaration order instead.
   const visible = (name: string, at: number, from: Scope): boolean => { for (let s: Scope | undefined = from; s !== undefined; s = s.parent) { const d = s.held.get(name); if (d !== undefined) return d.spaced && (s !== from || d.at < at); } return false; };
   const close = (start: number, o: string, c: string): number => {
     let depth = 0;
@@ -49,20 +47,12 @@ export function measureProseHeld(source: string): number {
     }
     return t.length;
   };
-  // a return-type annotation sits between ")" and the body: skip one balanced type with a real
-  // balanced walk over (), <>, [], {} - generics, arrays, object types, unions and function
-  // types all nest, so the type is never skipped by regex over raw source. Stops at the first
-  // depth-0 "{" or "=>" that is NOT part of the type: a "{" whose balanced close is followed
-  // by |, &, [, { or => is an object type inside the annotation, otherwise it is the body; a
-  // "=>" directly after a balanced "(...)" opened inside the type is a function-type arrow.
-  // Returns the body-start token index, or -1 when the annotation is malformed.
   const skipType = (start: number): number => {
     let depth = 0;
     let typeParenClose = -1;
     for (let j = start; j < t.length; j += 1) {
       const tx = t[j]?.text;
       if (tx === "{" && depth === 0) {
-        // only a "{" where a type may start (annotation start, after | & or a function-type =>)
         const prev = t[j - 1]?.text;
         const typeStart = j === start || prev === "|" || prev === "&" || (prev === ">" && t[j - 2]?.text === "=");
         const bodyClose = close(j, "{", "}");
@@ -99,11 +89,6 @@ export function measureProseHeld(source: string): number {
     }
     return names;
   };
-  // end of an expression-bodied arrow body: the first `,` or `;` at relative depth 0, a bracket
-  // closing past the body's start, or - ASI (documented simplification) - a newline in front of
-  // a statement-starting token (identifier/keyword or literal) when the previous token cannot
-  // continue the expression (is not an operator, opening bracket, comma or dot); without this
-  // the parameter scope leaks over the next statement under automatic semicolon insertion.
   const expressionEnd = (start: number, end: number): number => {
     let depth = 0;
     for (let k = start; k < end; k += 1) {
@@ -131,8 +116,6 @@ export function measureProseHeld(source: string): number {
       const tok = t[i];
       if (tok?.kind === "p" && tok.text === "{") { const e = close(i, "{", "}"); walk(i + 1, Math.min(e, end), { parent: scope, held: new Map() }); i = e + 1; continue; }
       if (tok?.kind === "p" && tok.text === "}") { i += 1; continue; }
-      // a parameter list gives its names to the function's own scope: a block body shares it,
-      // an expression body gets it for the expression's extent only
       if (tok?.kind === "p" && tok.text === "(") {
         const pe = close(i, "(", ")");
         // a return-type annotation may sit between ")" and the body ("{" or "=>"): skip it
@@ -157,7 +140,6 @@ export function measureProseHeld(source: string): number {
           continue;
         }
       }
-      // single-parameter arrow without parens
       if (tok?.kind === "id" && t[i + 1]?.text === "=" && t[i + 2]?.text === ">") {
         const body = i + 3;
         if (t[body]?.text === "{") {
@@ -224,8 +206,6 @@ export const PROSE_PIN = /includes\((?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\
 export const PROSE_MATCHER =
   /\.(startsWith|endsWith|indexOf)\((?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\)|\.match\(\/[^/]* [^/]*\/[a-z]*\)|\/[^\n]*\\s[^\n]*\/\.test\(|[!=]== ?(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')|includes\([^\n]*(`|") \+ (`|")/;
 export const PROSE_EQUALITY = /\bcheck\([^\n]*,\s*(?:(`|")[^`"]* [^`"]*(?:`|")|'[^']* [^']*')\s*\)/;
-// Flow precision: only whole whitespace-free path/env values and whitespace-only separators are structural.
-// Template interpolation inputs are computed values, not literal output (e.g. JSON.stringify).
 function proseText(text: string, template = false): boolean {
   let literal = "";
   for (let i = 0; i < text.length; i++) {
@@ -244,7 +224,6 @@ function proseText(text: string, template = false): boolean {
   return /\S/.test(literal) && /\s/.test(literal) && !/^[A-Za-z_][A-Za-z0-9_]*=\S*$/.test(literal) && !/^[^\s]*[\\/][^\s]*$/.test(literal);
 }
 const proseRegex = (text: string): boolean => (proseText(text) || /[\w]\\+s[+*?]?[\w]/.test(text));
-// node:assert operand positions (message arguments excluded); throws/rejects take a lone string as the message.
 const ASSERT_OPERANDS: Record<string, readonly number[]> = {
   equal: [1], notEqual: [1], strictEqual: [1], notStrictEqual: [1], deepEqual: [1], notDeepEqual: [1],
   deepStrictEqual: [1], notDeepStrictEqual: [1], partialDeepStrictEqual: [1],
@@ -290,18 +269,17 @@ function assertNames(source: string): { receivers: Set<string>; bare: Map<string
  *  measured by legacy line ratchets are included in this independent superset. */
 export function measureProseHeldFlow(source: string, onSite?: (at: number) => void): number {
   const t = tokensOf(source);
-  // token indices that begin a source line: a newline sits between the previous token and this one
+  const syntax = bindingSyntax(t);
   const lineStart = new Set<number>();
   for (let k = 1; k < t.length; k += 1) if (source.slice(t[k - 1]!.at, t[k]!.at).includes("\n")) lineStart.add(k);
   const allSpaced = new Set<string>(); // Flow binding inventory (legacy controls remain anchored above).
-  interface Binding { spaced: boolean; value?: Flow; result?: Flow; from?: Scope; at: number; updates?: Array<{ at: number; value: Flow; from: Scope }> }
+  interface Binding { spaced: boolean; value?: Flow; result?: Flow; from?: Scope; at: number; updates?: Array<{ at: number; value: Flow; from: Scope; compound?: boolean; property?: boolean }> }
   interface Scope { parent: Scope | undefined; held: Map<string, Binding> }
   const root: Scope = { parent: undefined, held: new Map() };
   interface Flow { literals: number[]; properties?: Map<string, Flow>; names: Array<{ name: string; call: boolean; k: number; path?: string[] }> }
-  const assignments: Array<{ name: string; at: number; from: Scope; value: Flow }> = [];
+  const assignments: Array<{ name: string; at: number; from: Scope; value: Flow; compound?: boolean; property?: boolean }> = [];
   const sites: Array<Flow & { from: Scope }> = [];
   const { receivers, bare } = assertNames(source);
-  // a name carries prose where its innermost visible declaration does (same TDZ rule as visible)
   const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = []): boolean => {
     for (let s: Scope | undefined = from; s !== undefined; s = s.parent) {
       const d = s.held.get(name); if (d === undefined) continue;
@@ -310,20 +288,26 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         if (flowVisible(name, at, from)) return true;
         if (d.spaced) return false;
       }
-      const update = d.updates?.filter((u) => s !== from || u.at < at).at(-1);
+      const propertyHits = d.updates?.filter((u) => u.property && (s !== from || u.at < at));
+      if (propertyHits?.some((u) => u.value.literals.length || u.value.names.some((n) => carrying(n.name, n.call, n.k, u.from, new Set([...seen, d]), n.path)))) return true;
+      const updates = d.updates?.filter((u) => !u.property && (s !== from || u.at < at)) ?? [];
+      const update = updates.at(-1);
+      const compound = updates.filter((u) => u.compound);
+      if (compound.length) {
+        const alternatives = [d.value, ...updates.map((u) => u.value)].filter((f) => f !== undefined);
+        if (alternatives.some((f) => f.literals.length || f.names.some((n) => carrying(n.name, n.call, n.k, d.from ?? s, new Set([...seen, d]), n.path)))) return true;
+      }
       let f = call ? d.result ?? d.value : update?.value ?? d.value;
-      // A declared value is not a callable return. Only function results or aliases resolve calls.
       if (call && !d.result && f?.literals.length) return false;
       let remaining = path;
-      while (remaining.length && f?.properties) { f = f.properties.get(remaining[0]!); remaining = remaining.slice(1); }
+      while (remaining.length && f?.properties) { f = remaining[0] === "*" ? merge([...f.properties.values()]) : f.properties.get(remaining[0]!) ?? f.properties.get("*"); remaining = remaining.slice(1); }
+      if (remaining.every((key) => key === "*")) remaining = [];
       if (f === undefined) return false;
       const visited = new Set(seen); visited.add(d);
       return (!remaining.length && f.literals.length > 0) || f.names.some((n) => carrying(n.name, call && !d.result ? true : n.call, n.k, update?.from ?? (call && d.result ? { parent: d.from ?? s, held: new Map() } : d.from ?? s), visited, [...(n.path ?? []), ...remaining]));
     }
     return false;
   };
-  // d.at < at applies only when resolving in the declaring scope directly (a use there before
-  // the const is a TDZ read and counts 0); a nested scope resolves in declaration order instead.
   const flowVisible = (name: string, at: number, from: Scope): boolean => { for (let s: Scope | undefined = from; s !== undefined; s = s.parent) { const d = s.held.get(name); if (d !== undefined) return d.spaced && (s !== from || d.at < at); } return false; };
   const close = (start: number, o: string, c: string): number => {
     let depth = 0;
@@ -333,20 +317,12 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     }
     return t.length;
   };
-  // a return-type annotation sits between ")" and the body: skip one balanced type with a real
-  // balanced walk over (), <>, [], {} - generics, arrays, object types, unions and function
-  // types all nest, so the type is never skipped by regex over raw source. Stops at the first
-  // depth-0 "{" or "=>" that is NOT part of the type: a "{" whose balanced close is followed
-  // by |, &, [, { or => is an object type inside the annotation, otherwise it is the body; a
-  // "=>" directly after a balanced "(...)" opened inside the type is a function-type arrow.
-  // Returns the body-start token index, or -1 when the annotation is malformed.
   const skipType = (start: number): number => {
     let depth = 0;
     let typeParenClose = -1;
     for (let j = start; j < t.length; j += 1) {
       const tx = t[j]?.text;
       if (tx === "{" && depth === 0) {
-        // only a "{" where a type may start (annotation start, after | & or a function-type =>)
         const prev = t[j - 1]?.text;
         const typeStart = j === start || prev === "|" || prev === "&" || (prev === ">" && t[j - 2]?.text === "=");
         const bodyClose = close(j, "{", "}");
@@ -383,11 +359,6 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     }
     return names;
   };
-  // end of an expression-bodied arrow body: the first `,` or `;` at relative depth 0, a bracket
-  // closing past the body's start, or - ASI (documented simplification) - a newline in front of
-  // a statement-starting token (identifier/keyword or literal) when the previous token cannot
-  // continue the expression (is not an operator, opening bracket, comma or dot); without this
-  // the parameter scope leaks over the next statement under automatic semicolon insertion.
   const expressionEnd = (start: number, end: number): number => {
     let depth = 0;
     for (let k = start; k < end; k += 1) {
@@ -418,14 +389,14 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     if (x?.kind === "id" && t[k - 1]?.text !== ".") return { literals: [], names: [{ name: x.text, call, k }] };
     return none();
   };
-  // what reaches an operand: literals and bare names (a called name for its return); call
-  // arguments, member accesses, object keys and arrow block bodies are not the operand
   const operand = (start: number, end: number): Flow => {
     const flow = none();
     if (t[start]?.text === "{" && close(start, "{", "}") === end - 1) {
       flow.properties = new Map();
       for (const [a, b] of args(start + 1, end - 1)) {
         const key = t[a];
+        if (key?.text === ".") { const value = operand(a + 3, b); if (t[a + 3]?.kind === "id") value.names.push({ name: t[a + 3]!.text, call: false, k: a + 3 }); flow.properties.set("*", merge([flow.properties.get("*") ?? none(), value])); flow.literals.push(...value.literals); flow.names.push(...value.names); continue; }
+        if (b - a === 1 && key?.kind === "id") { const value = single(a); flow.properties.set(key.text, value); flow.names.push(...value.names); }
         if (key && t[a + 1]?.text === ":") {
           const value = operand(a + 2, b);
           flow.properties.set(key.text, value);
@@ -438,7 +409,27 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
       const x = t[k]!; const prev = t[k - 1]; const next = t[k + 1];
       if (x.kind === "str" || x.kind === "regex") {
         flow.literals.push(...single(k).literals);
-        if (x.kind === "str" && source[x.at] === "`") for (const m of x.text.matchAll(/\$\{\s*([A-Za-z_$][\w$]*)\s*\}/g)) flow.names.push({ name: m[1]!, call: false, k });
+        if (t[k + 1]?.text === "." && t[k + 2]?.text === "concat" && t[k + 3]?.text === "(") {
+          const value = merge(args(k + 4, close(k + 3, "(", ")")).map((r) => operand(...r))); flow.literals.push(...value.literals); flow.names.push(...value.names);
+        }
+        if (x.kind === "str" && source[x.at] === "`") for (const part of templateParts(x.text)) {
+          const inner = tokensOf(part);
+          for (let j = 0; j < inner.length; j++) {
+            const token = inner[j]!;
+            if (token.kind === "str" && proseText(token.text)) flow.literals.push(k);
+            if (token.kind !== "id" || inner[j - 1]?.text === ".") continue;
+            const path: string[] = []; let last = j;
+            while (inner[last + 1]?.text === "." && inner[last + 2]?.kind === "id") { path.push(inner[last + 2]!.text); last += 2; }
+            const call = inner[last + 1]?.text === "(";
+            if (!call) flow.names.push({ name: token.text, call: false, k, path });
+            else {
+              if (!path.length) flow.names.push({ name: token.text, call: true, k });
+              if (path.at(-1) === "concat") flow.names.push({ name: token.text, call: false, k, path: path.slice(0, -1) });
+              if (path.at(-1) !== "concat") { let depth = 1; j = last + 2; for (; j < inner.length && depth; j++) { if (inner[j]?.text === "(") depth++; else if (inner[j]?.text === ")") depth--; } j--; }
+              else j = last;
+            }
+          }
+        }
         continue;
       }
       if (x.kind === "p" && x.text === "(" && (prev?.kind === "id" || prev?.text === ")" || prev?.text === "]")) {
@@ -446,25 +437,27 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         k = e; continue;
       }
       if (x.kind === "p" && x.text === "{" && prev?.text === ">" && t[k - 2]?.text === "=") { k = close(k, "{", "}"); continue; }
-      if (x.kind !== "id" || prev?.text === ".") continue;
+      if (x.kind !== "id" || (prev?.text === "." && t[k - 2]?.text !== ".")) continue;
       if (next?.text === ":" && (prev?.text === "{" || prev?.text === ",")) continue;
-      const path: string[] = [];
-      let last = k;
-      while (last + 2 < end && t[last + 1]?.text === "." && t[last + 2]?.kind === "id") { path.push(t[last + 2]!.text); last += 2; }
-      // Predicate results carry only their expected argument (test carries its regex receiver).
+      const access = memberAccess(t, k, end, syntax.close);
+      const path = access.path;
+      const last = access.end - 1;
       if (t[last + 1]?.text === "(" && path.length && FLOW_METHODS.has(path.at(-1)!)) {
         const e = close(last + 1, "(", ")");
         const part = args(last + 2, e)[0];
         if (path.at(-1) === "test") flow.names.push({ name: x.text, call: false, k, path: path.slice(0, -1) });
         else if (part) { const f = operand(...part); flow.literals.push(...f.literals); flow.names.push(...f.names); }
       } else if (t[last + 1]?.text === "(" && path.length) {
-        if (path.at(-1) === "join") flow.names.push({ name: x.text, call: false, k, path: path.slice(0, -1) });
+        if (["join", "concat", "get", "values", "entries", "has", "set", "add", "*"].includes(path.at(-1)!)) flow.names.push({ name: x.text, call: false, k, path: path.slice(0, -1) });
+        if (["concat", "set", "add", "*"].includes(path.at(-1)!) || (x.text === "Object" && DEFINING_METHODS.has(path.at(-1)!))) {
+          const list = args(last + 2, close(last + 1, "(", ")"));
+          const value = merge(list.map((r) => operand(...r))); flow.literals.push(...value.literals); flow.names.push(...value.names);
+        }
       } else flow.names.push({ name: x.text, call: t[last + 1]?.text === "(", k, path });
       k = last;
     }
     return flow;
   };
-  // body start of an arrow-function initializer, or -1
   const arrowBody = (s: number, end: number): number => {
     let k = t[s]?.text === "async" ? s + 1 : s;
     if (t[k]?.kind === "id" && t[k + 1]?.text === "=" && t[k + 2]?.text === ">") return k + 3;
@@ -473,6 +466,22 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     if (t[k]?.text === ":") { const j = skipType(k + 1); if (j < 0) return -1; k = j; }
     return t[k]?.text === "=" && t[k + 1]?.text === ">" && k + 2 < end ? k + 2 : -1;
   };
+  const merge = (flows: Flow[]): Flow => ({ literals: flows.flatMap((f) => f.literals), names: flows.flatMap((f) => f.names) });
+  const bindPattern = (a: number, b: number, value: Flow, scope: Scope, at: number, declare: boolean): void => {
+    const destructured = t[a]?.text === "{" || t[a]?.text === "[";
+    if (destructured && !trackDestructuring) return;
+    for (const entry of syntax.entries(a, b)) {
+      let selected = value;
+      for (const key of entry.path) { if (selected.properties && key !== "*") selected = selected.properties.get(key) ?? selected.properties.get("*") ?? none(); }
+      const f = merge([selected, ...entry.defaults.map((r) => operand(...r))]);
+      if (destructured) f.properties = new Map([["*", { ...f }]]);
+      if (declare) scope.held.set(entry.name, { spaced: false, value: f, from: scope, at });
+      else assignments.push({ name: entry.name, at, from: scope, value: f });
+    }
+  };
+  const trackDestructuring = true;
+  const trackProperties = true;
+  const trackCompound = true;
   const asserted = new Set<number>();
   const mark = (a: number, b: number): void => { for (let k = a; k < b; k++) asserted.add(k); };
   for (let k = 0; k < t.length; k++) {
@@ -500,24 +509,38 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         const e = close(i + 1, "(", ")");
         if (asserted.has(i + 2)) addSite([operand(i + 2, e)], scope);
       }
+      if ((tok?.text === "{" || tok?.text === "[") && t[syntax.close(i) + 1]?.text === "=") {
+        const e = syntax.close(i); bindPattern(i, e + 1, operand(e + 2, expressionEnd(e + 2, end)), scope, i, false); i = e + 1; continue;
+      }
+      if (trackProperties && tok?.kind === "id" && t[i - 1]?.text !== ".") {
+        const e = syntax.memberEnd(i, end);
+        const op = assignmentOperator(t, e);
+        if (e > i + 1 && op && (!op.compound || trackCompound)) assignments.push({ name: tok.text, at: i, from: scope, property: true, value: operand(op.end, expressionEnd(op.end, end)) });
+        const access = memberAccess(t, i, end, syntax.close);
+        const method = access.path.at(-1);
+        if (tok.text === "Object" && (DEFINING_METHODS.has(method ?? "") || method === "*") && t[e]?.text === "(") {
+          const list = args(e + 1, close(e, "(", ")")); const target = list[0];
+          if (target && t[target[0]]?.kind === "id") assignments.push({ name: t[target[0]]!.text, at: i, from: scope, property: true, value: merge(list.slice(method === "defineProperty" ? 2 : 1).map((r) => operand(...r))) });
+        }
+        if (e > i + 1 && t[e]?.text === "(" && (MUTATING_METHODS.has(method ?? "") || method === "*")) assignments.push({ name: tok.text, at: i, from: scope, property: true, value: merge(args(e + 1, close(e, "(", ")")).map((r) => operand(...r))) });
+      }
       if (tok?.kind === "p" && tok.text === "{") { const e = close(i, "{", "}"); walk(i + 1, Math.min(e, end), { parent: scope, held: new Map() }); i = e + 1; continue; }
       if (tok?.kind === "p" && tok.text === "}") { i += 1; continue; }
-      // a parameter list gives its names to the function's own scope: a block body shares it,
-      // an expression body gets it for the expression's extent only
       if (tok?.kind === "p" && tok.text === "(") {
         const pe = close(i, "(", ")");
-        // Flow: a return-type annotation may sit between ")" and the body ("{" or "=>"): skip it
         let after = pe + 1;
         if (t[after]?.text === ":") { const j = skipType(after + 1); if (j >= 0) after = j; }
         const arrow = t[after]?.text === "=" && t[after + 1]?.text === ">";
         const isFn = t[i - 1]?.text === "function" || (t[i - 1]?.kind === "id" && t[i - 2]?.text === "function");
         if (arrow || isFn) {
           const names = paramNames(i + 1, pe);
+          const params = syntax.split(i + 1, pe).flatMap(([a, b]) => syntax.entries(a, b));
+          const parameterScope = bodyScope(scope, names);
+          for (const entry of params) parameterScope.held.set(entry.name, { spaced: false, value: merge(entry.defaults.map((r) => operand(...r))), from: scope, at: -1 });
           const body = arrow ? after + 2 : after;
           if (t[body]?.text === "{") {
             const e = close(body, "{", "}");
-            const inner: Scope = { parent: scope, held: new Map() };
-            for (const n of names) inner.held.set(n, { spaced: false, at: i });
+            const inner = parameterScope;
             if (isFn && t[i - 1]?.kind === "id") {
               const result = none();
               for (let k = body + 1; k < Math.min(e, end); k += 1) if (t[k]?.text === "return") {
@@ -530,13 +553,12 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
             i = e + 1;
           } else if (arrow) {
             const e = expressionEnd(body, end);
-            walk(body, Math.min(e, end), bodyScope(scope, names));
+            walk(body, Math.min(e, end), parameterScope);
             i = e;
           } else i += 1;
           continue;
         }
       }
-      // single-parameter arrow without parens
       if (tok?.kind === "id" && t[i + 1]?.text === "=" && t[i + 2]?.text === ">") {
         const body = i + 3;
         if (t[body]?.text === "{") {
@@ -552,11 +574,10 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         }
         continue;
       }
-      // Resolve assignments after declarations have all been collected (including outer later bindings).
-      if (tok?.kind === "id" && t[i - 1]?.text !== "." && t[i - 1]?.text !== "const" && t[i - 1]?.text !== "let" && t[i + 1]?.text === "=" && t[i + 2]?.text !== "=" && t[i + 2]?.text !== ">") {
-        assignments.push({ name: tok.text, at: i, from: scope, value: operand(i + 2, expressionEnd(i + 2, end)) });
+      if (tok?.kind === "id" && t[i - 1]?.text !== "." && !["const", "let", "var"].includes(t[i - 1]?.text ?? "")) {
+        const op = assignmentOperator(t, i + 1);
+        if (op && (!op.compound || trackCompound)) assignments.push({ name: tok.text, at: i, from: scope, compound: op.compound, value: operand(op.end, expressionEnd(op.end, end)) });
       }
-      // Propagate node:assert aliases, including method aliases and default callable aliases.
       if (tok?.kind === "id" && (tok.text === "const" || tok.text === "let")) {
         const local = t[i + 1]?.text; const base = t[i + 3]?.text;
         if (local && base && t[i + 2]?.text === "=") {
@@ -564,6 +585,16 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
           else if (receivers.has(base)) receivers.add(local);
           else if (bare.has(base)) bare.set(local, bare.get(base)!);
         }
+      }
+      if (["const", "let", "var"].includes(tok?.text ?? "")) {
+        let a = i + 1;
+        do {
+          const stop = expressionEnd(a, end); const eq = syntax.delimiter(a, stop, "=");
+          if (t[a]?.kind !== "id" || tok?.text === "var" || a !== i + 1) bindPattern(a, eq, eq < stop ? operand(eq + 1, stop) : none(), scope, i, true);
+          if (t[stop]?.text !== ",") break;
+          a = stop + 1;
+        } while (a < end);
+        if (t[i + 1]?.kind !== "id" || tok?.text === "var") { i += 1; continue; }
       }
       if ((tok?.text === "const" || tok?.text === "let") && t[i + 1]?.kind === "id") {
         if (t[i + 1]?.text === "of" || t[i + 1]?.text === "in") { scope.held.set(t[i + 1]!.text, { spaced: false, at: i }); i += 2; continue; }
@@ -645,7 +676,6 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     if (d.at < u.at || s !== u.from) (d.updates ??= []).push(u);
     break;
   }
-  // one count per site; a literal or name already counted by an earlier overlapping site is not new
   let flow = 0;
   const claimed = new Set<number>();
   for (const s of sites) {

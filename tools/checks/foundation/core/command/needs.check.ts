@@ -30,7 +30,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { TRANSPORT_SENTINEL, createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
-import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 
 interface Unit {
   readonly label: string;
@@ -138,16 +138,18 @@ const validArgs = (unit: Unit, root: string): { readonly args: Record<string, un
 const DATA_DIR_UNSET_TOKENS: readonly string[] = ["OC_DATA_DIR", "is", "not", "set", "in", ".env"];
 
 const tally = stageTally();
-const fixture = await createDeploymentFixture();
+const isolated = await isolatedAppsRoot("needs-fixture");
+const fixtureRoot = isolated.root;
+const fixture = await createDeploymentFixture({ root: fixtureRoot });
 const app = { name: "needs-fixture", description: "fixture", commands: openclawCommands };
 try {
   // The malformed .env: no assignment at all, so every Settings build dies (toSettings
   // refuses a deployment without OC_DATA_DIR) while the file itself still parses as data.
   // The read-count seam makes "never read" observable, not just unobserved.
-  await writeFile(join(fixture.root, ".env"), "this file carries no assignment\n", "utf8");
+  await writeFile(join(fixtureRoot, ".env"), "this file carries no assignment\n", "utf8");
   // The import source the local `recipe import` row copies from.
-  await mkdir(join(fixture.root, "import-source"), { recursive: true });
-  await writeFile(join(fixture.root, "import-source", "recipe.json"), JSON.stringify({ description: "import source" }), "utf8");
+  await mkdir(join(fixtureRoot, "import-source"), { recursive: true });
+  await writeFile(join(fixtureRoot, "import-source", "recipe.json"), JSON.stringify({ description: "import source" }), "utf8");
 
   const runArgv = async (command: string, argv: readonly string[]) => {
     let output = "";
@@ -294,6 +296,7 @@ try {
   check("every target unit accepted inputs derived from its declaration", impossible, []);
 } finally {
   await fixture.dispose();
+  await isolated.dispose();
 }
 tally.print("needs by action");
 finish("needs");

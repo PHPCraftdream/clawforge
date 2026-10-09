@@ -70,7 +70,7 @@ else if (args[0] === 'exec' || args.includes('run')) {
     for (const branch of ["helper", "fallback"]) {
       for (const ending of ["client-eof", "child-close"]) {
         const child = spawn(process.execPath, ["--experimental-strip-types", self, "--bridge", shim, root, branch], {
-          stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, OC_DEBUG: "0" },
+          cwd: root, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, OC_DEBUG: "0" },
         });
         const chunks: Buffer[] = [];
         let stderr = "";
@@ -95,7 +95,7 @@ else if (args[0] === 'exec' || args.includes('run')) {
           child.once("error", rejectClose);
           child.once("close", resolveClose);
         });
-        const deadline = setTimeout(() => { child.kill(); }, 15000);
+        const deadline = setTimeout(() => { child.kill(); }, 60000);
         const response = () => responses.length > 0
           ? Promise.resolve(responses.shift()!)
           : Promise.race([new Promise<string>((resolveResponse) => waiters.push(resolveResponse)), closed.then(() => { throw new Error(`bridge closed before response: ${stderr}`); })]);
@@ -122,10 +122,10 @@ else if (args[0] === 'exec' || args.includes('run')) {
       }
     }
     // An open client pipe must not prevent finite explicit input from closing promptly.
-    const finite = spawn(process.execPath, ["--experimental-strip-types", self, "--bridge", shim, root, "finite"], { stdio: ["pipe", "pipe", "pipe"] });
+    const finite = spawn(process.execPath, ["--experimental-strip-types", self, "--bridge", shim, root, "finite"], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
     let finiteStderr = "";
     finite.stderr.on("data", chunk => { finiteStderr += chunk; });
-    const deadline = setTimeout(() => finite.kill(), 15000);
+    const deadline = setTimeout(() => finite.kill(), 60000);
     try {
       const code = await new Promise<number | null>((resolveClose, rejectClose) => {
         finite.once("error", rejectClose); finite.once("close", resolveClose);

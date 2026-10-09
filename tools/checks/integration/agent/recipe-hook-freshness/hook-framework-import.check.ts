@@ -150,8 +150,8 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   try {
     const result = await runProcess(
       process.execPath,
-      ["--experimental-strip-types", "tools/clawforge.ts", "--app", name, "status"],
-      { cwd: monorepoRoot, timeoutMs: 120_000 },
+      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "status"],
+      { cwd: apps.root, timeoutMs: 120_000 },
     );
     // Positive assertion: the app LOADED far enough for the dispatcher to answer — a loader
     // failure, a timeout or an otherwise empty output must fail here, not pass vacuously.

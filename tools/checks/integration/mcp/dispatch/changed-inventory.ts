@@ -1,4 +1,4 @@
-import { check } from "#checks/kit/harness.ts";
+import { check, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { type DeploymentFixture, type StageTally } from "#checks/kit/deployment-fixture.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -162,11 +162,13 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
   const units = buildChangedInventory(options.fixture.root);
   const rows: Array<{ mode: string; expected: number; stages: Map<number, Stage>; responses: Array<{ id: number; result?: Record<string, unknown> }>; stderr: string }> = [];
   let failures = 0;
+  const childApps = await isolatedAppsRoot("changed-inventory-child");
+  try {
   for (const mode of ["parse", "confirm", "prepare", "context", "run"]) {
     const selected = mode === "confirm" ? units.filter((unit) => unit.effect === "destroy") : units;
     const requests = selected.map((unit, index) => ({ jsonrpc: "2.0", id: index + 1, method: "tools/call", params: { name: `probe-${index}`, arguments: { ...unit.args, confirm: mode !== "confirm", ...(mode === "parse" ? { __unknown: true } : {}) } } }));
     const result = await runProcess(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
-      cwd: process.cwd(), env: { ...process.env, CASE_MODE: mode, FIXTURE_ROOT: options.fixture.root },
+      cwd: childApps.root, env: { ...process.env, CASE_MODE: mode, FIXTURE_ROOT: options.fixture.root },
       input: requests.map((request) => JSON.stringify(request) + "\n").join(""), timeoutMs: 60_000,
     });
     if (result.code !== 0 || result.timedOut) failures++;
@@ -179,6 +181,7 @@ export async function runChangedInventory(options: { fixture: DeploymentFixture;
       .map((message) => ({ id: message.id as number, result: message.result }));
     rows.push({ mode, expected: requests.length, responses, stages, stderr: result.stderr });
   }
+  } finally { await childApps.dispose(); }
   const contactsLine = new RegExp("FIXTURE_CONTACTS (\\[[^\\n]*\\])");
   const rowContacts = (stderr: string): string => stderr.match(contactsLine)?.[1] ?? "absent";
   check("changed inventory child exits", failures, 0);

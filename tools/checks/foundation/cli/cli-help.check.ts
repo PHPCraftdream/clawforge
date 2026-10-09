@@ -13,6 +13,7 @@
 
 import { rm, readFile } from "node:fs/promises";
 import { createName } from "#framework/core/values/names.ts";
+import { cp, mkdir, symlink } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { createApp } from "#framework/integration/deployment/scaffold.ts";
@@ -25,11 +26,17 @@ import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
 /** Runs the real gate with a hard deadline. stdin stays an open, never-written pipe: a server
  *  wrongly started by --help would block on it, whereas /dev/null's EOF would let it exit and hide
  *  the hang. The deadline is generous — a cold start under a loaded machine is slow, a hang is forever. */
+const childSource = await isolatedAppsRoot("cli-help-source");
+await cp(resolve(monorepoRoot, "tools"), resolve(childSource.root, "tools"), { recursive: true });
+await cp(resolve(monorepoRoot, "package.json"), resolve(childSource.root, "package.json"));
+await symlink(resolve(monorepoRoot, "node_modules"), resolve(childSource.root, "node_modules"), "junction");
+await mkdir(resolve(childSource.root, "apps"));
+
 async function runGate(args: string[], timeoutMs = CHILD_NODE_DEADLINE_MS): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
   const { code, output, timedOut } = await runProcess(
     process.execPath,
-    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-    { keepStdinOpen: true, timeoutMs },
+    ["--experimental-strip-types", resolve(childSource.root, "tools", "clawforge.ts"), ...args],
+    { cwd: childSource.root, keepStdinOpen: true, timeoutMs },
   );
   return { code, stdout: output, timedOut };
 }
@@ -162,6 +169,7 @@ try {
 } finally {
   // dispose() retries through transient Windows handle errors and removes the whole root,
   // so this per-fixture rm is only defense in depth (a no-op once dispose succeeded).
+  await childSource.dispose();
   await apps.dispose();
   await rm(resolve(apps.root, deploymentName), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

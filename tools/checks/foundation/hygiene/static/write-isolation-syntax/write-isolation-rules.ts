@@ -4,9 +4,11 @@
 // classifying write-shaped CALLS, not specific spellings. Shared by
 // write-isolation.check.ts (real-tree scan) and its table-driven self-check.
 
+import { type SourceContext } from "./body.ts";
+import { analyzeCalleeSyntax } from "./index.ts";
+import { childProcessHits } from "./children.ts";
 export type Classification = "CLEAN" | "ANCHORED" | "UNKNOWN";
-
-export type Hit = { call: string; target: string; classification: Classification; approximation?: boolean };
+export type Hit = { call: string; target: string; classification: Classification; approximation?: boolean; at?: number };
 
 // Closed table of fs write/destroy operations and the argument indexes they write or
 // destroy (a move's source loses its file; copyFile also enforces source isolation).
@@ -39,7 +41,7 @@ const OPERATION_TARGETS = new Map(Object.entries(OPERATIONS));
 
 const FS_MODULE = /^(?:node:)?fs(?:\/promises)?$/;
 const CHILD_MODULE = /^(?:node:)?child_process$/;
-const CHILD_CALLEES = new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
+const CHILD_CALLEES = new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"]);
 // Receivers the old spelling rule knew; still fs namespaces when the file binds them to nothing else.
 const FALLBACK_NAMESPACES = ["fs", "fsp", "fsPromises"];
 
@@ -126,7 +128,7 @@ export function createAppCalled(source: string): boolean {
 // `arg` is the index of the argument currently being scanned (0-based); a depth-1 comma
 // ENDS the current argument (and begins the next), so `end` is fixed when the current
 // argument is the one requested and `start` was fixed one comma earlier.
-function extractArgRange(masked: string, open: number, index: number): [number, number] | undefined {
+export function extractArgRange(masked: string, open: number, index: number): [number, number] | undefined {
   let depth = 0;
   let arg = 0;
   let start = open + 1;
@@ -153,7 +155,7 @@ function isCleanSignal(expr: string, clean: ReadonlySet<string>): boolean {
   return false;
 }
 
-function isAnchoredSignal(expr: string, origin: string): boolean {
+export function isAnchoredSignal(expr: string, origin: string): boolean {
   if (ANCHORED_TOKEN.test(expr)) return true;
   // Relative components in join(tempRoot, './file') do not anchor the root.
   // A bare relative string literal as the whole target ("tools/clawforge.ts") is
@@ -308,7 +310,10 @@ function scopedClassifier(source: string, masked: string): Classify {
   const lookup = (name: string, at: number, lexicalAt = at): Binding | undefined => {
     let scope: Scope | undefined = scopeAt(lexicalAt);
     while (scope !== undefined) {
-      const binding = bindings.filter((b) => b.name === name && b.scope === scope && b.at < at).sort((a, b) => b.at - a.at)[0];
+      const binding = bindings.filter((b) => b.name === name && b.scope === scope && (b.at < at || scope !== scopeAt(lexicalAt))).sort((a, b) => {
+        const aBefore = a.at < at; const bBefore = b.at < at;
+        return aBefore !== bBefore ? aBefore ? -1 : 1 : aBefore ? b.at - a.at : a.at - b.at;
+      })[0];
       if (binding !== undefined) return binding;
       scope = scope.parent;
     }
@@ -345,6 +350,10 @@ function scopedClassifier(source: string, masked: string): Classify {
     const leading = expr.length - expr.trimStart().length;
     expr = expr.trim(); origin = origin.slice(leading).trim();
     if (reHits(/^await\s/, expr)) return evaluate(expr.slice(6), origin.slice(6), at, seen, lexicalAt);
+    if (expr.includes("??")) {
+      const branches = expr.split("??").map(e => evaluate(e, e, at, seen, lexicalAt));
+      return branches.every(r => r === "CLEAN") ? "CLEAN" : branches.includes("ANCHORED") ? "ANCHORED" : "UNKNOWN";
+    }
     if (reHits(/^(?:tmpdir|isolatedAppsRoot)\s*\(/, expr)) return "CLEAN";
     // A template must start with a proven root and have a literal, non-escaping suffix.
     const template = /^`\$\{([^{}]+)\}([^`$]*)`$/.exec(origin);
@@ -387,8 +396,18 @@ function scopedClassifier(source: string, masked: string): Classify {
     return anchoredFloor(evaluate(binding.rhs, binding.origin, Math.min(at, binding.at), next, binding.at), binding.rhs);
   };
   const resolveValue = (expr: string, origin: string, at: number, seen = new Set<Binding>()): Value => {
+    const memberRoot = /^([\w$]+)\.root$/.exec(expr.trim());
+    if (memberRoot !== null) {
+      const binding = lookup(memberRoot[1], at);
+      if (binding !== undefined && reHits(/^(?:await\s+)?isolatedAppsRoot\s*\(/, binding.rhs.trim())) return { expr: "tmpdir()", origin: "tmpdir()", at };
+    }
     const binding = IDENT.test(expr.trim()) ? lookup(expr.trim(), at) : undefined;
-    if (binding === undefined || seen.has(binding) || binding.callers !== undefined) return { expr, origin, at };
+    if (binding === undefined || seen.has(binding)) return { expr, origin, at };
+    if (binding.callers !== undefined) {
+      const rows = binding.callers.map(b => resolveValue(b.rhs, b.origin, b.at, new Set([...seen,binding])));
+      if (rows.length > 0 && rows.every(v => evaluate(v.expr,v.origin,v.at,new Set()) === "CLEAN")) return { expr: "tmpdir()", origin: "tmpdir()", at };
+      return { expr, origin, at };
+    }
     return resolveValue(binding.rhs, binding.origin, binding.at, new Set([...seen, binding]));
   };
   return Object.assign((expr: string, origin: string, at: number) => evaluate(expr, origin, at, new Set()), { resolveValue });
@@ -397,7 +416,7 @@ function scopedClassifier(source: string, masked: string): Classify {
 /** Lower bound: the evaluator only models exact shapes, so any other target that merely
  * mentions an anchored token (template, concatenation, conditional, imported root) is
  * ANCHORED unless the evaluator proved it CLEAN. */
-function anchoredFloor(classification: Classification | "UNBOUND", target: string): Classification | "UNBOUND" {
+export function anchoredFloor(classification: Classification | "UNBOUND", target: string): Classification | "UNBOUND" {
   return classification !== "CLEAN" && reHits(ANCHORED_TOKEN, target) ? "ANCHORED" : classification;
 }
 
@@ -411,7 +430,7 @@ type ImportEntry = { module: string; imported: string; local: string };
 type FsBindings = { namespaces: Set<string>; functions: Map<string, string>; childNamespaces: Set<string>; children: Map<string, string>; foreign: Set<string> };
 type Callee = { kind: "fs"; op: string; targets: readonly number[] } | { kind: "child"; name: string };
 type Value = { expr: string; origin: string; at: number };
-type Classify = ((expr: string, origin: string, at: number) => Classification | "UNBOUND") & { resolveValue: (expr: string, origin: string, at: number) => Value };
+export type Classify = ((expr: string, origin: string, at: number) => Classification | "UNBOUND") & { resolveValue: (expr: string, origin: string, at: number) => Value };
 
 /** Table entry for an fs function name (Sync variants share it). */
 function operationOf(name: string): { readonly name: string; readonly targets: readonly number[] } | undefined {
@@ -500,7 +519,7 @@ function resolveCallee(parts: readonly string[], b: FsBindings, declared: (name:
     if ((!isChild && operationOf(head) === undefined) || b.foreign.has(head) || declared(head)) return undefined;
     return isChild ? { kind: "child", name: head } : fsOp(head);
   }
-  if (members.length === 1 && b.namespaces.has(head)) return fsOp(members[0]);
+  if (members.length === 1 && b.namespaces.has(head)) return fsOp(members[0]) ?? (/^(?:read|stat|lstat|realpath|access|readdir|exists|watch)/.test(members[0]) ? undefined : fsOp("writeFile"));
   if (members.length === 2 && members[0] === "promises" && b.namespaces.has(head)) return fsOp(members[1]);
   if (members.length === 1 && b.childNamespaces.has(head) && CHILD_CALLEES.has(members[0])) return { kind: "child", name: members[0] };
   return undefined;
@@ -517,12 +536,14 @@ function opensForWrite(masked: string, source: string, open: number): boolean {
 }
 
 /** Write/destroy-shaped calls with checkout or unresolved target provenance. */
-export function checkoutWriteHits(source: string): Hit[] {
+export function checkoutWriteHits(source: string, context?: SourceContext): Hit[] {
+  const syntax = analyzeCalleeSyntax(source);
+  source = syntax.source;
   const masked = maskLiterals(source);
   const classify = scopedClassifier(source, masked);
   const declared = declaredNames(masked, parseImports(source, masked));
   const bindings = fsBindings(source, masked, declared);
-  const hits: Hit[] = [];
+  const hits: Hit[] = [...syntax.diagnostics];
   const children: Array<{ name: string; at: number; open: number }> = [];
   for (const m of masked.matchAll(CALL)) {
     const at = m.index ?? 0;
@@ -532,6 +553,12 @@ export function checkoutWriteHits(source: string): Hit[] {
     const callee = resolveCallee([m[1], ...m[2].split(".").map((s) => s.trim()).filter((s) => s !== "")], bindings, declared);
     if (callee === undefined) continue;
     const open = at + m[0].length - 1;
+    let callDepth = 1; let callClose = open + 1;
+    for (; callClose < masked.length; callClose++) {
+      if (masked[callClose] === "(") callDepth++;
+      else if (masked[callClose] === ")" && --callDepth === 0) break;
+    }
+    if (reHits(/^\s*(?::[^\n{]+)?\s*\{/, masked.slice(callClose + 1))) continue;
     const after = masked.slice(extractArgRange(masked, open, 0)?.[1] ?? open);
     // Object method declarations are not calls (typed or inferred parameters).
     if (reHits(/^\)\s*(?::[^\n{]+)?\s*\{/, after) || reHits(/\basync\s*$/, masked.slice(Math.max(0, at - 10), at))) continue;
@@ -550,115 +577,7 @@ export function checkoutWriteHits(source: string): Hit[] {
       if (floored !== "CLEAN") hits.push({ call: callee.op, target: origin.trim(), classification: floored === "UNBOUND" ? "UNKNOWN" : floored, approximation: floored === "UNKNOWN" });
     }
   }
-  hits.push(...childProcessHits(source, masked, classify, children));
-  return hits;
-}
-
-const DESTRUCTIVE = /\bgit\b.*\bclean\b|\bgit\b.*\bcheckout\b.*\s--(?:\s|$)|\bgit\b.*\breset\b.*--hard\b|(?:^|[\s;&|])(?:rm|del|rmdir|rd|Remove-Item)(?:\s|$)/i;
-const LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
-
-/** Ordinary strings and interpolation-free templates are fixed child-process words. */
-function childWord(origin: string): string | undefined {
-  const literal = /^(["'`])([^"'`]*)\1$/.exec(origin.trim());
-  return literal === null || (literal[1] === "`" && literal[2].includes("${")) ? undefined : literal[2];
-}
-
-/** End offset of the depth-0 expression starting at from (stops at , ; ) ] }). */
-function expressionEnd(masked: string, from: number): number {
-  let depth = 0;
-  for (let i = from; i < masked.length; i++) {
-    const c = masked[i];
-    if ("([{".includes(c)) depth++;
-    else if (")]}".includes(c)) { if (depth === 0) return i; depth--; }
-    else if (depth === 0 && (c === "," || c === ";")) return i;
-  }
-  return masked.length;
-}
-
-/** Non-empty top-level items of the call or array opening at open. */
-function listItems(masked: string, open: number): Array<[number, number]> {
-  const items: Array<[number, number]> = [];
-  for (let index = 0; index < 64; index++) {
-    const range = extractArgRange(masked, open, index);
-    if (range === undefined) break;
-    if (masked.slice(range[0], range[1]).trim() !== "") items.push(range);
-  }
-  return items;
-}
-
-/** Extract path operands, not executables, subcommands or flags. Shell parsing is a
- * bounded approximation; provenance of nonliteral operands is checked separately. */
-function destructiveOperands(command: string): string[] {
-  const words = [...command.matchAll(/"([^"]*)"|'([^']*)'|([^\s;&|]+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
-  const git = words.findIndex((word) => /^(?:.*[\\/])?git(?:\.exe)?$/i.test(word));
-  let operands: string[];
-  if (git >= 0) {
-    const subcommand = words[git + 1];
-    if (subcommand === "checkout") {
-      const separator = words.indexOf("--", git + 2);
-      operands = separator < 0 ? [] : words.slice(separator + 1);
-    } else operands = subcommand === "clean" ? words.slice(git + 2) : [];
-  } else {
-    const destroy = words.findIndex((word) => /^(?:rm|del|rmdir|rd|Remove-Item)$/i.test(word));
-    operands = destroy < 0 ? [] : words.slice(destroy + 1);
-  }
-  return operands.filter((word) => word !== "" && !word.startsWith("-") && !/^\/(?:s|q|f)$/i.test(word));
-}
-
-/** Child processes running a destructive command (git clean/checkout --/reset --hard,
- * rm/del/rmdir/Remove-Item) with a checkout-anchored cwd or path argument. An absent cwd
- * inherits the checkout; an unresolved cwd is enforced, not disclosed. */
-function childProcessHits(source: string, masked: string, classify: Classify, calls: ReadonlyArray<{ name: string; at: number; open: number }>): Hit[] {
-  const hits: Hit[] = [];
-  for (const { name, at, open } of calls) {
-    const items = listItems(masked, open);
-    const text = source.slice(open + 1, items.at(-1)?.[1] ?? open + 1);
-    const values = items.map(([f, t]) => classify.resolveValue?.(masked.slice(f, t), source.slice(f, t), at) ?? { expr: masked.slice(f, t), origin: source.slice(f, t), at });
-    const program = childWord(values[0]?.origin ?? "");
-    const argv = values[1];
-    const argvItems = argv?.expr.trim().startsWith("[") ? listItems(argv.expr, argv.expr.indexOf("[")) : [];
-    const args = argvItems.map(([f, t]) => childWord(argv!.origin.slice(f, t)));
-    const readOnlyGit = (expr: string, origin: string): boolean => {
-      if (!expr.trim().startsWith("[")) return false;
-      const rows = listItems(expr, expr.indexOf("["));
-      const first = rows[0];
-      if (first === undefined) return false;
-      if (expr.slice(...first).trim().startsWith("[")) return rows.every((r) => readOnlyGit(expr.slice(...r), origin.slice(...r)));
-      const subcommand = childWord(origin.slice(...first));
-      return subcommand !== undefined && /^(?:status|ls-files|ls-tree|diff|log|show|rev-parse|rev-list|cat-file|blame)$/.test(subcommand);
-    };
-    if (/^(?:.*[\\/])?git(?:\.exe)?$/i.test(program ?? "") && argv !== undefined && readOnlyGit(argv.expr, argv.origin)) continue;
-    const unresolved = argv !== undefined && (argvItems.length > 0 ? args.some((v) => v === undefined) : !argv.expr.trim().startsWith("{"));
-    const capable = /^(?:.*[\\/])?(?:git|rm|del|rmdir|rd|Remove-Item)(?:\.exe)?$/i.test(program ?? "")
-      || (/^(?:.*[\\/])?sh(?:\.exe)?$/i.test(program ?? "") && args.includes("-c"))
-      || (/^(?:.*[\\/])?cmd(?:\.exe)?$/i.test(program ?? "") && args.some((v) => v?.toLowerCase() === "/c"));
-    const destructive = DESTRUCTIVE.test(values.map((v) => [...v.origin.matchAll(LITERAL)].map((l) => l[2]).join(" ")).join(" "));
-    if (!destructive && !(unresolved && capable)) continue;
-    let cwd: Classification | "UNBOUND" = "ANCHORED";
-    let anchored = false;
-    for (const value of values) {
-      const item = value.expr.trim();
-      const start = value.expr.indexOf(item);
-      const localVerdict = (f: number, t: number): Classification | "UNBOUND" => anchoredFloor(classify(value.expr.slice(f, t), value.origin.slice(f, t), value.at), value.expr.slice(f, t));
-      if (item.startsWith("{")) {
-        const key = /\bcwd\b\s*(:)?/.exec(item);
-        if (key === null) continue;
-        const valueFrom = start + key.index + (key[1] === undefined ? 0 : key[0].length);
-        cwd = localVerdict(valueFrom, key[1] === undefined ? valueFrom + 3 : expressionEnd(value.expr, valueFrom));
-        continue;
-      }
-      const parts: Array<[number, number]> = item.startsWith("[") ? listItems(value.expr, start) : [[0, value.expr.length]];
-      const literals = parts.map(([f, t]) => childWord(value.origin.slice(f, t)));
-      const command = item.startsWith("[")
-        ? [program ?? "", ...literals.map((v) => v ?? "")].join(" ")
-        : literals[0] ?? "";
-      if (destructiveOperands(command).some((path) => isAnchoredSignal("", JSON.stringify(path)))) anchored = true;
-      for (const [f, t] of parts) if (!reHits(/^(["'`])\s*\1$/, value.expr.slice(f, t).trim()) && localVerdict(f, t) === "ANCHORED") anchored = true;
-    }
-    if (!destructive && cwd !== "ANCHORED") continue;
-    const classification = anchored || cwd === "ANCHORED" ? "ANCHORED" : cwd === "CLEAN" ? undefined : "UNKNOWN";
-    if (classification !== undefined) hits.push({ call: name, target: text.replace(/\s+/g, " ").trim(), classification, approximation: false });
-  }
+  hits.push(...childProcessHits(source, masked, classify, children, context));
   return hits;
 }
 
@@ -691,6 +610,6 @@ export function createAppWithoutIsolation(source: string): boolean {
   return createAppCalled(masked) && !isolatedAppsCallPresent(masked) && !appsDirRedirectIsClean(masked, source, cleanIdents(masked));
 }
 
-export function analyze(source: string): { createAppWithoutIsolation: boolean; writes: Hit[] } {
-  return { createAppWithoutIsolation: createAppWithoutIsolation(source), writes: checkoutWriteHits(source) };
+export function analyze(source: string, context?: SourceContext): { createAppWithoutIsolation: boolean; writes: Hit[] } {
+  return { createAppWithoutIsolation: createAppWithoutIsolation(source), writes: checkoutWriteHits(source, context) };
 }

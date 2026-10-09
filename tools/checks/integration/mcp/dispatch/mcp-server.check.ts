@@ -50,7 +50,7 @@ function runServer(name: string, input: string): Promise<ProcessResult> {
   return runProcess(
     process.execPath,
     ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "control-mcp"],
-    { input: `${input}\n` },
+    { cwd: apps.root, input: `${input}\n` },
   );
 }
 
@@ -59,7 +59,7 @@ function runServer(name: string, input: string): Promise<ProcessResult> {
  *  whose stack-bound actions cannot run here. The declaration under test is real; only the
  *  bytes the command emits are stood in for. */
 function runScript(script: string, input: string): Promise<ProcessResult> {
-  return runProcess(process.execPath, ["--input-type=module", "-e", script], { input: `${input}\n` });
+  return runProcess(process.execPath, ["--input-type=module", "-e", script], { cwd: apps.root, input: `${input}\n` });
 }
 
 const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;

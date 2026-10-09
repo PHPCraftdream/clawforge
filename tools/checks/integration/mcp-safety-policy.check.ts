@@ -17,7 +17,7 @@ import { runProcess } from "#checks/kit/spawn.ts";
 useLinuxHost();
 
 function runServer(script: string, input: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return runProcess(process.execPath, ["--experimental-strip-types", "-e", script], { input: `${input}\n` });
+  return runProcess(process.execPath, ["--experimental-strip-types", "-e", script], { cwd: tmpdir(), input: `${input}\n` });
 }
 
 // MCP confirmation does not silently change a command's own force flags.

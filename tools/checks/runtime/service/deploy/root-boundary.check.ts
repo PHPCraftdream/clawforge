@@ -6,8 +6,7 @@
 import { mkdtemp, mkdir, readFile, realpath, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { execFile, type ExecFileOptions } from "node:child_process";
 import { deploy, collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript, markerVerifyScript } from "#framework/commands/management/deploy/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -18,7 +17,14 @@ import { MARKER_FILE } from "#framework/security/privacy/deploy-boundary.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe, markerLine } from "./fixture.ts";
 
-const execFileAsync = promisify(execFile);
+function execFileAsync(program: string, args: string[], options: ExecFileOptions = {}): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(program, args, { ...options, encoding: "utf8", timeout: 60_000 }, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve({ stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
 import { check, finish, requires } from "#checks/kit/harness.ts";
 
 
@@ -428,11 +434,11 @@ function skip(name: string): void {
       const changedMarker = await runScript(markerVerifyScript(markerPath, line1, line2));
       check("marker verification rejects changed bytes", changedMarker.code !== 0, true);
 
-      await rm(markerPathForNode);
+      await rm(join(root, ".clawforge-deploy-marker"));
       const outsideMarker = resolve(root, "outside-marker");
       let linkCreated = true;
       try {
-        await symlink(outsideMarker, markerPathForNode);
+        await symlink(outsideMarker, join(root, ".clawforge-deploy-marker"));
       } catch {
         linkCreated = false;
       }

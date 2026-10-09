@@ -5,11 +5,12 @@
 // excluded): the lifecycle/restore state helpers and the artifact install → provision-agent
 // → orchestration loop. The `set` actions cycle was broken in 6c43b01 and must not return.
 
+import { tmpdir } from "node:os";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const framework = (...parts: string[]) => resolve(monorepoRoot, "tools", "framework", ...parts);
@@ -29,18 +30,22 @@ const CYCLES: Record<string, string[]> = {
   ],
 };
 
+const apps = await isolatedAppsRoot("set-module-load");
+try {
 for (const [cycle, modules] of Object.entries(CYCLES)) {
   for (const relative of modules) {
     const file = framework(relative);
+    const script = `await import(${JSON.stringify(pathToFileURL(file).href)});`;
     const result = await runProcess(
       process.execPath,
-      ["--experimental-strip-types", "--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(file).href)});`],
-      { timeoutMs: 60_000 },
+      ["--experimental-strip-types", "--input-type=module", "-e", script],
+      { cwd: tmpdir(), timeoutMs: 60_000 },
     );
     check(`${relative} loads as the first import (${cycle})`, result.code === 0, true);
     if (result.code !== 0) process.stderr.write(`    ${result.output.split("\n").filter((line) => /Error/.test(line)).slice(0, 2).join("\n    ")}\n`);
   }
 }
+} finally { await apps.dispose(); }
 
 // A cycle that happens to load is still a cycle: load.ts must not statically reach install.ts.
 // Type-only and dynamic imports are excluded, as in the cycle census above.

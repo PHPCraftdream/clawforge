@@ -63,6 +63,7 @@ async function checkNeverSelectedThrows(): Promise<void> {
   try {
     const { stdout } = await new Promise<{ code: number | null; stdout: string }>((resolvePromise) => {
       const proc = spawn(process.execPath, ["--experimental-strip-types", scriptFile], {
+        cwd: scratch,
         stdio: ["ignore", "pipe", "pipe"],
       });
       let out = "";

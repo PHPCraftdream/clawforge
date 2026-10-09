@@ -194,4 +194,64 @@ check("flow: word separating regex whitespace is prose", flow('const RE = /held\
 check("flow: ordinary single-quoted interpolation spelling is literal prose", flow("const E = '${the target did not answer at all}'; check('n', msg, E);"), 1);
 check("flow: ordinary double-quoted interpolation spelling is literal prose", flow('const E = "${the target did not answer at all}"; check("n", msg, E);'), 1);
 check("precision: real template interpolation has no literal prose", flow('const E = `${the target did not answer at all}`; check("n", msg, E);'), 0);
+const entries: Array<[string, string]> = [
+  ["R3 destructuring declarator", 'const {text:E}={text:"the server refused the requested connection"}; check("probe",actual,E);'],
+  ["R3 array declarator", 'const [E]=["held phrase"]; check("n",msg,E);'],
+  ["R3 nested declarator", 'const {a:[{text:E}]}={a:[{text:"held phrase"}]}; check("n",msg,E);'],
+  ["R3 object rest", 'const {code,...E}={code:1,text:"held phrase"}; check("n",msg,E.text);'],
+  ["R3 array rest", 'const [code,...E]=[1,"held phrase"]; check("n",msg,E[0]);'],
+  ["R3 destructuring assignment", 'let E; ({text:E}={text:"held phrase"}); check("n",msg,E);'],
+  ["R3 array assignment", 'let E; [E]=["held phrase"]; check("n",msg,E);'],
+  ["R3 var", 'var E="held phrase"; check("n",msg,E);'],
+  ["R3 multiple declarators", 'const code=1, {text:E}={text:"held phrase"}; check("n",msg,E);'],
+  ["R3 property write", 'const E:any={}; E.text="the server refused the requested connection"; check("probe",actual,E.text);'],
+  ["R3 computed write", 'const E={}; E[key]="held phrase"; check("n",msg,E[key]);'],
+  ["R3 nested write", 'const E={a:{}}; E.a.text="held phrase"; check("n",msg,E.a.text);'],
+  ["R3 assign", 'const E={}; Object.assign(E,{text:"held phrase"}); check("n",msg,E.text);'],
+  ["R3 spread object", 'const A={text:"held phrase"}; const E={...A}; check("n",msg,E.text);'],
+  ["R3 spread array", 'const A=["held phrase"]; const E=[...A]; check("n",msg,E[0]);'],
+  ["R3 parameter default", 'function f(E="held phrase"){check("n",msg,E);}'],
+  ["R3 destructured parameter default", 'const f=({text:E}={text:"held phrase"})=>check("n",msg,E);'],
+  ["R3 binding default", 'const {text:E="held phrase"}={}; check("n",msg,E);'],
+];
+for (const [name, source] of entries) check(`flow: ${name}`, flow(source), 1);
+for (const op of ["+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=", "&=", "|=", "^=", "||=", "&&=", "??="]) {
+  check(`flow: compound binding ${op}`, flow(`let E="CODE"; E ${op} "held phrase"; check("n",msg,E);`), 1);
+  check(`flow: compound retains binding ${op}`, flow(`let E="held phrase"; E ${op} "CODE"; check("n",msg,E);`), 1);
+  check(`flow: compound property ${op}`, flow(`const E={}; E.text ${op} "held phrase"; check("n",msg,E.text);`), 1);
+  check(`flow: compound structural ${op}`, flow(`let E="CODE"; E ${op} "OTHER"; check("n",msg,E);`), 0);
+}
+const mutations: Array<[string, string]> = [
+  ["computed defineProperty tracked", 'const P="held phrase"; const E={}; Object["defineProperty"](E,"text",{value:P}); check("n",msg,E.text);'],
+  ["computed push tracked", 'const P="held phrase"; const E=[]; E["push"](P); check("n",msg,E[0]);'],
+  ["unknown defining method tracked", 'const P="held phrase"; const E={}; Object[method](E,"text",{value:P}); check("n",msg,E.text);'],
+  ["unknown mutating method tracked", 'const P="held phrase"; const E=[]; E[method](P); check("n",msg,E[0]);'],
+  ["multiple spreads preserve first", 'const A={text:"held phrase"}; const B={code:"CODE"}; const E={...A,...B}; check("n",msg,E.text);'],
+  ["multiple spreads preserve last", 'const A={code:"CODE"}; const B={text:"held phrase"}; const E={...A,...B}; check("n",msg,E.text);'],
+  ["binding compound tracked", 'const P="held phrase"; let E="CODE"; E+=P; check("n",msg,E);'],
+  ["property compound tracked", 'const P="held phrase"; const E={text:"CODE"}; E.text+=P; check("n",msg,E.text);'],
+  ["template nested", 'const P="held phrase"; const E=`${`${P}`}`; check("n",msg,E);'],
+  ["template member concat", 'const A={text:"held phrase"}; const E=`${A.text.concat("CODE")}`; check("n",msg,E);'],
+  ["computed concat tracked", 'const A={text:"held phrase"}; const E=A.text["concat"]("CODE"); check("n",msg,E);'],
+  ["nested mutating member tracked", 'const P="held phrase"; const E={items:[]}; E.items["push"](P); check("n",msg,E.items);'],
+  ["defineProperty", 'const E={}; Object.defineProperty(E,"text",{value:"held phrase"}); check("n",msg,E.text);'],
+  ["defineProperties", 'const E={}; Object.defineProperties(E,{text:{value:"held phrase"}}); check("n",msg,E.text);'],
+  ["assign return", 'const A={text:"held phrase"}; const E=Object.assign({},A); check("n",msg,E);'],
+  ["spread held", 'const A={text:"held phrase"}; const E={...A}; check("n",msg,E.text);'],
+  ["push", 'const E=[]; E.push("held phrase"); check("n",msg,E[0]);'],
+  ["unshift", 'const E=[]; E.unshift("held phrase"); check("n",msg,E[0]);'],
+  ["splice", 'const E=[]; E.splice(0,0,"held phrase"); check("n",msg,E[0]);'],
+  ["fill", 'const E=[]; E.fill("held phrase"); check("n",msg,E[0]);'],
+  ["array concat return", 'const A=[]; const E=A.concat(["held phrase"]); check("n",msg,E);'],
+  ["concat tracked receiver", 'const A=["held phrase"]; const E=A.concat([]); check("n",msg,E);'],
+  ["Map set", 'const E=new Map(); E.set("text","held phrase"); check("n",msg,E);'],
+  ["Set add", 'const E=new Set(); E.add("held phrase"); check("n",msg,E);'],
+  ["template member", 'const A={text:"held phrase"}; const E=`${A.text}`; check("n",msg,E);'],
+  ["template compound expression", 'const A="held phrase"; const E=`${A + "CODE"}`; check("n",msg,E);'],
+  ["string concat parts", 'const A="held phrase"; const E="CODE".concat(A); check("n",msg,E);'],
+];
+for (const [name, source] of mutations) {
+  check(`flow: mutation ${name}`, flow(source), 1);
+  check(`flow: mutation structural ${name}`, flow(source.replaceAll("held phrase", "CODE")), 0);
+}
 finish("architecture self: prose-held scanner");

@@ -141,6 +141,42 @@ for a state query already in progress. That query can finish after the window wh
 the readiness timeout still has budget; it must return a ready verdict before install
 can succeed. Slow WSL/SSH queries do not fail merely because they began near the window's end.
 
+## Durable repair and verification
+
+Use the framework's recipe commands to diagnose and recover a sidecar before resorting to
+manual administration. `recipe status` and `recipe logs` observe the stack; `recipe
+diagnose` also invokes `verify.ts` and takes the instance lock because the hook may mutate
+state. An ownership/cutover refusal must be resolved deliberately, not hidden by a second
+Compose project or bypassed without the operator's agreement.
+
+An emergency change to a running container is not a complete recipe repair. Identify the
+owner of the fault and update its reproducible source: `compose.yml`/`Dockerfile` for
+runtime dependencies and mounts, `prepare.ts` for generated configuration, `recipe.json`
+for required services/readiness, and `verify.ts` for the consumer-visible check. Preserve
+existing credentials and application state; a repair must not silently regenerate them or
+overwrite live data. A Docker/host fault is not automatically a recipe-code defect, but the
+recipe should detect an unavailable dependency and must not report it as ready.
+
+Declare every service required by the consumer, including protocol bridges, in readiness.
+A listening socket alone does not prove usable egress. Verification must check command
+success, the expected protocol/status and application result, not accept any positive HTTP
+code. Distinguish dependency reachability, API authentication and active channel processing.
+For a proxy serving Telegram, a successful `getMe` is insufficient while polling is stopped;
+verification should report that channel state as a separate failed or unverified condition.
+If Telegram is optional for the recipe, report it separately rather than silently converting
+an unavailable check into a ready verdict.
+
+Reconcile the consumer after its dependency is ready through the supported lifecycle hook,
+with disruptive effects disclosed. Then verify from the gateway and, with permission, send
+an end-to-end message and observe the reply. Do not send messages or claim a working reply
+without that check. Exercise the repaired recipe's install/verification path on an isolated
+fixture or through an approved live run; a manual repair alone does not prove that the next
+install or recovery reproduces it.
+
+Keep an explicit distinction between recovered service, durable recipe fix and framework
+tool gap. When the supported lifecycle is blocked by migration or a lock, record the blocker
+and the approved temporary recovery instead of claiming the recipe has been fully repaired.
+
 ## Private files: `privatePaths` and `privateFiles`
 
 A recipe that generates credentials declares — in the same `recipe.json` — where they live.

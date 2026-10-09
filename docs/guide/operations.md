@@ -1,5 +1,42 @@
 # Operations
 
+## Diagnose and repair through the framework
+
+Start with the deployment's ClawForge CLI or `clawforge-control` MCP tools, not custom
+scripts or direct Docker/WSL/SSH administration. This framework exists to simplify complete
+OpenClaw setup and recovery; operating it is also a check that its tools cover the real task.
+Use the launcher appropriate to the deployment and shell (`./clawforge` below is the checkout
+or POSIX-shim spelling).
+
+1. Run `status --json` and `inspect --json`; use `doctor --json` when a failing exit status
+   is useful. Container health, gateway readiness, configured secrets and outbound
+   dependencies are different facts. An absent observation is not a successful probe.
+2. Follow findings with bounded `logs --tail 100` and, for an owning sidecar, `recipe status
+   <name>`, `recipe logs <name> --tail 100`, `recipe diagnose <name>` or `recipe verify <name>`.
+   Read `help recipe` first: diagnose/verify execute application hooks and take the instance
+   lock; they are not guaranteed read-only.
+3. Use `cli` for OpenClaw's own channel diagnostics. If the high-level tools cannot expose
+   the cause, use a narrow `exec` probe from the gateway or `host target` probe on the target.
+   Keep the operation inside the framework's selected deployment/transport. Do not dump
+   secret files, tokens or conversation contents; avoid passing credentials in argv.
+4. Treat a live repair as emergency recovery, not automatically a permanent fix. With the
+   operator's agreement, restore only the affected component and preserve its data.
+   Then correct the owning declaration or [recipe](recipes.md#durable-repair-and-verification)
+   so the supported lifecycle reproduces the setup and its verification detects the fault.
+5. Verify the actual consumer path after recovery. For a messaging bot, check connectivity
+   from the gateway, channel state, and an authorized inbound message and outbound reply.
+   A successful `getMe` proves API access/authentication, not working polling or agent replies.
+
+Do not break a lock merely because its timestamp is old, adopt an ambiguous legacy recipe
+project, remove volumes, or restart unrelated services to make diagnostics pass. Follow the
+lock's ownership checks and the [recipe cutover procedure](recipes.md#existing-stack-cutover);
+agree any disruptive recovery separately. If a high-level command refuses, a low-level
+`host`/`exec` call is not implicit authorization to circumvent that refusal.
+
+State what the framework could diagnose and repair, where a manual fallback was required,
+and which end-to-end check remains unperformed. A missing operation is a framework gap to
+improve, not a reason to silently establish a second script-based workflow.
+
 ## Changing something
 
 Edit the declaration, look at what that implies, apply it, get an answer about the

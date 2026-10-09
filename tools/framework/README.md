@@ -40,6 +40,32 @@ Provider setup is provider-agnostic: put `<PROVIDER>_API_KEY` in the target's
 when the provider uses a custom variable name; URLs, adapters and model catalogues stay in
 `config/desired-state.json`.
 
+## Operating and repairing a deployment
+
+Use ClawForge's CLI or `clawforge-control` MCP tools first: `status`, `inspect`, `doctor`,
+bounded `logs`, and the relevant `recipe status`, `recipe logs`, `recipe diagnose` or
+`recipe verify`. Ask `help <command>` for the installed version's contract before changing
+state. Use `cli` for OpenClaw's own diagnostics and `exec` or `host` for a missing low-level
+probe; do not start with custom scripts, direct Docker/WSL/SSH calls or raw secret-file dumps.
+The purpose is to make complete OpenClaw setup and recovery reproducible through the
+framework, not to maintain a second manual operating procedure.
+
+Separate emergency recovery from a permanent fix. An approved live repair may restore
+service, but the owning declaration or recipe must also reproduce the corrected setup and
+detect the failure. Fix configuration generation, dependency readiness and verification
+there, rather than leaving a working container that the next install cannot reproduce.
+Record any missing framework diagnostic or recovery operation as an explicit tool gap.
+
+A healthy container or a successful API authentication probe is not proof that a bot
+responds. Verify the dependency from the gateway, the channel's running state, and an
+authorized end-to-end message and reply. Do not send test messages without permission or
+claim that an untested path works. Hooks may mutate state; a stale lock or recipe ownership
+cutover is a safety refusal, not permission to bypass it. Agree disruptive recovery with
+the operator and preserve data and credentials.
+
+See the repository guides `docs/guide/operations.md` and `docs/guide/recipes.md` for the
+diagnostic sequence and durable recipe-repair contract.
+
 ## Recipe private files
 
 A recipe's `recipe.json` can declare two private-file fields, in two different coordinate

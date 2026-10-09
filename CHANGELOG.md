@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
+  emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
+  verification rather than treating container health or API authentication as a working bot.
 * Rendered advice quotes arguments for each shell and preserves native PowerShell handoff through Windows npm wrappers.
 * Advice naming another deployment keeps `--project-root` when needed, or re-roots to the checkout's runnable shim instead of assuming a system-wide command exists.
 * Value arguments containing control characters are refused at parse, before target contact.

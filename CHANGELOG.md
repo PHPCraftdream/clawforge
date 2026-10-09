@@ -5,6 +5,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* Rendered advice quotes arguments for each shell and preserves native PowerShell handoff through Windows npm wrappers.
+* Advice naming another deployment keeps `--project-root` when needed, or re-roots to the checkout's runnable shim instead of assuming a system-wide command exists.
+* Value arguments containing control characters are refused at parse, before target contact.
+* Outgoing MCP `nextSteps` bind through the strict command binder; a remedy that cannot bind no longer produces a machine step.
+* `recover-env` reports an unreadable target as typed unknown with a remedy, not as no container.
 * The gate commands (`check`, `new-app`, `remove-app`, `list`, `version`, `completion`, `init`) run through the same pipeline as every other command, declared once: the argument kinds, rules, effect and confirm come from their spec bodies. `remove-app` over MCP removes with one `confirm: true` (without it the call stays the dry run and needs no confirmation), its tool schema no longer requires `confirm`, and its list marker is `*` (destructive for some flags) instead of `!`. A gate argument refusal under `--json` prints the same `{"error": …}` document every other command prints. `help <gate-command>` and `--help` show the effect note.
 * `mcp-setup` works when the target location is unsupported or unreachable.
 * MCP no longer asks for confirm on `recipe import`/`recipe new`, which only add files.

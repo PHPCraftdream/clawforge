@@ -1,5 +1,7 @@
 # План этапа 7: контракты frame, binding и content плюс доказательные проверки
 
+Статус: S0–S4 выполнены; R4 и R5 — два чистых раунда подряд, правило остановки §5 выполнено в объявленной области и с записанными пределами. [Итог и метрики](refactor-summary-stages-0-7-2026-10-09.md), [реестр S4](review-findings-registry.md).
+
 Дата: 2026-10-06. Основание — [review-convergence-after-refactor-2026-10-06.md](review-convergence-after-refactor-2026-10-06.md)
 (далее «отчёт о сходимости») и находки раундов 16–19 этапа 6
 ([refactor-plan-2026-10-01.md](refactor-plan-2026-10-01.md)).

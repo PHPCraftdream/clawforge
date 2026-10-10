@@ -6,9 +6,61 @@ import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { TargetReadUnknownError, readIfExists } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CronJob, AgentConfig } from "#src/commands/management/provision-agent/index.ts";
-import type { DeclaredState } from "#src/service/inspection.ts";
+import type { DeclaredState, Problem, MemoryObservation } from "#src/service/inspection.ts";
+import { problem } from "#src/service/inspection.ts";
 import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
+import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 
+const memoryRecord = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const memoryCount = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+const memoryName = (value: unknown): string | undefined => typeof value === "string" && /^[a-zA-Z][a-zA-Z0-9._/-]{0,79}$/.test(value) ? value : undefined;
+function memoryModel(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > 512 || /\p{Cc}/u.test(value)) return undefined;
+  const safe = publicConfigValue("model", value);
+  return typeof safe === "string" ? safe : undefined;
+}
+function memoryReady(value: unknown): "ready" | "disabled" | "unknown" {
+  const entry = memoryRecord(value);
+  return entry.enabled === false ? "disabled" : entry.available === true ? "ready" : "unknown";
+}
+
+/** Normal status only: missing metadata and source scans are independent of FTS capability. */
+export function parseMemoryStatus(result: (BatchedCliResult & { readonly stderr?: string }) | undefined, problems: Problem[]): MemoryObservation[] {
+  if ((result?.stdout.length ?? 0) > 262144) {
+    problems.push(problem("MEMORY_UNKNOWN", "normal memory status exceeds the observation bound"));
+    return [];
+  }
+  let payload: unknown;
+  try { payload = JSON.parse(result?.stdout ?? ""); } catch { /* Unknown, never an empty index. */ }
+  if (!Array.isArray(payload) || payload.length > 64) {
+    problems.push(problem("MEMORY_UNKNOWN", "normal memory status is unavailable or malformed"));
+    return [];
+  }
+  if (result?.code !== 0) problems.push(problem("MEMORY_UNKNOWN", "normal memory status returned partial facts"));
+  return payload.map((entry: unknown, agent): MemoryObservation => {
+    const root = memoryRecord(entry);
+    const status = memoryRecord(root.status);
+    const custom = memoryRecord(status.custom);
+    const identity = memoryRecord(custom.indexIdentity);
+    const providerState = memoryRecord(custom.providerState);
+    const files = memoryCount(status.files);
+    const chunks = memoryCount(status.chunks);
+    const scannedFiles = memoryCount(memoryRecord(root.scan).totalFiles);
+    const identityStatus = typeof identity.status === "string" ? identity.status.toLowerCase() : undefined;
+    const indexIdentity = identityStatus === "missing" ? "missing" : identityStatus === "mismatched" ? "mismatched" : identityStatus === "valid" || identityStatus === "present" || identityStatus === "ok" ? "present" : "unknown";
+    const failed = root.error !== undefined && root.error !== null;
+    const state = status.enabled === false ? "disabled" : failed || indexIdentity === "mismatched" ? "unknown" : indexIdentity === "missing" ? "metadata-missing" : files === 0 && chunks === 0 ? "index-empty" : files !== undefined && chunks !== undefined && files > 0 && chunks > 0 && indexIdentity === "present" ? "indexed" : "unknown";
+    if (state === "unknown") problems.push(problem("MEMORY_UNKNOWN", `memory agent ${agent + 1}: normal status incomplete`));
+    if (state !== "disabled" && scannedFiles !== undefined && scannedFiles > 0 && (state === "metadata-missing" || state === "index-empty")) problems.push(problem("MEMORY_NOT_READY", `memory agent ${agent + 1}: ${state}, ${scannedFiles} source files scanned`));
+    return {
+      agent: agent + 1, agentId: memoryName(root.agentId), state, backend: memoryName(status.backend), provider: memoryName(status.provider),
+      requestedProvider: memoryName(status.requestedProvider), model: memoryModel(status.model),
+      scannedFiles, files, chunks, dirty: typeof status.dirty === "boolean" ? status.dirty : undefined,
+      indexIdentity, fts: memoryReady(status.fts), vector: memoryReady(status.vector),
+      embedding: status.provider === "none" || status.requestedProvider === "none" || providerState.requestedProvider === "none" ? "disabled" : failed ? "unknown" : providerState.mode === "pending" ? "unchecked" : memoryReady(status.embedding),
+    };
+  });
+}
 /** Field by field, so the reader is not left to diff a cron job themselves. Mirrors exactly
  *  what cronJobMatches compares — it decides, this only explains its verdict. */
 export function cronDifferences(job: CronJob, config: AgentConfig, cronMessage: string): string[] {

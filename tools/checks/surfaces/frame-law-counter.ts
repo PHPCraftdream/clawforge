@@ -65,7 +65,9 @@ const EXPANDING_SHELLS: readonly Shell[] = ["posix", "cmd", "pwsh"];
 /** Minimal in-memory file system, the same probe shape the resolver takes (matrix.ts's rule:
  *  normalise drive/separator spelling, because node's resolve spells fake paths with this
  *  host's drive). */
+const PATH_ENTRIES: Readonly<Record<string, string>> = { cw: "/usr/local/bin/cw" };
 const FILES: Record<string, string> = {
+  ["/usr/local/bin/cw"]: "#!/bin/sh\n",
   [`${ROOT}/clawforge`]: "#!/bin/sh\n",
   [`${ROOT}/tools/clawforge.ts`]: "// gate\n",
   [`${ROOT}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
@@ -145,6 +147,11 @@ const cwdAppOf = (dir: string): string | undefined => {
   return name !== "" && FILES[prefix + name + "/app.ts"] !== undefined ? name : undefined;
 };
 
+export interface FrameLawLayout {
+  readonly pathEntries?: Readonly<Record<string, string>>;
+  readonly missingEntries?: readonly string[];
+}
+
 interface Entry {
   readonly kind: "system" | "gate" | "installed" | "verbatim";
 }
@@ -153,22 +160,24 @@ type ProgramResolution = Entry | { readonly problem: string };
 /** The pasted program resolves to an entry point on the fake layout: the checkout shim →
  *  the checkout gate; a clawforge bin wrapper → the installed entry; the bare system-wide
  *  command → the installed entry. Anything else is spelling drift. */
-function resolveProgram(program: string, pasteDir: string, launch: string, declaredProgram: string, shell: Shell): ProgramResolution {
+function resolveProgram(program: string, pasteDir: string, launch: string, declaredProgram: string, shell: Shell, layout: FrameLawLayout = {}): ProgramResolution {
   if (launch === "verbatim") {
     // A hand-set program resolves like every other — and the equality check runs BEFORE
     // any other branch: the pasted first word must BE the declared program (a coercion to
-    // the system word must not escape validation), and the declared entry must exist on
-    // the layout (a bare word has no declared entry a fixture can vouch for — a PATH
-    // lookup is no file fact).
+    // the system word must not escape validation).
     if (program !== declaredProgram) {
       return { problem: `the pasted first word ${program} drifts from the declared hand-set program ${declaredProgram}` };
     }
-    if (program === "clawforge") return { kind: "installed" };
+    const pathEntries = layout.pathEntries ?? PATH_ENTRIES;
+    const missingEntries = new Set((layout.missingEntries ?? []).map(fakePath));
+    const hasEntry = (at: string): boolean => Object.hasOwn(FILES, at) && !missingEntries.has(at);
     if (!program.includes("/")) {
+      const entry = Object.hasOwn(pathEntries, program) ? pathEntries[program] : undefined;
+      if (entry !== undefined && hasEntry(fakePath(entry))) return { kind: "installed" };
       return { problem: `the hand-set bare program ${program} names no declared entry the layout can resolve (a PATH lookup is no file fact)` };
     }
     const at = fakePath(pathResolve(pasteDir, program));
-    return FILES[at] !== undefined ? { kind: "installed" } : { problem: `${at} is not a declared entry on the layout` };
+    return hasEntry(at) ? { kind: "installed" } : { problem: `${at} is not a declared entry on the layout` };
   }
   if (program === "clawforge") return { kind: "installed" };
   const at = fakePath(pathResolve(pasteDir, program.replaceAll("\\", "/")));
@@ -205,6 +214,7 @@ export interface FrameLawMeasurement {
   readonly reached: number;
   /** (producer, row, shell) cases attempted. */
   readonly attempted: number;
+  readonly caseKeys: readonly string[];
   /** Cases that stopped BEFORE a decision for a SETUP reason (unknown producer/row,
    *  unresolvable paste directory, model crash): the law check fails on these —
    *  violations recorded in the baseline are fine, silent setup stops are not. */
@@ -219,9 +229,10 @@ export interface FrameLawMeasurement {
  *  quoting round-trip row) × every producer × the producer's shells (install/prose/quoting
  *  rows paste in all three shells), then the SELECTION_CASES drive through the gate
  *  resolver (design §5, decision O3). */
-export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
+export function runFrameLaw(tally = stageTally(), layout: FrameLawLayout = {}): FrameLawMeasurement {
   const violations = new Map<string, string>();
   const setupFailures: string[] = [];
+  const caseKeys: string[] = [];
   let reached = 0;
   let attempted = 0;
   let finalRuns = 0;
@@ -279,6 +290,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
       for (const shell of shells) {
         const key = `${producer.label} | ${rowEntry.label} | ${shell}`;
         attempted += 1;
+        caseKeys.push(key);
         let stage: import("#framework/core/command/execute.ts").Stage = "parse";
         try {
           // The law tests the line PRODUCTION emits from the original multi-shell frame;
@@ -334,7 +346,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
             record(key, `quoting/spelling drift: the shell model tokenized ${JSON.stringify(tokenArgv)} where the advice declares ${JSON.stringify(filled.argv)}`);
             continue;
           }
-          const where = resolveProgram(program, resolvedPasteDir, producer.frame.launch.kind, producer.invocation.program, pasteShell);
+          const where = resolveProgram(program, resolvedPasteDir, producer.frame.launch.kind, producer.invocation.program, pasteShell, layout);
           stage = "environment";
           if ("problem" in where) {
             record(key, `the pasted program does not resolve — ${where.problem}`);
@@ -464,6 +476,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
     const producer = FRAME_PRODUCERS.find((entry) => entry.label === selection.producer);
     const key = `selection ${selection.label} | ${selection.producer}`;
     attempted += 1;
+    caseKeys.push(key);
     let stage: import("#framework/core/command/execute.ts").Stage = "parse";
     if (producer === undefined) {
       setupFailures.push(`${key}: unknown producer`);
@@ -559,6 +572,7 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
     for (const shell of row.advice.shell === undefined ? row.frame.shells : ["pwsh"] as const) {
       const key = `${row.label} | ${shell}`;
       attempted++;
+      caseKeys.push(key);
       const witness = { key, reached: false, matched: false };
       quotingWitnesses.push(witness);
       const part = parts.find((p) => p.shell === undefined || p.shell === shell);
@@ -587,5 +601,5 @@ export function runFrameLaw(tally = stageTally()): FrameLawMeasurement {
       tally.case(key, stage);
     }
   }
-  return { violations, reached, attempted, setupFailures, stageCounts: tally.counts(), finalRuns, quotingWitnesses };
+  return { violations, reached, attempted, caseKeys, setupFailures, stageCounts: tally.counts(), finalRuns, quotingWitnesses };
 }

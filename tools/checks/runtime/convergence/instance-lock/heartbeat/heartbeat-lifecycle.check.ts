@@ -1,4 +1,5 @@
 import { takeLock, readLockHolder, lockPath } from "#framework/runtime/lock/instance-lock.ts";
+import { machineName } from "#framework/runtime/lock/process-identity.ts";
 import { heartbeatScheduler } from "#framework/runtime/lock/heartbeat.ts";
 import { withMutationGuard } from "#framework/security/instance-mutation-guard.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -98,7 +99,7 @@ try {
 
   // A guard acquisition pending across takeover must not publish the old owner.
   {
-    const { ctx, dirs } = stubContext();
+    const { ctx, files, dirs } = stubContext();
     const heldA = await takeLock(ctx, "apply", "guard-A");
     const tickA = ticks.at(-1)!;
     const waiting = barrier();
@@ -122,6 +123,7 @@ try {
     const refresh = tickA();
     await waiting.promise;
     const releaseA = heldA.release();
+    files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ ...await readLockHolder(ctx), host: machineName(), pid: 99999999 }));
     const heldB = await takeLock(ctx, "apply", "guard-B", { breakLock: true });
     resume.resolve();
     await refresh;
@@ -134,7 +136,7 @@ try {
 
   // Contention skips this tick; the next tick retries without breaking the guard.
   {
-    const { ctx } = stubContext();
+    const { ctx, files } = stubContext();
     const heldA = await takeLock(ctx, "apply", "retry-A");
     const tickA = ticks.at(-1)!;
     const started = barrier();
@@ -153,6 +155,7 @@ try {
     await guarded;
     await tickA();
     check("a busy heartbeat retries successfully on its next tick", publications, 1);
+    files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ ...await readLockHolder(ctx), host: machineName(), pid: 99999999 }));
     const heldB = await takeLock(ctx, "apply", "retry-B", { breakLock: true });
     await tickA();
     check("a displaced owner cannot refresh B", (await readLockHolder(ctx))?.operationId, "retry-B");

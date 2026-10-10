@@ -37,6 +37,69 @@ State what the framework could diagnose and repair, where a manual fallback was 
 and which end-to-end check remains unperformed. A missing operation is a framework gap to
 improve, not a reason to silently establish a second script-based workflow.
 
+From a native Windows shell, use the installed Windows ClawForge launcher or invoke Git Bash
+explicitly. The legacy Windows bash/WSL launcher is not Git Bash: it can
+reinterpret quoted foreign arguments and expand `$` or command substitutions before ClawForge
+receives them. For WSL operation, enter the WSL shell first rather than forwarding scripts
+through that legacy launcher.
+
+## Safe channel, memory and lock observations
+
+Normal `inspect --json` and `doctor --json` batch `channels status --json` and
+`memory status --json` with registration reads. Channel output uses opaque account labels,
+boolean configuration/liveness facts, timestamps and error categories, never raw provider
+errors, bot/chat/user IDs, tokens or URLs. `getMe` success is authentication evidence only:
+a configured enabled account with `running: false` remains `CHANNEL_UNHEALTHY`. Missing
+polling telemetry is not proven disconnection. No channel probe is requested by this reader;
+a probe verdict is shown only when upstream actually supplies one. Disabled accounts do not
+alarm. Unknown or malformed telemetry is not healthy.
+
+Memory status is normal, not `--deep`: it does not index, reindex, fix, download a model or
+spend embedding API credit. Per-agent source scans, indexed files/chunks, dirty state,
+metadata identity and FTS/vector/embedding capabilities are separate observations. FTS
+available does not prove an index exists. Pending provider preparation means `unchecked`,
+not missing authentication. Partial failures preserve other agents' facts. Deliberate
+`memorySearch.provider=none` is FTS-only: initialization creates no embedding client, and
+no deep embedding-success evidence is required. Keep `query.hybrid.enabled=true` for that
+mode because it controls FTS enablement. A configured non-`none` provider missing authentication
+fails before keyword fallback; FTS availability alone does not make that provider operational.
+An explicit per-agent failure remains unknown while retaining reported index/FTS facts;
+pending preparation alone does not imply missing authentication. Disabled memory need not
+enable an embedding provider. Start recovery with
+`cli memory status --json`; prepare the selected backend/provider first, then agree any
+index operation explicitly. Never blindly run `index --force` as a diagnostic remedy.
+OpenClaw's normal status implementation may initialize or checkpoint SQLite metadata;
+this is not a byte-for-byte database-immutability guarantee. The framework requests no
+indexing, repair or provider probe.
+Model observations preserve bounded HF identifiers and absolute local model paths, including
+Unicode filenames. URI credentials use the same redaction policy as configuration values;
+control-character or oversized identifiers remain unknown.
+
+
+Normal status is not search proof. Identity `valid` normalizes to present; `missing`,
+`MISMATCHED` and unknown/version-new identities remain distinct. Positive counts never make
+a mismatched or unknown identity indexed-ready. Explicit provider/requested-provider `none`
+disables embedding readiness even when provider preparation is pending or the upstream
+search-mode label says hybrid. Text inventory names safe agent/backend/provider/requested-provider/
+model values; absent values are unchecked, not an explicit `none`.
+
+`status --json` and inspection expose `instanceLock`, distinct from the composition pin
+managed by the `lock` command. Observation reads only; it never acquires, refreshes, deletes,
+releases or kills an owner. Missing and unreadable locks are different states. Local owner
+liveness reuses host/PID/start identity checks; foreign owners remain remote. Age and an old
+heartbeat are not death evidence. Live/unknown local owners refuse takeover even with
+`--break-lock`; a proven dead owner requires explicit takeover. Foreign takeover additionally
+requires exact host confirmation. Observation advice is not authorization to repair.
+Normal text inspect/doctor also show bounded channel/account, memory-agent and instance-lock
+inventories. Unknown polling emits `CHANNEL_UNKNOWN` while retaining valid configuration and
+credential booleans; malformed accounts do not erase valid siblings. Doctor does not claim
+"doing its job" when channel telemetry makes the JSON verdict unhealthy.
+
+Normal observation JSON retains lock facts and structured advice even when another target
+read fails. Unknown lock reads never mean absent. Top-level `next`/`nextActions` include
+non-absent lock advice for inspection, doctor and status; manual takeover decisions do not
+invent an executable mutation command.
+
 ## Changing something
 
 Edit the declaration, look at what that implies, apply it, get an answer about the
@@ -218,28 +281,30 @@ own from-source build routinely runs past on its own. A record from before this 
 keeps the old rule (stale past 30 minutes since taken). Either way it is described, never
 silently taken: silently taking it is the same bug one layer down, the run that lost it has no
 idea. The refusal says which is true — "not refreshed for N minutes" or "refreshed N seconds
-ago — the operation is still running" — and only ever suggests `--break-lock` once the holder
-is actually stale or provably dead; a live, recently-refreshed holder is told to wait, or to
-check `./clawforge operations <id>` for what it is doing, never to break its own lock.
-`--break-lock` overrides, deliberately by hand, and deliberately not `--force`: `--force` means
+ago — owner liveness must be checked". Age alone never permits takeover. A local live or
+unknown owner must be waited out; only a proven dead owner permits explicit `--break-lock`.
+Use `status --json` for host/PID/birth evidence and `operations <id>` for the operation.
+`--break-lock` requests an ownership-checked takeover, deliberately not `--force`: `--force` means
 "yes, I mean it" for a destructive command and is set automatically from an MCP caller's
 `confirm`, so sharing the name would have made every confirmed tool call seize whatever lock
 someone else was holding. Every pid a lock records is this tool's own — wherever `clawforge`
 itself runs, never anything on a WSL or SSH transport's target — so when the holder was
 recorded on this same machine and its pid is provably gone, the refusal says so plainly;
-`--break-lock` is still required either way. Not every lock-taking command accepts
-`--break-lock` (`backup` and `secrets` guard a single operation each run and take no takeover
-flag); a refusal from one of those names a command that does instead, rather than advising a
-flag it will then reject.
+Explicit takeover is still required. Not every lock-taking command accepts `--break-lock`
+(`backup` and `secrets` do not); their refusals require choosing an intended operation that
+supports takeover, never an arbitrary mutation just to remove the lock.
 
-A shorter-lived internal guard around the lock's own bookkeeping can end up recording its
-owner on a *different* machine (two operators, one crashing mid-release) — a case
-`--break-lock` deliberately never breaks, since a remote pid's liveness cannot be checked from
-here. `--break-foreign-lock <hostId>` is the explicit, human-confirmed override: reach the
-recorded machine, verify its `clawforge` is actually gone, then pass its exact recorded id to
-`up`, `restart`, `down` or `bootstrap`. A wrong id is refused outright; a match takes over and
-appends who/when/which foreign owner to `<data>-locks/foreign-lock-takeovers.jsonl`. Never
-automatic, never guessed.
+An operation lock or its shorter-lived bookkeeping guard may belong to a different machine.
+A remote PID cannot be checked locally: first verify that the recorded owner's ClawForge
+process is gone on that machine. The intended command must support both `--break-lock` and
+`--break-foreign-lock <hostId>` with the exact recorded identity. A wrong identity refuses.
+Bookkeeping-guard takeovers retain their existing audit in
+`<data>-locks/foreign-lock-takeovers.jsonl`; confirmation is never automatic or guessed.
+
+Takeover revalidates the observed generation, or the immutable acquisition identity of a
+legacy record without a generation. Missing or changed ownership refuses. A restoration
+collision preserves the current lock and parks the displaced directory without nesting or
+deletion; inspect the reported parked path before any separately authorized repair.
 
 ### Does this deployment's own work work
 

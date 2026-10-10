@@ -81,6 +81,7 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
       // is the shape only that call ever passes.
       if (tail[0] === "-c") return ok(formatBatchStub([
         agentsResult, mcpResult, cronResult, versionResult, json({ plugins: [] }), json({ skills: [] }),
+        json({ channelAccounts: {} }), json([]),
       ]));
       // provision-agent's own reconcile.ts still reads these one at a time, unbatched.
       if (tail[0] === "agents" && tail[1] === "list") return agentsResult;

@@ -1,28 +1,21 @@
-// A refusal must never advise a flag the refused command does not accept.
-//
-// `refusalMessage`/`unreadableLockMessage` take a `breakLockSupported` flag from the calling
-// command's own `guardedWith()`/`withLockUnlessHeld()` call site (instance-lock.ts) rather than
-// always assuming --break-lock is executable. This file cross-references that against
-// openclawCommands' own declarations (the same list --help, the MCP schema and argv
-// validation read — commands/interface/index.ts), proves the message wording actually changes
-// with the flag, proves the new pid-liveness fact in refusalMessage fires only for
-// a holder recorded on THIS machine, and proves bootstrap/pull's own parsers — which used to
-// reject --break-lock before this fix even reached guardedWith() — now let it through.
+// Checks declaration/parser agreement, manual refusal actions, local owner liveness,
+// and explicit foreign-host confirmation without pinning diagnostic prose.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import {
+  takeLock,
+  readLockHolder,
   refusalMessage,
-  unreadableLockMessage,
   guardedWith,
   lockPath,
   isStale,
   STALE_AFTER_MS,
   type LockHolder,
 } from "#framework/runtime/lock/instance-lock.ts";
-import { breakLockAdvice, liveWaitLine, DEAD_HERE_LINE } from "#framework/runtime/lock/lock-claim.ts";
-import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { refusalAdvice } from "#framework/runtime/lock/lock-claim.ts";
 import { machineName } from "#framework/runtime/lock/process-identity.ts";
-import { stubContext } from "./fixture.ts";
+import { stubContext, refused } from "./fixture.ts";
+import { UserError } from "#framework/core/io/log.ts";
 import { readFile } from "node:fs/promises";
 import type { Context } from "#framework/core/context.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
@@ -112,17 +105,13 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
   // actually on the table here, so it is the case worth telling supported from unsupported.
   const holder: LockHolder = {
     operationId: "op-1", what: "apply", by: "coder@box pid 1",
-    takenAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(),
+    takenAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), host: machineName(), pid: 99999999,
   };
   const supported = refusalMessage(holder, Date.now(), true);
-  const unsupported = refusalMessage(holder, Date.now(), false);
   check("supported: advises --break-lock", supported.includes("--break-lock"), true);
-  check("unsupported: never tells the reader to take it over here", unsupported.includes(breakLockAdvice(true)), false);
-  check("unsupported: says so plainly", unsupported.includes(breakLockAdvice(false)), true);
-  check("unsupported: still names a command that does", unsupported.includes(commandLine(["up", "--break-lock"])), true);
-  // The example named above must itself actually accept the flag, or this message would repeat
-  // exactly the bug it exists to fix.
-  check("and that example command really does declare it", declaresBreakLock("up"), true);
+  const advice = refusalAdvice(holder, false);
+  check("unsupported takeover is a manual decision", advice.kind, "manual");
+  check("unsupported advice never invents mutation argv", "argv" in advice, false);
 }
 
 {
@@ -135,46 +124,55 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
   const message = refusalMessage(holder);
   check("a live heartbeat overrides an old takenAt", isStale(holder), false);
   check("and is never advised to break its own lock", message.includes("--break-lock"), false);
-  check("it is told to wait instead", message.includes(liveWaitLine("op-live-fresh")), true);
 }
 
 {
-  const unsupported = unreadableLockMessage({ settings: { dataDir: "/srv/clawforge" } } as unknown as Context, false);
-  check("unreadable-holder message respects unsupported too", unsupported.includes(breakLockAdvice(false)), true);
-  check("and never bare-advises --break-lock", unsupported.includes(breakLockAdvice(true)), false);
+  const advice = refusalAdvice(undefined, false);
+  check("unreadable-holder remediation is manual", advice.kind, "manual");
+  check("unreadable-holder remediation has no mutation argv", "argv" in advice, false);
 }
 
-// --- a holder provably dead on THIS machine is named as such, never guessed at ----------------
+// --- only confirmed dead local owners permit explicit takeover -------------------------------
 
-{
+for (const state of ["dead-local", "foreign", "live-local"] as const) {
+  const { ctx, files, dirs } = stubContext();
   const holder: LockHolder = {
-    operationId: "op-dead-here", what: "apply", by: "coder@box pid 99999999",
-    takenAt: new Date().toISOString(), host: machineName(), pid: 99999999,
+    operationId: `op-${state}`, what: "apply", by: "owner",
+    takenAt: new Date().toISOString(),
+    host: state === "foreign" ? `${machineName()}-not-this-one` : machineName(),
+    pid: state === "live-local" ? process.pid : 99999999,
   };
-  const message = refusalMessage(holder);
-  check("a pid that does not exist on this machine is reported as gone", message.includes(DEAD_HERE_LINE), true);
-  check("and --break-lock is still the advice, not an automatic takeover", message.includes("--break-lock"), true);
-}
+  const original = JSON.stringify(holder);
+  dirs.add(lockPath(ctx));
+  files.set(`${lockPath(ctx)}/holder.json`, original);
+  let entered = false;
+  let failure: unknown;
+  const message = await refused(async () => {
+    try { await guardedWith(ctx, "apply", { breakLock: false }, async () => { entered = true; }); }
+    catch (error) { failure = error; throw error; }
+  });
+  check(`${state}: ordinary acquisition is a user refusal`, failure instanceof UserError, true);
+  check(`${state}: ordinary acquisition never enters body`, entered, false);
+  check(`${state}: ordinary acquisition preserves holder bytes`, files.get(`${lockPath(ctx)}/holder.json`), original);
+  check(`${state}: refusal action is manual`, (failure as UserError).advice.map(entry => entry.kind), ["manual"]);
+  check(`${state}: refusal action has no mutation argv`, (failure as UserError).advice.some(entry => "argv" in entry), false);
+  check(`${state}: explicit takeover flag eligibility`, message.includes("--break-lock"), state !== "live-local");
+  if (state === "foreign") check("foreign refusal requires host-confirmation flag", message.includes("--break-foreign-lock"), true);
 
-{
-  // The exact same dead pid, but recorded on a DIFFERENT machine: unverifiable from here, so
-  // the message must not claim anything about it.
-  const holder: LockHolder = {
-    operationId: "op-dead-elsewhere", what: "apply", by: "coder@elsewhere pid 99999999",
-    takenAt: new Date().toISOString(), host: `${machineName()}-not-this-one`, pid: 99999999,
-  };
-  const message = refusalMessage(holder);
-  check("a pid recorded on another machine is never called dead from here", message.includes(DEAD_HERE_LINE), false);
-}
-
-{
-  // This process's own pid, recorded on this machine: unambiguously alive.
-  const holder: LockHolder = {
-    operationId: "op-alive", what: "apply", by: "coder@box pid 1",
-    takenAt: new Date().toISOString(), host: machineName(), pid: process.pid,
-  };
-  const message = refusalMessage(holder);
-  check("this process's own live pid is never called dead", message.includes(DEAD_HERE_LINE), false);
+  if (state === "dead-local") {
+    const held = await takeLock(ctx, "apply", "replacement", { breakLock: true });
+    check("confirmed dead local owner permits explicit takeover", (await readLockHolder(ctx))?.operationId, "replacement");
+    await held.release();
+  } else {
+    failure = undefined;
+    await refused(async () => {
+      try { await guardedWith(ctx, "apply", { breakLock: true }, async () => { entered = true; }); }
+      catch (error) { failure = error; throw error; }
+    });
+    check(`${state}: unconfirmed takeover is a user refusal`, failure instanceof UserError, true);
+    check(`${state}: unconfirmed takeover never enters body`, entered, false);
+    check(`${state}: unconfirmed takeover preserves holder bytes`, files.get(`${lockPath(ctx)}/holder.json`), original);
+  }
 }
 
 // --- bootstrap/pull: the parser itself, not just the declaration, now accepts --break-lock ----

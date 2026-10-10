@@ -14,6 +14,8 @@
 // On-disk primitives live in lock-claim.ts; this file adds reentrancy (chainLocks/
 // heldScopes) and the HeldLock handle.
 
+import { renderAdvice } from "../../core/io/invocation/render.ts";
+import { command, manual, type Advice } from "../../core/io/invocation/advice.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { withMutationGuard } from "../../security/instance-mutation-guard.ts";
@@ -40,7 +42,61 @@ import {
   claimGenerationMarker,
   writeHolderOrRollback,
 } from "./lock-claim.ts";
+import { localLiveness, machineName } from "./process-identity.ts";
 import type { Context } from "../../core/context.ts";
+
+export interface InstanceLockObservation {
+  readonly state: "absent" | "live" | "dead" | "remote" | "unknown";
+  readonly host?: string;
+  readonly pid?: number;
+  readonly startedAt?: string;
+  readonly heartbeatAt?: string;
+  readonly operation?: string;
+  readonly ageMs?: number;
+  readonly heartbeatAgeMs?: number;
+  readonly next?: Advice;
+  readonly nextActions?: readonly string[];
+  readonly takeover: "none" | "explicit-break-lock" | "foreign-confirmation-required";
+}
+
+/** Read-only advice; never authorizes a takeover from elapsed time. */
+export function instanceLockAdvice(lock: InstanceLockObservation): Advice {
+  return lock.state === "dead" ? manual("owner proven dead; explicitly rerun the intended operation with --break-lock")
+    : lock.state === "remote" ? manual(`verify the remote owner first; exact confirmation required: --break-foreign-lock ${JSON.stringify(lock.host ?? "<unavailable-host>")} together with --break-lock`)
+    : lock.state === "live" ? command(["status", "--json"], { note: "wait for the owner; observes without takeover" })
+    : lock.state === "unknown" ? manual("owner identity/read unavailable; do not break by age") : manual("no operation lock");
+}
+
+function lockObservation(lock: InstanceLockObservation): InstanceLockObservation {
+  const next = instanceLockAdvice(lock);
+  return { ...lock, next, nextActions: [renderAdvice(next)] };
+}
+
+/** No acquisition, heartbeat refresh or cleanup. Age is never owner-death evidence. */
+export async function observeInstanceLock(ctx: Context, now = Date.now()): Promise<InstanceLockObservation> {
+  const unknown = lockObservation({ state: "unknown", takeover: "none" });
+  try {
+    if (!(await ctx.transport.exists(lockPath(ctx)))) return lockObservation({ state: "absent", takeover: "none" });
+    const holder = await readLockHolder(ctx);
+    if (holder === undefined) return unknown;
+    const identityKnown = typeof holder.host === "string" && Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0;
+    const time = (value: unknown): string | undefined => typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined;
+    const takenAt = time(holder.takenAt);
+    const startedAt = time(holder.startedAt);
+    const heartbeatAt = time(holder.heartbeatAt);
+    const remote = identityKnown && holder.host !== machineName();
+    const liveness = !identityKnown || remote ? "unknown" : await localLiveness({ machine: holder.host!, pid: holder.pid!, startedAt });
+    const state = remote ? "remote" : liveness === "alive" ? "live" : liveness;
+    return lockObservation({
+      state, host: typeof holder.host === "string" && /^[a-zA-Z0-9._:-]{1,160}$/.test(holder.host) ? holder.host : undefined,
+      pid: identityKnown ? holder.pid : undefined, startedAt, heartbeatAt,
+      operation: typeof holder.what === "string" && holder.what.length <= 80 ? /^[a-z-]{1,40}(?=\s|$)/.exec(holder.what)?.[0] : undefined,
+      ageMs: takenAt === undefined ? undefined : Math.max(0, now - Date.parse(takenAt)),
+      heartbeatAgeMs: heartbeatAt === undefined ? undefined : Math.max(0, now - Date.parse(heartbeatAt)),
+      takeover: state === "dead" ? "explicit-break-lock" : remote ? "foreign-confirmation-required" : "none",
+    });
+  } catch { return unknown; }
+}
 
 export {
   STALE_AFTER_MS,

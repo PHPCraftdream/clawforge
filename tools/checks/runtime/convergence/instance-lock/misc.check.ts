@@ -1,19 +1,28 @@
-// Grab-bag for what does not belong to claims or takeovers specifically: the refusal message's
-// own wording, where the lock lives relative to the data directory `restore` replaces, that a
-// plain claim is genuinely atomic, and that a `mkdir` failure is never misread as "held".
+// Lock placement, refusal actions, atomic claims, and failed creation without false held-lock advice.
 
-import { takeLock, readLockHolder, refusalMessage, lockPath, lockHome } from "#framework/runtime/lock/instance-lock.ts";
+import { takeLock, readLockHolder, lockPath, lockHome } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
+import { UserError } from "#framework/core/io/log.ts";
+import { refusalAdvice } from "#framework/runtime/lock/lock-claim.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-// --- the message itself ----------------------------------------------------------------------------
+async function userRefusal(body: () => Promise<unknown>): Promise<UserError> {
+  let failure: unknown;
+  await refused(async () => {
+    try { await body(); } catch (error) { failure = error; throw error; }
+  });
+  check("lock acquisition refuses with UserError", failure instanceof UserError, true);
+  return failure as UserError;
+}
+
+// --- fresh ownership requires manual action --------------------------------------------------
 
 {
   const fresh = { operationId: "op-1", what: "apply", by: "coder@box pid 1", takenAt: new Date().toISOString() };
-  const message = refusalMessage(fresh);
-  check("a fresh lock suggests waiting", message.includes("Wait for it to finish"), true);
-  check("and does not call it stale", message.includes("not refreshed for"), false);
+  const advice = refusalAdvice(fresh);
+  check("fresh ownership requires manual action", advice.kind, "manual");
+  check("fresh ownership never invents mutation argv", "argv" in advice, false);
 }
 
 // --- the lock is not inside the tree restore replaces ------------------------------------------
@@ -49,10 +58,9 @@ import { check, finish } from "#checks/kit/harness.ts";
   const first = await takeLock(ctx, "apply", "op-1");
   check("winning the lock creates the directory", dirs.has(lockPath(ctx)), true);
 
-  // Second acquire with the directory already there: refused, without ever reading a holder
-  // file to decide.
-  const message = await refused(() => takeLock(ctx, "apply", "op-2"));
-  check("a second claim against an existing directory is refused", message !== "", true);
+  // The second acquire must refuse without replacing the first holder.
+  await userRefusal(() => takeLock(ctx, "apply", "op-2"));
+  check("a refused second claim preserves the first holder", (await readLockHolder(ctx))?.operationId, "op-1");
 
   await first.release();
   check("releasing frees the directory for the next run", dirs.has(lockPath(ctx)), false);
@@ -68,13 +76,12 @@ import { check, finish } from "#checks/kit/harness.ts";
   const { ctx, dirs } = stubContext();
   dirs.add(lockPath(ctx));
 
-  const message = await refused(() => takeLock(ctx, "apply", "op-new"));
-  check("a lock with no readable holder still refuses", message !== "", true);
-  check("and says so plainly", message.includes("did not record who it is"), true);
+  const refusal = await userRefusal(() => takeLock(ctx, "apply", "op-new"));
+  check("unknown ownership remediation is manual", refusal.advice.map(entry => entry.kind), ["manual"]);
+  check("unknown ownership remediation has no mutation argv", refusal.advice.some(entry => "argv" in entry), false);
 
-  const taken = await takeLock(ctx, "apply", "op-new", { breakLock: true });
-  check("--break-lock takes over an unnamed lock too", (await readLockHolder(ctx))?.operationId, "op-new");
-  await taken.release();
+  await userRefusal(() => takeLock(ctx, "apply", "op-new", { breakLock: true }));
+  check("unknown ownership preserves the unnamed lock", dirs.has(lockPath(ctx)), true);
 }
 
 // --- a lock that cannot be created is not a lock that is held ---------------------------------
@@ -85,11 +92,13 @@ import { check, finish } from "#checks/kit/harness.ts";
 // is: present means held, absent means the mkdir failed for a reason of its own.
 
 {
+  let writes = 0;
+  let removals = 0;
   const denied = {
     settings: { dataDir: "/srv/clawforge" },
     transport: {
       async exec(command: string, _args: string[]) {
-        if (command === "mkdir") return { code: 1, stdout: "", stderr: "mkdir: cannot create directory: Permission denied" };
+        if (command === "mkdir") return { code: 1, stdout: "", stderr: "EACCES" };
         // The lock directory is genuinely absent — nothing is holding anything.
         if (command === "test") return { code: 1, stdout: "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
@@ -97,18 +106,17 @@ import { check, finish } from "#checks/kit/harness.ts";
       async readFile(): Promise<string> {
         throw new Error("no such file");
       },
-      async writeFile(): Promise<void> {},
-      async remove(): Promise<void> {},
+      async writeFile(): Promise<void> { writes += 1; },
+      async remove(): Promise<void> { removals += 1; },
     },
   } as unknown as Context;
 
-  const message = await refused(() => takeLock(denied, "apply", "op-1"));
-  check("a mkdir that fails with the directory absent is not reported as held", message.includes("another operation is changing"), false);
-  check("the real reason is repeated verbatim", message.includes("Permission denied"), true);
-  check("it says nothing holds it", message.includes("Nothing holds it"), true);
-  // --break-lock cannot help here, so it is not suggested.
-  check("and does not offer a takeover that would not work", message.includes("--break-lock"), false);
-  check("pointing at what prepares the directory instead", message.includes("./clawforge bootstrap"), true);
+  const failure = await userRefusal(() => takeLock(denied, "apply", "op-1"));
+  check("failed creation retains transport error detail", failure.message.includes("EACCES"), true);
+  check("failed creation has no held-owner remediation", failure.advice, []);
+  check("failed creation does not offer takeover", failure.message.includes("--break-lock"), false);
+  check("failed creation writes no holder", writes, 0);
+  check("failed creation removes no owner files", removals, 0);
 }
 
 finish("instance lock misc");

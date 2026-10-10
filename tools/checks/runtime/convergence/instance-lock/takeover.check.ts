@@ -8,15 +8,29 @@
 
 import { hostname } from "node:os";
 import { machineName, localLiveness } from "#framework/runtime/lock/process-identity.ts";
-import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, guardedWith, STALE_AFTER_MS, heartbeatAgeMs } from "#framework/runtime/lock/instance-lock.ts";
-import { breakLockAdvice, staleHeartbeatLine, TAKEOVER_LOST_LINE } from "#framework/runtime/lock/lock-claim.ts";
-import { mutationBusyMessage, foreignTakeoverBy } from "#framework/security/instance-mutation-guard.ts";
+import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, guardedWith, STALE_AFTER_MS, type LockHolder, type LockOptions } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
-import type { Context } from "#framework/core/context.ts";
+import { UserError } from "#framework/core/io/log.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-function mutationGuardPath(ctx: Context): string {
-  return `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+async function userRefusal(body: () => Promise<unknown>): Promise<string> {
+  let failure: unknown;
+  const message = await refused(async () => {
+    try { await body(); } catch (error) { failure = error; throw error; }
+  });
+  check("refusal is a UserError, not success or an incidental exception", failure instanceof UserError, true);
+  return message;
+}
+
+async function guardRefusal(body: () => Promise<unknown>, expectedError?: Error): Promise<string> {
+  let failure: unknown;
+  const message = await refused(async () => {
+    try { await body(); } catch (error) { failure = error; throw error; }
+  });
+  check("guard refusal throws rather than succeeding", failure !== undefined, true);
+  check("guard refusal is an Error", failure instanceof Error, true);
+  if (expectedError !== undefined) check("guard refusal preserves the injected error identity", failure === expectedError, true);
+  return message;
 }
 
 // --- stale locks are described, not stolen ------------------------------------------------------
@@ -25,14 +39,14 @@ function mutationGuardPath(ctx: Context): string {
   const { ctx, files, dirs } = stubContext();
   const old = new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString();
   dirs.add(lockPath(ctx));
-  files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ operationId: "op-dead", what: "apply", by: "someone", takenAt: old }));
+  const original = JSON.stringify({ operationId: "op-dead", what: "apply", by: "someone", takenAt: old, host: machineName(), pid: 99999999 });
+  files.set(`${lockPath(ctx)}/holder.json`, original);
 
   const holder = (await readLockHolder(ctx))!;
   check("a long-held lock is recognised as stale", isStale(holder), true);
 
-  const message = await refused(() => takeLock(ctx, "apply", "op-new"));
-  check("but it still refuses rather than taking it", message !== "", true);
-  check("saying it has not been refreshed", message.includes(staleHeartbeatLine(heartbeatAgeMs(holder))), true);
+  const message = await userRefusal(() => takeLock(ctx, "apply", "op-new"));
+  check("refusal preserves the original holder bytes", files.get(`${lockPath(ctx)}/holder.json`), original);
   check("and that the reader is the one who decides", message.includes("--break-lock"), true);
   check("the dead holder is still in place", (await readLockHolder(ctx))?.operationId, "op-dead");
 
@@ -62,11 +76,16 @@ function mutationGuardPath(ctx: Context): string {
   const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "dead", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
-  const listingFailure = "guard listing failed";
-  ctx.transport.listFiles = async () => { throw new Error(listingFailure); };
+  dirs.add(lockPath(ctx).replace(/\/operation\.lock$/, ""));
+  const originalFiles = new Map(files);
+  const originalDirs = new Set(dirs);
+  const listingFailure = new Error("EIO");
+  ctx.transport.listFiles = async () => { throw listingFailure; };
 
-  const message = await refused(() => takeLock(ctx, "apply", "op-list-failure"));
-  check("a guard listing failure is reported, not treated as no claims", message.includes(listingFailure), true);
+  const message = await guardRefusal(() => takeLock(ctx, "apply", "op-list-failure"), listingFailure);
+  check("a guard listing failure is reported, not treated as no claims", message.includes("EIO"), true);
+  check("listing failure preserves all original files", files, originalFiles);
+  check("listing failure preserves all original directories", dirs, originalDirs);
   check("listing failure preserves the original guard owner", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "dead");
   check("listing failure removes its temporary claim", [...files.keys()].some((path) => path.includes(".claim-")), false);
 }
@@ -78,8 +97,12 @@ function mutationGuardPath(ctx: Context): string {
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "live", pid: process.pid, machine, takenAt: new Date().toISOString() }));
 
-  const message = await refused(() => takeLock(ctx, "apply", "op-must-wait", { breakLock: true }));
-  check("--break-lock cannot break a live mutation guard", message, mutationBusyMessage(guard, { generation: "live", pid: process.pid, machine, takenAt: "" }).message);
+  dirs.add(lockPath(ctx).replace(/\/operation\.lock$/, ""));
+  const originalFiles = new Map(files);
+  const originalDirs = new Set(dirs);
+  await guardRefusal(() => takeLock(ctx, "apply", "op-must-wait", { breakLock: true }));
+  check("live guard refusal preserves all original files", files, originalFiles);
+  check("live guard refusal preserves all original directories", dirs, originalDirs);
   check("a live guard is left untouched", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "live");
   check("a refused live guard creates no instance lock", dirs.has(lockPath(ctx)), false);
 }
@@ -91,8 +114,12 @@ function mutationGuardPath(ctx: Context): string {
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "remote", pid: 99999999, machine: `${machine}-other`, takenAt: new Date().toISOString() }));
 
-  const message = await refused(() => takeLock(ctx, "apply", "op-unverifiable", { breakLock: true }));
-  check("--break-lock keeps a guard owned by an unverifiable host", message, mutationBusyMessage(guard, { generation: "remote", pid: 99999999, machine: `${machine}-other`, takenAt: "" }).message);
+  dirs.add(lockPath(ctx).replace(/\/operation\.lock$/, ""));
+  const originalFiles = new Map(files);
+  const originalDirs = new Set(dirs);
+  const message = await guardRefusal(() => takeLock(ctx, "apply", "op-unverifiable", { breakLock: true }));
+  check("foreign guard refusal preserves all original files", files, originalFiles);
+  check("foreign guard refusal preserves all original directories", dirs, originalDirs);
   check("an unverifiable guard is not replaced", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
   // The recovery path from here is --break-foreign-lock, not --break-lock — the refusal
   // names the exact flag, the recorded host id, and the runbook that says how to verify first.
@@ -118,10 +145,14 @@ function mutationGuardPath(ctx: Context): string {
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify(foreignOwner));
 
-  const message = await refused(() =>
+  dirs.add(lockPath(ctx).replace(/\/operation\.lock$/, ""));
+  const originalFiles = new Map(files);
+  const originalDirs = new Set(dirs);
+  const message = await guardRefusal(() =>
     takeLock(ctx, "apply", "op-wrong-host", { breakLock: true, breakForeignLockHost: `${machine}-not-it` }),
   );
-  check("the wrong host id is refused", message !== "", true);
+  check("wrong host refusal preserves all original files", files, originalFiles);
+  check("wrong host refusal preserves all original directories", dirs, originalDirs);
   check("naming the host id that was actually recorded", message.includes(`${machine}-other`), true);
   check("and the one that was typed", message.includes(`${machine}-not-it`), true);
   check("a wrong host id never takes the guard", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
@@ -136,7 +167,7 @@ function mutationGuardPath(ctx: Context): string {
   check("naming the confirmed host", entries[0]?.confirmedHost, `${machine}-other`);
   check("and the exact foreign owner it replaced", entries[0]?.foreignOwner, foreignOwner);
   check("recording when it happened", typeof entries[0]?.at === "string" && (entries[0].at as string).length > 0, true);
-  check("recording who did it", typeof entries[0]?.by === "string" && (entries[0].by as string).includes(foreignTakeoverBy()), true);
+  check("recording who did it", typeof entries[0]?.by === "string" && (entries[0].by as string).includes(String(process.pid)), true);
 
   await held.release();
 }
@@ -147,15 +178,18 @@ function mutationGuardPath(ctx: Context): string {
   const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "uncertain", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
+  dirs.add(lockPath(ctx).replace(/\/operation\.lock$/, ""));
+  const originalFiles = new Map(files);
+  const originalDirs = new Set(dirs);
   const originalKill = process.kill;
   process.kill = (() => { throw Object.assign(new Error("process probe failed"), { code: "EIO" }); }) as typeof process.kill;
-  let message = "";
   try {
-    message = await refused(() => takeLock(ctx, "apply", "op-kill-probe-failure", { breakLock: true }));
+    await guardRefusal(() => takeLock(ctx, "apply", "op-kill-probe-failure", { breakLock: true }));
   } finally {
     process.kill = originalKill;
   }
-  check("a process probe error does not prove the owner is dead", message, mutationBusyMessage(guard, { generation: "uncertain", pid: 99999999, machine, takenAt: "" }).message);
+  check("process probe failure preserves all original files", files, originalFiles);
+  check("process probe failure preserves all original directories", dirs, originalDirs);
   check("a process probe error preserves the guard", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain");
 }
 
@@ -169,15 +203,18 @@ function mutationGuardPath(ctx: Context): string {
   const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "uncertain-local", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
+  dirs.add(lockPath(ctx).replace(/\/operation\.lock$/, ""));
+  const originalFiles = new Map(files);
+  const originalDirs = new Set(dirs);
   const originalKill = process.kill;
   process.kill = (() => { throw Object.assign(new Error("process probe failed"), { code: "EIO" }); }) as typeof process.kill;
-  let message = "";
   try {
-    message = await refused(() => takeLock(ctx, "apply", "op-local-probe-failure", { breakLock: true, breakForeignLockHost: machine }));
+    await guardRefusal(() => takeLock(ctx, "apply", "op-local-probe-failure", { breakLock: true, breakForeignLockHost: machine }));
   } finally {
     process.kill = originalKill;
   }
-  check("--break-foreign-lock naming this machine does not rescue a local probe error", message, mutationBusyMessage(guard, { generation: "uncertain-local", pid: 99999999, machine, takenAt: "" }).message);
+  check("local probe failure preserves all original files", files, originalFiles);
+  check("local probe failure preserves all original directories", dirs, originalDirs);
   check("the guard is preserved", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain-local");
 }
 
@@ -195,8 +232,9 @@ function mutationGuardPath(ctx: Context): string {
 // --- a lock taken over by --break-lock is not removed by the run that lost it -------------------------
 
 {
-  const { ctx } = stubContext();
+  const { ctx, files } = stubContext();
   const overrun = await takeLock(ctx, "apply", "op-slow");
+  files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ ...await readLockHolder(ctx), host: machineName(), pid: 99999999 }));
   const stolen = await takeLock(ctx, "apply", "op-fast", { breakLock: true });
 
   await overrun.release();
@@ -208,16 +246,12 @@ function mutationGuardPath(ctx: Context): string {
 
 // --- two racing --break-lock callers: only one may enter the critical section -----------------
 //
-// `--break-lock` used to write straight into the directory it found: both callers could read
-// the old holder, remove its marker, and write their own holder.json — the second only renamed
-// the winner, while the first had already started its body with no lease left to check. The
-// fix moves the contested directory aside before winning a fresh `mkdir`, so at most one racing
-// mover can win. This gates the first caller right before that move, runs a second, uncontested
-// takeover to completion, then releases it and checks only the mover that won ran its body.
+// Both callers observe one contested lock. Pause the first before displacement; the second
+// must refuse without entering its body. Resume the first and require a clean release.
 
 {
   const { ctx, files, dirs } = stubContext();
-  const oldHolder = JSON.stringify({ operationId: "op-old", what: "apply", by: "old", takenAt: new Date().toISOString() });
+  const oldHolder = JSON.stringify({ operationId: "op-old", host: machineName(), pid: 99999999, what: "apply", by: "old", takenAt: new Date().toISOString() });
   dirs.add(lockPath(ctx));
   files.set(`${lockPath(ctx)}/holder.json`, oldHolder);
 
@@ -245,12 +279,17 @@ function mutationGuardPath(ctx: Context): string {
   await stalledAtMove;
   check("the stalled caller has not moved the contested directory yet", dirs.has(lockPath(ctx)), true);
 
-  let fastError: Error | undefined;
-  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {})
-    .catch((error: Error) => { fastError = error; });
+  const guardedFiles = new Map(files);
+  const guardedDirs = new Set(dirs);
+  let fastError: unknown;
+  let fastEnteredBody = false;
+  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => { fastEnteredBody = true; })
+    .catch((error: unknown) => { fastError = error; });
   check("another takeover cannot enter while the first owns the mutation guard", fastError !== undefined, true);
-  check("the competing caller is told the lock change is in progress", fastError?.message,
-    mutationBusyMessage(mutationGuardPath(ctx), { generation: "", pid: process.pid, machine: machineName(), takenAt: "" }).message);
+  check("the competing caller receives a guard Error", fastError instanceof Error, true);
+  check("the competing caller preserves the guarded files", files, guardedFiles);
+  check("the competing caller preserves the guarded directories", dirs, guardedDirs);
+  check("the competing caller never enters its body", fastEnteredBody, false);
 
   releaseStalled();
   await stalled;
@@ -272,7 +311,7 @@ function mutationGuardPath(ctx: Context): string {
   dirs.add(lockPath(ctx));
   dirs.add(`${lockPath(ctx)}/gen-${oldGeneration}`);
   files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({
-    operationId: "op-live", what: "apply", by: "live", takenAt: new Date().toISOString(), generation: oldGeneration,
+    operationId: "op-live", host: machineName(), pid: 99999999, what: "apply", by: "live", takenAt: new Date().toISOString(), generation: oldGeneration,
   }));
 
   const originalReadFile = ctx.transport.readFile;
@@ -284,7 +323,7 @@ function mutationGuardPath(ctx: Context): string {
     if (path.includes(".stale-") && path.endsWith("/holder.json")) {
       const movedRoot = path.slice(0, -"/holder.json".length);
       files.set(path, JSON.stringify({
-        operationId: "op-live", what: "apply", by: "live", takenAt: new Date().toISOString(), generation: newGeneration,
+        operationId: "op-live", host: machineName(), pid: 99999999, what: "apply", by: "live", takenAt: new Date().toISOString(), generation: newGeneration,
       }));
       reachedDisplacedRead();
       await readGate;
@@ -299,13 +338,15 @@ function mutationGuardPath(ctx: Context): string {
     .then((held) => held.release(), (error: Error) => { takeoverError = error; });
   await displacedRead;
 
-  const thirdCaller = await refused(() => takeLock(ctx, "apply", "op-third"));
-  check("a third caller is refused while the takeover owns the mutation guard", thirdCaller,
-    mutationBusyMessage(mutationGuardPath(ctx), { generation: "", pid: process.pid, machine: machineName(), takenAt: "" }).message);
+  const guardedFiles = new Map(files);
+  const guardedDirs = new Set(dirs);
+  await guardRefusal(() => takeLock(ctx, "apply", "op-third"));
+  check("the third caller preserves the displaced files and guard owner", files, guardedFiles);
+  check("the third caller preserves the displaced directories and guard", dirs, guardedDirs);
   releaseRead();
   await takeover;
 
-  check("the generation mismatch refuses takeover", takeoverError?.message.includes(TAKEOVER_LOST_LINE), true);
+  check("the generation mismatch refuses takeover", takeoverError instanceof UserError, true);
   check("the live lock is restored before the guard is released", dirs.has(lockPath(ctx)), true);
   check("the restored lock holder remains readable", (await readLockHolder(ctx))?.operationId, "op-live");
   check("a refused takeover leaves no displaced directory", [...dirs].some((path) => path.includes(".stale-")), false);
@@ -314,7 +355,7 @@ function mutationGuardPath(ctx: Context): string {
 // --- releases and takeovers share the same mutation guard -------------------------------------
 
 {
-  const { ctx, dirs } = stubContext();
+  const { ctx, files, dirs } = stubContext();
   const slow = await takeLock(ctx, "apply", "op-slow");
   const originalExec = ctx.transport.exec;
   let releaseOwnership!: () => void;
@@ -333,11 +374,17 @@ function mutationGuardPath(ctx: Context): string {
 
   const releasing = slow.release();
   await ownershipCheck;
-  let takeoverError: Error | undefined;
-  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {})
-    .catch((error: Error) => { takeoverError = error; });
-  check("a takeover cannot race a release mutation", takeoverError?.message,
-    mutationBusyMessage(mutationGuardPath(ctx), { generation: "", pid: process.pid, machine: machineName(), takenAt: "" }).message);
+  const guardedFiles = new Map(files);
+  const guardedDirs = new Set(dirs);
+  let takeoverError: unknown;
+  let takeoverEnteredBody = false;
+  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => { takeoverEnteredBody = true; })
+    .catch((error: unknown) => { takeoverError = error; });
+  check("a takeover blocked by release throws rather than succeeding", takeoverError !== undefined, true);
+  check("a takeover cannot race a release mutation", takeoverError instanceof Error, true);
+  check("a takeover blocked by release preserves the guarded files", files, guardedFiles);
+  check("a takeover blocked by release preserves the guarded directories", dirs, guardedDirs);
+  check("a takeover blocked by release never enters its body", takeoverEnteredBody, false);
   releaseOwnership();
   await releasing;
   check("the release removes its own lock after the guard clears", dirs.has(lockPath(ctx)), false);
@@ -356,28 +403,211 @@ function mutationGuardPath(ctx: Context): string {
 // --- guardedWith: the takeover is explicit, and its outcomes are observable --------------------
 
 {
-  /** The outcome of one guard over a stale lock: the refusal text, or what happened to the holder. */
-  async function outcome(run: (ctx: Context) => Promise<void>): Promise<string> {
+  interface GuardOutcome {
+    failure: unknown;
+    message: string;
+    entered: boolean;
+    holder: LockHolder | undefined;
+    originalPreserved: boolean;
+  }
+  async function outcome(options: LockOptions): Promise<GuardOutcome> {
     const { ctx, files, dirs } = stubContext();
     const old = new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString();
+    const original = JSON.stringify({ operationId: "op-dead", what: "apply", by: "someone", takenAt: old, host: machineName(), pid: 99999999 });
     dirs.add(lockPath(ctx));
-    files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ operationId: "op-dead", what: "apply", by: "someone", takenAt: old }));
-    const refusal = await refused(() => run(ctx));
-    return refusal !== "" ? refusal : `ran, holder: ${(await readLockHolder(ctx))?.operationId}`;
+    files.set(`${lockPath(ctx)}/holder.json`, original);
+    let entered = false;
+    let failure: unknown;
+    const message = await refused(async () => {
+      try {
+        await guardedWith(ctx, "apply", { ...options, breakLock: options.breakLock === true }, async () => { entered = true; }, { breakLockSupported: options.breakLockSupported });
+      } catch (error) { failure = error; throw error; }
+    });
+    return { failure, message, entered, holder: await readLockHolder(ctx), originalPreserved: files.get(`${lockPath(ctx)}/holder.json`) === original };
   }
-  const body = async (): Promise<void> => {};
 
-  const refusedOutcome = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body));
-  check("no takeover: a stale lock is refused, not taken", refusedOutcome.startsWith("another operation"), true);
-  check("no takeover: the refusal advises --break-lock", refusedOutcome.includes(breakLockAdvice(true)), true);
-  const unsupported = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body, { breakLockSupported: false }));
-  check("breakLockSupported: false never advises a --break-lock the command refuses", unsupported.includes(breakLockAdvice(false)), true);
-  check("and it still refuses the stale lock", unsupported.startsWith("another operation"), true);
-  const taken = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: true }, body));
-  check("breakLock: takes the stale lock and runs", taken.startsWith("ran"), true);
-  check("and releases cleanly: no holder remains after the guard", taken, "ran, holder: undefined");
-  const foreignHostOnly = await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false, breakForeignLockHost: "other" }, body));
-  check("a foreign host id without breakLock does not take a stale lock", foreignHostOnly.startsWith("another operation"), true);
+  for (const options of [
+    { breakLock: false },
+    { breakLock: false, breakLockSupported: false },
+    { breakLock: false, breakForeignLockHost: "other" },
+  ]) {
+    const result = await outcome(options);
+    check("no takeover: guardedWith returns a user refusal", result.failure instanceof UserError, true);
+    check("no takeover: body is not entered", result.entered, false);
+    check("no takeover: original holder bytes are preserved", result.originalPreserved, true);
+    check("no takeover: remediation is manual", (result.failure as UserError).advice.map(entry => entry.kind), ["manual"]);
+    check("no takeover: remediation has no mutation argv", (result.failure as UserError).advice.some(entry => "argv" in entry), false);
+    if (options.breakLockSupported !== false) check("supported refusal names --break-lock", result.message.includes("--break-lock"), true);
+  }
+  const taken = await outcome({ breakLock: true });
+  check("breakLock takes the stale lock and runs", taken.entered, true);
+  check("takeover completes without failure", taken.failure, undefined);
+  check("takeover releases cleanly", taken.holder, undefined);
+}
+
+// --- holder CAS: race after the observed owner's liveness check, before displacement ---------
+
+const legacyOwner = {
+  operationId: "legacy-A", what: "apply", by: "legacy", host: machineName(), pid: 99999999,
+  takenAt: "2026-10-01T00:00:00.000Z", startedAt: "2026-09-30T23:59:00.000Z",
+};
+for (const [field, replacement] of [
+  ["operationId", "legacy-B"], ["host", `${machineName()}-other`], ["pid", 99999998],
+  ["takenAt", "2026-10-02T00:00:00.000Z"], ["startedAt", "2026-09-29T23:59:00.000Z"],
+] as const) {
+  const { ctx, files, dirs } = stubContext();
+  const root = lockPath(ctx);
+  dirs.add(root);
+  files.set(`${root}/holder.json`, JSON.stringify(legacyOwner));
+  const racedOwner = { ...legacyOwner, [field]: replacement };
+  const exec = ctx.transport.exec;
+  let raced = false;
+  ctx.transport.exec = async (command, args) => {
+    if (command === "mv" && args[0] === root && !raced) {
+      raced = true;
+      files.set(`${root}/holder.json`, JSON.stringify(racedOwner));
+    }
+    return exec(command, args);
+  };
+  let entered = false;
+  await userRefusal(() => withInstanceLock(ctx, "apply", "must-not-enter", { breakLock: true }, async () => { entered = true; }));
+  check(`legacy ${field} race reaches displacement after liveness`, raced, true);
+  check(`legacy ${field} race never enters body`, entered, false);
+  check(`legacy ${field} race restores B exactly`, JSON.parse(files.get(`${root}/holder.json`) ?? "null"), racedOwner);
+  check(`legacy ${field} race leaves no displaced tree`, [...dirs].some((path) => path.includes(".stale-")), false);
+}
+
+// Invalid identity must be refused on the initial read, not merely detected as a changed
+// string after displacement. Identical invalid timestamps otherwise pass exact equality.
+for (const field of ["takenAt", "startedAt"] as const) {
+  const { ctx, files, dirs } = stubContext();
+  const root = lockPath(ctx);
+  const original = `${JSON.stringify({ ...legacyOwner, [field]: "not-a-date" }, null, 2)}\n`;
+  dirs.add(root);
+  files.set(`${root}/holder.json`, original);
+  files.set(`${root}/keep.txt`, "unrelated contents");
+  const originalKeep = files.get(`${root}/keep.txt`);
+  const exec = ctx.transport.exec;
+  let displacements = 0;
+  ctx.transport.exec = async (command, args) => {
+    if (command === "mv" && args[0] === root) displacements += 1;
+    return exec(command, args);
+  };
+  let entered = false;
+  let failure: unknown;
+  try { await withInstanceLock(ctx, "apply", "must-not-enter", { breakLock: true }, async () => { entered = true; }); } catch (error) { failure = error; }
+  check(`initial legacy invalid ${field} refuses malformed acquisition`, failure instanceof UserError, true);
+  check(`initial legacy invalid ${field} never enters body`, entered, false);
+  check(`initial legacy invalid ${field} has zero displacement`, displacements, 0);
+  check(`initial legacy invalid ${field} preserves original bytes`, files.get(`${root}/holder.json`), original);
+  check(`initial legacy invalid ${field} preserves root`, dirs.has(root), true);
+  check(`initial legacy invalid ${field} preserves unrelated contents`, files.get(`${root}/keep.txt`), originalKeep);
+}
+
+for (const record of [undefined, "unreadable JSON", JSON.stringify({ ...legacyOwner, takenAt: "not-a-date" }),
+  JSON.stringify({ ...legacyOwner, operationId: "" }), JSON.stringify({ ...legacyOwner, startedAt: "invalid" }),
+  JSON.stringify({ ...legacyOwner, generation: "" }), JSON.stringify({ ...legacyOwner, generation: null })]) {
+  const { ctx, files, dirs } = stubContext();
+  const root = lockPath(ctx);
+  dirs.add(root);
+  files.set(`${root}/holder.json`, JSON.stringify(legacyOwner));
+  files.set(`${root}/keep.txt`, "unrelated contents");
+  const originalKeep = files.get(`${root}/keep.txt`);
+  const exec = ctx.transport.exec;
+  let displaced = false;
+  ctx.transport.exec = async (command, args) => {
+    if (command === "mv" && args[0] === root) {
+      displaced = true;
+      if (record === undefined) files.delete(`${root}/holder.json`);
+      else files.set(`${root}/holder.json`, record);
+    }
+    return exec(command, args);
+  };
+  await userRefusal(() => withInstanceLock(ctx, "apply", "must-not-enter", { breakLock: true }, async () => {
+    check("malformed displaced legacy cannot enter body", true, false);
+  }));
+  check(`displaced ${record ?? "missing"} was actually read`, displaced, true);
+  check(`malformed displaced legacy restores root: ${record ?? "missing"}`, dirs.has(root), true);
+  check(`malformed displaced legacy preserves unrelated contents: ${record ?? "missing"}`, files.get(`${root}/keep.txt`), originalKeep);
+  check(`malformed displaced legacy preserves record: ${record ?? "missing"}`, files.get(`${root}/holder.json`), record);
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const root = lockPath(ctx);
+  dirs.add(root);
+  files.set(`${root}/holder.json`, JSON.stringify(legacyOwner));
+  const exec = ctx.transport.exec;
+  ctx.transport.exec = async (command, args) => {
+    if (command === "mv" && args[0] === root) files.set(`${root}/holder.json`, JSON.stringify({ ...legacyOwner, heartbeatAt: "2026-10-09T00:00:00.000Z" }));
+    return exec(command, args);
+  };
+  let entered = false;
+  await withInstanceLock(ctx, "apply", "same-legacy", { breakLock: true }, async () => {
+    entered = true;
+    check("same legacy publishes the new owner", (await readLockHolder(ctx))?.operationId, "same-legacy");
+  });
+  check("same legacy succeeds despite changed heartbeat", entered, true);
+  check("same legacy releases root cleanly", dirs.has(root), false);
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const root = lockPath(ctx);
+  dirs.add(root);
+  files.set(`${root}/holder.json`, JSON.stringify(legacyOwner));
+  files.set(`${root}/keep.txt`, "unrelated contents");
+  const originalKeep = files.get(`${root}/keep.txt`);
+  const read = ctx.transport.readFile;
+  let unreadable = false;
+  ctx.transport.readFile = async (path) => {
+    if (path.includes(".stale-") && path.endsWith("/holder.json")) {
+      unreadable = true;
+      throw new Error("permission denied reading displaced holder");
+    }
+    return read(path);
+  };
+  await userRefusal(() => withInstanceLock(ctx, "apply", "must-not-enter", { breakLock: true }, async () => {
+    check("unreadable displaced record cannot enter body", true, false);
+  }));
+  check("unreadable displaced record reaches failed read", unreadable, true);
+  check("unreadable displaced record restores original bytes", files.get(`${root}/holder.json`), JSON.stringify(legacyOwner));
+  check("unreadable displaced record preserves unrelated contents", files.get(`${root}/keep.txt`), originalKeep);
+}
+
+for (const uncertain of [false, true]) {
+  const { ctx, files, dirs } = stubContext();
+  const root = lockPath(ctx);
+  dirs.add(root);
+  files.set(`${root}/holder.json`, JSON.stringify(legacyOwner));
+  const racedOwner = { ...legacyOwner, operationId: "legacy-B" };
+  const collidingOwner = { ...legacyOwner, operationId: "live-C", pid: process.pid };
+  const exec = ctx.transport.exec;
+  let parked = "";
+  let originalLiveOnly: string | undefined;
+  ctx.transport.exec = async (command, args) => {
+    if (command === "mv" && args[0] === root) files.set(`${root}/holder.json`, JSON.stringify(racedOwner));
+    // Inject at the restoration operation itself, not at an earlier absence probe.
+    // Removing -T must expose real mv nesting; removing -n must not overwrite C.
+    if (command === "mv" && args.at(-1) === root && (args.at(-2) ?? "").includes(".stale-")) {
+      parked = args.at(-2)!;
+      dirs.add(root);
+      files.set(`${root}/holder.json`, JSON.stringify(collidingOwner));
+      files.set(`${root}/live-only.txt`, "live data");
+      originalLiveOnly = files.get(`${root}/live-only.txt`);
+      if (uncertain) throw new Error("restore acknowledgement unavailable");
+    }
+    return exec(command, args);
+  };
+  const message = await userRefusal(() => withInstanceLock(ctx, "apply", "must-not-enter", { breakLock: true }, async () => {
+    check("restore collision cannot enter body", true, false);
+  }));
+  check(`restore collision ${uncertain} identifies safe park`, parked !== "" && message.includes(parked), true);
+  check(`restore collision ${uncertain} preserves C`, JSON.parse(files.get(`${root}/holder.json`) ?? "null"), collidingOwner);
+  check(`restore collision ${uncertain} preserves B safely parked`, JSON.parse(files.get(`${parked}/holder.json`) ?? "null"), racedOwner);
+  check(`restore collision ${uncertain} keeps displaced root`, dirs.has(parked), true);
+  check(`restore collision ${uncertain} never nests into live root`, [...dirs].some((path) => path.startsWith(`${root}/operation.lock.stale-`)), false);
+  check(`restore collision ${uncertain} preserves unrelated live data`, files.get(`${root}/live-only.txt`), originalLiveOnly);
 }
 
 finish("instance lock takeover");

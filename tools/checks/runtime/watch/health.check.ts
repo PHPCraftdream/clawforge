@@ -1,5 +1,4 @@
-// `./clawforge watch check`'s own channel/disk findings (watch/health.ts) — the two liveness
-// signals `inspect`/`doctor` do not compute:
+// Shared channel liveness plus watch-specific disk findings.
 //
 // - channelFindings(): a pure function over `channels status --json`'s already-parsed
 //   answer (gathered by gatherInspection's own `channels` option, inspect/live.ts, in the
@@ -18,6 +17,7 @@ import type { WatchFinding } from "#framework/commands/operate/watch/health.ts";
 import type { ChannelsStatusResponse } from "#framework/service/inspection.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
+import { channelProblems } from "#framework/service/inspection.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- channelFindings(): only a configured, enabled account's own trouble is reported -------
@@ -55,17 +55,17 @@ function channelsResponse(channelAccounts: unknown): ChannelsStatusResponse {
   check("configured but not running -> one CHANNEL_UNHEALTHY finding", findings.length, 1);
   check("severity is degraded, never down", findings[0]?.level, "degraded");
   check("the code is CHANNEL_UNHEALTHY", findings[0]?.reason.code, "CHANNEL_UNHEALTHY");
-  check("the detail names the channel/account and the fault", findings[0]?.reason.detail, "telegram/default: configured but not running");
 }
 
 {
   const errored = channelsResponse({
-    telegram: [{ accountId: "default", enabled: true, configured: true, running: true, lastError: "auth failed: bad token" }],
+    telegram: [{ accountId: "default", enabled: true, configured: true, running: true, lastError: "unregistered-auth-secret-0123456789abcdef" }],
   });
   const findings = channelFindings(errored);
-  check("a captured lastError with no connection state -> CHANNEL_UNHEALTHY", findings[0]?.reason.detail, "telegram/default: last error: auth failed: bad token");
+  check("a captured lastError with no connection state degrades channel health", findings.map((entry) => [entry.level, entry.reason.code]), [["degraded", "CHANNEL_UNHEALTHY"]]);
+  check("unregistered authentication diagnostics never escape", findings[0]?.reason.detail.includes("unregistered-auth-secret-0123456789abcdef"), false);
   const recovered = channelsResponse({
-    telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: true, lastError: "auth failed: bad token" }],
+    telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: true, lastError: "unregistered-auth-secret-0123456789abcdef" }],
   });
   check("a connected account is healthy despite a lingering lastError", channelFindings(recovered).length, 0);
 }
@@ -75,7 +75,7 @@ function channelsResponse(channelAccounts: unknown): ChannelsStatusResponse {
     telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: false, lastError: null }],
   });
   const findings = channelFindings(disconnected);
-  check("configured, running, but not connected -> CHANNEL_UNHEALTHY", findings[0]?.reason.detail, "telegram/default: configured but not connected");
+  check("configured, running, but disconnected degrades channel health", findings.map((entry) => [entry.level, entry.reason.code]), [["degraded", "CHANNEL_UNHEALTHY"]]);
 }
 
 {
@@ -91,6 +91,11 @@ function channelsResponse(channelAccounts: unknown): ChannelsStatusResponse {
 }
 
 {
+  const shared = channelsResponse({ telegram: [{ configured: true, enabled: true, running: false, probe: { ok: true } }] });
+  check("watch getMe success cannot override stopped polling", channelFindings(shared).map((entry) => [entry.level, entry.reason.code]), [["degraded", "CHANNEL_UNHEALTHY"]]);
+  check("inspect getMe success cannot override stopped polling", channelProblems(shared).map((entry) => entry.code), ["CHANNEL_UNHEALTHY"]);
+  check("unknown polling is not proven disconnected", channelFindings(channelsResponse({ telegram: [{ configured: true, running: true }] })).map((entry) => [entry.level, entry.reason.code]), [["degraded", "CHANNEL_UNKNOWN"]]);
+  check("credentials without polling do not prove liveness", channelFindings(channelsResponse({ telegram: [{ configured: true, enabled: true, credentialPresent: true }] })).map((entry) => [entry.level, entry.reason.code]), [["degraded", "CHANNEL_UNKNOWN"]]);
   check("an absent payload adds nothing; requested failures carry an inspection problem", channelFindings(undefined), []);
 }
 

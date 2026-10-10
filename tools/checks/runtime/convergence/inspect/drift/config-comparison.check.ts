@@ -5,7 +5,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { gatherInspection } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
 import { configValuesEqual, effectiveDeclarationPaths } from "#framework/commands/orchestration/inspect/helpers.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "#checks/runtime/convergence/inspect/fixture.ts";
@@ -15,10 +15,6 @@ import { check, finish } from "#checks/kit/harness.ts";
 const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();
 
 try {
-  // --- gatherInspection's `channels` option (watch check's own opt-in): rides the same
-  // batched CLI call observeLive already makes for agents/mcp/cron/plugins/skills, so this
-  // never costs a second exec — and inspect/doctor/plan/apply, which never set the option,
-  // see no new field at all ------------------------------------------------------------
 
   {
     let batchCalls = 0;
@@ -41,17 +37,14 @@ try {
     check("the channels command rides in the same batch — one exec, not two", batchCalls, 1);
     check(
       "observed.channels carries channels status --json's parsed answer",
-      inspection.observed.channels,
+      JSON.parse(JSON.stringify(renderJson(inspection))).observed.channels,
       { channelAccounts: { telegram: [{ accountId: "default", enabled: true, configured: true, running: true }] } },
     );
   }
 
   {
-    // No channelsStatus on the spec: the fixture's own batch stub leaves this command's line
-    // unmatched, the same shape a real CLI failure inside the batch would produce — proving
-    // that failure is a gap (channels absent), never a thrown inspection.
     const inspection = await gatherInspection(
-      stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
+      stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, channelsStatus: "unavailable" }),
       { channels: true },
     );
     check("a failing channels command inside the batch leaves observed.channels absent, not a crash", inspection.observed.channels, undefined);
@@ -61,8 +54,9 @@ try {
   {
     const inspection = await gatherInspection(
       stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, channelsStatus: { telegram: [] } }),
+      { channels: false },
     );
-    check("without the option, observed.channels is absent even when channel data is available", inspection.observed.channels, undefined);
+    check("explicit opt-out leaves observed.channels absent", inspection.observed.channels, undefined);
     check("without the option, no channel telemetry failure is reported", inspection.problems.some((entry) => entry.code === "CHANNEL_UNKNOWN"), false);
   }
 

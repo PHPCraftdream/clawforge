@@ -244,7 +244,7 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/orchestration/inspect/helpers.ts",
-    line: 227,
+    line: 279,
     reason:
       "readLiveConfigForProspective only falls the prospective view back to the declaration; observeConfig (drift.ts) owns reporting the unknown and re-probes with exists(), so the unknown surfaces there",
   },
@@ -352,7 +352,7 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/operate/watch/health.ts",
-    line: 93,
+    line: 70,
     reason:
       "a df that cannot run becomes a DISK_UNKNOWN 'degraded' finding carrying the cause (never a silent ok, never a false down) - the watch contract's documented unknown state",
   },

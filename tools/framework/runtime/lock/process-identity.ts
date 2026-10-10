@@ -39,6 +39,33 @@ export function ownProcessStartedAt(): string {
   return new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString();
 }
 
+/** WMIC's DMTF wall clock has an explicit signed UTC offset in minutes. Only a single,
+ *  complete CreationDate proves a birth time; wildcards or partial output prove nothing. */
+export function parseWindowsProcessStartedAt(stdout: string): string | undefined {
+  const values = stdout.split(/\r?\n/).map((line) => line.trim())
+    .filter((line) => line.startsWith("CreationDate="));
+  if (values.length !== 1) return undefined;
+  const match = /^CreationDate=(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.(\d{6})([+-])(\d{3})$/.exec(values[0]!);
+  if (match === null) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const millis = Math.floor(Number(match[7]) / 1000);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31 ||
+      hour > 23 || minute > 59 || second > 59) return undefined;
+  // setUTCFullYear avoids Date.UTC's special interpretation of years 00 through 99.
+  const wall = new Date(0);
+  wall.setUTCFullYear(year, month - 1, day);
+  wall.setUTCHours(hour, minute, second, millis);
+  if (wall.getUTCFullYear() !== year || wall.getUTCMonth() !== month - 1 ||
+      wall.getUTCDate() !== day) return undefined;
+  const offsetMinutes = Number(match[9]) * (match[8] === "+" ? 1 : -1);
+  return new Date(wall.getTime() - offsetMinutes * 60_000).toISOString();
+}
+
 /** Best-effort: when the process currently holding `pid` on this machine actually started,
  *  used only to catch pid reuse. Undefined when the platform tool is unavailable or its
  *  output cannot be parsed — the caller must then fall back to treating the process as alive
@@ -47,12 +74,7 @@ async function queryProcessStartedAt(pid: number): Promise<string | undefined> {
   try {
     if (process.platform === "win32") {
       const { stdout } = await execFileAsync("wmic", ["process", "where", `ProcessId=${pid}`, "get", "CreationDate", "/value"]);
-      const match = /CreationDate=(\d{14})/.exec(stdout);
-      if (match === null) return undefined;
-      const raw = match[1];
-      const iso = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T${raw.slice(8, 10)}:${raw.slice(10, 12)}:${raw.slice(12, 14)}`;
-      const parsed = Date.parse(iso);
-      return Number.isNaN(parsed) ? undefined : new Date(parsed).toISOString();
+      return parseWindowsProcessStartedAt(stdout);
     }
     const { stdout } = await execFileAsync("ps", ["-o", "lstart=", "-p", String(pid)]);
     const parsed = Date.parse(stdout.trim());

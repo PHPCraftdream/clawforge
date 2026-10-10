@@ -9,7 +9,7 @@ import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { readLedger, orphanedBy, foreign } from "#src/set/ownership/ledger.ts";
-import type { DeclaredOwnership } from "#src/set/ownership/ledger.ts";
+import type { DeclaredOwnership, Ledger } from "#src/set/ownership/ledger.ts";
 import { forgetRemedy, provisionRemedy } from "#src/set/advice.ts";
 import {
   recipeMirrorTargetDir,
@@ -18,7 +18,7 @@ import {
   mcpServerMatches,
 } from "#src/commands/management/provision-agent/index.ts";
 import type { CronJob } from "#src/commands/management/provision-agent/index.ts";
-import { problem, isChannelsStatusResponse } from "#src/service/inspection.ts";
+import { problem, normalizeChannels, channelProblems } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState, ObservedState, EgressObservation, ChannelsStatusResponse } from "#src/service/inspection.ts";
 import {
   PLUGINS_LIST_ARGS,
@@ -28,6 +28,7 @@ import {
 } from "#src/commands/management/extensions.ts";
 import type { PluginListEntry, SkillListEntry } from "#src/commands/management/extensions.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
+import { parseMemoryStatus } from "./helpers.ts";
 import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
 import { cronDifferences, egressEndpoints, redactEndpoint, redactEndpointText } from "./helpers.ts";
 import { recipeExpectations } from "./declared.ts";
@@ -221,9 +222,11 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean, prob
   ];
   // Appended, never inserted: indices above are read positionally below.
   const channelsIndex = includeChannels ? batchCommands.push(["channels", "status", "--json"]) - 1 : undefined;
+  const memoryIndex = batchCommands.push(["memory", "status", "--json"]) - 1;
   const batchResults = await openclawCliBatch(ctx, batchCommands);
   const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = batchResults;
   const channels = channelsIndex === undefined ? undefined : parseChannelsStatus(batchResults[channelsIndex], problems);
+  const memory = parseMemoryStatus(batchResults[memoryIndex], problems);
   const agents = parseJsonOrUnknown(agentsResult, "agents list", problems, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
   // Full entries, not just names: a server registered under the wrong command (or disabled)
@@ -251,7 +254,7 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean, prob
   const plugins = parsePluginsList(pluginsResult, problems);
   const skills = parseSkillsList(skillsResult, problems);
 
-  return { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills };
+  return { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, memory, openclawVersion, plugins, skills };
 }
 
 /** What this framework can show it created, against what every recipe in the set currently
@@ -301,7 +304,7 @@ async function checkRecipeExpectation(
   problems: Problem[],
   expectation: RecipeExpectation,
   registrations: { agents?: string[]; mcpServerEntries?: [string, { command?: unknown; args?: unknown; enabled?: unknown }][]; liveJobs?: CronJob[] },
-  ledger: Awaited<ReturnType<typeof readLedger>>,
+  ledger: Ledger,
 ): Promise<void> {
   const { agents, mcpServerEntries, liveJobs } = registrations;
   const { config, cronMessage } = expectation.bundle;
@@ -391,9 +394,8 @@ export async function observeLive(
   problems: Problem[],
   configMtimeMs: number | undefined,
   liveConfig: unknown,
-  // watch check's opt-in: adds `channels status --json` to the batch below instead of a
-  // second container. inspect/doctor/plan/apply never pass true.
-  includeChannels = false,
+  // Normal telemetry joins the registration batch; no channel probe is requested.
+  includeChannels = true,
 ): Promise<Partial<ObservedState> & { plugins?: PluginListEntry[]; skills?: SkillListEntry[] }> {
   const { probes, health } = await observeHealth(ctx, problems, configMtimeMs);
 
@@ -402,7 +404,7 @@ export async function observeLive(
 
   // --- what OpenClaw itself has registered ----------------------------------------------
   const registrations = await observeRegistrations(ctx, includeChannels, problems);
-  const { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills } = registrations;
+  const { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, memory, openclawVersion, plugins, skills } = registrations;
 
   const expectations = await recipeExpectations();
   const { ledger, foreignObjects } = await observeOwnership(ctx, problems, expectations, agents, mcpServers, liveJobs);
@@ -411,7 +413,7 @@ export async function observeLive(
     await checkRecipeExpectation(ctx, problems, expectation, { agents, mcpServerEntries, liveJobs }, ledger);
   }
 
-  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills, channels };
+  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills, channels, memory };
 }
 
 /** A failed list remains unknown; callers may compare only confirmed values. */
@@ -435,16 +437,20 @@ function reportCliReadFailure(problems: Problem[], name: string, reason: string)
 }
 
 /** A requested read's failure stays unknown, with no raw CLI output in its reason. */
-export function parseChannelsStatus(result: BatchedCliResult | undefined, problems: Problem[]): ChannelsStatusResponse | undefined {
+export function parseChannelsStatus(result: (BatchedCliResult & { readonly stderr?: string }) | undefined, problems: Problem[]): ChannelsStatusResponse | undefined {
   const unknown = (reason: string): undefined => {
     problems.push(problem("CHANNEL_UNKNOWN", `openclaw channels status could not be confirmed (${reason}); channel state is unknown`));
     return undefined;
   };
   if (result === undefined) return unknown("missing response");
-  if (result.code !== 0) return unknown(`exit ${result.code}`);
+  if (result.code !== 0) unknown(`exit ${result.code}; partial facts retained when valid`);
+  if (result.stdout.length > 262144) return unknown("response exceeds observation bound");
   try {
     const parsed: unknown = JSON.parse(result.stdout);
-    return isChannelsStatusResponse(parsed) ? parsed : unknown("invalid response shape");
+    const safe = normalizeChannels(parsed);
+    if (safe === undefined) return unknown("invalid response shape");
+    problems.push(...channelProblems(safe));
+    return safe;
   } catch {
     return unknown("invalid JSON response");
   }

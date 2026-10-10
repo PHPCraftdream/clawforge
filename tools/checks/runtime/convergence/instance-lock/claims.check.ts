@@ -8,6 +8,7 @@
 // that a failure afterwards is cleaned up like any other fresh claim's).
 
 import { takeLock, withInstanceLock, readLockHolder, lockPath } from "#framework/runtime/lock/instance-lock.ts";
+import { machineName } from "#framework/runtime/lock/process-identity.ts";
 import { stubContext, refused } from "./fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -164,7 +165,7 @@ for (const mode of ["throw", "nonzero"] as const) {
   const { ctx, files, dirs } = stubContext();
   const originalWrite = ctx.transport.writeFile;
   const holderPath = `${lockPath(ctx)}/holder.json`;
-  const oldHolder = JSON.stringify({ operationId: "op-old", what: "apply", by: "old", takenAt: new Date().toISOString() });
+  const oldHolder = JSON.stringify({ operationId: "op-old", host: machineName(), pid: 99999999, what: "apply", by: "old", takenAt: new Date().toISOString() });
   dirs.add(lockPath(ctx));
   files.set(holderPath, oldHolder);
   ctx.transport.writeFile = async (path: string, content: string) => {

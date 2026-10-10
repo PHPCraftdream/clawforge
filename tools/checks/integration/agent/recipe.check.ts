@@ -9,6 +9,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { callFactsFor } from "#framework/core/command/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { guardedWith, lockPath, readLockHolder, takeLock, withInstanceLock } from "#framework/runtime/lock/instance-lock.ts";
+import { machineName } from "#framework/runtime/lock/process-identity.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import {
   listAgentBundleRecipes,
@@ -532,10 +533,11 @@ try {
   }
 
   {
-    const { ctx, calls } = stubContext({});
+    const { ctx, calls, files } = stubContext({});
     const held = await takeLock(ctx, "backup", "op-backup");
+    files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ ...await readLockHolder(ctx), host: machineName(), pid: 99999999 }));
     await withOutputSink(() => {}, () => recipe(ctx, ["install", "plain", "--break-lock"]));
-    check("--break-lock installs through a foreign lock", calls, ["build", "up"]);
+    check("--break-lock installs only after the recorded local owner is gone", calls, ["build", "up"]);
     check("the install held the lock only for its own run", await readLockHolder(ctx), undefined);
     await held.release();
     check("the old owner's late release is a harmless no-op", await readLockHolder(ctx), undefined);

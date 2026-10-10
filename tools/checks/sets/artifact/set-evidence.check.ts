@@ -62,6 +62,8 @@ const ctx = {
           ["'--version'", "OpenClaw fixture"],
           ["'plugins' 'list' '--json'", '{"plugins":[]}'],
           ["'skills' 'list' '--json'", '{"skills":[]}'],
+          ["'channels' 'status' '--json'", '{"channelAccounts":{}}'],
+          ["'memory' 'status' '--json'", "[]"],
         ] as const;
         const results = (args[1] ?? "").split("\n")
           .filter((line) => line.includes("node dist/index.js"))

@@ -16,6 +16,9 @@ MCP_SERVER_MISSING	blocking	./clawforge apply
 CRON_DRIFT	blocking	./clawforge apply
 CLI_READ_FAILED	blocking	./clawforge inspect
 CHANNEL_UNKNOWN	warning	./clawforge cli channels status --json
+CHANNEL_UNHEALTHY	warning	./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+MEMORY_UNKNOWN	warning	./clawforge cli memory status --json
+MEMORY_NOT_READY	warning	./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
 LOCK_MISSING	warning	./clawforge lock
 LOCK_DRIFT	warning	./clawforge plan
 PLUGIN_DRIFT	warning	./clawforge plan

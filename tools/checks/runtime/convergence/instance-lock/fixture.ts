@@ -7,10 +7,16 @@
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
+export interface LockFixture {
+  readonly ctx: Context;
+  readonly files: Map<string, string>;
+  readonly dirs: Set<string>;
+}
+
 /** A target with the one property the lock is built on: `mkdir` of an existing directory
  *  fails. Emulated rather than assumed, because it is the entire mechanism — a stub whose
  *  mkdir always succeeded would let this file pass against a lock that locks nothing. */
-export function stubContext() {
+export function stubContext(): LockFixture {
   const files = new Map<string, string>();
   const dirs = new Set<string>();
   return {
@@ -35,10 +41,21 @@ export function stubContext() {
             return { code: 0, stdout: "", stderr: "" };
           }
           if (command === "mv") {
-            // Emulates POSIX rename: fails once the source is gone — only one racing mover wins.
-            const [source, dest] = args;
+            // Model mv's POSIX/GNU destination rules, including directory nesting unless
+            // -T is supplied and successful no-op on a no-clobber collision.
+            const operands = args.filter((arg) => !arg.startsWith("-"));
+            const [source, requested] = operands;
+            if (!files.has(source) && !dirs.has(source)) return { code: 1, stdout: "", stderr: "No such file or directory" };
+            const noTargetDirectory = args.some((arg) => arg.startsWith("-") && arg.includes("T"));
+            const noClobber = args.some((arg) => arg.startsWith("-") && arg.includes("n"));
+            const dest = dirs.has(requested) && !noTargetDirectory ? `${requested}/${source.slice(source.lastIndexOf("/") + 1)}` : requested;
+            if (noClobber && (files.has(dest) || dirs.has(dest))) return { code: 0, stdout: "", stderr: "" };
+            if (dirs.has(source) && (files.has(dest) || (dirs.has(dest) &&
+              ([...dirs].some((entry) => entry.startsWith(`${dest}/`)) || [...files.keys()].some((entry) => entry.startsWith(`${dest}/`)))))) {
+              return { code: 1, stdout: "", stderr: "Destination not empty or not a directory" };
+            }
             if (files.has(source)) {
-              if (files.has(dest)) return { code: 1, stdout: "", stderr: "File exists" };
+              if (dirs.has(dest)) return { code: 1, stdout: "", stderr: "Destination is a directory" };
               const value = files.get(source)!;
               files.delete(source);
               files.set(dest, value);
@@ -73,6 +90,9 @@ export function stubContext() {
           // displaced directory back, whether a release still owns the root it is about to
           // remove. A stub that answered "yes" to everything would let the checks pass
           // against a lock that is not atomic, so it is answered from the modeled tree.
+          if (command === "test" && args[0] === "-e") {
+            return { code: dirs.has(args[1] ?? "") || files.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
+          }
           if (command === "test" && args[0] === "-d") {
             return { code: dirs.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
           }

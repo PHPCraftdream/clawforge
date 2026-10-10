@@ -53,12 +53,8 @@ export interface TargetSpec {
   plugins?: PluginListEntry[];
   /** `skills list --json`'s entries, same default. */
   skills?: SkillListEntry[];
-  /** `channels status --json`'s own channelAccounts shape — only fetched, and only added to
-   *  the batch, when a case calls gatherInspection with `{ channels: true }`. Left undefined
-   *  by default so that command's own script line is left unmatched, the same "gap, not a
-   *  verdict" a real CLI failure would leave — the case a case that says nothing about
-   *  channels means "the CLI call itself failed", not "no channels configured". */
-  channelsStatus?: Record<string, unknown>;
+  memoryStatus?: unknown;
+  channelsStatus?: Record<string, unknown> | "unavailable";
   mirrorChecksums?: Record<string, string>;
   /** What the agent's workspace holds — its prompt files as the target reports them. */
   workspaceChecksums?: Record<string, string>;
@@ -234,9 +230,8 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
               { needle: "'--version'", result: version },
               { needle: "'plugins' 'list' '--json'", result: pluginsList },
               { needle: "'skills' 'list' '--json'", result: skillsList },
-              ...(spec.channelsStatus === undefined
-                ? []
-                : [{ needle: "'channels' 'status' '--json'", result: json({ channelAccounts: spec.channelsStatus }) }]),
+              { needle: "'memory' 'status' '--json'", result: json(spec.memoryStatus ?? []) },
+              { needle: "'channels' 'status' '--json'", result: spec.channelsStatus === "unavailable" ? { code: 1, stdout: "", stderr: "" } : json({ channelAccounts: spec.channelsStatus ?? {} }) },
             ];
             const results = script
               .split("\n")

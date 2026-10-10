@@ -4,6 +4,7 @@
 // the detail (what was observed, without secrets) is per call. Codes are a stable contract: an
 // agent branches on them, so renaming one is a breaking change.
 
+import type { InstanceLockObservation } from "../runtime/lock/instance-lock.ts";
 import type { SecretStatus } from "./secrets.ts";
 import type { OwnedKind } from "../set/ownership/ledger.ts";
 import type { TransportUnreachableError } from "../runtime/transport/exec.ts";
@@ -38,6 +39,9 @@ export type ProblemCode =
   | "CRON_DRIFT"
   | "CLI_READ_FAILED"
   | "CHANNEL_UNKNOWN"
+  | "CHANNEL_UNHEALTHY"
+  | "MEMORY_UNKNOWN"
+  | "MEMORY_NOT_READY"
   | "LOCK_MISSING"
   | "LOCK_DRIFT"
   | "PLUGIN_DRIFT"
@@ -185,6 +189,21 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "warning",
     summary: "the requested channel telemetry could not be confirmed",
     next: command("cli channels status --json"),
+  },
+  CHANNEL_UNHEALTHY: {
+    severity: "warning",
+    summary: "a configured channel account is not operational",
+    next: command("cli channels status --json", { note: "check channel configuration and gateway logs before restarting" }),
+  },
+  MEMORY_UNKNOWN: {
+    severity: "warning",
+    summary: "memory status could not be confirmed",
+    next: command("cli memory status --json"),
+  },
+  MEMORY_NOT_READY: {
+    severity: "warning",
+    summary: "memory has scanned content but its index is not ready",
+    next: command("cli memory status --json", { note: "prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model" }),
   },
   LOCK_MISSING: {
     severity: "warning",
@@ -413,11 +432,7 @@ export interface Problem {
   readonly nextAction: string;
 }
 
-/** Builds a problem from its code so severity/remedy come from one table, not from
- *  whichever call site got there first. next can be overridden with a more specific
- *  remedy; severity deliberately cannot — a caller downgrading its own CONFIG_DRIFT is
- *  exactly what this table exists to prevent. nextAction is that remedy rendered at
- *  construction. */
+/** Builds findings with shared severity and advice. Overrides affect advice, never severity. */
 export function problem(code: ProblemCode, detail: string, next?: Advice): Problem {
   const meaning = PROBLEM_CODES[code];
   const advice = next ?? meaning.next;
@@ -487,6 +502,13 @@ export interface ChannelAccountStatus {
   readonly running?: unknown;
   readonly connected?: unknown;
   readonly lastError?: unknown;
+  readonly tokenSource?: unknown;
+  readonly credentialPresent?: unknown;
+  readonly restartPending?: unknown;
+  readonly healthState?: unknown;
+  readonly lastInboundAt?: unknown;
+  readonly lastOutboundAt?: unknown;
+  readonly probe?: unknown;
 }
 
 /** `openclaw channels status --json`'s own shape, by channel name. */
@@ -503,15 +525,92 @@ export function isChannelsStatusResponse(value: unknown): value is ChannelsStatu
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
     const account = entry as ChannelAccountStatus;
     if (typeof account.configured !== "boolean") return false;
-    for (const field of [account.enabled, account.running, account.connected]) {
+    for (const field of [account.enabled, account.running, account.connected, account.credentialPresent, account.restartPending]) {
       if (field !== undefined && typeof field !== "boolean") return false;
     }
     if (account.accountId !== undefined && typeof account.accountId !== "string") return false;
     if (account.lastError !== undefined && account.lastError !== null && typeof account.lastError !== "string") return false;
-    const hasState = typeof account.running === "boolean" || typeof account.connected === "boolean";
-    const hasError = typeof account.lastError === "string" && account.lastError.trim() !== "";
-    return account.configured !== true || account.enabled === false || hasState || hasError;
+    if (account.healthState !== undefined && !["healthy", "unhealthy", "not-running", "starting", "unknown"].includes(String(account.healthState))) return false;
+    for (const at of [account.lastInboundAt, account.lastOutboundAt]) {
+      if (at !== undefined && at !== null && (typeof at !== "number" || !Number.isFinite(at) || at < 0)) return false;
+    }
+    if (account.probe !== undefined && (account.probe === null || typeof account.probe !== "object" || typeof (account.probe as { ok?: unknown }).ok !== "boolean")) return false;
+    return true;
   }));
+}
+
+/** Whitelist telemetry; opaque account labels deliberately do not preserve upstream IDs. */
+export function normalizeChannels(value: unknown): ChannelsStatusResponse | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const envelope = (value as ChannelsStatusResponse).channelAccounts;
+  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) return undefined;
+  const accounts = Object.entries(envelope);
+  if (accounts.length > 32) return undefined;
+  const channelAccounts: Record<string, unknown> = Object.create(null);
+  const known = new Set(["telegram", "discord", "slack", "whatsapp", "signal", "matrix", "teams", "irc", "webchat"]);
+  for (const [name, entries] of accounts) {
+    const label = known.has(name) ? name : `channel-${Object.keys(channelAccounts).length + 1}`;
+    const bounded = Array.isArray(entries) && entries.length <= 64 ? entries : [null];
+    channelAccounts[label] = bounded.map((entry: unknown, index) => {
+      const raw = entry !== null && typeof entry === "object" && !Array.isArray(entry) ? entry as ChannelAccountStatus : {} as ChannelAccountStatus;
+      const safe: Record<string, unknown> = { accountId: raw.accountId === "default" ? "default" : `account-${index + 1}` };
+      if (typeof raw.configured === "boolean") safe.configured = raw.configured;
+      const valid = isChannelsStatusResponse({ channelAccounts: { account: [raw] } });
+      if (!valid) safe.healthState = "unknown";
+      for (const key of ["enabled", "running", "connected", "credentialPresent", "restartPending"] as const) {
+        if (typeof raw[key] === "boolean") safe[key] = raw[key];
+      }
+      if (raw.credentialPresent === undefined && ["config", "env", "secret", "none"].includes(String(raw.tokenSource))) safe.credentialPresent = raw.tokenSource !== "none";
+      if (valid && ["healthy", "unhealthy", "not-running", "starting", "unknown"].includes(String(raw.healthState))) safe.healthState = raw.healthState;
+      for (const key of ["lastInboundAt", "lastOutboundAt"] as const) {
+        const at = raw[key];
+        if (typeof at === "number" && Number.isFinite(at) && at >= 0) safe[key] = at;
+      }
+      if (typeof raw.lastError === "string" && raw.lastError.trim() !== "") {
+        safe.lastError = /auth|token|unauthorized|forbidden/i.test(raw.lastError) ? "authentication" : /timeout/i.test(raw.lastError) ? "timeout" : /network|connect|dns/i.test(raw.lastError) ? "network" : "unknown";
+      }
+      const probe = raw.probe;
+      if (probe !== null && typeof probe === "object" && typeof (probe as { ok?: unknown }).ok === "boolean") safe.probe = { ok: (probe as { ok: boolean }).ok };
+      return safe;
+    });
+  }
+  return { channelAccounts };
+}
+
+/** Shared by watch and inspection: API authentication is not polling liveness. */
+export function channelProblems(response: ChannelsStatusResponse | undefined): Problem[] {
+  if (response === undefined) return [];
+  const safe = normalizeChannels(response);
+  if (safe === undefined) return [problem("CHANNEL_UNKNOWN", "channel telemetry has an invalid response shape")];
+  const found: Problem[] = [];
+  for (const [channel, entries] of Object.entries(safe.channelAccounts ?? {})) {
+    for (const raw of entries as ChannelAccountStatus[]) {
+      if (raw.enabled === false || raw.configured === false) continue;
+      if (raw.configured !== true || raw.healthState === "unknown") found.push(problem("CHANNEL_UNKNOWN", `${channel}/${raw.accountId}: polling state unknown`));
+      const fault = raw.running === false || raw.healthState === "not-running" ? "configured but not running" : raw.connected === false ? "configured but not connected" : raw.restartPending === true ? "restart pending" : raw.healthState === "unhealthy" ? "unhealthy" : raw.connected !== true && raw.lastError ? `last error: ${raw.lastError}` : undefined;
+      if (fault !== undefined) found.push(problem("CHANNEL_UNHEALTHY", `${channel}/${raw.accountId}: ${fault}`));
+      else if (raw.configured === true && raw.healthState !== "unknown" && raw.connected !== true) found.push(problem("CHANNEL_UNKNOWN", `${channel}/${raw.accountId}: polling state unknown`));
+    }
+  }
+  return found;
+}
+
+export interface MemoryObservation {
+  readonly agentId?: string;
+  readonly agent: number;
+  readonly state: "unknown" | "disabled" | "metadata-missing" | "index-empty" | "indexed";
+  readonly backend?: string;
+  readonly provider?: string;
+  readonly requestedProvider?: string;
+  readonly model?: string;
+  readonly scannedFiles?: number;
+  readonly files?: number;
+  readonly chunks?: number;
+  readonly dirty?: boolean;
+  readonly indexIdentity: "missing" | "present" | "mismatched" | "unknown";
+  readonly fts: "ready" | "disabled" | "unknown";
+  readonly vector: "ready" | "disabled" | "unknown";
+  readonly embedding: "ready" | "disabled" | "unchecked" | "unknown";
 }
 
 /** What the instance actually is, right now. */
@@ -532,9 +631,9 @@ export interface ObservedState {
    *  only when a store file existed — bootstrap can put values on the target without ever
    *  creating one, so an absent store isn't checked and this field's absence is that gap. */
   readonly secretStore?: SecretStoreObservation;
-  /** `channels status --json`'s answer, gathered in the same batched CLI call only when the
-   *  caller opts in (gatherInspection's `channels` option — only `watch check` does).
-   *  Requested failures also produce CHANNEL_UNKNOWN; an unrequested read does not. */
+  /** Bounded, whitelisted channel telemetry from the normal batched status read. */
+  readonly memory?: readonly MemoryObservation[];
+  readonly instanceLock?: InstanceLockObservation;
   readonly channels?: ChannelsStatusResponse;
   /** Image actually in use, and its digest when the runtime can resolve one. */
   readonly image?: string;
@@ -565,15 +664,12 @@ export function blockingProblems(problems: readonly Problem[]): readonly Problem
   return problems.filter((entry) => entry.severity === "blocking");
 }
 
-/** Instance is doing its job: running, serving, nothing blocking. Not "problems.length ===
- *  0" — a warning is not a reason to call a working instance broken. Not "runtime says
- *  healthy" alone either — a container in healthcheck grace period reports "starting" while
- *  already answering every probe, so answering counts as evidence of serving; a runtime
- *  that has actually decided the container is broken still overrules that. */
+/** Instance health combines runtime and HTTP evidence; channel unknowns cannot prove health. */
 export function isHealthy(inspection: Inspection): boolean {
   const { running, health, probes } = inspection.observed;
   if (!running) return false;
   if (blockingProblems(inspection.problems).length > 0) return false;
+  if (inspection.problems.some((entry) => entry.code === "CHANNEL_UNHEALTHY" || entry.code === "CHANNEL_UNKNOWN")) return false;
   if (health === "unhealthy" || health === "missing") return false;
 
   const answered = Object.values(probes);

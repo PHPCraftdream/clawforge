@@ -596,6 +596,75 @@
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo cli channels status --json
   tool form: {"tool":"cli","arguments":{"args":["channels","status","--json"]}}
 
+=== problem code: CHANNEL_UNHEALTHY ===
+  checkout gate shim (cwd: checkout root): ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  checkout gate shim (cwd: docs): ../clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  checkout gate shim (cwd: apps/demo): ../../clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  checkout gate, handed over by the init shim: ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge --app demo cli channels status --json  (check channel configuration and gateway logs before restarting)
+  MCP launcher (installed): no variables — the entry default: clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  defaultLaunch: global install: clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  defaultLaunch: checkout copy: ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  defaultLaunch: local package (posix): ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  defaultLaunch: local package (win32): node_modules\.bin\clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  manual verbatim (bare word): cw cli channels status --json  (check channel configuration and gateway logs before restarting)
+  manual verbatim (spaced program): '/opt/claw forge/clawforge' cli channels status --json  (check channel configuration and gateway logs before restarting)
+  system-wide inside apps/demo (cwd selection): clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  fixture G0: shim before 710cf66 wrote no variables: clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  fixture G1 (710cf66): the legacy variable alone: ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge cli channels status --json  (check channel configuration and gateway logs before restarting)
+  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo cli channels status --json  (check channel configuration and gateway logs before restarting)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo cli channels status --json  (check channel configuration and gateway logs before restarting)
+  tool form: {"tool":"cli","arguments":{"args":["channels","status","--json"]},"note":"check channel configuration and gateway logs before restarting"}
+
+=== problem code: MEMORY_UNKNOWN ===
+  checkout gate shim (cwd: checkout root): ./clawforge cli memory status --json
+  checkout gate shim (cwd: docs): ../clawforge cli memory status --json
+  checkout gate shim (cwd: apps/demo): ../../clawforge cli memory status --json
+  checkout gate, handed over by the init shim: ./clawforge cli memory status --json
+  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge --app demo cli memory status --json
+  MCP launcher (installed): no variables — the entry default: clawforge cli memory status --json
+  defaultLaunch: global install: clawforge cli memory status --json
+  defaultLaunch: checkout copy: ./clawforge cli memory status --json
+  defaultLaunch: local package (posix): ./clawforge cli memory status --json
+  defaultLaunch: local package (win32): node_modules\.bin\clawforge cli memory status --json
+  defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli memory status --json
+  manual verbatim (bare word): cw cli memory status --json
+  manual verbatim (spaced program): '/opt/claw forge/clawforge' cli memory status --json
+  system-wide inside apps/demo (cwd selection): clawforge cli memory status --json
+  fixture G0: shim before 710cf66 wrote no variables: clawforge cli memory status --json
+  fixture G1 (710cf66): the legacy variable alone: ./clawforge cli memory status --json
+  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli memory status --json
+  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge cli memory status --json
+  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo cli memory status --json
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo cli memory status --json
+  tool form: {"tool":"cli","arguments":{"args":["memory","status","--json"]}}
+
+=== problem code: MEMORY_NOT_READY ===
+  checkout gate shim (cwd: checkout root): ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  checkout gate shim (cwd: docs): ../clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  checkout gate shim (cwd: apps/demo): ../../clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  checkout gate, handed over by the init shim: ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  checkout gate, handed over by the monorepo MCP launcher: ../../clawforge --app demo cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  MCP launcher (installed): no variables — the entry default: clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  defaultLaunch: global install: clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  defaultLaunch: checkout copy: ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  defaultLaunch: local package (posix): ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  defaultLaunch: local package (win32): node_modules\.bin\clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  manual verbatim (bare word): cw cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  manual verbatim (spaced program): '/opt/claw forge/clawforge' cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  system-wide inside apps/demo (cwd selection): clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  fixture G0: shim before 710cf66 wrote no variables: clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  fixture G1 (710cf66): the legacy variable alone: ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  fixture G3 (a841c16): v1 checkout + legacy: ./clawforge cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  fixture L1 (f620c8a): the legacy launcher variable: ../../clawforge --app demo cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawforge --app demo cli memory status --json  (prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model)
+  tool form: {"tool":"cli","arguments":{"args":["memory","status","--json"]},"note":"prepare the selected backend/provider before explicitly indexing; keyword-only memory needs no embedding model"}
+
 === problem code: LOCK_MISSING ===
   checkout gate shim (cwd: checkout root): ./clawforge lock
   checkout gate shim (cwd: docs): ../clawforge lock

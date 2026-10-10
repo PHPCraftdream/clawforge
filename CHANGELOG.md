@@ -8,6 +8,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.
+* Normal inspection and doctor expose safe channel polling, memory index/provider capabilities,
+  and operation-lock ownership independently; API authentication never proves a working poller.
+* Lock takeover refuses live or unknown local owners regardless of age, revalidates legacy
+  acquisition identity, and preserves both directories on restoration collisions.
+* Windows owner birth checks honor WMIC UTC offsets; memory model observations preserve
+  native HF identifiers and local paths while redacting URI credentials.
 * Rendered advice quotes arguments for each shell and preserves native PowerShell handoff through Windows npm wrappers.
 * Advice naming another deployment keeps `--project-root` when needed, or re-roots to the checkout's runnable shim instead of assuming a system-wide command exists.
 * Value arguments containing control characters are refused at parse, before target contact.

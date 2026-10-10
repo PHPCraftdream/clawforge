@@ -4,8 +4,8 @@
 import { maskSecrets } from "../../../core/io/log.ts";
 import type { Context } from "../../../core/context.ts";
 import type { ExecResult } from "../../../runtime/transport/transport.ts";
-import type { ChannelAccountStatus, ChannelsStatusResponse } from "../../../service/inspection.ts";
-import { isChannelsStatusResponse } from "../../../service/inspection.ts";
+import type { ChannelsStatusResponse } from "../../../service/inspection.ts";
+import { channelProblems } from "../../../service/inspection.ts";
 import type { WatchLevel, WatchReason } from "./state.ts";
 
 export const DISK_MIN_MB_ENV = "OC_WATCH_DISK_MIN_MB";
@@ -27,39 +27,16 @@ export interface WatchFinding {
   readonly reason: WatchReason;
 }
 
-function channelFinding(id: string, detail: string): WatchFinding {
-  return { level: "degraded", reason: { code: "CHANNEL_UNHEALTHY", detail: capDetail(`${id}: ${detail}`) } };
-}
-
 /** Per-account channel liveness from `openclaw channels status --json`, gathered by
  *  gatherInspection's `channels` option in the same batched CLI call as agents/mcp/cron
  *  (inspect/gather.ts) rather than a one-off call — pure over that data, no ctx/transport
  *  needed to test. Only configured, enabled accounts count; a connected account is healthy
  *  even with a stale lastError. An absent response is a gap, not a verdict. */
 export function channelFindings(response: ChannelsStatusResponse | undefined): WatchFinding[] {
-  if (response === undefined) return [];
-  if (!isChannelsStatusResponse(response)) return [{ level: "degraded", reason: { code: "CHANNEL_UNKNOWN", detail: "channel telemetry has an invalid response shape" } }];
-  const accounts = response.channelAccounts ?? {};
-
-  const findings: WatchFinding[] = [];
-  for (const [channel, entry] of Object.entries(accounts)) {
-    if (!Array.isArray(entry)) continue;
-    for (const raw of entry as ChannelAccountStatus[]) {
-      if (raw === null || typeof raw !== "object") continue;
-      if (raw.configured !== true || raw.enabled === false) continue;
-      const accountId = typeof raw.accountId === "string" && raw.accountId !== "" ? raw.accountId : "default";
-      const id = `${channel}/${accountId}`;
-      const lastError = typeof raw.lastError === "string" && raw.lastError.trim() !== "" ? `: ${raw.lastError}` : "";
-      if (raw.running === false) {
-        findings.push(channelFinding(id, `configured but not running${lastError}`));
-      } else if (raw.connected === false) {
-        findings.push(channelFinding(id, `configured but not connected${lastError}`));
-      } else if (raw.connected !== true && lastError !== "") {
-        findings.push(channelFinding(id, `last error${lastError}`));
-      }
-    }
-  }
-  return findings;
+  return channelProblems(response).map((entry) => ({
+    level: "degraded",
+    reason: { code: entry.code === "CHANNEL_UNKNOWN" ? "CHANNEL_UNKNOWN" : "CHANNEL_UNHEALTHY", detail: entry.detail },
+  }));
 }
 
 function diskThresholdMb(ctx: Context): number {

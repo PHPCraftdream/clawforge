@@ -51,6 +51,7 @@ check(
     "BACKUP_MISSING",
     "BACKUP_STALE",
     "BACKUP_UNREADABLE",
+    "CHANNEL_UNHEALTHY",
     "CHANNEL_UNKNOWN",
     "CLI_READ_FAILED",
     "CONFIG_DRIFT",
@@ -76,6 +77,8 @@ check(
     "LOCK_MISSING",
     "MCP_RESTART_REQUIRED",
     "MCP_SERVER_MISSING",
+    "MEMORY_NOT_READY",
+    "MEMORY_UNKNOWN",
     // Reported instead of ever asking the runtime, on a deployment nobody has bootstrapped.
     "NOT_BOOTSTRAPPED",
     // Third-party plugins/skills against config/deployment.lock.json — commands/management/extensions.ts.
@@ -118,6 +121,13 @@ check(
   const unknown = problem("CHANNEL_UNKNOWN", "requested channel telemetry was not confirmed");
   check("unknown channel telemetry is advisory, never proven down", unknown.severity, "warning");
   check("channel telemetry has a CLI diagnostic remedy", unknown.nextAction, "./clawforge cli channels status --json");
+}
+
+for (const code of ["CHANNEL_UNHEALTHY", "MEMORY_UNKNOWN", "MEMORY_NOT_READY"] as const) {
+  const finding = problem(code, "fixture diagnostic fact");
+  check(`${code} remains advisory`, finding.severity, "warning");
+  check(`${code} supplies structured diagnostic command advice`, finding.next.kind, "clawforge");
+  check(`${code} requests only normal status, never repair or deep probing`, finding.next.kind === "clawforge" ? finding.next.argv : undefined, ["cli", code === "CHANNEL_UNHEALTHY" ? "channels" : "memory", "status", "--json"]);
 }
 
 {

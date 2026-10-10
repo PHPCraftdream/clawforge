@@ -11,16 +11,35 @@
 import { readFile } from "node:fs/promises";
 import { resolve as pathResolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { runFrameLaw } from "./frame-law-counter.ts";
+import { runFrameLaw, type FrameLawLayout } from "./frame-law-counter.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const { violations, reached, attempted, setupFailures, stageCounts, finalRuns, quotingWitnesses } = runFrameLaw();
+const { violations, reached, attempted, caseKeys, setupFailures, stageCounts, finalRuns, quotingWitnesses } = runFrameLaw();
+const actualCaseKeys = new Set(caseKeys);
+
+const bareStatusKey = "manual verbatim (bare word) | command: status | posix";
+check("declared bare alias reaches advice", violations.has(bareStatusKey), false);
+const negativeLayouts: readonly FrameLawLayout[] = [
+  { pathEntries: {} },
+  { missingEntries: ["/usr/local/bin/cw"] },
+  { pathEntries: { cw: "/usr/local/bin/missing-cw" } },
+];
+for (const layout of negativeLayouts) {
+  const negative = runFrameLaw(undefined, layout);
+  check("undeclared or missing bare alias is rejected", negative.violations.has(bareStatusKey), true);
+  check("negative alias layout has no setup failure", negative.setupFailures, []);
+}
 
 for (const witness of quotingWitnesses) {
   checkTrue(`frame law: ${witness.key} reaches resolver`, witness.reached);
   checkTrue(`frame law: ${witness.key} resolves the exact program, argv and app`, witness.matched);
 }
 check("frame law: new quoting resolver witnesses", quotingWitnesses.length, 7);
+for (const code of ["CHANNEL_UNHEALTHY", "MEMORY_UNKNOWN", "MEMORY_NOT_READY"]) {
+  const key = `manual verbatim (bare word) | problem code: ${code} | posix`;
+  check(`declared bare alias attempts ${code} normal read advice`, actualCaseKeys.has(key), true);
+  check(`declared bare alias preserves ${code} normal read advice`, violations.has(key), false);
+}
 
 // Every violation prints with a stable format — the negative controls read these lines.
 for (const [key, reason] of violations) {

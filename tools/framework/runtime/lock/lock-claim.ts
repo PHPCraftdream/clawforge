@@ -4,11 +4,13 @@
 // (chainLocks/heldScopes) and the HeldLock handle live there and import these instead,
 // re-exporting the ones callers use so instance-lock.ts stays every consumer's import path.
 
+import { commandLine } from "../../core/io/invocation/render.ts";
+import { manual, type Advice } from "../../core/io/invocation/advice.ts";
 import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../../core/env.ts";
 import { log, die } from "../../core/io/log.ts";
-import { machineName, ownProcessStartedAt, removeEmptyDirectory } from "./process-identity.ts";
+import { machineName, localLiveness, ownProcessStartedAt, removeEmptyDirectory } from "./process-identity.ts";
 import type { Context } from "../../core/context.ts";
 
 /** Legacy fallback: judges staleness for a holder with no `heartbeatAt` (pre-field record).
@@ -28,7 +30,7 @@ export interface LockHolder {
   readonly by: string;
   readonly takenAt: string;
   /** Which acquisition of the lock directory this record belongs to. Absent on a legacy
-   *  holder; `undefined === undefined` still lets a takeover be checked against it. */
+   *  holder, whose immutable owner identity must match instead. */
   readonly generation?: string;
   /** This host's identity (machineName()). `pid` is only askable against THIS machine's
    *  process table when `host` matches — every recorded pid is the CLI's own, never a
@@ -134,6 +136,7 @@ async function removeFailedMarkerClaim(ctx: Context, generation: string): Promis
 async function readHolderAt(ctx: Context, path: string): Promise<LockHolder | undefined> {
   try {
     const raw = await ctx.transport.readFile(path);
+    if (raw.length > 65536) return undefined;
     const parsed = JSON.parse(raw) as LockHolder;
     return typeof parsed.operationId === "string" ? parsed : undefined;
   } catch {
@@ -165,27 +168,58 @@ async function claimDirectory(ctx: Context): Promise<{ won: boolean; heldByOther
   return { won: false, heldByOther: exists.code === 0, detail: (result.stderr || result.stdout).trim() };
 }
 
-/** Moves a lock aside and accepts it only if its generation still matches the observation. */
+/** Modern tokens must be meaningful marker names, not arbitrary falsy JSON values. */
+function validGeneration(value: unknown): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{1,160}$/.test(value);
+}
+
+/** A legacy record needs meaningful immutable identity, not just two absent generations.
+ *  Birth time is optional on older records, but when supplied must be a valid timestamp. */
+function validLegacyHolder(holder: LockHolder): boolean {
+  const timestamp = (value: unknown): boolean => typeof value === "string" && Number.isFinite(Date.parse(value));
+  return holder.generation === undefined &&
+    typeof holder.host === "string" && holder.host.trim().length > 0 &&
+    Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0 &&
+    typeof holder.operationId === "string" && holder.operationId.trim().length > 0 &&
+    timestamp(holder.takenAt) && (holder.startedAt === undefined || timestamp(holder.startedAt));
+}
+
+function sameTakeoverHolder(observed: LockHolder, displaced: LockHolder | undefined): boolean {
+  if (displaced === undefined) return false;
+  if (validGeneration(observed.generation)) {
+    return validGeneration(displaced.generation) && displaced.generation === observed.generation;
+  }
+  if (!validLegacyHolder(observed) || !validLegacyHolder(displaced)) return false;
+  return displaced.host === observed.host && displaced.pid === observed.pid &&
+    displaced.operationId === observed.operationId && displaced.takenAt === observed.takenAt &&
+    displaced.startedAt === observed.startedAt;
+}
+
+/** Moves a lock aside and accepts only the validated acquisition that was observed. */
 async function claimTakeover(
   ctx: Context,
-  observedGeneration: string | undefined,
+  observedHolder: LockHolder,
 ): Promise<{ won: boolean; detail: string }> {
   const displaced = `${lockPath(ctx)}.stale-${randomBytes(6).toString("hex")}`;
   const moved = await ctx.transport.exec("mv", [lockPath(ctx), displaced], { allowFailure: true });
   if (moved.code !== 0) return { won: false, detail: (moved.stderr || moved.stdout).trim() };
 
-  // Compare-and-swap. `undefined === undefined` is the legacy shape: a holder with no
-  // generation is still checked against the lock it read.
   const displacedHolder = await readHolderAt(ctx, `${displaced}/holder.json`);
-  if (displacedHolder?.generation !== observedGeneration) {
-    // Not the lock that was observed — a newer owner holds the path now. Put the displaced
-    // directory back only into an absent path; if something appeared there meanwhile, park
-    // the displaced directory rather than destroying what may be a live lock.
-    const present = await ctx.transport.exec("test", ["-d", lockPath(ctx)], { allowFailure: true });
-    if (present.code !== 0) {
-      await ctx.transport.exec("mv", [displaced, lockPath(ctx)], { allowFailure: true });
+  if (!sameTakeoverHolder(observedHolder, displacedHolder)) {
+    // Use the target's existing publication idiom (mv -nT, then verify): -n alone
+    // can nest a directory into a colliding live root, and a skipped -n move exits zero.
+    // Never remove either tree on a mismatch, a collision, or an uncertain acknowledgement.
+    try {
+      const restored = await ctx.transport.exec("mv", ["-nT", "--", displaced, lockPath(ctx)], { allowFailure: true });
+      const source = await ctx.transport.exec("test", ["-e", displaced], { allowFailure: true });
+      const destination = await ctx.transport.exec("test", ["-d", lockPath(ctx)], { allowFailure: true });
+      if (restored.code === 0 && source.code === 1 && destination.code === 0) {
+        return { won: false, detail: "the lock changed during takeover; displaced directory restored" };
+      }
+    } catch {
+      // A transport error cannot authorize cleanup of a possibly live owner.
     }
-    return { won: false, detail: "" };
+    return { won: false, detail: `the lock changed during takeover; displaced directory retained or restoration unconfirmed at ${displaced}; inspect both paths` };
   }
 
   const result = await ctx.transport.exec("mkdir", [lockPath(ctx)], { allowFailure: true });
@@ -238,7 +272,7 @@ function humanShortAge(ms: number): string {
 export function breakLockAdvice(breakLockSupported: boolean): string {
   return breakLockSupported
     ? "take it over with --break-lock"
-    : `this command does not accept --break-lock — run one that does (for example ${commandLine(["up", "--break-lock"])}) to take it over`;
+    : "this command does not accept --break-lock; verify the owner and choose an intended operation that supports explicit takeover";
 }
 
 /** The stale holder's heartbeat line, shared with the checks that prove it. */
@@ -265,7 +299,7 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
   lines.push(
     stale
       ? staleHeartbeatLine(heartbeatAgeMs(holder, now))
-      : `refreshed ${humanShortAge(heartbeatAgeMs(holder, now))} ago — the operation is still running.`,
+      : `refreshed ${humanShortAge(heartbeatAgeMs(holder, now))} ago — owner liveness must be checked.`,
   );
   if (deadHere) {
     lines.push(DEAD_HERE_LINE);
@@ -273,11 +307,22 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
   lines.push(
     // --break-lock is offered only once one of the two facts above supports it — a live,
     // recently-refreshed holder is never told to break its own lock.
-    stale || deadHere
+    deadHere
       ? `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`
-      : liveWaitLine(holder.operationId),
+      : typeof holder.host === "string" && holder.host !== machineName() && Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0
+        ? breakLockSupported
+          ? `Verify the remote owner first; takeover requires --break-lock and exact --break-foreign-lock ${JSON.stringify(holder.host)} confirmation.`
+          : "Verify the remote owner first; this command does not accept --break-lock; choose an intended operation supporting exact foreign-owner confirmation."
+        : liveWaitLine(holder.operationId),
   );
   return lines.join("\n");
+}
+
+export function refusalAdvice(holder: LockHolder | undefined, breakLockSupported = true): Advice {
+  if (holder === undefined) return manual("Owner identity is unknown; do not take over by age alone.");
+  if (isProvablyDeadHere(holder)) return manual(`Owner proven dead; ${breakLockSupported ? "explicitly rerun the intended operation with --break-lock" : "this command does not accept --break-lock; choose an intended operation supporting explicit takeover"}.`);
+  if (typeof holder.host === "string" && holder.host !== machineName() && Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0) return manual(`Verify the remote owner first; ${breakLockSupported ? `the intended operation requires --break-lock and exact --break-foreign-lock ${JSON.stringify(holder.host)} confirmation` : "this command does not accept --break-lock; choose an intended operation supporting exact foreign-owner confirmation"}.`);
+  return manual("Wait for the owner; live or unknown owners cannot be taken over by age.");
 }
 
 export const DEAD_HERE_LINE = "Its recorded process is not running on this machine anymore — not a guess, the pid itself is gone.";
@@ -289,11 +334,11 @@ export function liveWaitLine(operationId: string): string {
 
 /** Held by something that never said what it was. Worth its own message: the reader needs to
  *  know there is no name to look for, rather than assuming the report lost it. */
-export function unreadableLockMessage(ctx: Context, breakLockSupported = true): string {
+export function unreadableLockMessage(ctx: Context): string {
   return [
     `this instance is locked by an operation that did not record who it is (${lockPath(ctx)})`,
     "Most likely a run that won the lock and stopped before naming itself.",
-    `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`,
+    "Owner identity is unknown; do not take over by age alone.",
   ].join("\n");
 }
 
@@ -330,12 +375,24 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
     // that won it and died before writing its name. Refusing is the safe reading.
     die(
       existing === undefined
-        ? unreadableLockMessage(ctx, options.breakLockSupported)
+        ? unreadableLockMessage(ctx)
         : refusalMessage(existing, undefined, options.breakLockSupported),
+      refusalAdvice(existing, options.breakLockSupported),
     );
   }
 
-  const takeover = await claimTakeover(ctx, existing?.generation);
+  if (existing !== undefined && !validGeneration(existing.generation) && !validLegacyHolder(existing)) {
+    die("lock owner acquisition identity is malformed; takeover cannot compare ownership", refusalAdvice(undefined));
+  }
+  if (existing !== undefined && typeof existing.host === "string" && Number.isSafeInteger(existing.pid) && (existing.pid ?? 0) > 0) {
+    const local = existing.host === machineName();
+    const life = await localLiveness({ machine: existing.host, pid: existing.pid!, startedAt: existing.startedAt });
+    if (local && life !== "dead") die("the recorded lock owner is live or unknown; --break-lock cannot take it over", manual("Wait for the owner; do not take over by age."));
+    if (!local && options.breakForeignLockHost !== existing.host) die("foreign lock owner requires exact --break-foreign-lock host confirmation", refusalAdvice(existing, options.breakLockSupported));
+  } else {
+    die("lock owner identity is unknown; takeover requires confirmed ownership, not age alone", refusalAdvice(undefined));
+  }
+  const takeover = await claimTakeover(ctx, existing);
   if (!takeover.won) {
     // Another caller's takeover or release already changed this path between the read above
     // and this attempt — refused like a fresh claim against a directory still there.
@@ -345,11 +402,7 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
     );
   }
 
-  log(
-    existing === undefined
-      ? "taking over a lock whose holder could not be read — --break-lock"
-      : `taking over the lock held by ${existing.what} (${existing.operationId}) — --break-lock`,
-  );
+  log(`taking over the lock held by ${existing.what} (${existing.operationId}) — --break-lock`);
 }
 
 /** Mints this acquisition's identity — a fresh random generation, before its first command. */
@@ -408,4 +461,3 @@ export async function writeHolderOrRollback(ctx: Context, generation: string, ho
     throw error;
   }
 }
-import { commandLine } from "../../core/io/invocation/render.ts";

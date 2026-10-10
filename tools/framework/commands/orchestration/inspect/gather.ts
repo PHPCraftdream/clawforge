@@ -9,6 +9,8 @@
 // declares), drift.ts (declared-vs-target comparisons), live.ts (what the target reports
 // with no declared counterpart), upkeep.ts (recoverability), this file (CLI surface).
 
+import { renderAdvice } from "#src/core/io/invocation/render.ts";
+import { observeInstanceLock, instanceLockAdvice } from "#src/runtime/lock/instance-lock.ts";
 import { log, info, warn, reportBlocking } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
@@ -47,8 +49,7 @@ export const RECREATE_SWITCHES_IMAGES = "the next recreate (up, restart after co
 
 /** gatherInspection's opt-in extras; a caller that omits this gets the inspection it always did. */
 export interface GatherInspectionOptions {
-  /** Also gather `channels status --json` in observeLive's batched CLI call, exposed as
-   *  observed.channels. Only `watch check` sets this. */
+  /** Gather safe channel telemetry by default; false explicitly suppresses the read. */
   readonly channels?: boolean;
 }
 
@@ -60,13 +61,15 @@ export interface GatherInspectionOptions {
 export async function gatherInspection(ctx: Context, options?: GatherInspectionOptions): Promise<Inspection> {
   const problems: Problem[] = [];
   const declared = await declaredState(ctx, problems);
+  const instanceLock = await observeInstanceLock(ctx);
   try {
-    return publicInspection(await gatherReachedInspection(ctx, declared, problems, options));
+    const inspection = await gatherReachedInspection(ctx, declared, problems, options);
+    return publicInspection({ ...inspection, observed: { ...inspection.observed, instanceLock } });
   } catch (error) {
     if (!(error instanceof TransportUnreachableError)) throw error;
     return publicInspection({
       declared,
-      observed: { running: false, probes: {}, config: {}, secrets: [], agents: [], mcpServers: [], cronJobs: [], foreignObjects: [] },
+      observed: { instanceLock, running: false, probes: {}, config: {}, secrets: [], agents: [], mcpServers: [], cronJobs: [], foreignObjects: [] },
       problems: [...problems, unreachableProblem(error)],
     });
   }
@@ -213,7 +216,7 @@ async function gatherRunningInspection(
   await observeDeclarationFile(problems);
   const connectionFacts = await observeConnectionFacts(ctx, problems);
 
-  const live = await observeLive(ctx, declared, problems, configState.mtimeMs, liveConfig, options?.channels === true);
+  const live = await observeLive(ctx, declared, problems, configState.mtimeMs, liveConfig, options?.channels !== false);
 
   // Shared below by the set-requirement match and the displayed digest, one container
   // inspect instead of two.
@@ -282,6 +285,7 @@ async function gatherRunningInspection(
       egress: live.egress,
       connectionFacts: connectionFacts,
       channels: live.channels,
+      memory: live.memory,
       config: configState.config,
       agents: live.agents,
       mcpServers: live.mcpServers,
@@ -350,13 +354,18 @@ export const inspect = (ctx: Context, args: string[]): Promise<void> => runOnCon
 /** The machine-readable answer. Its own shape rather than the Inspection struct verbatim:
  *  what a caller needs first is the verdict and what to do about it, and burying those under
  *  the raw observation would make every consumer compute them again — differently. */
+function lockNext(inspection: Inspection) {
+  const lock = inspection.observed.instanceLock;
+  return lock === undefined || lock.state === "absent" ? [] : [instanceLockAdvice(lock)];
+}
+
 export function renderJson(inspection: Inspection): Record<string, unknown> {
   return {
     deployment: inspection.declared.deployment,
     healthy: isHealthy(inspection),
     problems: inspection.problems,
-    nextActions: nextActions(inspection.problems),
-    next: nextAdvice(inspection.problems),
+    nextActions: [...nextActions(inspection.problems), ...lockNext(inspection).map((entry) => renderAdvice(entry))],
+    next: [...nextAdvice(inspection.problems), ...lockNext(inspection)],
     declared: inspection.declared,
     observed: inspection.observed,
   };
@@ -394,6 +403,7 @@ export const DOCTOR = commandBody({
     const blocking = blockingProblems(problems);
     const warnings = problems.filter((entry) => entry.severity === "warning");
 
+    if (!jsonOnly && !isCaptured()) printObservationInventory(inspection);
     if (jsonOnly || isCaptured()) {
       emit(
         `${JSON.stringify(
@@ -401,9 +411,10 @@ export const DOCTOR = commandBody({
             deployment: inspection.declared.deployment,
             healthy: isHealthy(inspection) && blockingProblems(security.problems).length === 0,
             problems,
+            observed: inspection.observed,
             security: security.findings,
-            nextActions: nextActions(problems),
-            next: nextAdvice(problems),
+            nextActions: [...nextActions(problems), ...lockNext(inspection).map((entry) => renderAdvice(entry))],
+            next: [...nextAdvice(problems), ...lockNext(inspection)],
           },
           null,
           2,
@@ -421,7 +432,7 @@ export const DOCTOR = commandBody({
       for (const finding of suppressed) {
         info(`SUPPRESSED  ${finding.source} ${finding.checkId}: ${finding.message} (${finding.suppressedReason})`);
       }
-      if (blocking.length === 0) info("nothing blocking — the instance is doing its job");
+      if (blocking.length === 0) info(isHealthy(inspection) ? "nothing blocking — the instance is doing its job" : "nothing blocking — operational health is impaired or unconfirmed");
     }
 
     if (blocking.length > 0) {
@@ -435,9 +446,32 @@ export const DOCTOR = commandBody({
 
 export const doctor = (ctx: Context, args: string[]): Promise<void> => runOnContext(DOCTOR, ctx, args);
 
+function printObservationInventory(inspection: Inspection): void {
+  const { observed } = inspection;
+  const lock = observed.instanceLock;
+  if (lock !== undefined) {
+    info(`instanceLock ${lock.state} host=${lock.host ?? "unknown"} pid=${lock.pid ?? "unknown"} birth=${lock.startedAt ?? "unknown"} operation=${lock.operation ?? "unknown"} ageMs=${lock.ageMs ?? "unknown"} heartbeatAgeMs=${lock.heartbeatAgeMs ?? "unknown"}`);
+    info(`  → ${renderAdvice(instanceLockAdvice(lock))}`);
+  }
+  const accounts = observed.channels?.channelAccounts;
+  if (accounts === undefined) info("channels   unknown");
+  else if (Object.keys(accounts).length === 0) info("channels   (none)");
+  else for (const [channel, entries] of Object.entries(accounts).slice(0, 32)) {
+    if (!Array.isArray(entries)) continue;
+    for (const account of entries.slice(0, 64)) {
+      const facts = account as Record<string, unknown>;
+      info(`channel    ${channel}/${facts.accountId}: ${Object.entries(facts).filter(([key]) => key !== "accountId").map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(" ")}`);
+    }
+  }
+  if (observed.memory === undefined) info("memory     unknown");
+  else if (observed.memory.length === 0) info("memory     (no agent facts)");
+  else for (const memory of observed.memory.slice(0, 64)) info(`memory     agent-${memory.agent} agentId=${memory.agentId ?? "unchecked"} backend=${memory.backend ?? "unchecked"} provider=${memory.provider ?? "unchecked"} requestedProvider=${memory.requestedProvider ?? "unchecked"} model=${memory.model ?? "unchecked"} ${memory.state} scanned=${memory.scannedFiles ?? "unknown"} indexedFiles=${memory.files ?? "unknown"} chunks=${memory.chunks ?? "unknown"} dirty=${memory.dirty ?? "unknown"} metadata=${memory.indexIdentity} fts=${memory.fts} vector=${memory.vector} embedding=${memory.embedding}`);
+}
+
 function renderText(inspection: Inspection): void {
   const { declared, observed, problems } = inspection;
 
+  printObservationInventory(inspection);
   log(`deployment ${declared.deployment}`);
   info(`state      ${observed.running ? `running (${observed.health ?? "unknown"})` : "not running"}`);
   if (observed.image !== undefined) info(`image      ${observed.image}`);

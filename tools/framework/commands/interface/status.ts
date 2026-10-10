@@ -5,14 +5,15 @@
 // disagree — an image whose healthcheck binary is missing reports "unhealthy" forever
 // while the gateway serves traffic.
 
+import { observeInstanceLock, instanceLockAdvice } from "#src/runtime/lock/instance-lock.ts";
 import { log, info, die } from "#src/core/io/log.ts";
-import { commandLine } from "#src/core/io/invocation/render.ts";
+import { commandLine, renderAdvice } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
-import { summarizeExposure, exposureOneLiner } from "#src/commands/operate/expose/index.ts";
+import { summarizeExposure, exposureOneLiner, type ExposureSummary } from "#src/commands/operate/expose/index.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
 export const STATUS_ARGUMENTS = [
@@ -38,6 +39,9 @@ async function runStatus(ctx: Context, jsonOnly: boolean): Promise<void> {
     return;
   }
 
+  const instanceLock = await observeInstanceLock(ctx);
+  info(`instance lock: ${instanceLock.state} (${instanceLock.takeover})`);
+  info(`  → ${renderAdvice(instanceLockAdvice(instanceLock))}`);
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
 
   // The exposure line and showStatus() both reach the target, so both sit inside this one
@@ -89,95 +93,108 @@ async function runStatus(ctx: Context, jsonOnly: boolean): Promise<void> {
  *  ps` table showStatus() streams straight to the terminal — that is not structured data —
  *  so `running` (isRunning(), the one fact every Runtime can answer) stands in for it. */
 async function emitStatusReport(ctx: Context): Promise<void> {
+  const instanceLock = await observeInstanceLock(ctx);
+  const lockNext = instanceLock.state === "absent" ? [] : [instanceLockAdvice(instanceLock)];
+  const lockActions = lockNext.map((entry) => renderAdvice(entry));
   // Both calls reach the target, so both sit in the one try: an unreachable target can fail
   // on the exposure read before isRunning() ever runs.
-  let exposure: ReturnType<typeof summarizeExposure> | undefined;
+  let exposure: ExposureSummary | undefined;
   let running: boolean;
+  const partial: Record<string, unknown> = {};
   try {
-    exposure = summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.());
-    running = await ctx.runtime.isRunning();
-  } catch (error) {
-    if (error instanceof TransportUnreachableError) {
-      const found = unreachableProblem(error);
+    try {
+      exposure = summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.());
+      partial.exposure = exposure;
+      running = await ctx.runtime.isRunning();
+      partial.bootstrapped = true;
+      partial.running = running;
+      partial.serviceUrl = ctx.settings.serviceUrl;
+    } catch (error) {
+      if (!(error instanceof NotBootstrapped)) throw error;
       emit(
         `${JSON.stringify(
           {
             target: ctx.transport.description,
             runtime: ctx.runtime.description,
-            // The whole shared-builder problem, severity and advice included — the shape
-            // inspect/doctor serialize, not a hand-picked subset (rf6-fix33).
-            problem: found,
+            // Not yet assigned only if the exposure read itself is what threw NotBootstrapped;
+            // the target is still reachable either way, so the local-only fallback answers it.
+            exposure: exposure ?? summarizeExposure(ctx, undefined),
+            instanceLock,
+            next: lockNext,
+            nextActions: lockActions,
+            bootstrapped: false,
+            running: false,
+            image: null,
+            health: null,
+            serviceUrl: null,
+            dataUsage: null,
           },
           null,
           2,
         )}\n`,
       );
-      die(`${found.code}  ${found.detail}`, found.next);
+      return;
     }
-    if (!(error instanceof NotBootstrapped)) throw error;
+
+    const reference = await ctx.runtime.imageReference();
+    partial.image = reference ?? null;
+    const health: Partial<Record<"healthz" | "startupz" | "readyz", number> & { runtime: string }> = {};
+    partial.health = health;
+    health.healthz = await ctx.runtime.probe("healthz");
+    health.startupz = await ctx.runtime.probe("startupz");
+    health.readyz = await ctx.runtime.probe("readyz");
+    health.runtime = await ctx.runtime.health();
+
+    const usage = await ctx.transport.exec(
+      "du",
+      ["-sh", `${ctx.settings.dataDir}/config`, `${ctx.settings.dataDir}/workspace`, `${ctx.settings.dataDir}/auth-secrets`],
+      { allowFailure: true },
+    );
+    const dataUsage = usage.code === 0
+      ? usage.stdout
+        .trimEnd()
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((line) => {
+          const tab = line.indexOf("\t");
+          return tab === -1
+            ? { size: line.trim(), path: "" }
+            : { size: line.slice(0, tab).trim(), path: line.slice(tab + 1).trim() };
+        })
+      : null;
+
     emit(
       `${JSON.stringify(
         {
           target: ctx.transport.description,
           runtime: ctx.runtime.description,
-          // Not yet assigned only if the exposure read itself is what threw NotBootstrapped;
-          // the target is still reachable either way, so the local-only fallback answers it.
-          exposure: exposure ?? summarizeExposure(ctx, undefined),
-          bootstrapped: false,
-          running: false,
-          image: null,
-          health: null,
-          serviceUrl: null,
-          dataUsage: null,
+          exposure,
+          instanceLock,
+          next: lockNext,
+          nextActions: lockActions,
+          bootstrapped: true,
+          running,
+          image: reference ?? null,
+          health,
+          serviceUrl: ctx.settings.serviceUrl,
+          dataUsage,
         },
         null,
         2,
       )}\n`,
     );
-    return;
+  } catch (error) {
+    if (!(error instanceof TransportUnreachableError)) throw error;
+    const found = unreachableProblem(error);
+    emit(`${JSON.stringify({
+      target: ctx.transport.description,
+      runtime: ctx.runtime.description,
+      ...partial,
+      instanceLock,
+      next: [found.next, ...lockNext],
+      nextActions: [found.nextAction, ...lockActions],
+      problem: found,
+    }, null, 2)}\n`);
+    die(`${found.code}  ${found.detail}`, found.next);
   }
-
-  const reference = await ctx.runtime.imageReference();
-  const health = {
-    healthz: await ctx.runtime.probe("healthz"),
-    startupz: await ctx.runtime.probe("startupz"),
-    readyz: await ctx.runtime.probe("readyz"),
-    runtime: await ctx.runtime.health(),
-  };
-
-  const usage = await ctx.transport.exec(
-    "du",
-    ["-sh", `${ctx.settings.dataDir}/config`, `${ctx.settings.dataDir}/workspace`, `${ctx.settings.dataDir}/auth-secrets`],
-    { allowFailure: true },
-  );
-  const dataUsage = usage.code === 0
-    ? usage.stdout
-      .trimEnd()
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((line) => {
-        const tab = line.indexOf("\t");
-        return tab === -1
-          ? { size: line.trim(), path: "" }
-          : { size: line.slice(0, tab).trim(), path: line.slice(tab + 1).trim() };
-      })
-    : null;
-
-  emit(
-    `${JSON.stringify(
-      {
-        target: ctx.transport.description,
-        runtime: ctx.runtime.description,
-        exposure,
-        bootstrapped: true,
-        running,
-        image: reference ?? null,
-        health,
-        serviceUrl: ctx.settings.serviceUrl,
-        dataUsage,
-      },
-      null,
-      2,
-    )}\n`,
-  );
 }

@@ -5,6 +5,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* Held-value prose analysis preserves callable scopes, conditional returns and property/getter
+  flows, while treating array length as metadata rather than prose.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.

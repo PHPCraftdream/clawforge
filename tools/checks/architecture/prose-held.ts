@@ -1,5 +1,6 @@
+import { collectionFlow, declarationEquals, destinationAccess, descriptorFlow, emptyFlow, mergeFlow, localReturnFlow, mutationFlow, pathsOverlap, returnFlow, selectFlow, type ReturnFlow } from "./self/prose-return-flow.ts";
 import { bindingSyntax } from "./self/prose-bindings.ts";
-import { assignmentOperator, DEFINING_METHODS, memberAccess, MUTATING_METHODS, templateParts } from "./self/prose-mutations.ts";
+import { assignmentOperator, DEFINING_METHODS, MUTATING_METHODS, templateParts } from "./self/prose-mutations.ts";
 export type Token = { kind: "id" | "str" | "regex" | "p"; text: string; at: number };
 export function tokensOf(source: string): Token[] {
   const out: Token[] = [];
@@ -273,14 +274,15 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
   const lineStart = new Set<number>();
   for (let k = 1; k < t.length; k += 1) if (source.slice(t[k - 1]!.at, t[k]!.at).includes("\n")) lineStart.add(k);
   const allSpaced = new Set<string>(); // Flow binding inventory (legacy controls remain anchored above).
-  interface Binding { spaced: boolean; value?: Flow; result?: Flow; from?: Scope; at: number; updates?: Array<{ at: number; value: Flow; from: Scope; compound?: boolean; property?: boolean }> }
+  interface Binding { spaced: boolean; value?: Flow; result?: Flow; from?: Scope; at: number; updates?: Array<{ at: number; value: Flow; from: Scope; compound?: boolean; property?: boolean; path?: string[] }> }
   interface Scope { parent: Scope | undefined; held: Map<string, Binding> }
   const root: Scope = { parent: undefined, held: new Map() };
-  interface Flow { literals: number[]; properties?: Map<string, Flow>; names: Array<{ name: string; call: boolean; k: number; path?: string[] }> }
-  const assignments: Array<{ name: string; at: number; from: Scope; value: Flow; compound?: boolean; property?: boolean }> = [];
+  type Flow = ReturnFlow;
+  const callableBodies = new Map<number, Binding>();
+  const assignments: Array<{ name: string; at: number; from: Scope; value: Flow; compound?: boolean; property?: boolean; path?: string[] }> = [];
   const sites: Array<Flow & { from: Scope }> = [];
   const { receivers, bare } = assertNames(source);
-  const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = []): boolean => {
+  const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = [], descriptor = 0): boolean => {
     for (let s: Scope | undefined = from; s !== undefined; s = s.parent) {
       const d = s.held.get(name); if (d === undefined) continue;
       if (seen.has(d) || (s === from && d.at >= at)) return false;
@@ -289,22 +291,24 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         if (d.spaced) return false;
       }
       const propertyHits = d.updates?.filter((u) => u.property && (s !== from || u.at < at));
-      if (propertyHits?.some((u) => u.value.literals.length || u.value.names.some((n) => carrying(n.name, n.call, n.k, u.from, new Set([...seen, d]), n.path)))) return true;
+      if (!call && propertyHits?.some((u) => {
+        if (!pathsOverlap(u.path, path)) return false;
+        const selected = u.path === undefined ? u.value : selectFlow(u.value, path.slice(u.path.length));
+        return selected.literals.length > 0 || selected.names.some((n) => carrying(n.name, n.call, n.k, u.from, new Set([...seen, d]), n.path, n.descriptor));
+      })) return true;
       const updates = d.updates?.filter((u) => !u.property && (s !== from || u.at < at)) ?? [];
       const update = updates.at(-1);
       const compound = updates.filter((u) => u.compound);
       if (compound.length) {
         const alternatives = [d.value, ...updates.map((u) => u.value)].filter((f) => f !== undefined);
-        if (alternatives.some((f) => f.literals.length || f.names.some((n) => carrying(n.name, n.call, n.k, d.from ?? s, new Set([...seen, d]), n.path)))) return true;
+        if (alternatives.some((f) => { const selected = selectFlow(f, path); return (!call && selected.literals.length > 0) || selected.names.some((n) => carrying(n.name, call || n.call, n.k, d.from ?? s, new Set([...seen, d]), n.path, n.descriptor)); })) return true;
       }
-      let f = call ? d.result ?? d.value : update?.value ?? d.value;
+      let f = call ? d.result ?? update?.value ?? d.value : update?.value ?? d.value;
       if (call && !d.result && f?.literals.length) return false;
-      let remaining = path;
-      while (remaining.length && f?.properties) { f = remaining[0] === "*" ? merge([...f.properties.values()]) : f.properties.get(remaining[0]!) ?? f.properties.get("*"); remaining = remaining.slice(1); }
-      if (remaining.every((key) => key === "*")) remaining = [];
+      if (f !== undefined) f = selectFlow(descriptor ? descriptorFlow(f, descriptor) : f, path);
       if (f === undefined) return false;
       const visited = new Set(seen); visited.add(d);
-      return (!remaining.length && f.literals.length > 0) || f.names.some((n) => carrying(n.name, call && !d.result ? true : n.call, n.k, update?.from ?? (call && d.result ? { parent: d.from ?? s, held: new Map() } : d.from ?? s), visited, [...(n.path ?? []), ...remaining]));
+      return f.literals.length > 0 || f.names.some((n) => carrying(n.name, call && !d.result ? true : n.call, n.k, update?.from ?? d.from ?? s, visited, n.path, n.descriptor));
     }
     return false;
   };
@@ -381,7 +385,7 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     for (const n of names) s.held.set(n, { spaced: false, at: -1 });
     return s;
   };
-  const none = (): Flow => ({ literals: [], names: [] });
+  const none = emptyFlow;
   const single = (k: number, call = false): Flow => {
     const x = t[k];
     if (x?.kind === "str") return { literals: proseText(x.text, source[x.at] === "`") ? [k] : [], names: [] };
@@ -389,16 +393,27 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     if (x?.kind === "id" && t[k - 1]?.text !== ".") return { literals: [], names: [{ name: x.text, call, k }] };
     return none();
   };
-  const operand = (start: number, end: number): Flow => {
+  const operand = (start: number, end: number, descriptor = 0): Flow => {
+    if (t[start]?.text === "(" && close(start, "(", ")") === end - 1) return operand(start + 1, end - 1);
     const flow = none();
+    if (t[start]?.text === "[" && close(start, "[", "]") === end - 1) {
+      const items = args(start + 1, end - 1).map((r) => operand(...r));
+      return collectionFlow(items);
+    }
     if (t[start]?.text === "{" && close(start, "{", "}") === end - 1) {
       flow.properties = new Map();
       for (const [a, b] of args(start + 1, end - 1)) {
         const key = t[a];
+        if (key?.text === "get" && t[a + 1]?.kind === "id" && t[a + 2]?.text === "(") {
+          const body = close(a + 2, "(", ")") + 1;
+          if (t[body]?.text === "{") { const value = returned(body + 1, close(body, "{", "}")); flow.properties.set(t[a + 1]!.text, value); flow.literals.push(...value.literals); flow.names.push(...value.names); continue; }
+        }
         if (key?.text === ".") { const value = operand(a + 3, b); if (t[a + 3]?.kind === "id") value.names.push({ name: t[a + 3]!.text, call: false, k: a + 3 }); flow.properties.set("*", merge([flow.properties.get("*") ?? none(), value])); flow.literals.push(...value.literals); flow.names.push(...value.names); continue; }
         if (b - a === 1 && key?.kind === "id") { const value = single(a); flow.properties.set(key.text, value); flow.names.push(...value.names); }
         if (key && t[a + 1]?.text === ":") {
-          const value = operand(a + 2, b);
+          let value = operand(a + 2, b, descriptor === 2 ? 1 : 0);
+          const getter = key.text === "get" ? arrowBody(a + 2, b) : -1;
+          if (getter >= 0) value = { ...none(), callable: t[getter]?.text === "{" ? localReturnFlow(t, source, getter + 1, close(getter, "{", "}"), syntax.close, expressionEnd, skipType, operand) : operand(getter, b) };
           flow.properties.set(key.text, value);
           flow.literals.push(...value.literals); flow.names.push(...value.names);
         }
@@ -439,21 +454,22 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
       if (x.kind === "p" && x.text === "{" && prev?.text === ">" && t[k - 2]?.text === "=") { k = close(k, "{", "}"); continue; }
       if (x.kind !== "id" || (prev?.text === "." && t[k - 2]?.text !== ".")) continue;
       if (next?.text === ":" && (prev?.text === "{" || prev?.text === ",")) continue;
-      const access = memberAccess(t, k, end, syntax.close);
+      const access = destinationAccess(t, k, end, syntax.close, true);
       const path = access.path;
       const last = access.end - 1;
+      if (access.unknown) flow.names.push({ name: x.text, call: access.call, k });
       if (t[last + 1]?.text === "(" && path.length && FLOW_METHODS.has(path.at(-1)!)) {
         const e = close(last + 1, "(", ")");
         const part = args(last + 2, e)[0];
-        if (path.at(-1) === "test") flow.names.push({ name: x.text, call: false, k, path: path.slice(0, -1) });
+        if (path.at(-1) === "test") flow.names.push({ name: x.text, call: access.call, k, path: path.slice(0, -1) });
         else if (part) { const f = operand(...part); flow.literals.push(...f.literals); flow.names.push(...f.names); }
       } else if (t[last + 1]?.text === "(" && path.length) {
-        if (["join", "concat", "get", "values", "entries", "has", "set", "add", "*"].includes(path.at(-1)!)) flow.names.push({ name: x.text, call: false, k, path: path.slice(0, -1) });
+        if (["join", "concat", "get", "values", "entries", "has", "set", "add", "*"].includes(path.at(-1)!)) flow.names.push({ name: x.text, call: access.call, k, path: path.slice(0, -1) });
         if (["concat", "set", "add", "*"].includes(path.at(-1)!) || (x.text === "Object" && DEFINING_METHODS.has(path.at(-1)!))) {
           const list = args(last + 2, close(last + 1, "(", ")"));
           const value = merge(list.map((r) => operand(...r))); flow.literals.push(...value.literals); flow.names.push(...value.names);
         }
-      } else flow.names.push({ name: x.text, call: t[last + 1]?.text === "(", k, path });
+      } else if (!access.unknown) flow.names.push({ name: x.text, call: access.call || t[last + 1]?.text === "(", k, path });
       k = last;
     }
     return flow;
@@ -466,13 +482,13 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
     if (t[k]?.text === ":") { const j = skipType(k + 1); if (j < 0) return -1; k = j; }
     return t[k]?.text === "=" && t[k + 1]?.text === ">" && k + 2 < end ? k + 2 : -1;
   };
-  const merge = (flows: Flow[]): Flow => ({ literals: flows.flatMap((f) => f.literals), names: flows.flatMap((f) => f.names) });
+  const merge = mergeFlow;
+  const returned = (body: number, end: number): Flow => returnFlow(t, source, body, end, syntax.close, expressionEnd, skipType, operand);
   const bindPattern = (a: number, b: number, value: Flow, scope: Scope, at: number, declare: boolean): void => {
     const destructured = t[a]?.text === "{" || t[a]?.text === "[";
     if (destructured && !trackDestructuring) return;
     for (const entry of syntax.entries(a, b)) {
-      let selected = value;
-      for (const key of entry.path) { if (selected.properties && key !== "*") selected = selected.properties.get(key) ?? selected.properties.get("*") ?? none(); }
+      const selected = selectFlow(value, entry.path);
       const f = merge([selected, ...entry.defaults.map((r) => operand(...r))]);
       if (destructured) f.properties = new Map([["*", { ...f }]]);
       if (declare) scope.held.set(entry.name, { spaced: false, value: f, from: scope, at });
@@ -513,16 +529,15 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         const e = syntax.close(i); bindPattern(i, e + 1, operand(e + 2, expressionEnd(e + 2, end)), scope, i, false); i = e + 1; continue;
       }
       if (trackProperties && tok?.kind === "id" && t[i - 1]?.text !== ".") {
-        const e = syntax.memberEnd(i, end);
+        const access = destinationAccess(t, i, end, syntax.close); const e = access.end;
         const op = assignmentOperator(t, e);
-        if (e > i + 1 && op && (!op.compound || trackCompound)) assignments.push({ name: tok.text, at: i, from: scope, property: true, value: operand(op.end, expressionEnd(op.end, end)) });
-        const access = memberAccess(t, i, end, syntax.close);
+        if (e > i + 1 && op && (!op.compound || trackCompound)) assignments.push({ name: tok.text, at: i, from: scope, property: true, path: access.unknown ? undefined : access.path, value: operand(op.end, expressionEnd(op.end, end)) });
         const method = access.path.at(-1);
-        if (tok.text === "Object" && (DEFINING_METHODS.has(method ?? "") || method === "*") && t[e]?.text === "(") {
+        if (tok.text === "Object" && (DEFINING_METHODS.has(method ?? "") || method === "setPrototypeOf" || method === "*") && t[e]?.text === "(") {
           const list = args(e + 1, close(e, "(", ")")); const target = list[0];
-          if (target && t[target[0]]?.kind === "id") assignments.push({ name: t[target[0]]!.text, at: i, from: scope, property: true, value: merge(list.slice(method === "defineProperty" ? 2 : 1).map((r) => operand(...r))) });
+          if (target && t[target[0]]?.kind === "id") { const destination = destinationAccess(t, target[0], target[1], syntax.close); assignments.push({ name: t[target[0]]!.text, at: i, from: scope, property: true, path: destination.unknown || destination.end < target[1] ? undefined : destination.path, value: mutationFlow(method, list, t, operand) }); }
         }
-        if (e > i + 1 && t[e]?.text === "(" && (MUTATING_METHODS.has(method ?? "") || method === "*")) assignments.push({ name: tok.text, at: i, from: scope, property: true, value: merge(args(e + 1, close(e, "(", ")")).map((r) => operand(...r))) });
+        if (e > i + 1 && t[e]?.text === "(" && (MUTATING_METHODS.has(method ?? "") || method === "*")) { const value = merge(args(e + 1, close(e, "(", ")")).map((r) => operand(...r))); assignments.push({ name: tok.text, at: i, from: scope, property: true, path: access.unknown ? undefined : access.path.slice(0, -1), value: { ...value, properties: new Map([["*", value]]) } }); }
       }
       if (tok?.kind === "p" && tok.text === "{") { const e = close(i, "{", "}"); walk(i + 1, Math.min(e, end), { parent: scope, held: new Map() }); i = e + 1; continue; }
       if (tok?.kind === "p" && tok.text === "}") { i += 1; continue; }
@@ -535,18 +550,15 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
         if (arrow || isFn) {
           const names = paramNames(i + 1, pe);
           const params = syntax.split(i + 1, pe).flatMap(([a, b]) => syntax.entries(a, b));
-          const parameterScope = bodyScope(scope, names);
-          for (const entry of params) parameterScope.held.set(entry.name, { spaced: false, value: merge(entry.defaults.map((r) => operand(...r))), from: scope, at: -1 });
+          const parameterScope = bodyScope(scope, names.filter((name) => params.some((entry) => entry.name === name)));
+          for (const entry of params) parameterScope.held.set(entry.name, { spaced: false, value: merge(entry.defaults.map((r) => operand(...r))), from: parameterScope, at: -1 });
           const body = arrow ? after + 2 : after;
+          const callable = callableBodies.get(body); if (callable) callable.from = parameterScope;
           if (t[body]?.text === "{") {
             const e = close(body, "{", "}");
             const inner = parameterScope;
             if (isFn && t[i - 1]?.kind === "id") {
-              const result = none();
-              for (let k = body + 1; k < Math.min(e, end); k += 1) if (t[k]?.text === "return") {
-                const f = operand(k + 1, expressionEnd(k + 1, e));
-                result.literals.push(...f.literals); result.names.push(...f.names);
-              }
+              const result = returned(body + 1, Math.min(e, end));
               scope.held.set(t[i - 1]!.text, { spaced: false, result, from: inner, at: -1 });
             }
             walk(body + 1, Math.min(e, end), inner);
@@ -561,15 +573,15 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
       }
       if (tok?.kind === "id" && t[i + 1]?.text === "=" && t[i + 2]?.text === ">") {
         const body = i + 3;
+        const parameterScope = bodyScope(scope, [tok.text]);
+        const callable = callableBodies.get(body); if (callable) callable.from = parameterScope;
         if (t[body]?.text === "{") {
           const e = close(body, "{", "}");
-          const inner: Scope = { parent: scope, held: new Map() };
-          inner.held.set(tok.text, { spaced: false, at: i });
-          walk(body + 1, Math.min(e, end), inner);
+          walk(body + 1, Math.min(e, end), parameterScope);
           i = e + 1;
         } else {
           const e = expressionEnd(body, end);
-          walk(body, Math.min(e, end), bodyScope(scope, [tok.text]));
+          walk(body, Math.min(e, end), parameterScope);
           i = e;
         }
         continue;
@@ -589,7 +601,7 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
       if (["const", "let", "var"].includes(tok?.text ?? "")) {
         let a = i + 1;
         do {
-          const stop = expressionEnd(a, end); const eq = syntax.delimiter(a, stop, "=");
+          const stop = expressionEnd(a, end); const eq = t[a]?.kind === "id" ? declarationEquals(t, a + 1, stop, syntax.close) : syntax.delimiter(a, stop, "=");
           if (t[a]?.kind !== "id" || tok?.text === "var" || a !== i + 1) bindPattern(a, eq, eq < stop ? operand(eq + 1, stop) : none(), scope, i, true);
           if (t[stop]?.text !== ",") break;
           a = stop + 1;
@@ -599,24 +611,20 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
       if ((tok?.text === "const" || tok?.text === "let") && t[i + 1]?.kind === "id") {
         if (t[i + 1]?.text === "of" || t[i + 1]?.text === "in") { scope.held.set(t[i + 1]!.text, { spaced: false, at: i }); i += 2; continue; }
         let eq = i + 2;
-        if (t[eq]?.text === ":") { eq += 1; while (eq < end && t[eq]?.text !== "=") eq += 1; }
+        if (t[eq]?.text === ":") eq = declarationEquals(t, eq + 1, end, syntax.close);
         const value = t[eq + 1];
         const spaced = t[eq]?.text === "=" && value?.kind === "str" && proseText(value.text, source[value.at] === "`");
-        let valueFlow: Flow | undefined; let result: Flow | undefined;
+        let valueFlow: Flow | undefined; let result: Flow | undefined; let body = -1;
         if (t[eq]?.text === "=") {
           const initEnd = Math.min(expressionEnd(eq + 1, end), end);
-          const body = arrowBody(eq + 1, initEnd);
+          body = arrowBody(eq + 1, initEnd);
           if (body < 0) valueFlow = operand(eq + 1, initEnd);
           else if (t[body]?.text !== "{") result = operand(body, initEnd);
-          else {
-            result = none();
-            for (let k = body + 1; k < initEnd; k++) if (t[k]?.text === "return") {
-              const f = operand(k + 1, expressionEnd(k + 1, initEnd));
-              result.literals.push(...f.literals); result.names.push(...f.names);
-            }
-          }
+          else result = returned(body + 1, Math.min(close(body, "{", "}"), initEnd));
         }
-        scope.held.set(t[i + 1]!.text, { spaced, value: valueFlow, result, from: scope, at: i });
+        const binding: Binding = { spaced, value: valueFlow, result, from: scope, at: i };
+        scope.held.set(t[i + 1]!.text, binding);
+        if (body >= 0) callableBodies.set(body, binding);
         if (spaced) allSpaced.add(t[i + 1]!.text);
         i += 2;
         continue;
@@ -673,13 +681,13 @@ export function measureProseHeldFlow(source: string, onSite?: (at: number) => vo
   walk(0, t.length, root);
   for (const u of assignments) for (let s: Scope | undefined = u.from; s; s = s.parent) {
     const d = s.held.get(u.name); if (!d) continue;
-    if (d.at < u.at || s !== u.from) (d.updates ??= []).push(u);
+    if (d.at < u.at || s !== u.from) (d.updates ??= []).push({ ...u, compound: u.compound || (!u.property && s !== u.from) });
     break;
   }
   let flow = 0;
   const claimed = new Set<number>();
   for (const s of sites) {
-    const hits = [...s.literals, ...s.names.filter((n) => carrying(n.name, n.call, n.k, s.from, new Set(), n.path)).map((n) => n.k)];
+    const hits = [...s.literals, ...s.names.filter((n) => carrying(n.name, n.call, n.k, s.from, new Set(), n.path, n.descriptor)).map((n) => n.k)];
     const novel = hits.find((k) => !claimed.has(k));
     if (novel !== undefined) { flow += 1; onSite?.(t[novel]!.at); }
     for (const k of hits) claimed.add(k);

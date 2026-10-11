@@ -73,7 +73,7 @@ is unchanged.
 | `inspect` | `[--json]` | What is declared, what is actually running, and where they disagree |
 | `doctor` | `[--json]` | Say whether anything is wrong and what to run about it |
 | `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run the acceptance checks this deployment's recipes declare |
-| `operations` | `[<id>] [--limit <n>] [--json]` | What mutating runs did to this instance, and what they left behind |
+| `operations` | `[<id>] [--limit <n>] [--takeover-lock] [--break-lock] [--break-foreign-lock <hostId>] [--confirmed] [--json]` | What mutating runs did to this instance, and what they left behind (destructive for some actions) |
 | `watch` | `<action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change (destructive for some actions) |
 
 ### Change

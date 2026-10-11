@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
-import type { ExecResult } from "../runtime/transport/transport.ts";
+import { probeEntryExists, type ExecResult } from "../runtime/transport/transport.ts";
 import { docsUrl } from "../core/io/docs-url.ts";
 import { machineName, removeEmptyDirectory } from "../runtime/lock/process-identity.ts";
 
@@ -347,12 +347,44 @@ export async function withMutationGuard<T>(
   body: () => Promise<T>,
   breakLock = false,
   breakForeignLockHost?: string,
+  options: { strictVerification?: boolean } = {},
 ): Promise<T> {
   const owner = await claim(ctx, breakLock, breakForeignLockHost);
-  if (owner === undefined) return body();
-  try {
-    return await body();
-  } finally {
-    await release(ctx, owner);
+  if (owner === undefined) {
+    if (options.strictVerification) throw new Error("mutation guard acquisition was not verified");
+    return body();
   }
+  if (!options.strictVerification) {
+    try {
+      return await body();
+    } finally {
+      await release(ctx, owner);
+    }
+  }
+
+  let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+  try {
+    const published = await readOwner(ctx, ownerPath(ctx));
+    if (published?.generation !== owner.generation || published.pid !== process.pid ||
+        published.machine !== machineName() || published.takenAt !== owner.takenAt ||
+        (await ctx.transport.exec("test", ["-d", guardPath(ctx)], { allowFailure: true })).code !== 0) {
+      throw new Error("published mutation guard ownership was not verified");
+    }
+    outcome = { ok: true, value: await body() };
+  } catch (error) {
+    outcome = { ok: false, error };
+  }
+
+  let cleanupFailure: { error: unknown } | undefined;
+  try {
+    await release(ctx, owner);
+    if (await probeEntryExists(ctx.transport, guardPath(ctx))) {
+      throw new Error("mutation guard release/quiescence was not verified");
+    }
+  } catch (error) {
+    cleanupFailure = { error };
+  }
+  if (!outcome.ok) throw outcome.error;
+  if (cleanupFailure !== undefined) throw cleanupFailure.error;
+  return outcome.value;
 }

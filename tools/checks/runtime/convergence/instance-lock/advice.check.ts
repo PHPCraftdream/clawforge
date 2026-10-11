@@ -1,287 +1,217 @@
-// Checks declaration/parser agreement, manual refusal actions, local owner liveness,
-// and explicit foreign-host confirmation without pinning diagnostic prose.
-
+import { hostname } from "node:os";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import {
-  takeLock,
-  readLockHolder,
-  refusalMessage,
-  guardedWith,
-  lockPath,
-  isStale,
-  STALE_AFTER_MS,
-  type LockHolder,
-} from "#framework/runtime/lock/instance-lock.ts";
-import { refusalAdvice } from "#framework/runtime/lock/lock-claim.ts";
-import { machineName } from "#framework/runtime/lock/process-identity.ts";
-import { stubContext, refused } from "./fixture.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import { ArgumentError } from "#framework/core/command/errors.ts";
 import { UserError } from "#framework/core/io/log.ts";
-import { readFile } from "node:fs/promises";
+import { guardedWith, observeInstanceLock } from "#framework/runtime/lock/instance-lock.ts";
+import { machineName } from "#framework/runtime/lock/process-identity.ts";
+import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
+import { ROUND_TRIP_ENTRY, runArchiveChecks } from "#framework/commands/lifecycle/smoke/round-trip.ts";
+import { captureFailure, FIXTURE_LOCK_HOME, FIXTURE_LOCK_PATH, stubContext } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { CommandArgument } from "#framework/core/app.ts";
-import type { GateCommand } from "#framework/integration/gate.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
-function declaresBreakLock(name: string): boolean {
-  return (openclawCommands[name]?.arguments ?? []).some((argument) => argument.name === "break-lock");
+
+const now = Date.now();
+const fresh = new Date(now).toISOString();
+const old = new Date(now - 3_600_000).toISOString();
+const local = machineName();
+const expectedPhysicalHost = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+async function checkExpectedHost(label: string, host: unknown): Promise<void> {
+  check(`${label}: host type`, typeof host, "string");
+  const value = typeof host === "string" ? host : "";
+  const separator = value.lastIndexOf(":");
+  const scope = value.slice(separator + 1);
+  check(`${label}: physical host`, [separator >= 0, value.slice(0, separator)], [true, expectedPhysicalHost]);
+  await requires("linux-host", `${label}: Linux pid scope`, () => check(`${label}: Linux pid scope`, /^linux-(?:[1-9][0-9]*|unknown)$/.test(scope), true));
+  await requires("windows-host", `${label}: Windows pid scope`, () => check(`${label}: Windows pid scope`, scope, "win32"));
+}
+const foreign = "advice-foreign:win32";
+const holderPath = `${FIXTURE_LOCK_PATH}/holder.json`;
+const guardPath = `${FIXTURE_LOCK_HOME}/operation.mutation`;
+const base = { operationId: "independent-owner", what: "recipe install", by: "display only", generation: "seed-generation", takenAt: fresh };
+const scenarios = [
+  { name: "dead recent", record: { ...base, host: local, pid: 99999999 }, state: "dead", takeover: "explicit-break-lock", allowed: true },
+  { name: "dead old", record: { ...base, takenAt: old, host: local, pid: 99999999 }, state: "dead", takeover: "explicit-break-lock", allowed: true },
+  { name: "foreign", record: { ...base, host: foreign, pid: 99999999 }, state: "remote", takeover: "foreign-confirmation-required", allowed: true },
+  { name: "live", record: { ...base, host: local, pid: process.pid }, state: "live", takeover: "none", allowed: false },
+  { name: "heartbeat", record: { ...base, takenAt: old, heartbeatAt: fresh, host: local, pid: process.pid }, state: "live", takeover: "none", allowed: false },
+  { name: "unknown identity", record: { ...base, takenAt: old, host: local, pid: 0 }, state: "unknown", takeover: "none", allowed: false },
+  { name: "unreadable", record: undefined, state: "unknown", takeover: "none", allowed: false },
+] as const;
+
+for (const scenario of scenarios) {
+  {
+    const { ctx, files, dirs } = stubContext();
+    const raw = scenario.record === undefined ? "not JSON" : JSON.stringify(scenario.record);
+    dirs.add(FIXTURE_LOCK_PATH);
+    dirs.add(`${FIXTURE_LOCK_PATH}/gen-seed-generation`);
+    files.set(holderPath, raw);
+    const label = `${scenario.name}/observation`;
+    const beforeFiles = JSON.stringify([...files]);
+    const beforeDirs = JSON.stringify([...dirs]);
+    const observation = await observeInstanceLock(ctx, now);
+    check(`${label}: observed state`, observation.state, scenario.state);
+    check(`${label}: takeover policy`, observation.takeover, scenario.takeover);
+    if (scenario.record !== undefined && scenario.state !== "unknown") {
+      check(`${label}: observed host`, observation.host, scenario.record.host);
+      check(`${label}: observed pid`, observation.pid, scenario.record.pid);
+    }
+    if (scenario.name === "heartbeat") {
+      check(`${label}: heartbeat age`, observation.heartbeatAgeMs, 0);
+      check(`${label}: acquisition age`, observation.ageMs, 3_600_000);
+    }
+    if (scenario.state !== "live") {
+      check(`${label}: observation manual`, observation.next?.kind, "manual");
+      check(`${label}: observation no argv`, observation.next !== undefined && "argv" in observation.next, false);
+    } else {
+      check(`${label}: observation read command`, observation.next?.kind, "clawforge");
+    }
+    check(`${label}: observation preserves files`, JSON.stringify([...files]), beforeFiles);
+    check(`${label}: observation preserves directories`, JSON.stringify([...dirs]), beforeDirs);
+  }
+  for (const request of ["none", "break", "confirmed"] as const) {
+    const variesAdvice = request === "none" && scenario.takeover === "explicit-break-lock";
+    const unsupportedLive = request === "break" && scenario.name === "live";
+    for (const supported of variesAdvice || unsupportedLive ? [true, false] : [true]) {
+      const { ctx, files, dirs } = stubContext();
+      const raw = scenario.record === undefined ? "not JSON" : JSON.stringify(scenario.record);
+      dirs.add(FIXTURE_LOCK_PATH);
+      dirs.add(`${FIXTURE_LOCK_PATH}/gen-seed-generation`);
+      files.set(holderPath, raw);
+      const label = `${scenario.name}/${supported ? "supported" : "unsupported"}/${request}`;
+      let bodies = 0;
+      const succeeds = scenario.allowed && request !== "none" && (scenario.state !== "remote" || request === "confirmed");
+      const failure = await captureFailure(() => guardedWith(ctx, "advice consumer", {
+        breakLock: request !== "none",
+        breakForeignLockHost: request === "confirmed" ? foreign : undefined,
+      }, async () => {
+        bodies += 1;
+        const published = JSON.parse(files.get(holderPath) ?? "null");
+        check(`${label}: replacement operation`, published?.what, "advice consumer");
+        check(`${label}: replacement pid`, published?.pid, process.pid);
+        await checkExpectedHost(label, published?.host);
+        check(`${label}: replacement generation`, typeof published?.generation === "string" && published.generation !== "seed-generation", true);
+        check(`${label}: replacement marker`, dirs.has(`${FIXTURE_LOCK_PATH}/gen-${published?.generation}`), true);
+        check(`${label}: old marker displaced`, dirs.has(`${FIXTURE_LOCK_PATH}/gen-seed-generation`), false);
+      }, { breakLockSupported: supported }));
+      check(`${label}: body count`, bodies, succeeds ? 1 : 0);
+      check(`${label}: captured Error`, failure instanceof Error, !succeeds);
+      check(`${label}: captured UserError`, failure instanceof UserError, !succeeds);
+      if (!succeeds) {
+        const advice = failure instanceof UserError ? failure.advice : [];
+        check(`${label}: refusal advice count`, advice.length, 1);
+        check(`${label}: refusal manual`, advice[0]?.kind, "manual");
+        check(`${label}: refusal no argv`, advice[0] !== undefined && "argv" in advice[0], false);
+        check(`${label}: owner bytes preserved`, files.get(holderPath), raw);
+        check(`${label}: owner marker preserved`, dirs.has(`${FIXTURE_LOCK_PATH}/gen-seed-generation`), true);
+        check(`${label}: owner directory preserved`, dirs.has(FIXTURE_LOCK_PATH), true);
+        check(`${label}: no displaced directory`, [...dirs].some((path) => path.startsWith(`${FIXTURE_LOCK_PATH}.stale-`)), false);
+      } else {
+        check(`${label}: no failure`, failure, undefined);
+        check(`${label}: released holder`, files.has(holderPath), false);
+        check(`${label}: released directory`, dirs.has(FIXTURE_LOCK_PATH), false);
+        check(`${label}: displaced tree removed`, [...dirs].some((path) => path.startsWith(`${FIXTURE_LOCK_PATH}.stale-`)), false);
+      }
+      check(`${label}: mutation guard cleaned`, dirs.has(guardPath), false);
+    }
+  }
 }
 
-/** True once a declaration list carries `--break-foreign-lock` as a value-taking option — a
- *  flag whose whole point is a host id has no meaning as a bare boolean flag. Generic over
- *  `CommandArgument[]` so the same rule applies to an AppCommand's declaration
- *  (openclawCommands, checked exhaustively below) and to a GateCommand's (gate.ts's `check`/
- *  `new-app`/`init`, the same shape, declared before a deployment even exists). */
-function declaresBreakForeignLockOption(args: readonly CommandArgument[] | undefined): boolean {
-  const argument = (args ?? []).find((entry) => entry.name === "break-foreign-lock");
-  return argument !== undefined && argument.kind === "option";
+for (const [name, flags] of [
+  ["bootstrap", ["--break-lock", "--break-foreign-lock"]],
+  ["pull", ["--break-lock", "--break-foreign-lock"]],
+  ["backup", ["--break-lock"]],
+  ["smoke", ["--break-lock"]],
+] as const) {
+  for (const flag of flags) {
+    let contacts = 0;
+    const denied = new Proxy(stubContext().ctx.transport, {
+      get() {
+        contacts += 1;
+        throw new Error("unexpected target contact");
+      },
+    });
+    const stages: string[] = [];
+    const argv = [flag, ...(flag === "--break-foreign-lock" ? [foreign] : []), "--totally-unknown-flag"];
+    const execution = await executeCommand({ name: "advice-parser", description: "independent parse input", commands: openclawCommands }, name,
+      { kind: "argv", argv }, { surface: "terminal", transport: denied, observe: (stage) => stages.push(stage) });
+    const label = `${name}/${flag}`;
+    const error = execution.error;
+    check(`${label}: parse stage`, execution.stage, "parse");
+    check(`${label}: only parse observed`, JSON.stringify(stages), JSON.stringify(["parse"]));
+    check(`${label}: no run`, execution.reachedRun, false);
+    check(`${label}: ArgumentError`, error instanceof ArgumentError, true);
+    check(`${label}: controlling argument`, error instanceof ArgumentError ? error.argument : undefined,
+      name === "backup" ? "break-lock" : name === "smoke" ? "--break-lock" : "--totally-unknown-flag");
+    check(`${label}: no target contact`, contacts, 0);
+  }
 }
 
-function declaresBreakForeignLock(name: string): boolean {
-  return declaresBreakForeignLockOption(openclawCommands[name]?.arguments);
+for (const consumer of ["backup create", "smoke standalone", "smoke archives"]) {
+  const { ctx: fixtureCtx, files, dirs } = stubContext();
+  const raw = JSON.stringify({ ...base, host: local, pid: 99999999 });
+  dirs.add(FIXTURE_LOCK_PATH);
+  dirs.add(`${FIXTURE_LOCK_PATH}/gen-seed-generation`);
+  files.set(holderPath, raw);
+  let runtimeCalls = 0;
+  const ctx: Context = { ...fixtureCtx, runtime: new Proxy(fixtureCtx.runtime, {
+    get(_target, property) {
+      return async () => {
+        runtimeCalls += 1;
+        if (consumer === "backup create" && property === "isRunning" && runtimeCalls === 1) return true;
+        throw new Error("lock body reached runtime");
+      };
+    },
+  }) };
+  const failure = await captureFailure(() => consumer === "backup create" ? createBackup(ctx)
+    : consumer === "smoke standalone" ? ROUND_TRIP_ENTRY.run(ctx)
+    : runArchiveChecks(ctx, new Set(["snapshot round-trip is byte-identical"])));
+  check(`${consumer}: lock refusal UserError`, failure instanceof UserError, true);
+  check(`${consumer}: no lock body runtime`, runtimeCalls, consumer === "backup create" ? 1 : 0);
+  const advice = failure instanceof UserError ? failure.advice : [];
+  check(`${consumer}: manual advice`, advice.length === 1 && advice[0]?.kind === "manual", true);
+  check(`${consumer}: no mutation argv`, advice[0] !== undefined && "argv" in advice[0], false);
+  check(`${consumer}: owner preserved`, files.get(holderPath), raw);
+  check(`${consumer}: marker preserved`, dirs.has(`${FIXTURE_LOCK_PATH}/gen-seed-generation`), true);
+  check(`${consumer}: directory preserved`, dirs.has(FIXTURE_LOCK_PATH), true);
 }
 
-// --- every command whose guardedWith()/withLockUnlessHeld() call carries a takeover
-// declares it, and every command that deliberately does not is left undeclared too ------------
-
-for (const name of ["up", "restart", "down", "restore", "push", "apply", "rollback", "apply-config", "recipe", "provision-agent", "set", "bootstrap", "pull", "configure-provider"]) {
-  check(`${name} declares --break-lock`, declaresBreakLock(name), true);
-}
-for (const name of ["secrets"]) {
-  check(`${name} does not declare --break-lock (its own parser rejects it)`, declaresBreakLock(name), false);
-}
-
-// backup is a second deliberate asymmetry: bare `backup` (create) takes the lock but its own
-// guardedWith() call passes breakLockSupported: false (see backup/index.ts) and its creation
-// parser (BACKUP_ARGUMENTS) still rejects the flag, same as before; `prune-replaced --apply`
-// is the one action that both reads and needs it, so the merged declaration
-// (BACKUP_ALL_ARGUMENTS) carries it for that action alone.
-check("backup declares --break-lock (for prune-replaced --apply only)", declaresBreakLock("backup"), true);
-
-// --- hermetic: every command in openclawCommands that declares --break-lock also declares
-// --break-foreign-lock, checked over the whole declaration rather than a fixed list, so a
-// command added later cannot silently reintroduce the gap an orphaned foreign guard hit --------
-
-for (const [name] of Object.entries(openclawCommands)) {
-  if (!declaresBreakLock(name)) continue;
-  check(`${name} (declares --break-lock) also declares --break-foreign-lock`, declaresBreakForeignLock(name), true);
-}
-
-// secrets is the one deliberate asymmetry: --apply is the only action that takes the instance
-// lock, and its own parser never accepts --break-lock (see secrets.ts) — but an orphaned guard
-// from another machine still needs a way out, so --break-foreign-lock is declared alone.
-check("secrets declares --break-foreign-lock despite never declaring --break-lock", declaresBreakForeignLock("secrets"), true);
-
-// The rule above is generic over any CommandArgument[], including a gate command's — the
-// shape check/new-app/init declare before a deployment exists. None of the three takes the
-// instance lock today, so none declares --break-lock; this proves the same helper would still
-// catch the gap if one ever did, without needing to import gate.ts's own side-effecting entry
-// points (tools/clawforge.ts, framework/entry/bin.ts) just to reach their gateCommands arrays.
-{
-  const brokenGateCommand: Pick<GateCommand, "arguments"> = {
-    arguments: [{ name: "break-lock", description: "x", kind: "flag" }],
-  };
-  check(
-    "a gate-shaped declaration with --break-lock but no --break-foreign-lock is caught",
-    declaresBreakForeignLockOption(brokenGateCommand.arguments),
-    false,
-  );
-  const fixedGateCommand: Pick<GateCommand, "arguments"> = {
-    arguments: [
-      { name: "break-lock", description: "x", kind: "flag" },
-      { name: "break-foreign-lock", description: "x", kind: "option" },
-    ],
-  };
-  check(
-    "and a matching --break-foreign-lock <hostId> option satisfies it",
-    declaresBreakForeignLockOption(fixedGateCommand.arguments),
-    true,
-  );
-}
-
-// --- the message itself only ever names a flag the caller says is supported -------------------
-
-{
-  // A stale holder (heartbeatAt absent, taken long past STALE_AFTER_MS): --break-lock is
-  // actually on the table here, so it is the case worth telling supported from unsupported.
-  const holder: LockHolder = {
-    operationId: "op-1", what: "apply", by: "coder@box pid 1",
-    takenAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), host: machineName(), pid: 99999999,
-  };
-  const supported = refusalMessage(holder, Date.now(), true);
-  check("supported: advises --break-lock", supported.includes("--break-lock"), true);
-  const advice = refusalAdvice(holder, false);
-  check("unsupported takeover is a manual decision", advice.kind, "manual");
-  check("unsupported advice never invents mutation argv", "argv" in advice, false);
-}
-
-{
-  // A live, recently-refreshed holder is a different case entirely: `recipe install` can hold
-  // this lock for a whole build, and it is never told to break its own lock over that.
-  const holder: LockHolder = {
-    operationId: "op-live-fresh", what: "recipe install", by: "coder@box pid 1",
-    takenAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), heartbeatAt: new Date().toISOString(),
-  };
-  const message = refusalMessage(holder);
-  check("a live heartbeat overrides an old takenAt", isStale(holder), false);
-  check("and is never advised to break its own lock", message.includes("--break-lock"), false);
-}
-
-{
-  const advice = refusalAdvice(undefined, false);
-  check("unreadable-holder remediation is manual", advice.kind, "manual");
-  check("unreadable-holder remediation has no mutation argv", "argv" in advice, false);
-}
-
-// --- only confirmed dead local owners permit explicit takeover -------------------------------
-
-for (const state of ["dead-local", "foreign", "live-local"] as const) {
+for (const confirmation of [undefined, "wrong-host", foreign]) {
   const { ctx, files, dirs } = stubContext();
-  const holder: LockHolder = {
-    operationId: `op-${state}`, what: "apply", by: "owner",
-    takenAt: new Date().toISOString(),
-    host: state === "foreign" ? `${machineName()}-not-this-one` : machineName(),
-    pid: state === "live-local" ? process.pid : 99999999,
-  };
-  const original = JSON.stringify(holder);
-  dirs.add(lockPath(ctx));
-  files.set(`${lockPath(ctx)}/holder.json`, original);
-  let entered = false;
-  let failure: unknown;
-  const message = await refused(async () => {
-    try { await guardedWith(ctx, "apply", { breakLock: false }, async () => { entered = true; }); }
-    catch (error) { failure = error; throw error; }
-  });
-  check(`${state}: ordinary acquisition is a user refusal`, failure instanceof UserError, true);
-  check(`${state}: ordinary acquisition never enters body`, entered, false);
-  check(`${state}: ordinary acquisition preserves holder bytes`, files.get(`${lockPath(ctx)}/holder.json`), original);
-  check(`${state}: refusal action is manual`, (failure as UserError).advice.map(entry => entry.kind), ["manual"]);
-  check(`${state}: refusal action has no mutation argv`, (failure as UserError).advice.some(entry => "argv" in entry), false);
-  check(`${state}: explicit takeover flag eligibility`, message.includes("--break-lock"), state !== "live-local");
-  if (state === "foreign") check("foreign refusal requires host-confirmation flag", message.includes("--break-foreign-lock"), true);
-
-  if (state === "dead-local") {
-    const held = await takeLock(ctx, "apply", "replacement", { breakLock: true });
-    check("confirmed dead local owner permits explicit takeover", (await readLockHolder(ctx))?.operationId, "replacement");
-    await held.release();
+  const raw = JSON.stringify({ generation: "foreign-guard-generation", pid: 12345, machine: foreign, takenAt: fresh });
+  dirs.add(guardPath);
+  files.set(`${guardPath}/owner.json`, raw);
+  let bodies = 0;
+  const label = `foreign guard/${confirmation ?? "unconfirmed"}`;
+  const failure = await captureFailure(() => guardedWith(ctx, "up", { breakLock: false, breakForeignLockHost: confirmation }, async () => {
+    bodies += 1;
+    const holder = JSON.parse(files.get(holderPath) ?? "null");
+    check(`${label}: body holds operation`, holder?.what, "up");
+    check(`${label}: body holds local pid`, holder?.pid, process.pid);
+    await checkExpectedHost(label, holder?.host);
+    check(`${label}: body holds fresh generation`, typeof holder?.generation === "string" && holder.generation !== "foreign-guard-generation", true);
+    check(`${label}: body holds generation marker`, dirs.has(`${FIXTURE_LOCK_PATH}/gen-${holder?.generation}`), true);
+  }));
+  const confirmed = confirmation === foreign;
+  check(`${label}: body count`, bodies, confirmed ? 1 : 0);
+  check(`${label}: captured Error`, failure instanceof Error, !confirmed);
+  if (confirmed) {
+    check(`${label}: no refusal`, failure, undefined);
+    check(`${label}: guard removed`, dirs.has(guardPath), false);
+    check(`${label}: guard owner removed`, files.has(`${guardPath}/owner.json`), false);
+    check(`${label}: holder removed`, files.has(holderPath), false);
+    check(`${label}: lock removed`, dirs.has(FIXTURE_LOCK_PATH), false);
+    check(`${label}: no guard remnants`, [...files.keys(), ...dirs].some((path) => path.startsWith(`${guardPath}/`)), false);
+    const audit = JSON.parse((files.get(`${FIXTURE_LOCK_HOME}/foreign-lock-takeovers.jsonl`) ?? "null").trim());
+    check(`${label}: audit confirmation`, audit?.confirmedHost, foreign);
+    check(`${label}: audit displaced generation`, audit?.foreignOwner?.generation, "foreign-guard-generation");
   } else {
-    failure = undefined;
-    await refused(async () => {
-      try { await guardedWith(ctx, "apply", { breakLock: true }, async () => { entered = true; }); }
-      catch (error) { failure = error; throw error; }
-    });
-    check(`${state}: unconfirmed takeover is a user refusal`, failure instanceof UserError, true);
-    check(`${state}: unconfirmed takeover never enters body`, entered, false);
-    check(`${state}: unconfirmed takeover preserves holder bytes`, files.get(`${lockPath(ctx)}/holder.json`), original);
+    check(`${label}: ordinary Error not UserError`, failure instanceof UserError, false);
+    check(`${label}: foreign owner bytes preserved`, files.get(`${guardPath}/owner.json`), raw);
+    check(`${label}: foreign directory preserved`, dirs.has(guardPath), true);
+    check(`${label}: no operation acquired`, dirs.has(FIXTURE_LOCK_PATH), false);
   }
-}
-
-// --- bootstrap/pull: the parser itself, not just the declaration, now accepts --break-lock ----
-//
-// Before this fix, bootstrap's and pull's own argument loops died on "unknown argument:
-// --break-lock" before guardedWith()/withLockUnlessHeld() ever read it — declaring the flag alone
-// would not have made `./clawforge bootstrap --break-lock` work. Passing a second, genuinely
-// unknown flag alongside it and asserting the die() names THAT one (never --break-lock) proves
-// break-lock itself parses cleanly, without needing to stand up bootstrap's whole environment:
-// the parse loop runs synchronously before any transport call.
-
-{
-  let message = "";
-  try {
-    await openclawCommands.bootstrap.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  check("bootstrap's own parser accepts --break-lock", message.includes("--break-lock"), false);
-  check("and still rejects a genuinely unknown flag", message.includes("--totally-unknown-flag"), true);
-}
-
-{
-  let message = "";
-  try {
-    await openclawCommands.bootstrap.run({} as unknown as Context, ["--break-foreign-lock", "some-host", "--totally-unknown-flag"]);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  check("bootstrap's own parser accepts --break-foreign-lock <hostId>", message.includes("--break-foreign-lock"), false);
-  check("without swallowing the host id as an unknown flag", message.includes("some-host"), false);
-  check("and still rejects a genuinely unknown flag after it", message.includes("--totally-unknown-flag"), true);
-}
-
-{
-  let message = "";
-  try {
-    await openclawCommands.pull.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  check("pull's own parser accepts --break-lock", message.includes("--break-lock"), false);
-  check("and still rejects a genuinely unknown flag", message.includes("--totally-unknown-flag"), true);
-}
-
-// backup and smoke refuse --break-lock at their own parsers, matching the
-// breakLockSupported: false their lock call sites pass — the refusal must come from
-// the parser naming the flag, not silently accepting it.
-
-{
-  let message = "";
-  try {
-    await openclawCommands.backup.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  check("backup's own parser rejects --break-lock", message.includes("--break-lock"), true);
-}
-
-{
-  let message = "";
-  try {
-    await openclawCommands.smoke.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  check("smoke's own parser rejects --break-lock", message.includes("--break-lock"), true);
-}
-
-// --- guardedWith takes a foreign mutation guard over when given the host id --------------------
-
-{
-  const { ctx, files, dirs } = stubContext();
-  const home = lockPath(ctx).replace(/\/operation\.lock$/, "");
-  const guard = `${home}/operation.mutation`;
-  const foreignMachine = `${machineName()}-elsewhere`;
-  dirs.add(guard);
-  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "g", pid: 12345, machine: foreignMachine, takenAt: new Date().toISOString() }));
-
-  let ranBody = false;
-  let threw: Error | undefined;
-  try {
-    await guardedWith(ctx, "up", { breakLock: false, breakForeignLockHost: foreignMachine }, async () => {
-      ranBody = true;
-    });
-  } catch (error) {
-    threw = error as Error;
-  }
-  check("guardedWith takes a foreign guard over with an explicit host id", ranBody, true);
-  check("without refusing", threw, undefined);
-  check("and the guard it took over is cleaned up afterwards", dirs.has(guard), false);
-}
-
-// smoke declares no --break-lock, so each lock its run takes (the archive window, the
-// standalone round-trip — both in smoke/round-trip.ts) must say so — a merge once dropped
-// it from the archive window.
-{
-  const optsOut = (source: string): string[] => source.split("guardedWith(ctx,").slice(1);
-  const smokeSource = await readFile(new URL("../../../../framework/commands/lifecycle/smoke/round-trip.ts", import.meta.url), "utf8");
-  const smokeCalls = optsOut(smokeSource);
-  check("smoke still takes the instance lock somewhere", smokeCalls.length > 0, true);
-  check("every smoke lock opts out of --break-lock advice smoke cannot accept",
-    declaresBreakLock("smoke") || smokeCalls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
-
-  const backupSource = await readFile(new URL("../../../../framework/commands/lifecycle/backup/index.ts", import.meta.url), "utf8");
-  const backupCalls = optsOut(backupSource);
-  check("backup still takes the instance lock somewhere", backupCalls.length > 0, true);
-  check("backup's create-path lock opts out too (its parser rejects --break-lock)",
-    backupCalls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
 }
 
 finish("instance lock advice");

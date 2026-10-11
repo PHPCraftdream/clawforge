@@ -100,6 +100,15 @@ read fails. Unknown lock reads never mean absent. Top-level `next`/`nextActions`
 non-absent lock advice for inspection, doctor and status; manual takeover decisions do not
 invent an executable mutation command.
 
+To unlock metadata without running an application operation, use
+`operations --takeover-lock --break-lock --json`, not `up` or `restart` as an unlock
+workaround. Terminal callers must type `yes`; MCP requires `confirm: true`. Foreign
+owners additionally require the exact `--break-foreign-lock <host>` after verification
+in the original PID namespace. This command changes lock metadata only, not runtime,
+application files or operation history. Failed verification emits available observed
+before/claimed/after facts and conservative flags, then still fails non-zero; an
+unconfirmed release is not a successful unlock.
+
 ## Changing something
 
 Edit the declaration, look at what that implies, apply it, get an answer about the
@@ -300,6 +309,16 @@ process is gone on that machine. The intended command must support both `--break
 `--break-foreign-lock <hostId>` with the exact recorded identity. A wrong identity refuses.
 Bookkeeping-guard takeovers retain their existing audit in
 `<data>-locks/foreign-lock-takeovers.jsonl`; confirmation is never automatic or guessed.
+
+Historical by-only owners expose safe host/PID and `identitySource: legacy-by`, never the
+username or raw `by`. Their original PID namespace is unknown, even on the same physical
+host; no local liveness or birth probe runs. Verify the original namespace and owner manually
+before an intended takeover with `--break-lock` and exact `--break-foreign-lock 'PC'` (for
+recorded host `PC`). Candidate metadata and age prove neither death nor authorization.
+Only exact bounded `user@HOST pid POSITIVEDECIMAL` records with all structured identity fields
+absent qualify; partial, malformed or contradictory identities refuse, without migration.
+Historical takeover rechecks the exact raw `by`, operation ID, acquisition time and operation;
+structured legacy identity equality and modern generation checks remain separate.
 
 Takeover revalidates the observed generation, or the immutable acquisition identity of a
 legacy record without a generation. Missing or changed ownership refuses. A restoration

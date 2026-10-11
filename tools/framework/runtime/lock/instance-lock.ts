@@ -24,6 +24,10 @@ import { startHeartbeat, type Heartbeat } from "./heartbeat.ts";
 import {
   type LockHolder,
   type LockOptions,
+  type LockOwnerIdentity,
+  readLockOwnerIdentity,
+  isLocalLockOwner,
+  legacyByOwnerAdvice,
   STALE_AFTER_MS,
   HEARTBEAT_STALE_AFTER_MS,
   lockHome,
@@ -42,11 +46,13 @@ import {
   claimGenerationMarker,
   writeHolderOrRollback,
 } from "./lock-claim.ts";
-import { localLiveness, machineName } from "./process-identity.ts";
+import { localLiveness } from "./process-identity.ts";
+import { probeEntryExists } from "../transport/transport.ts";
 import type { Context } from "../../core/context.ts";
 
 export interface InstanceLockObservation {
   readonly state: "absent" | "live" | "dead" | "remote" | "unknown";
+  readonly identitySource?: LockOwnerIdentity["identitySource"];
   readonly host?: string;
   readonly pid?: number;
   readonly startedAt?: string;
@@ -61,8 +67,9 @@ export interface InstanceLockObservation {
 
 /** Read-only advice; never authorizes a takeover from elapsed time. */
 export function instanceLockAdvice(lock: InstanceLockObservation): Advice {
+  if (lock.identitySource === "legacy-by" && lock.host !== undefined) return manual(legacyByOwnerAdvice(lock.host));
   return lock.state === "dead" ? manual("owner proven dead; explicitly rerun the intended operation with --break-lock")
-    : lock.state === "remote" ? manual(`verify the remote owner first; exact confirmation required: --break-foreign-lock ${JSON.stringify(lock.host ?? "<unavailable-host>")} together with --break-lock`)
+    : lock.state === "remote" ? manual(`verify the remote owner in its original PID namespace first; exact confirmation required: --break-foreign-lock ${JSON.stringify(lock.host ?? "<unavailable-host>")} together with --break-lock`)
     : lock.state === "live" ? command(["status", "--json"], { note: "wait for the owner; observes without takeover" })
     : lock.state === "unknown" ? manual("owner identity/read unavailable; do not break by age") : manual("no operation lock");
 }
@@ -72,30 +79,42 @@ function lockObservation(lock: InstanceLockObservation): InstanceLockObservation
   return { ...lock, next, nextActions: [renderAdvice(next)] };
 }
 
+/** Internal snapshot: the public projection and CAS owner come from one read. */
+export interface InstanceLockSnapshot {
+  readonly observation: InstanceLockObservation;
+  readonly holder?: LockHolder;
+}
+
 /** No acquisition, heartbeat refresh or cleanup. Age is never owner-death evidence. */
-export async function observeInstanceLock(ctx: Context, now = Date.now()): Promise<InstanceLockObservation> {
+export async function observeInstanceLockSnapshot(ctx: Context, now = Date.now()): Promise<InstanceLockSnapshot> {
   const unknown = lockObservation({ state: "unknown", takeover: "none" });
+  let holder: LockHolder | undefined;
   try {
-    if (!(await ctx.transport.exists(lockPath(ctx)))) return lockObservation({ state: "absent", takeover: "none" });
-    const holder = await readLockHolder(ctx);
-    if (holder === undefined) return unknown;
-    const identityKnown = typeof holder.host === "string" && Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0;
+    if (!(await probeEntryExists(ctx.transport, lockPath(ctx)))) return { observation: lockObservation({ state: "absent", takeover: "none" }) };
+    holder = await readLockHolder(ctx);
+    if (holder === undefined) return { observation: unknown };
+    const identity = readLockOwnerIdentity(holder);
     const time = (value: unknown): string | undefined => typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined;
     const takenAt = time(holder.takenAt);
-    const startedAt = time(holder.startedAt);
-    const heartbeatAt = time(holder.heartbeatAt);
-    const remote = identityKnown && holder.host !== machineName();
-    const liveness = !identityKnown || remote ? "unknown" : await localLiveness({ machine: holder.host!, pid: holder.pid!, startedAt });
+    const startedAt = identity === undefined ? undefined : time(identity.startedAt);
+    const heartbeatAt = identity === undefined ? undefined : time(holder.heartbeatAt);
+    const remote = identity !== undefined && !isLocalLockOwner(identity);
+    const liveness = identity === undefined || remote ? "unknown" : await localLiveness({ machine: identity.host, pid: identity.pid, startedAt });
     const state = remote ? "remote" : liveness === "alive" ? "live" : liveness;
-    return lockObservation({
-      state, host: typeof holder.host === "string" && /^[a-zA-Z0-9._:-]{1,160}$/.test(holder.host) ? holder.host : undefined,
-      pid: identityKnown ? holder.pid : undefined, startedAt, heartbeatAt,
+    return { holder, observation: lockObservation({
+      state, identitySource: identity?.identitySource, host: identity?.host,
+      pid: identity?.pid, startedAt, heartbeatAt,
       operation: typeof holder.what === "string" && holder.what.length <= 80 ? /^[a-z-]{1,40}(?=\s|$)/.exec(holder.what)?.[0] : undefined,
       ageMs: takenAt === undefined ? undefined : Math.max(0, now - Date.parse(takenAt)),
       heartbeatAgeMs: heartbeatAt === undefined ? undefined : Math.max(0, now - Date.parse(heartbeatAt)),
       takeover: state === "dead" ? "explicit-break-lock" : remote ? "foreign-confirmation-required" : "none",
-    });
-  } catch { return unknown; }
+    }) };
+  } catch { return { holder, observation: unknown }; }
+}
+
+/** Public observation never exposes the raw owner record. */
+export async function observeInstanceLock(ctx: Context, now = Date.now()): Promise<InstanceLockObservation> {
+  return (await observeInstanceLockSnapshot(ctx, now)).observation;
 }
 
 export {
@@ -143,7 +162,7 @@ export function lockHeldHere(ctx: Context): boolean {
 }
 
 /** Assembles the handle a caller releases; release() closes over this acquisition's own generation. */
-function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, heartbeat: Heartbeat): HeldLock {
+function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, heartbeat: Heartbeat, strictVerification = false): HeldLock {
   let releasing: Promise<void> | undefined;
   const resource = lockResource(ctx);
   let handle: HeldLock;
@@ -172,9 +191,14 @@ function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, hea
           await heartbeat.stop();
           await withMutationGuard(ctx, async () => {
             const trash = await claimOwnedLockDirectory(ctx, generation);
+            if (trash === undefined && strictVerification) throw new Error("owned instance lock release claim was not verified");
             if (trash !== undefined) await removeOwnedLock(ctx, generation, trash);
-          });
-        } catch {
+            if (strictVerification && await probeEntryExists(ctx.transport, lockPath(ctx))) {
+              throw new Error("instance lock release was not verified");
+            }
+          }, false, undefined, { strictVerification });
+        } catch (error) {
+          if (strictVerification) throw error;
           // Failed cleanup leaves a reported stale lock.
         }
       })();
@@ -203,7 +227,7 @@ async function takeLockClaim(
   // for STALE_AFTER_MS alone reading a live `recipe install` as abandoned mid-build.
   const heartbeat = startHeartbeat(ctx, generation, readLockHolder, writeHolderRecord);
 
-  return buildHeldLock(ctx, holder, generation, heartbeat);
+  return buildHeldLock(ctx, holder, generation, heartbeat, options.strictVerification);
 }
 
 /** Serializes every path-changing claim from the initial read through holder publication. */
@@ -213,12 +237,24 @@ export async function takeLock(
   operationId: string,
   options: LockOptions = {},
 ): Promise<HeldLock> {
-  return withMutationGuard(
-    ctx,
-    () => takeLockClaim(ctx, what, operationId, options),
-    options.breakLock === true,
-    options.breakForeignLockHost,
-  );
+  let held: HeldLock | undefined;
+  try {
+    return await withMutationGuard(
+      ctx,
+      async () => {
+        held = await takeLockClaim(ctx, what, operationId, options);
+        return held;
+      },
+      options.breakLock === true,
+      options.breakForeignLockHost,
+      { strictVerification: options.strictVerification },
+    );
+  } catch (error) {
+    // Guard cleanup can fail after acquisition, before the caller receives the handle.
+    // Stop its heartbeat and attempt only ownership-checked release; retain the original error.
+    if (held !== undefined) await held.release().catch(() => {});
+    throw error;
+  }
 }
 
 /** Runs `body` holding the lock, and releases it whatever happens — including when the body
@@ -229,11 +265,11 @@ export async function withInstanceLock<T>(
   what: string,
   operationId: string,
   options: LockOptions,
-  body: () => Promise<T>,
+  body: (held: HeldLock) => Promise<T>,
 ): Promise<T> {
   const held = await takeLock(ctx, what, operationId, options);
   try {
-    return await runOwning(held, body);
+    return await runOwning(held, () => body(held));
   } finally {
     await held.release();
   }

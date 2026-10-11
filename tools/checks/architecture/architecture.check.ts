@@ -59,7 +59,6 @@ interface Baseline {
   };
   readonly legacyCommands: { readonly comment: string; readonly total: number };
   readonly unsummarizedDescriptions: { readonly comment: string; readonly total: number };
-  readonly declaredArguments: { readonly comment: string; readonly total: number };
   readonly untypedValueArguments: { readonly comment: string; readonly total: number };
   readonly imageStringOps: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly prosePins: PerFileMetric;
@@ -359,7 +358,6 @@ let changedWhen = 0;
 let requiresConfirmationWhen = 0;
 let legacyCount = 0;
 let unsummarized = 0;
-let argumentCount = 0;
 for (const command of Object.values(openclawCommands)) {
   if (command.readOnlyWhen !== undefined) readOnlyWhen += 1;
   if (command.changedWhen !== undefined) changedWhen += 1;
@@ -367,7 +365,6 @@ for (const command of Object.values(openclawCommands)) {
   // 4. Stage-3 (CommandSpec) counts, measured through the materialized declarations:
   // legacyCommands — entries not yet carrying a spec body.
   if (specOf(command) === undefined) legacyCount += 1;
-  argumentCount += (command.arguments ?? []).length;
 }
 
 // unsummarizedDescriptions — stage 5 (rf5-mcp) widened the scope from openclawCommands to
@@ -384,7 +381,6 @@ report(ratchet("rawArgvPredicates.changedWhen", baseline.rawArgvPredicates.chang
 report(ratchet("rawArgvPredicates.requiresConfirmationWhen", baseline.rawArgvPredicates.requiresConfirmationWhen, requiresConfirmationWhen, [], []));
 report(ratchet("legacyCommands", baseline.legacyCommands.total, legacyCount, [], []));
 report(ratchet("unsummarizedDescriptions", baseline.unsummarizedDescriptions.total, unsummarized, [], []));
-report(ratchet("declaredArguments", baseline.declaredArguments.total, argumentCount, [], []));
 
 // 4b. untypedValueArguments — stage 7 S2.4: every value argument (option, positional, and a
 // variadic's element kind, in single bodies and per-action slices alike) carries a declared

@@ -45,14 +45,84 @@ export interface LockHolder {
   readonly heartbeatAt?: string;
 }
 
-/** Whether `holder`'s process is provably gone: recorded on THIS machine (never a WSL/SSH
- *  target) and signalling it fails with ESRCH. A different machine, no pid, a live process,
- *  or an inconclusive probe are all "not provable" and stay silent — only a human decides.
- *  No pid-reuse cross-check against `startedAt` (too costly on every ordinary refusal). */
+/** Public owner facts only; historical pids have no known PID namespace. */
+export interface LockOwnerIdentity {
+  readonly identitySource: "structured" | "legacy-by";
+  readonly host: string;
+  readonly pid: number;
+  readonly startedAt?: string;
+}
+
+function validTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function safePhysicalHost(value: string): boolean {
+  return value.length <= 160 && value.split(".").every((label) =>
+    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label));
+}
+
+function containsUnsafeIdentityText(text: string, includeSpace: boolean): boolean {
+  return [...text].some((char) => {
+    const code = char.charCodeAt(0);
+    return code <= (includeSpace ? 32 : 31) || (code >= 127 && code <= 159);
+  });
+}
+
+function safeOwnerHost(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 160 || containsUnsafeIdentityText(value, true)) return false;
+  const ownerHost = /^([^:]+)(?::(?:win32|darwin|aix|android|freebsd|openbsd|netbsd|sunos|cygwin|haiku|linux-(?:[1-9][0-9]*|unknown)))?$/.exec(value);
+  return ownerHost !== null && safePhysicalHost(ownerHost[1]!);
+}
+
+/** Exact bounded historical spelling, not a general-purpose display-string parser. */
+function historicalByIdentity(value: unknown): LockOwnerIdentity | undefined {
+  if (typeof value !== "string" || value.length > 256 || containsUnsafeIdentityText(value, false)) return undefined;
+  const match = /^([a-zA-Z0-9_][a-zA-Z0-9_.-]{0,63})@([a-zA-Z0-9.-]{1,160}) pid ([1-9][0-9]{0,15})$/.exec(value);
+  if (match === null || match[0] !== value || !safePhysicalHost(match[2]!)) return undefined;
+  const pid = Number(match[3]);
+  return Number.isSafeInteger(pid) ? { identitySource: "legacy-by", host: match[2]!, pid } : undefined;
+}
+
+/** One reader for observation, refusal and takeover. Presence is not truthiness: explicit
+ *  null/undefined structured fields never fall back to a historical display string. */
+export function readLockOwnerIdentity(value: unknown): LockOwnerIdentity | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const holder = value as LockHolder;
+  if (typeof holder.operationId !== "string" || holder.operationId.trim().length === 0 || !validTimestamp(holder.takenAt)) return undefined;
+  const structured = ["host", "pid", "startedAt", "heartbeatAt", "generation"].some((key) => Object.hasOwn(holder, key));
+  if (!structured) return historicalByIdentity(holder.by);
+  if (!Object.hasOwn(holder, "host") || !Object.hasOwn(holder, "pid") ||
+      !safeOwnerHost(holder.host) || !Number.isSafeInteger(holder.pid) || (holder.pid ?? 0) <= 0 ||
+      (Object.hasOwn(holder, "startedAt") && !validTimestamp(holder.startedAt)) ||
+      (Object.hasOwn(holder, "heartbeatAt") && !validTimestamp(holder.heartbeatAt)) ||
+      (Object.hasOwn(holder, "generation") && !validGeneration(holder.generation))) return undefined;
+  // Historical by cannot accompany a modern generation or contradict structured identity.
+  // Modern :scope display strings do not match the historical grammar.
+  const historical = historicalByIdentity(holder.by);
+  if (historical !== undefined && (Object.hasOwn(holder, "generation") ||
+      historical.host !== holder.host || historical.pid !== holder.pid)) return undefined;
+  return { identitySource: "structured", host: holder.host, pid: holder.pid!, startedAt: holder.startedAt };
+}
+
+/** A physical hostname alone is never enough to select our process table. */
+export function isLocalLockOwner(identity: LockOwnerIdentity): boolean {
+  return identity.identitySource === "structured" && identity.host.includes(":") &&
+    !identity.host.endsWith(":linux-unknown") && identity.host === machineName();
+}
+
+export function legacyByOwnerAdvice(host: string, breakLockSupported = true): string {
+  return `Historical owner PID namespace is unknown; verify the owner in its ORIGINAL PID namespace first. Candidate host/PID metadata is not proof of death or authorization; ${breakLockSupported
+    ? `then explicitly rerun the intended operation with --break-lock and exact --break-foreign-lock '${host}' confirmation`
+    : "this command does not accept --break-lock; choose an intended operation supporting exact foreign-owner confirmation"}.`;
+}
+
+/** Only a validated, scoped local identity can be signalled here. */
 function isProvablyDeadHere(holder: LockHolder): boolean {
-  if (holder.host !== machineName() || holder.pid === undefined) return false;
+  const identity = readLockOwnerIdentity(holder);
+  if (identity === undefined || !isLocalLockOwner(identity)) return false;
   try {
-    process.kill(holder.pid, 0);
+    process.kill(identity.pid, 0);
     return false;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "ESRCH";
@@ -138,7 +208,7 @@ async function readHolderAt(ctx: Context, path: string): Promise<LockHolder | un
     const raw = await ctx.transport.readFile(path);
     if (raw.length > 65536) return undefined;
     const parsed = JSON.parse(raw) as LockHolder;
-    return typeof parsed.operationId === "string" ? parsed : undefined;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && typeof parsed.operationId === "string" ? parsed : undefined;
   } catch {
     // Absent, unreadable, or not JSON. The directory may still exist, and takeLock treats
     // that as held-by-someone-unknown rather than free — a reason to ask a human, not proceed.
@@ -176,20 +246,22 @@ function validGeneration(value: unknown): value is string {
 /** A legacy record needs meaningful immutable identity, not just two absent generations.
  *  Birth time is optional on older records, but when supplied must be a valid timestamp. */
 function validLegacyHolder(holder: LockHolder): boolean {
-  const timestamp = (value: unknown): boolean => typeof value === "string" && Number.isFinite(Date.parse(value));
-  return holder.generation === undefined &&
-    typeof holder.host === "string" && holder.host.trim().length > 0 &&
-    Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0 &&
-    typeof holder.operationId === "string" && holder.operationId.trim().length > 0 &&
-    timestamp(holder.takenAt) && (holder.startedAt === undefined || timestamp(holder.startedAt));
+  return !Object.hasOwn(holder, "generation") && readLockOwnerIdentity(holder) !== undefined;
 }
 
 function sameTakeoverHolder(observed: LockHolder, displaced: LockHolder | undefined): boolean {
-  if (displaced === undefined) return false;
+  if (displaced === undefined || readLockOwnerIdentity(observed) === undefined || readLockOwnerIdentity(displaced) === undefined) return false;
   if (validGeneration(observed.generation)) {
     return validGeneration(displaced.generation) && displaced.generation === observed.generation;
   }
   if (!validLegacyHolder(observed) || !validLegacyHolder(displaced)) return false;
+  const observedIdentity = readLockOwnerIdentity(observed);
+  const displacedIdentity = readLockOwnerIdentity(displaced);
+  if (observedIdentity === undefined || displacedIdentity === undefined || observedIdentity.identitySource !== displacedIdentity.identitySource) return false;
+  if (observedIdentity.identitySource === "legacy-by") {
+    return displaced.by === observed.by && displaced.operationId === observed.operationId &&
+      displaced.takenAt === observed.takenAt && displaced.what === observed.what;
+  }
   return displaced.host === observed.host && displaced.pid === observed.pid &&
     displaced.operationId === observed.operationId && displaced.takenAt === observed.takenAt &&
     displaced.startedAt === observed.startedAt;
@@ -288,10 +360,17 @@ export const TAKEOVER_LOST_LINE = "Another operation already took it over. Re-ru
  *  but delete files and hope. */
 export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSupported = true): string {
   const age = ageMs(holder, now);
+  const identity = readLockOwnerIdentity(holder);
   const lines = [
     `another operation is changing this instance: ${holder.what} (${holder.operationId})`,
-    `started by ${holder.by}, ${humanAge(age)} ago`,
+    identity?.identitySource === "legacy-by"
+      ? `candidate owner host ${identity.host} pid ${identity.pid}; PID namespace unknown, ${humanAge(age)} ago`
+      : `started by ${holder.by}, ${humanAge(age)} ago`,
   ];
+  if (identity?.identitySource === "legacy-by") {
+    lines.push(legacyByOwnerAdvice(identity.host, breakLockSupported));
+    return lines.join("\n");
+  }
   const stale = isStale(holder, now);
   // A fact, not a guess: recorded on this machine and the pid is provably gone. Independent
   // of staleness — a crash seconds ago is just as dead as one thirty minutes ago.
@@ -309,9 +388,9 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
     // recently-refreshed holder is never told to break its own lock.
     deadHere
       ? `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`
-      : typeof holder.host === "string" && holder.host !== machineName() && Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0
+      : identity !== undefined && !isLocalLockOwner(identity)
         ? breakLockSupported
-          ? `Verify the remote owner first; takeover requires --break-lock and exact --break-foreign-lock ${JSON.stringify(holder.host)} confirmation.`
+          ? `Verify the remote owner in its original PID namespace first; takeover requires --break-lock and exact --break-foreign-lock ${JSON.stringify(identity.host)} confirmation.`
           : "Verify the remote owner first; this command does not accept --break-lock; choose an intended operation supporting exact foreign-owner confirmation."
         : liveWaitLine(holder.operationId),
   );
@@ -320,8 +399,11 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
 
 export function refusalAdvice(holder: LockHolder | undefined, breakLockSupported = true): Advice {
   if (holder === undefined) return manual("Owner identity is unknown; do not take over by age alone.");
+  const identity = readLockOwnerIdentity(holder);
+  if (identity === undefined) return manual("Owner identity is malformed or unknown; do not take over by age alone.");
+  if (identity.identitySource === "legacy-by") return manual(legacyByOwnerAdvice(identity.host, breakLockSupported));
   if (isProvablyDeadHere(holder)) return manual(`Owner proven dead; ${breakLockSupported ? "explicitly rerun the intended operation with --break-lock" : "this command does not accept --break-lock; choose an intended operation supporting explicit takeover"}.`);
-  if (typeof holder.host === "string" && holder.host !== machineName() && Number.isSafeInteger(holder.pid) && (holder.pid ?? 0) > 0) return manual(`Verify the remote owner first; ${breakLockSupported ? `the intended operation requires --break-lock and exact --break-foreign-lock ${JSON.stringify(holder.host)} confirmation` : "this command does not accept --break-lock; choose an intended operation supporting exact foreign-owner confirmation"}.`);
+  if (!isLocalLockOwner(identity)) return manual(`Verify the remote owner in its original PID namespace first; ${breakLockSupported ? `the intended operation requires --break-lock and exact --break-foreign-lock ${JSON.stringify(identity.host)} confirmation` : "this command does not accept --break-lock; choose an intended operation supporting exact foreign-owner confirmation"}.`);
   return manual("Wait for the owner; live or unknown owners cannot be taken over by age.");
 }
 
@@ -350,13 +432,19 @@ export interface LockOptions {
   readonly breakLock?: boolean;
   readonly breakLockSupported?: boolean;
   readonly breakForeignLockHost?: string;
+  /** Opt-in metadata recovery: refuse fresh acquisition or a changed owner. */
+  readonly expectedOwner?: LockHolder;
+  readonly strictVerification?: boolean;
 }
 
 /** Wins the lock directory, or takes over an existing one under --break-lock; never both silently. */
 export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Promise<void> {
-  const claim = await claimDirectory(ctx);
+  const claim = options.expectedOwner === undefined
+    ? await claimDirectory(ctx)
+    : { won: false, heldByOther: (await ctx.transport.exec("test", ["-d", lockPath(ctx)], { allowFailure: true })).code === 0, detail: "expected existing owner is no longer observable" };
 
   if (!claim.won && !claim.heldByOther) {
+    if (options.expectedOwner !== undefined) throw new Error("expected existing lock is absent, changed or unreadable; metadata takeover refused");
     // Not a lock at all: mkdir could not run. --break-lock would fail the same way, so it's
     // not offered.
     die(
@@ -369,6 +457,9 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
   if (claim.won) return;
 
   const existing = await readLockHolder(ctx);
+  if (options.expectedOwner !== undefined && !sameTakeoverHolder(options.expectedOwner, existing)) {
+    throw new Error("the lock owner changed before metadata takeover; nothing authorized this owner");
+  }
 
   if (options.breakLock !== true) {
     // An existing directory with no readable holder is still someone's — most likely a run
@@ -381,16 +472,17 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
     );
   }
 
-  if (existing !== undefined && !validGeneration(existing.generation) && !validLegacyHolder(existing)) {
-    die("lock owner acquisition identity is malformed; takeover cannot compare ownership", refusalAdvice(undefined));
+  const identity = existing === undefined ? undefined : readLockOwnerIdentity(existing);
+  if (existing === undefined || identity === undefined) {
+    die(existing === undefined
+      ? "lock owner acquisition identity is unknown; takeover cannot compare ownership"
+      : "lock owner acquisition identity is malformed; takeover cannot compare ownership", refusalAdvice(existing));
   }
-  if (existing !== undefined && typeof existing.host === "string" && Number.isSafeInteger(existing.pid) && (existing.pid ?? 0) > 0) {
-    const local = existing.host === machineName();
-    const life = await localLiveness({ machine: existing.host, pid: existing.pid!, startedAt: existing.startedAt });
-    if (local && life !== "dead") die("the recorded lock owner is live or unknown; --break-lock cannot take it over", manual("Wait for the owner; do not take over by age."));
-    if (!local && options.breakForeignLockHost !== existing.host) die("foreign lock owner requires exact --break-foreign-lock host confirmation", refusalAdvice(existing, options.breakLockSupported));
-  } else {
-    die("lock owner identity is unknown; takeover requires confirmed ownership, not age alone", refusalAdvice(undefined));
+  if (isLocalLockOwner(identity)) {
+    const life = await localLiveness({ machine: identity.host, pid: identity.pid, startedAt: identity.startedAt });
+    if (life !== "dead") die("the recorded lock owner is live or unknown; --break-lock cannot take it over", manual("Wait for the owner; do not take over by age."));
+  } else if (options.breakForeignLockHost !== identity.host) {
+    die("foreign lock owner requires exact --break-foreign-lock host confirmation", refusalAdvice(existing, options.breakLockSupported));
   }
   const takeover = await claimTakeover(ctx, existing);
   if (!takeover.won) {
@@ -402,7 +494,7 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
     );
   }
 
-  log(`taking over the lock held by ${existing.what} (${existing.operationId}) — --break-lock`);
+  if (!options.strictVerification) log(`taking over the lock held by ${existing.what} (${existing.operationId}) — --break-lock`);
 }
 
 /** Mints this acquisition's identity — a fresh random generation, before its first command. */

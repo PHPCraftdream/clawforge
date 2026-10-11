@@ -196,10 +196,6 @@
     "comment": "stage 3 done, guard at 0: arguments of the derived `arguments` view with a description longer than 60 and no summary",
     "total": 0
   },
-  "declaredArguments": {
-    "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
-    "total": 184
-  },
   "untypedValueArguments": {
     "comment": "stage 7 S2.4: value arguments of openclawCommands (option/positional/variadic element, per-action slices included) without a declared `value` kind, measured structurally through specOf/specData — the legacy parse/choices bridges are deleted, so any new occurrence fails",
     "total": 0

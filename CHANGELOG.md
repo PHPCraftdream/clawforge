@@ -12,6 +12,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Write-isolation checks preserve regex boundaries and native promisify capabilities while
   distinguishing TypeScript-only metadata and readonly filesystem descriptors/constants.
   Fixture writers allocate and clean their own roots; the unknown-target budget is unchanged.
+* Metadata-only lock takeover requires explicit consent and exact owner revalidation.
+  Dangling lock or mutation-guard entries no longer certify absence or quiescence.
+* Retired the refactor-only frozen CLI argument count; new arguments remain covered by
+  typed binding, effect/confirmation and refusal-boundary contract checks.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.

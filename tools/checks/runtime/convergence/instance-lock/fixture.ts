@@ -6,6 +6,51 @@
 
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
+
+export const FIXTURE_LOCK_PATH = "/srv/clawforge-locks/operation.lock";
+export const FIXTURE_LOCK_HOME = "/srv/clawforge-locks";
+
+export interface PresenceModel {
+  readonly parents: Map<string, boolean>;
+  readonly links: Map<string, string | null>;
+  readonly answers: Map<string, ExecResult>;
+  rawTestE(path: string): ExecResult;
+  probe(path: string, entry?: boolean): ExecResult;
+}
+
+export function presenceModel(files: Map<string, string>, dirs: Set<string>, home: string): PresenceModel {
+  const parents = new Map<string, boolean>([["/", true], ["/srv", true], [home, true]]);
+  const links = new Map<string, string | null>();
+  const resolve = (path: string, seen = new Set<string>(), entry = false): { present: boolean; problem?: string } => {
+    const components = path.split("/").filter(Boolean);
+    let current = "";
+    for (let i = 0; i < components.length; i++) {
+      const parent = current || "/";
+      if (parents.get(parent) === false) return { present: false, problem: `blocked ${parent}` };
+      current += `/${components[i]}`;
+      if (links.has(current)) {
+        if (entry && i === components.length - 1) return { present: true };
+        const target = links.get(current);
+        if (target === null || target === undefined) return { present: false, problem: `unreadable ${current}` };
+        if (seen.has(current)) return { present: false, problem: `loop ${current}` };
+        seen.add(current);
+        return resolve(`${target}/${components.slice(i + 1).join("/")}`, seen, entry);
+      }
+      if (!parents.has(current) && !dirs.has(current) && !files.has(current)) return { present: false };
+    }
+    return { present: true };
+  };
+  const answers = new Map<string, ExecResult>();
+  return { parents, links, answers,
+    rawTestE(path: string): ExecResult { return { code: resolve(path).present ? 0 : 1, stdout: "", stderr: "" }; },
+    probe(path: string, entry = false): ExecResult {
+      const state = resolve(path, new Set(), entry);
+      return answers.get(path) ?? { code: 0, stdout: `${state.problem ?? (state.present ? "exists" : "absent")}\n`, stderr: "" };
+    },
+  };
+}
+
 
 export interface LockFixture {
   readonly ctx: Context;
@@ -25,6 +70,8 @@ export function stubContext(): LockFixture {
     ctx: {
       settings: { dataDir: "/srv/clawforge" },
       transport: {
+        async exists(path: string): Promise<boolean> { return dirs.has(path) || files.has(path); },
+        async existsEntry(path: string): Promise<boolean> { return dirs.has(path) || files.has(path); },
         async exec(command: string, args: string[]) {
           if (command === "mkdir") {
             const target = args[args.length - 1];
@@ -140,6 +187,21 @@ export function stubContext(): LockFixture {
       },
     } as unknown as Context,
   };
+}
+
+export async function captureFailure(body: () => Promise<unknown>): Promise<unknown> {
+  let failure: unknown;
+  await withOutputSink(
+    () => {},
+    async () => {
+      try {
+        await body();
+      } catch (error) {
+        failure = error;
+      }
+    },
+  );
+  return failure;
 }
 
 /** Runs `body`, capturing the message of whatever it throws — the lock's job is to refuse, so

@@ -76,6 +76,17 @@ export class LocalTransport implements Transport {
     }
   }
 
+  async existsEntry(path: string): Promise<boolean> {
+    try {
+      await lstat(path);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return false;
+      throw error;
+    }
+  }
+
   async mkdirp(path: string): Promise<void> {
     await mkdir(path, { recursive: true });
   }

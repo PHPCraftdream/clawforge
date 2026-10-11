@@ -110,6 +110,8 @@ export interface Transport {
   /** Creates a new owner-only directory and refuses an existing path. */
   readonly mkdirPrivate?: (path: string) => Promise<void>;
   exists(path: string): Promise<boolean>;
+  /** Final-leaf lstat presence; unknown traversal/errors throw, never imply absence. */
+  readonly existsEntry?: (path: string) => Promise<boolean>;
   mkdirp(path: string): Promise<void>;
   remove(path: string): Promise<void>;
   /** Removes one empty directory, preserving any contents on failure. */

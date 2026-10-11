@@ -78,7 +78,8 @@ export function withEnvPrefix(
  *  a multi-line argument wouldn't survive. */
 export const PRESENCE_PROBE = `
 p=$1
-if [ -e "$p" ]; then echo exists; exit 0; fi
+entry=\${2:-follow}
+if [ "$entry" != entry ] && [ -e "$p" ]; then echo exists; exit 0; fi
 case $p in
   /*) rest=$p ;;
   *) rest=\${PWD%/}/$p ;;
@@ -98,6 +99,8 @@ while :; do
   cur=$cur/$comp
   # -h is an lstat: it sees the link itself, so it answers even when the target does not.
   if [ -h "$cur" ]; then
+    # Preserve only the final entry, after its parent was checked; parents still resolve.
+    if [ "$entry" = entry ] && [ -z "$rest" ]; then echo exists; exit 0; fi
     hops=$((hops + 1))
     if [ "$hops" -gt 40 ]; then echo "loop $cur"; exit 0; fi
     target=$(readlink "$cur") || { echo "unreadable $cur"; exit 0; }
@@ -108,6 +111,7 @@ while :; do
     continue
   fi
   if [ ! -e "$cur" ]; then echo absent; exit 0; fi
+  if [ "$entry" = entry ] && [ -z "$rest" ]; then echo exists; exit 0; fi
 done
 # Every component is there while the path as written is not: a trailing slash on a file, or
 # something created since the first check. Either way the answer above stands.
@@ -122,10 +126,11 @@ echo absent
 export async function existsVia(
   exec: (command: string, args: string[], options: ExecOptions) => Promise<ExecResult>,
   path: string,
+  finalLeaf: "follow" | "entry" = "follow",
 ): Promise<boolean> {
   // `sh -s -- <path>`: the script arrives on stdin and the path is its $1, so neither is ever
   // part of a command line — a space or a quote in the path is data, never syntax.
-  const result = await exec("sh", ["-s", "--", path], { allowFailure: true, input: PRESENCE_PROBE });
+  const result = await exec("sh", ["-s", "--", path, ...(finalLeaf === "entry" ? ["entry"] : [])], { allowFailure: true, input: PRESENCE_PROBE });
   const verdict = result.stdout.trim().split("\n").at(-1)?.trim() ?? "";
 
   if (result.code === 0) {
@@ -190,6 +195,18 @@ export async function probeExists(transport: Transport, path: string): Promise<b
     return await transport.exists(path);
   } catch (error) {
     throw unknownAnswer(`could not check whether ${path} exists on the target`, error);
+  }
+}
+
+/** Directory-entry presence: dangling final symlinks are present, checked parents still
+ * resolve normally. Never fall back to follow-target exists() or bare test exit status. */
+export async function probeEntryExists(transport: Transport, path: string): Promise<boolean> {
+  try {
+    return transport.existsEntry !== undefined
+      ? await transport.existsEntry(path)
+      : await existsVia((command, args, options) => transport.exec(command, args, options), path, "entry");
+  } catch (error) {
+    throw unknownAnswer(`could not check whether entry ${path} exists on the target`, error);
   }
 }
 

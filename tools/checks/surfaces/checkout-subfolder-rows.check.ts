@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkoutSubfolderReport } from "#framework/integration/gate.ts";
 import { spawnLocal } from "#framework/runtime/transport/exec.ts";
+import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
 import type { UserError } from "#framework/core/io/log.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
@@ -48,7 +49,9 @@ for (const [label, leaf] of CASES) {
 
     await requires("bash", `${label}: the posix row pastes in bash`, async () => {
       if (posix === undefined) { checkTrue(`${label}: no posix row to paste`, false); return; }
-      const result = await spawnLocal("bash", ["-c", `${posix} && test -e ${MARKER}`], { allowFailure: true });
+      const bash = await bashCommand();
+      if (bash === undefined) throw new Error("required Bash selection disappeared");
+      const result = await spawnLocal(bash, ["-c", `${posix} && test -e ${MARKER}`], { allowFailure: true, env: { PATH: bashEnvironment(bash).PATH! } });
       checkTrue(`${label}: bash lands in the target`, result.code === 0);
     });
     await requires("windows-host", `${label}: the cmd row pastes in cmd.exe`, async () => {

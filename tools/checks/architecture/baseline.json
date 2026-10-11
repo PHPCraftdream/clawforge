@@ -703,12 +703,6 @@
           "const baseEnv = { OC_DATA_DIR: sourceData, OC_BIND_ADDRESS: \"127.0.0.1\", OC_TARGET_LOCATION: process.platform === \"win32\" ? \"wsl\" : \"local\", OPENCLAW_IMAGE: `fixture@sha256:${\"a\".repeat(64)}`, OPENCLAW_GATEWAY_TOKEN: \"fixture-token-12345\" };": 1
         }
       },
-      "tools/checks/sets/pack.ts": {
-        "reason": "value selection: tar --force-local on Windows for the drive-letter path",
-        "lines": {
-          "const forceLocal = process.platform === \"win32\" ? [\"--force-local\"] : [];": 1
-        }
-      },
       "tools/checks/runtime/service/image-identity/compose-live.check.ts": {
         "reason": "nested availability inside a requires() body: the capability held, this note covers what no capability models (a per-file tool or image, a skip note of a helper whose group is gated)",
         "lines": {

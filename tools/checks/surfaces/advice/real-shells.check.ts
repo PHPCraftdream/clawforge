@@ -27,6 +27,7 @@ import { readFile } from "node:fs/promises";
 import { resolve as pathResolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { pwshCommand, CapabilityProbe, DEFAULT_PROBES } from "#checks/kit/capabilities/capabilities.ts";
+import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { runProcess, type ProcessResult } from "#checks/kit/spawn.ts";
 
 const TIMEOUT_MS = 60_000;
@@ -169,8 +170,12 @@ const CASES: readonly RealCase[] = [
 
 // --- the drive: render -> model words -> real shell -> the stub's answer -----------------------
 
-const pathFor = (shell: "bash" | "pwsh" | "cmd"): NodeJS.ProcessEnv => {
-  const list = [ROOT, process.env.PATH ?? ""].join(shell === "bash" ? ":" : ";");
+const pathFor = (shell: "bash" | "pwsh" | "cmd", bash?: string): NodeJS.ProcessEnv => {
+  if (shell === "bash") {
+    if (bash === undefined) throw new Error("required Bash selection disappeared");
+    return bashEnvironment(bash, [ROOT]);
+  }
+  const list = [ROOT, process.env.PATH ?? ""].join(";");
   return { ...process.env, PATH: list };
 };
 
@@ -218,8 +223,10 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
   // The shell starts where the operator pastes; a cd inside the line does the moving.
   const spawnCwd = pasted.cd === undefined ? pasteBase : paste;
   rmSync(MARKER, { force: true });
-  const run = shell === "bash"
-    ? await runProcess("bash", ["-s"], { input: spelled, cwd: spawnCwd, env: pathFor(shell), timeoutMs: TIMEOUT_MS })
+  const bash = shell === "bash" ? await bashCommand() : undefined;
+  if (shell === "bash" && bash === undefined) throw new Error("required Bash selection disappeared");
+  const run = shell === "bash" && bash !== undefined
+    ? await runProcess(bash, ["-s"], { input: spelled, cwd: spawnCwd, env: pathFor(shell, bash), timeoutMs: TIMEOUT_MS })
     : shell === "pwsh"
       ? await runProcess(await pwshCommand() ?? "pwsh",
           // -EncodedCommand: the line reaches PowerShell's own tokenizer byte for byte —

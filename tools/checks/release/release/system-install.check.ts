@@ -26,6 +26,7 @@ import { ALREADY_HOLDS_APP, NOTHING_TO_INSTALL_NOTE, IN_BASH_NOTE, NOT_INITIALIS
 import { APP_CONFLICT_NOTE, FOREIGN_SOURCES_NOTE } from "#framework/entry/delegate.ts";
 import { INSTALLED_MARK, NOT_ON_PATH_HINT } from "#tools/dev/install-messages.ts";
 import { check, requires, finish } from "#checks/kit/harness.ts";
+import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const windows = process.platform === "win32";
@@ -233,14 +234,14 @@ try {
   if (answer === undefined) tail({ code: 1, output: mcp.output });
   check("the MCP launcher reaches the system-wide command and answers a ping", answer === undefined ? undefined : (JSON.parse(answer) as { result?: unknown }).result, {});
 
-  // The committed ./clawforge shim is bash; on Windows that is Git Bash, never WSL's bash.exe.
-  const bash = windows ? ["C:\\Program Files\\Git\\bin\\bash.exe"].find((path) => existsSync(path)) : "bash";
   await requires("bash", "the committed ./clawforge shim fallback", async () => {
+    const bash = await bashCommand();
     if (bash === undefined) throw new Error("bash capability present but no bash binary resolved");
-    const shimmed = await run(bash, ["./clawforge", "version"], fresh, { env });
+    const shimEnv = bashEnvironment(bash, [bin], env);
+    const shimmed = await run(bash, ["./clawforge", "version"], fresh, { env: shimEnv });
     tail(shimmed);
     check("without a local package the ./clawforge shim hands over to the system-wide command", shimmed.output.trim(), `clawforge ${expected}`);
-    const shimHelp = await run(bash, ["./clawforge", "help"], fresh, { env });
+    const shimHelp = await run(bash, ["./clawforge", "help"], fresh, { env: shimEnv });
     tail(shimHelp);
     check("through the shim the hints say ./clawforge, which is what runs there", shimHelp.output.includes(usageFooterHint(shimHint)) && shimHelp.output.includes(usageTopLine(shimHint)), true);
 
@@ -255,7 +256,7 @@ try {
       await writeFile(join(entryDir, "bin.js"), stub, "utf8");
       await mkdir(fakeBin, { recursive: true });
       await writeFile(join(fakeBin, "clawforge"), "#!/bin/sh\necho 'exec: node: not found' >&2\nexit 97\n", { mode: 0o755 });
-      const viaGlobalPackage = await run(bash, ["./clawforge", "status"], fresh, { env: withOnPath(fakeBin) });
+      const viaGlobalPackage = await run(bash, ["./clawforge", "status"], fresh, { env: bashEnvironment(bash, [fakeBin], withOnPath(fakeBin)) });
       tail(viaGlobalPackage);
       check(`the shim runs the global package next to a global command that cannot run itself (${label})`, viaGlobalPackage.output.trim(), "stub status");
     }

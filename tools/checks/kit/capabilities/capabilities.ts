@@ -13,10 +13,13 @@ import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { DEFAULT_WSL_DISTRO } from "#framework/core/env.ts";
 import { ENGINE_DISTRO } from "#framework/commands/interface/host/contexts.ts";
+import { bashCommand } from "./native-tools.ts";
+export { bashCommand, gnuTarCommand } from "./native-tools.ts";
 
 export const CAPABILITIES = [
   "docker", "docker-desktop-wsl", "wsl", "posix-sh", "rsync", "symlink", "linux-host", "posix-host", "local-posix", "windows-host", "ssh-loopback", "gnu-userland", "posix-modes", "auto-target",
   "bash", "pwsh", "cmd",
+  "recipe-helper-boundary", "recipe-staging-boundary", "recipe-private-parent-boundary",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -55,10 +58,8 @@ export async function hasPosixSh(): Promise<boolean> {
   return swallow(async () => (await spawnLocal("sh", ["-c", "exit 0"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
 }
 
-/** A `bash` that runs a trivial command — the shell that sources the generated completion
- *  script for real; neither `sh` nor wsl.exe stands in for it. */
 export async function hasBash(): Promise<boolean> {
-  return swallow(async () => (await spawnLocal("bash", ["-c", "exit 0"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
+  return (await bashCommand()) !== undefined;
 }
 
 /** A real rsync binary on PATH. */
@@ -214,6 +215,23 @@ export async function hasSshLoopback(): Promise<boolean> {
   )).code === 0);
 }
 
+async function hasAuthorizedRecipeBoundary(environment: string): Promise<boolean> {
+  return swallow(async () => (await isLinuxHost()) && process.getuid?.() === 0
+    && process.getgid?.() === 0 && process.env[environment] === "1");
+}
+
+export function hasRecipeHelperBoundary(): Promise<boolean> {
+  return hasAuthorizedRecipeBoundary("OC_RECIPE_HELPER_BOUNDARY");
+}
+
+export function hasRecipeStagingBoundary(): Promise<boolean> {
+  return hasAuthorizedRecipeBoundary("OC_RECIPE_STAGING_BOUNDARY");
+}
+
+export function hasRecipePrivateParentBoundary(): Promise<boolean> {
+  return hasAuthorizedRecipeBoundary("OC_RECIPE_PRIVATE_PARENT_BOUNDARY");
+}
+
 export type ProbeMap = Readonly<Record<Capability, () => Promise<boolean>>>;
 
 export const DEFAULT_PROBES: ProbeMap = {
@@ -234,6 +252,9 @@ export const DEFAULT_PROBES: ProbeMap = {
   bash: hasBash,
   pwsh: hasPwsh,
   cmd: hasCmd,
+  "recipe-helper-boundary": hasRecipeHelperBoundary,
+  "recipe-staging-boundary": hasRecipeStagingBoundary,
+  "recipe-private-parent-boundary": hasRecipePrivateParentBoundary,
 };
 
 /** Probes each capability at most once per instance, regardless of how many files ask —

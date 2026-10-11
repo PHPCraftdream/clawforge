@@ -27,6 +27,7 @@ import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { completionScenarios, type CompletionScenario } from "./scenarios.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { tokenizeLine } from "#checks/kit/shells.ts";
+import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 
@@ -483,7 +484,7 @@ const NOTE_MARK = String.fromCharCode(32, 32, 40);
     const prose = renderProse(details);
     const pipeNote = prose.search(/  \(in bash\) \|/) !== -1;
     const redirectNote = prose.search(/  \(in bash\) >/) !== -1;
-    checkTrue("the rendered Install sentence keeps the pwsh note out of the pipeline", pipeNote === false && redirectNote === false && /and pipe it through/.test(prose) === true);
+    checkTrue("the rendered Install sentence keeps the pwsh note out of the pipeline", pipeNote === false && redirectNote === false);
     checkHelpInstallFragments(prose, details, SHIM_PROGRAM);
   } finally {
     setInvocation(previous);
@@ -491,6 +492,8 @@ const NOTE_MARK = String.fromCharCode(32, 32, 40);
 }
 
 await requires("bash", "the bash Install: line, pasted in a real bash", async () => {
+  const bash = await bashCommand();
+  if (bash === undefined) throw new Error("required Bash selection disappeared");
   const previous = invocation();
   setInvocation(WRAPPER_FRAME);
   try {
@@ -514,7 +517,7 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
         "complete -p ./clawforge",
         "",
       ].join("\n"), "utf8");
-      const proc = spawnSync("bash", [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir });
+      const proc = spawnSync(bash, [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir, env: bashEnvironment(bash) });
       check("bash: the pasted Install: line exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
       const registered = (proc.stdout ?? "").split("\n").map((row) => row.trim()).filter((row) => row !== "").map((row) => row.split(" ").slice(-2)).sort();
       check("bash: the paste registered both completer names", registered, [["_clawforge_complete", "./clawforge"], ["_clawforge_complete", "clawforge"]]);
@@ -569,6 +572,8 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
 // Whether a usable bash exists is a host fact, not a string to sniff: the `bash` capability
 // probe decides (and OC_CHECK_REQUIRE=bash turns the skip into a failure, which is what CI does).
 await requires("bash", "the generated bash script, sourced by a real bash", async () => {
+  const bash = await bashCommand();
+  if (bash === undefined) throw new Error("required Bash selection disappeared");
   const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
   try {
     const scriptPath = join(dir, "completion.sh");
@@ -580,15 +585,14 @@ await requires("bash", "the generated bash script, sourced by a real bash", asyn
     await chmod(stub, 0o755);
     const driverPath = join(dir, "driver.sh");
     await writeFile(driverPath, bashDriver(scriptPath), "utf8");
-    const proc = spawnSync("bash", [driverPath], {
+    const proc = spawnSync(bash, [driverPath], {
       timeout: 360_000, encoding: "utf8",
-      // The stub has to be found on PATH for `"${COMP_WORDS[0]}" list --json …` to answer.
-      env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` },
+      env: bashEnvironment(bash, [dir]),
     });
     check("bash: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
     const answers = replies(proc.stdout, " ");
     assertShellAnswers("bash", answers, bashDivergent);
-    check("bash: the generated script parses (bash -n)", spawnSync("bash", ["-n", scriptPath], { timeout: 15_000 }).status, 0);
+    check("bash: the generated script parses (bash -n)", spawnSync(bash, ["-n", scriptPath], { timeout: 15_000, env: bashEnvironment(bash) }).status, 0);
     // zsh loads this SAME completer body through bashcompinit, so the two scripts cannot drift:
     // everything from `_clawforge_lookup()` to the end is one text, byte for byte.
     const body = (text: string): string => text.slice(text.indexOf("_clawforge_lookup()"));

@@ -2,7 +2,7 @@
 // installed-set record, a set artifact and an agent config named `aux` are reached by their
 // readers (safeName); attempting to create reserved `con` names is refused per creator type.
 
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createName, readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,6 +14,7 @@ import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import { readInstalledSet, readInstalledSetStrict, unpackArtifactVerified, installedSetFile } from "#framework/set/artifacts/install.ts";
 import { setManifestId } from "#framework/set/artifacts/model.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
+import { artifactTools } from "#checks/kit/capabilities/native-tools.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 import { parseAgentConfig } from "#framework/commands/management/provision-agent/declaration.ts";
 import { reservedNameMessage } from "#framework/core/values/names.ts";
@@ -24,7 +25,7 @@ import * as kinds from "#framework/core/values/kinds.ts";
 import { ValueError } from "#framework/core/values/value.ts";
 
 const DEVICE = "aux";
-const root = await mkdtemp(join(tmpdir(), "clawforge-name-compat-"));
+const root = await mkdtemp(join(tmpdir(), "clawforge-name-compat $ O'Brien-"));
 const apps = await isolatedAppsRoot("name-compat");
 try {
   // A deployment directory named like a device: listed, selectable, removable.
@@ -63,11 +64,23 @@ try {
     files: { "config/desired-state.json": checksumOf("[]") }, recipes: {}, secrets: [], acceptance: {},
   };
   await writeFile(join(source, "set.json"), `${JSON.stringify(manifest)}\n`);
-  const artifact = join(root, "aux.tar.gz");
-  await packArtifact(source, manifest, artifact);
-  const unpacked = await unpackArtifactVerified(artifact);
-  check("an artifact named aux verifies", unpacked.verified.id, setManifestId(manifest));
-  await rm(unpacked.staging, { recursive: true, force: true });
+  const artifacts = join(root, "artifacts $ O'Brien");
+  await mkdir(artifacts);
+  const artifact = join(artifacts, "aux.tar.gz");
+  const tools = await artifactTools();
+  let unpacked: { staging: string; verified: { id: string } } | undefined;
+  let packedPayload: string | undefined;
+  try {
+    await packArtifact(source, manifest, artifact, tools);
+    unpacked = await tools.withRunner(() => unpackArtifactVerified(artifact));
+    packedPayload = await readFile(join(unpacked.staging, "config", "desired-state.json"), "utf8");
+  } catch (error) {
+    process.stderr.write(`${String(error)}\n`);
+  } finally {
+    if (unpacked !== undefined) await rm(unpacked.staging, { recursive: true, force: true });
+  }
+  check("an artifact named aux verifies", unpacked?.verified.id, setManifestId(manifest));
+  check("the real assembler preserves payload through metacharacter paths", packedPayload, "[]");
 
   // An agent config naming aux reads; provisioning (minting) refuses it with the device-name reason.
   const config = { agentId: DEVICE, mcpServerName: "wiki", cronJobName: "nightly" };

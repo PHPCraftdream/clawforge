@@ -7,6 +7,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 ### Changed
 * Held-value prose analysis preserves callable scopes, conditional returns and property/getter
   flows, while treating array length as metadata rather than prose.
+* Windows checks select local Git Bash and GNU tar through executable identity and real
+  filesystem/argv roundtrips; a successful WSL-alias exit never proves a native tool.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.

@@ -7,8 +7,11 @@ import { pathToFileURL } from "node:url";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { CWD_CONFLICT_NOTE } from "#framework/core/io/invocation/render.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
+const bash = await bashCommand();
+if (bash === undefined) throw new Error("required Bash selection disappeared");
 const root = await mkdtemp(join(tmpdir(), "clawforge-r3a-"));
 const checkout = join(root, "checkout $ O'Brien");
 const q = (s: string): string => `'${s.replaceAll("'", "'\\''")}'`;
@@ -23,7 +26,7 @@ try {
   }
   await cp(join(monorepoRoot, "node_modules", "json5"), join(checkout, "node_modules", "json5"), { recursive: true, dereference: true });
   const moduleUrl = (p: string): string => JSON.stringify(pathToFileURL(join(checkout, "tools", "framework", p)).href);
-  const payload = ['r3"paired', "r3$TOKEN", "r3'DArcy", "r3Ω雪", ...[1, 2, 3, 4, 5, 6].map((n) => "r3 spaced " + "\\".repeat(n))];
+  const payload = ['literal $DO_NOT_EXPAND_CF $(printf unexpected-substitution) "$@" $1', 'r3"paired', "r3$TOKEN", "r3'DArcy", "r3Ω雪", ...[1, 2, 3, 4, 5, 6].map((n) => "r3 spaced " + "\\".repeat(n))];
   const declaration = `import { commandBody, materializeCommands } from ${moduleUrl("core/command/spec.ts")};
 import * as kinds from ${moduleUrl("core/values/kinds.ts")};
 import { deploymentDir } from ${moduleUrl("runtime/deployment.ts")};
@@ -39,14 +42,14 @@ export default {name:'witness',description:'witness',commands:materializeCommand
     await mkdir(join(checkout, "apps", app), { recursive: true });
     await writeFile(join(checkout, "apps", app, "app.ts"), declaration);
   }
-  const location = await runProcess("bash", ["-c", "command -v bash"], { cwd: tmpdir(), timeoutMs });
-  const bashDir = location.stdout.trim().replace(/\/bash(?:\.exe)?$/, "");
-  const path = `${forward(dirname(process.execPath))}:${bashDir}:/bin`;
+  const nodeDir = forward(dirname(process.execPath));
+  const bashDir = forward(dirname(bash));
+  const shellPath = `node_dir=${q(nodeDir)}; bash_dir=${q(bashDir)}\nif command -v cygpath >/dev/null 2>&1; then node_dir=$(cygpath -u "$node_dir") || exit; bash_dir=$(cygpath -u "$bash_dir") || exit; fi\nexport PATH="$node_dir:$bash_dir:/usr/bin:/bin"`;
   let serial = 0;
   const paste = async (body: string, cwd: string) => {
     const script = join(root, `paste-${serial++}.sh`);
-    await writeFile(script, `export PATH=${q(path)}\n${body}\n`);
-    return runProcess("bash", [forward(script)], { cwd, timeoutMs });
+    await writeFile(script, `${shellPath}\n${body}\n`);
+    return runProcess(bash, [forward(script)], { cwd, timeoutMs, env: bashEnvironment(bash) });
   };
   const cwd = join(checkout, "apps", "demo");
   const produce = await paste(`${q(forward(join(checkout, "clawforge")))} --app aux status produce`, cwd);
@@ -71,7 +74,7 @@ export default {name:'witness',description:'witness',commands:materializeCommand
     const body = `${excluded ? "export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'\n" : ""}set -- ${payload.map(q).join(" ")}\nprintf 'PRE:%s\\0' "$@"\nprintf '\\n'\n${exec ? "exec " : ""}${q(forward(process.execPath))} ${q(forward(printer))} "$@"`;
     const script = join(root, `probe-${serial++}.sh`);
     await writeFile(script, body);
-    const probe = await runProcess("bash", ["-s"], { input: body, timeoutMs });
+    const probe = await runProcess(bash, ["-s"], { input: body, timeoutMs, env: bashEnvironment(bash) });
     const [pre, native] = probe.stdout.split("\n");
     checkTrue("R3-A-2: probe exit 0", probe.code === 0);
     check("R3-A-2: pre-native exact argv", pre?.split("\0").slice(0, -1).map((s) => s.slice(4)), payload);

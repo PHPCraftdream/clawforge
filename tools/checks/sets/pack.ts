@@ -8,13 +8,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DESIRED_STATE_PATH } from "#framework/set/artifacts/model.ts";
 import { tarCreateArchive } from "#framework/set/artifacts/tar.ts";
+import { artifactTools, type ArtifactTools } from "#checks/kit/capabilities/native-tools.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 
 /** Test-only assembler: packs `manifest` plus the files it inventories (read from `tree`)
  *  into an artifact with the same layout the packer writes. Used where build refuses to
  *  pack, so the artifact side of a variant can still be asked the same question. The caller
  *  owns `out` (a path inside the deployment keeps its lifetime simple). */
-export async function packArtifact(tree: string, manifest: SetManifest, out: string): Promise<void> {
+export async function packArtifact(tree: string, manifest: SetManifest, out: string, selected?: ArtifactTools): Promise<void> {
+  const tools = selected ?? await artifactTools();
   const contents = await mkdtemp(join(tmpdir(), "clawforge-set-parity-contents-"));
   try {
     await writeFile(resolve(contents, "set.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
@@ -27,11 +29,7 @@ export async function packArtifact(tree: string, manifest: SetManifest, out: str
       if (rel === DESIRED_STATE_PATH && !(await access(source).then(() => true, () => false))) await writeFile(target, "");
       else await copyFile(source, target);
     }
-    // The owner module owns the Windows --force-local decision now; this recorded
-    // value selection stays only so the architecture ratchet's line still exists.
-    const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
-    void forceLocal;
-    const result = await tarCreateArchive(out, contents);
+    const result = await tools.withRunner(() => tarCreateArchive(out, contents));
     if (result.code !== 0) throw new Error(`test assembler could not pack: ${(result.stderr || result.stdout).trim()}`);
   } finally {
     await rm(contents, { recursive: true, force: true });

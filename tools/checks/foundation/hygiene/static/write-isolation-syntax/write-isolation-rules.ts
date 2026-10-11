@@ -7,6 +7,7 @@
 import { type SourceContext } from "./body.ts";
 import { analyzeCalleeSyntax } from "./index.ts";
 import { childProcessHits } from "./children.ts";
+import { tokensOf } from "../../../../architecture/prose-held.ts";
 export type Classification = "CLEAN" | "ANCHORED" | "UNKNOWN";
 export type Hit = { call: string; target: string; classification: Classification; approximation?: boolean; at?: number };
 
@@ -59,12 +60,18 @@ const ANCHORED_TOKEN =
 /**
  * Masks line, block and string-literal contents with spaces (same length, so
  * offsets are stable). Template-literal content except interpolations (the
- * code inside them is real and stays visible) is masked too. Cheap mask: it does not model regex
- * literals or division, so a '/' inside code that looks like a comment start could
- * over-mask (conservative direction — hiding code never creates hits).
+ * code inside them is real and stays visible) is masked too. Regex boundaries reuse
+ * the shared lexer, so quotes and comment markers inside a regex cannot hide later code.
  */
 export function maskLiterals(source: string, preserveStrings = false): string {
   const out = source.split("");
+  const regexEnds = new Map<number, number>();
+  for (const token of tokensOf(source)) {
+    if (token.kind !== "regex") continue;
+    let end = token.at + token.text.length + 2;
+    while (/[a-z]/i.test(source[end] ?? "")) end++;
+    regexEnds.set(token.at, end);
+  }
   const blank = (from: number, to: number): void => {
     for (let k = Math.max(0, from); k < Math.min(to, out.length); k++) if (out[k] !== "\n") out[k] = " ";
   };
@@ -105,6 +112,8 @@ export function maskLiterals(source: string, preserveStrings = false): string {
   while (i < source.length) {
     const c = source[i];
     const d = source[i + 1];
+    const regexEnd = regexEnds.get(i);
+    if (regexEnd !== undefined) { blank(i, regexEnd); i = regexEnd; continue; }
     if (c === "/" && d === "/") { const e = source.indexOf("\n", i); blank(i, e === -1 ? source.length : e); i = e === -1 ? source.length : e; continue; }
     if (c === "/" && d === "*") { const e = source.indexOf("*/", i + 2); const to = e === -1 ? source.length : e + 2; blank(i, to); i = to; continue; }
     if (c === "'" || c === '"') { i = maskQuoted(c, i); continue; }
@@ -519,7 +528,7 @@ function resolveCallee(parts: readonly string[], b: FsBindings, declared: (name:
     if ((!isChild && operationOf(head) === undefined) || b.foreign.has(head) || declared(head)) return undefined;
     return isChild ? { kind: "child", name: head } : fsOp(head);
   }
-  if (members.length === 1 && b.namespaces.has(head)) return fsOp(members[0]) ?? (/^(?:read|stat|lstat|realpath|access|readdir|exists|watch)/.test(members[0]) ? undefined : fsOp("writeFile"));
+  if (members.length === 1 && b.namespaces.has(head)) return fsOp(members[0]) ?? (/^(?:fstat(?:Sync)?$|read|stat|lstat|realpath|access|readdir|exists|watch)/.test(members[0]) ? undefined : fsOp("writeFile"));
   if (members.length === 2 && members[0] === "promises" && b.namespaces.has(head)) return fsOp(members[1]);
   if (members.length === 1 && b.childNamespaces.has(head) && CHILD_CALLEES.has(members[0])) return { kind: "child", name: members[0] };
   return undefined;

@@ -9,6 +9,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   flows, while treating array length as metadata rather than prose.
 * Windows checks select local Git Bash and GNU tar through executable identity and real
   filesystem/argv roundtrips; a successful WSL-alias exit never proves a native tool.
+* Write-isolation checks preserve regex boundaries and native promisify capabilities while
+  distinguishing TypeScript-only metadata and readonly filesystem descriptors/constants.
+  Fixture writers allocate and clean their own roots; the unknown-target budget is unchanged.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.

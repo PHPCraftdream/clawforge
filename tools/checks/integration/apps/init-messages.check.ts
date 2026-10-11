@@ -12,24 +12,27 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-async function initIn(options?: { local?: boolean }): Promise<{ output: string; env: string; directory: string; parent: string }> {
-  // The directory's own name is the deployment name, so it cannot be the random temp name.
-  const parent = await mkdtemp(join(tmpdir(), "clawforge-init-messages-"));
-  const directory = join(parent, "deployment");
-  await mkdir(directory);
+async function initIn(directory: string, options?: { local?: boolean }): Promise<{ output: string; env: string; directory: string }> {
   let output = "";
   await withOutputSink((chunk) => {
     output += chunk;
   }, () => initApp(directory, options));
-  return { output, env: await readFile(resolve(directory, ".env"), "utf8"), directory, parent };
+  return { output, env: await readFile(resolve(directory, ".env"), "utf8"), directory };
 }
 
-const plain = await initIn();
-const local = await initIn({ local: true });
-setInvocation({ program: "./clawforge", mode: "local-package", audience: "terminal" });
-const localPackageHint = await initIn();
-setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+const fixtureRoot = await mkdtemp(join(tmpdir(), "clawforge-init-messages-"));
 try {
+  const plainDirectory = join(fixtureRoot, "plain", "deployment");
+  const localDirectory = join(fixtureRoot, "local", "deployment");
+  const hintDirectory = join(fixtureRoot, "hint", "deployment");
+  await mkdir(plainDirectory, { recursive: true });
+  await mkdir(localDirectory, { recursive: true });
+  await mkdir(hintDirectory, { recursive: true });
+  const plain = await initIn(plainDirectory);
+  const local = await initIn(localDirectory, { local: true });
+  setInvocation({ program: "./clawforge", mode: "local-package", audience: "terminal" });
+  const localPackageHint = await initIn(hintDirectory);
+  setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
   checkTrue("the commit advice names mcp-launch.mjs", plain.output.includes("mcp-launch.mjs"));
   checkTrue("...and app.ts, package.json, config/ and recipes/", ["app.ts", "package.json", "config/", "recipes/"].every((name) => plain.output.includes(name)));
   checkTrue("the false 'only framework-adjacent file' claim is gone", !plain.output.includes("only framework-adjacent"));
@@ -73,9 +76,8 @@ try {
   const homepage = (JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { homepage: string }).homepage;
   check("docsUrl points at the package's own repository, default branch", docsUrl("x.md"), `${homepage.replace(/#readme$/, "")}/blob/main/docs/x.md`);
 } finally {
-  await rm(plain.parent, { recursive: true, force: true });
-  await rm(local.parent, { recursive: true, force: true });
-  await rm(localPackageHint.parent, { recursive: true, force: true });
+  setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+  await rm(fixtureRoot, { recursive: true, force: true });
 }
 
 finish("init-messages");

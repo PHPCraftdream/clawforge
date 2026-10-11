@@ -29,6 +29,31 @@ async function walk(dir: string): Promise<string[]> {
 }
 
 // --- self-check: table-driven, in-memory, every case asserts the exact classification -----
+const defaultParameterWrites = analyze(`
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execute = promisify(execFile);
+async function fixture(root: string, tor = false): Promise<unknown> {
+  const data = tor ? "tor" : "data"; return { data };
+}
+async function run() { await execute("sh", ["-c", "true"]); }
+`).writes;
+checkTrue("default parameter does not capture later callable bodies", !defaultParameterWrites.some(hit => hit.target === "tor"));
+check("descriptor metadata reads cannot mutate the checkout", analyze('import * as fs from "node:fs"; const metadata = fs.fstatSync(fd);').writes, []);
+checkTrue("descriptor permission mutations remain capabilities", analyze('import * as fs from "node:fs"; fs.fchmodSync(fd, 0o600);').writes.some(hit => hit.classification === "UNKNOWN"));
+check("filesystem access constants are scalar metadata, not writer capabilities", analyze('import fs,{constants} from "node:fs"; consume(constants.R_OK); consume(fs.constants.X_OK);').writes, []);
+check("regex quotes cannot hide checkout writes", analyze('import {writeFile} from "node:fs/promises"; const pattern=/"/.test(input); writeFile("./checkout","bytes");').writes.map(hit => hit.classification), ["ANCHORED"]);
+check("regex quotes preserve caller-owned temporary writes", analyze('import {writeFile} from "node:fs/promises"; import {tmpdir} from "node:os"; import {join} from "node:path"; const pattern=/"/.test(input); const root=tmpdir(); writeFile(join(root,"owned"),"bytes");').writes, []);
+check("filesystem types in callable signatures are not runtime capabilities", analyze('import * as fs from "node:fs"; const metadata=(stat:fs.Stats):fs.Stats=>stat;').writes, []);
+check("filesystem types in erased declarations are not runtime capabilities", analyze('import * as fs from "node:fs"; type Shape={path:fs.PathLike};').writes, []);
+checkTrue("typed writer aliases retain checkout mutations", analyze('import * as fs from "node:fs"; const writer:typeof fs.writeFile=fs.writeFile; writer("./checkout","bytes");').writes.some(hit => hit.classification === "ANCHORED"));
+for (const [source, expected] of [
+  ['import {execFile} from "node:child_process"; import {promisify} from "node:util"; const run=promisify(execFile); run("git",["clean","-fd"],{cwd:monorepoRoot});', ["ANCHORED"]],
+  ['import {execFile} from "node:child_process"; import {promisify} from "node:util"; const run=promisify(execFile); run("git",["status"],{cwd:monorepoRoot});', []],
+  ['import {writeFile} from "node:fs"; import {promisify as asyncFunction} from "node:util"; const put=asyncFunction(writeFile); put("./checkout","bytes");', ["ANCHORED"]],
+  ['import {writeFile} from "node:fs"; import {promisify} from "./unknown.ts"; const put=promisify(writeFile); put("./checkout","bytes");', ["UNKNOWN", "UNKNOWN"]],
+] as const) check("native promisify preserves capability classification", analyze(source).writes.map(hit => hit.classification), expected);
+
 
 const CREATE_APP = `import { createApp } from "#framework/integration/deployment/scaffold.ts";`;
 
@@ -406,6 +431,20 @@ for (const [name, body, expected] of [
   const snippet = `const script=resolve(monorepoRoot,'fixture-script.mjs'); spawnSync(process.execPath,['--experimental-strip-types',script],{cwd:monorepoRoot});`;
   check(`R3 script source: ${name}`, analyze(snippet, { root: repoRoot, file: resolve(repoRoot,"probe.ts"), readSource: p => p === path ? body : undefined }).writes.map(h => h.classification), expected);
 }
+for (const source of [
+  "export type NativeTool = 'bash' | 'tar'; import { writeFile } from 'node:fs/promises';",
+  "export type { writeFile } from 'node:fs';",
+  "export interface Shape { path: string }; import { writeFile } from 'node:fs/promises';",
+  "import { writeFile } from 'node:fs/promises'; import { spawnSync, type SpawnSyncReturns } from 'node:child_process'; export type NativeTool = 'bash' | 'tar';",
+  "import type { writeFile } from 'node:fs'; export interface Shape { path: string };",
+]) check("type-only export carries no runtime filesystem escape", analyze(source).writes, []);
+
+for (const source of [
+  "export { writeFile } from 'node:fs';",
+  "export type NativeTool = 'bash'; export { writeFile } from 'node:fs';",
+  "import { writeFile as type } from 'node:fs'; external(type);",
+]) check("runtime re-export still escapes filesystem capability", analyze(source).writes.map(h => h.classification), ["UNKNOWN"]);
+
 const fallbackProbe = `import * as fs from 'node:fs'; const get=fs.writeFile.bind(null); const w=get(); w(monorepoRoot,'x');`;
 check("R3 fallback fail-before", analyze(closeCalleeSyntax(fallbackProbe, false)).writes, []);
 check("R3 fallback pass-after", analyze(fallbackProbe).writes.map(h => [h.classification, h.approximation]), [["UNKNOWN", true]]);

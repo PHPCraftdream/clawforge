@@ -339,7 +339,7 @@ try {
   // --- fail-closed reads (no target needed) --------------------------------------------------------
 
   useRecipesDir(tempRecipesB);
-  const ledgerFile = privatePathsLedgerFile();
+  const ledgerFile = resolve(tempDeployment, "config", "private-paths.json");
   await writeFile(ledgerFile, "{ not json", "utf8");
   check(
     "a corrupt ledger stops the policy reader",

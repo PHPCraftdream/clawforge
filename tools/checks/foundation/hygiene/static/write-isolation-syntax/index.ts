@@ -1,8 +1,9 @@
+import { stripTypeScriptTypes } from "node:module";
 import { tokensOf } from "../../../../architecture/prose-held.ts";
 
-type Value = { name: string; derived?: boolean; bound?: string[]; unknown?: boolean; namespace?: boolean };
+type Value = { name: string; derived?: boolean; bound?: string[]; unknown?: boolean; namespace?: boolean; promisify?: boolean };
 type Binding = { name: string; from: number; to: number; at: number; scope: number; value?: Value };
-const READS = new Set("readFile readFileSync readdir readdirSync stat statSync lstat lstatSync access accessSync existsSync realpath realpathSync readlink readlinkSync watch watchFile unwatchFile opendir opendirSync constants".split(" "));
+const READS = new Set("readFile readFileSync readdir readdirSync stat statSync lstat lstatSync fstat fstatSync access accessSync existsSync realpath realpathSync readlink readlinkSync watch watchFile unwatchFile opendir opendirSync constants".split(" "));
 const WRITES = new Set("writeFile appendFile mkdir mkdtemp rm rmdir unlink truncate createWriteStream utimes lutimes chmod lchmod chown lchown open cp copyFile symlink link rename".split(" "));
 
 export type SyntaxDiagnostic = { call: string; target: string; at: number; classification: "UNKNOWN"; approximation: true };
@@ -10,8 +11,16 @@ export function closeCalleeSyntax(source: string, fallback = true): string {
   return analyzeCalleeSyntax(source, fallback).source;
 }
 export function analyzeCalleeSyntax(source: string, fallback = true): { source: string; diagnostics: SyntaxDiagnostic[] } {
+  let lexicalSource = source;
+  try {
+    lexicalSource = stripTypeScriptTypes(source, { mode: "strip" });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ERR_INVALID_TYPESCRIPT_SYNTAX" && code !== "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") throw error;
+    // Incomplete snippets keep the conservative lexical analysis.
+  }
   const trackEscapes = true;
-  const t = tokensOf(source);
+  const t = tokensOf(lexicalSource);
   const pairs = new Map<number, number>();
   const stack: number[] = [];
   const scope: number[] = [];
@@ -38,13 +47,15 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
     if (start < b) out.push([start, b]); return out;
   };
   const end = (a: number): number => {
-    for (let i = a; i < t.length; i++) { if (pairs.has(i)) i = pairs.get(i)!; else if ([";", ",", "}"].includes(t[i].text)) return i; }
+    for (let i = a; i < t.length; i++) { if (pairs.has(i)) i = pairs.get(i)!; else if ([";", ",", "}", ")", "]"].includes(t[i].text)) return i; }
     return t.length;
   };
   const bindings: Binding[] = [];
-  const moduleValue = (s: string): Value | undefined => /^(?:node:)?fs(?:\/promises)?$/.test(s) ? { name: "fs", namespace: true } : /^(?:node:)?child_process$/.test(s) ? { name: "cp", namespace: true } : undefined;
+  const moduleValue = (s: string): Value | undefined => /^(?:node:)?fs(?:\/promises)?$/.test(s) ? { name: "fs", namespace: true } : /^(?:node:)?child_process$/.test(s) ? { name: "cp", namespace: true } : /^(?:node:)?util$/.test(s) ? { name: "util", namespace: true } : undefined;
   const member = (v: Value | undefined, key: string | undefined): Value | undefined => {
     if (!v) return undefined;
+    if (!v.namespace && v.name === "constants") return undefined;
+    if (v.namespace && v.name === "util") return key === "promisify" ? { name: "promisify", promisify: true } : undefined;
     if (v.unknown) return { name: "writeFile", unknown: true };
     if (key === "promises" && v.namespace && v.name === "fs") return v;
     if (key === "native" && READS.has(v.name)) return v;
@@ -56,11 +67,13 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
   };
   for (let i = 0; i < t.length; i++) {
     if (t[i].text !== "import") continue;
+    if (t[i + 1]?.text === "type" && t[i + 2]?.text !== "from") continue;
     let j = i + 1; while (j < t.length && !["from", ";"].includes(t[j].text)) j++;
     const v = moduleValue(t[j + 1]?.text ?? ""); if (!v) continue;
     for (let k = i + 1; k < j; k++) {
       if (t[k].text === "{") {
-        for (const [a] of split(k + 1, pairs.get(k) ?? j)) {
+        for (const [a, b] of split(k + 1, pairs.get(k) ?? j)) {
+          if (t[a]?.text === "type" && b > a + 1 && t[a + 1]?.text !== "as") continue;
           const local = t[a + 1]?.text === "as" ? t[a + 2]?.text : t[a]?.text;
           if (local) bindings.push({ name: local, from: 0, to: 0, at: -1, scope: -1, value: member(v, t[a]?.text) });
         }
@@ -150,7 +163,14 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
           const args = split(i + 1, q).slice(1).map(([f, to]) => text(f, to));
           v = { ...v, bound: [...(v.bound ?? []), ...args] }; i = q + 1;
         } else v = member(v, key);
-      } else if (t[i].text === "(") { return v.bound || v.unknown ? { name: "writeFile", unknown: true } : contained(i + 1, b, seen); }
+      } else if (t[i].text === "(") {
+        if (v.promisify) {
+          const q = pairs.get(i); const first = q === undefined ? undefined : split(i + 1, q)[0];
+          const wrapped = first ? evaluate(...first, at, seen) : undefined;
+          return wrapped && !wrapped.namespace ? { ...wrapped, derived: true } : contained(i + 1, b, seen);
+        }
+        return v.bound || v.unknown ? { name: "writeFile", unknown: true } : contained(i + 1, b, seen);
+      }
       else return { name: v.name, unknown: true };
     }
     return v ?? contained(a, b, seen);
@@ -202,7 +222,7 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
         else { args = ["__r3Unresolved"]; mode = "unknown"; }
       }
     }
-    if (!v || v.namespace && !v.unknown || READS.has(v.name) && !v.unknown) continue;
+    if (!v || v.promisify || v.namespace && !v.unknown || READS.has(v.name) && !v.unknown) continue;
     if (v.unknown && !fallback) continue;
     if (v.unknown || mode === "unknown") {
       diagnostic(start, close + 1);
@@ -233,6 +253,16 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
     if (!v) continue;
     // Only a proven readonly property, not an arbitrary property on tainted data.
     if (READS.has(v.name) && !v.unknown) continue;
+    if (v.promisify || v.namespace && v.name === "util") continue;
+    const adapted = [...pairs].some(([open, close]) => {
+      if (t[open].text !== "(" || open >= a || close < b) return false;
+      const first = split(open + 1, close)[0];
+      if (!first || first[0] !== a || first[1] !== b) return false;
+      let start = open - 1;
+      while (t[start - 1]?.text === ".") start -= 2;
+      return evaluate(start, open, open)?.promisify === true;
+    });
+    if (adapted) continue;
     let after = b;
     while (["!", "?", "."].includes(t[after]?.text)) after++;
     if (["(", "="].includes(t[after]?.text ?? "") || edits.some(e => e.a <= t[a].at && e.b >= t[b - 1].at && source.slice(e.a, t[a].at).startsWith("Reflect."))) continue;
@@ -250,7 +280,7 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
     a = b - 1;
   }
   if (trackEscapes && fallback) for (let a = 0; a < t.length; a++) {
-    if (t[a].text !== "export") continue;
+    if (t[a].text !== "export" || t[a + 1]?.text === "type" || t[a + 1]?.text === "interface") continue;
     let b = a + 1; while (b < t.length && t[b].text !== ";") b++;
     const from = t.slice(a, b).findIndex(x => x.text === "from");
     if (from >= 0 && moduleValue(t[a + from + 1]?.text ?? "")) diagnostic(a, b);

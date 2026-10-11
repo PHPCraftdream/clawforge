@@ -338,6 +338,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
   const deployment = await mkdtemp(join(tmpdir(), "clawforge-lock-inventory-"));
   useDeployment(deployment);
   await mkdir(resolve(deployment, "config"));
+  const lockTarget = resolve(deployment, "config", "deployment.lock.json");
   const plugin = { id: "acme-tool", name: "@acme/tool", version: "1.0.0", origin: "npm", enabled: true };
   const skill = { name: "acme-skill", source: "clawhub" };
   const success = (key: string, entries: unknown[]): BatchedCliResult => ({ code: 0, stdout: JSON.stringify({ [key]: entries }) });
@@ -395,7 +396,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
       for (const scenario of cases) {
         slots = scenario.slots;
         wholeBatch = scenario.batch ?? "ok";
-        await writeFile(lockFile(), priorBytes);
+        await writeFile(lockTarget, priorBytes);
         const label = `${scenario.name}, prior ${priorPins ? "pins" : "empty"}`;
         let refusal = "";
         try { await withOutputSink(() => {}, () => lock(ctx, ["--json"])); }
@@ -417,7 +418,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
     }
     wholeBatch = "ok";
     slots = [{ code: 1, stdout: "" }, success("skills", [])];
-    await writeFile(lockFile(), JSON.stringify(baseline));
+    await writeFile(lockTarget, JSON.stringify(baseline));
     const partialRun = await runCheck();
     const partial = JSON.parse(partialRun.output) as { problems: Problem[] };
     check("confirmed skill removal remains visible when plugins are unknown",
@@ -428,7 +429,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
     check("composition callers without an outcome collector cannot silently accept unknown pins",
       compositionRefusal.includes(inventoryPrefix("plugins")) && compositionRefusal.includes(UNKNOWN_INVENTORY_TAIL), true);
     slots = [success("plugins", []), success("skills", [])];
-    await writeFile(lockFile(), JSON.stringify(baseline));
+    await writeFile(lockTarget, JSON.stringify(baseline));
     const removedRun = await runCheck();
     check("differences make lock --check exit non-zero", removedRun.failure, "2 difference(s) from the lock");
     const removed = JSON.parse(removedRun.output) as { problems: Problem[] };
@@ -437,7 +438,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
     const repinned = JSON.parse(await readFile(lockFile(), "utf8")) as DeploymentLock;
     check("confirmed empty inventory can explicitly remove prior pins", [repinned.plugins, repinned.skills], [[], []]);
     slots = [plugins, skills];
-    await writeFile(lockFile(), JSON.stringify(baseline));
+    await writeFile(lockTarget, JSON.stringify(baseline));
     const matching = await runCheck();
     check("a matching instance exits zero", [matching.failure, (JSON.parse(matching.output) as { problems: Problem[] }).problems], ["", []]);
     for (const [name, state] of [["never bootstrapped", "never"], ["stopped", false], ["running", true]] as const) {
@@ -470,7 +471,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
     };
     running = false;
     wholeBatch = "throw";
-    await rm(lockFile(), { force: true });
+    await rm(lockTarget, { force: true });
     const unread = await humanRun();
     check("not running: unread inventories are named as not compared", unread.text.includes(COULD_NOT_COMPARE + " — " + REASON_NOT_RUNNING + ":"), true);
     check("not running: a headline precedes the sections", unread.text.indexOf("==>") >= 0 && unread.text.indexOf("==>") < unread.text.indexOf("could not compare"), true);
@@ -481,7 +482,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
     check("not running: a missing lock is not counted as a difference", unread.failure.includes("difference(s)"), false);
     const jsonUnread = await runCheck();
     check("not running: json/MCP summary matches the text summary", jsonUnread.failure, unread.failure);
-    await writeFile(lockFile(), JSON.stringify(baseline));
+    await writeFile(lockTarget, JSON.stringify(baseline));
     const onlyUnread = await humanRun();
     check("only unread inventories: no difference count", onlyUnread.failure, "2 inventory read(s) could not be compared (instance is not running)");
     running = "never";

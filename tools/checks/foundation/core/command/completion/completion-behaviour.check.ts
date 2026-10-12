@@ -440,7 +440,7 @@ const NOTE_MARK = String.fromCharCode(32, 32, 40);
     // executable part plus where it ends in the raw line: the note check below runs on the
     // UNTRUNCATED text, so a note before the executable part cannot survive the last "  (" cut
     const commandOf = (line: string): { executable: string; end: number } => {
-      const inner = /source <\(([^)]+)\)/.exec(line);
+      const inner = /(?:source <|eval "\$)\(([^)]+)\)/.exec(line);
       if (inner !== null) return { executable: inner[1]!, end: inner.index + inner[0].length };
       const sentence = /run (\S+ completion \S+) in Git Bash/.exec(line);
       if (sentence !== null) return { executable: sentence[1]!, end: sentence.index + sentence[1].length };
@@ -499,7 +499,7 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
   try {
     const rendered = renderCompletion("bash", data);
     const install = rendered.split("\n")[1]!.slice("# Install: ".length);
-    const installProgram = install.slice("source <(".length, -1).split(" ")[0];
+    const installProgram = install.slice('eval "$('.length, -2).split(" ")[0];
     check("bash: the Install: line's program is the forward-slash wrapper", installProgram, "node_modules/.bin/clawforge");
     const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
     try {
@@ -519,7 +519,7 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
       ].join("\n"), "utf8");
       const proc = spawnSync(bash, [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir, env: bashEnvironment(bash) });
       if (proc.status !== 0) {
-        // Which bash answered (macOS ships 3.2, whose `source <(...)` does not work) and what it printed.
+        // Which bash answered (macOS ships 3.2; the install line avoids `source <(...)`, which 3.2 cannot run) and what it printed.
         const version = spawnSync(bash, ["--version"], { encoding: "utf8", env: bashEnvironment(bash) });
         process.stderr.write(`pasted with ${bash}: ${(version.stdout ?? "").split("\n")[0]}\ninstall line: ${install}\n`);
       }

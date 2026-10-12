@@ -73,7 +73,7 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
     details:
       "Generated from the live command declarations — names, flags, and a multi-action " +
       "command's own flags under the right action — so it cannot drift from --help.\n" +
-      "Install: source <({install completion bash}); " +
+      'Install: eval "$({install completion bash})"; ' +
       '{install completion zsh} > "${fpath[1]}/_clawforge"; or take ' +
       "{install completion pwsh} and pipe it through Out-String and Invoke-Expression.\n" +
       (appFlag ? "--app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +

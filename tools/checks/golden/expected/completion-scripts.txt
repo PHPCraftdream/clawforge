@@ -1,6 +1,6 @@
 === ./clawforge completion bash ===
 # clawforge bash completion — generated from the command declarations.
-# Install: source <(./clawforge completion bash)
+# Install: eval "$(./clawforge completion bash)"
 _clawforge_lookup() {
   case "$1" in
       "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
@@ -817,7 +817,7 @@ Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBl
 
 === clawforge completion bash (installed) ===
 # clawforge bash completion — generated from the command declarations.
-# Install: source <(clawforge completion bash)
+# Install: eval "$(clawforge completion bash)"
 _clawforge_lookup() {
   case "$1" in
       "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;

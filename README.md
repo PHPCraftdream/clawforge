@@ -113,7 +113,7 @@ the app. After the first release `npm install -g @clawforge/framework` does the 
 | Move a deployment onto a server | `./clawforge deploy user@host` | mirrors the framework and this deployment's config over SSH; credentials never leave this machine |
 | See every deployment in this checkout | `./clawforge list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |
 | Read the service log | `./clawforge logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
-| Get shell tab-completion | `source <(./clawforge completion bash)` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
+| Get shell tab-completion | `eval "$(./clawforge completion bash)"` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
 | Undo a deployment | `./clawforge destroy` then `./clawforge remove-app <name>` | dry run by default; `destroy` removes the instance (containers always, data/backups/snapshots each behind its own flag), `remove-app` deletes `apps/<name>/` itself — see [Removing a deployment](docs/guide/operations.md#removing-a-deployment) |
 
 ## Commands

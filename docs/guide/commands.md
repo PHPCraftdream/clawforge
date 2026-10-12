@@ -171,7 +171,7 @@ per-command code lives in the script, so bash, zsh (which loads that same body t
 invoked name, `clawforge` or `./clawforge`, both registered so either spelling completes.
 
 ```bash
-source <(./clawforge completion bash)                       # current shell
+eval "$(./clawforge completion bash)"                         # current shell (bash 3.2 included)
 ./clawforge completion zsh > "${fpath[1]}/_clawforge"       # new zsh shell (or: source <(...) now)
 ./clawforge completion pwsh | Out-String | Invoke-Expression # current PowerShell session
 ```

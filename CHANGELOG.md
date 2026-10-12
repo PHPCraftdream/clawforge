@@ -7,6 +7,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ### Changed
 * Held-value prose analysis preserves callable scopes, conditional returns and property/getter
   flows, while treating array length as metadata rather than prose.
+* Own-product assertions follow lexical bindings, transitive writes and closure captures;
+  property labels, shadows and literal keywords do not invent product provenance.
+  Generator self-names stay function-local; the measured shrink-only baseline is 305.
 * Windows checks select local Git Bash and GNU tar through executable identity and real
   filesystem/argv roundtrips; a successful WSL-alias exit never proves a native tool.
 * Write-isolation checks preserve regex boundaries and native promisify capabilities while

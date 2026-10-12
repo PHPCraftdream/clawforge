@@ -15,6 +15,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Write-isolation checks preserve regex boundaries and native promisify capabilities while
   distinguishing TypeScript-only metadata and readonly filesystem descriptors/constants.
   Fixture writers allocate and clean their own roots; the unknown-target budget is unchanged.
+* Write-isolation path provenance follows proven filesystem aliases through native realpath
+  calls; foreign receivers and shadowed bindings remain unknown, and checkout roots stay anchored.
 * Metadata-only lock takeover requires explicit consent and exact owner revalidation.
   Dangling lock or mutation-guard entries no longer certify absence or quiescence.
 * Recipe inspect/recover/migrate expose readonly diagnostics, explicit endpoint ownership and

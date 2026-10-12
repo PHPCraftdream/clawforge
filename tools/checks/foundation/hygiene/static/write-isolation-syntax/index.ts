@@ -222,6 +222,10 @@ export function analyzeCalleeSyntax(source: string, fallback = true): { source: 
         else { args = ["__r3Unresolved"]; mode = "unknown"; }
       }
     }
+    if (v && !v.unknown && !v.namespace && mode === "" && v.bound === undefined && /^(?:realpath|realpathSync)$/.test(v.name)) {
+      edits.push({ a: t[start].at, b: t[open].at, value: v.name });
+      continue;
+    }
     if (!v || v.promisify || v.namespace && !v.unknown || READS.has(v.name) && !v.unknown) continue;
     if (v.unknown && !fallback) continue;
     if (v.unknown || mode === "unknown") {

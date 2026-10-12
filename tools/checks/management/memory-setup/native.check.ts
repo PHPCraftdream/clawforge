@@ -5,7 +5,7 @@ import { runInNewContext } from "node:vm";
 import { posix, join } from "node:path";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 
@@ -187,7 +187,7 @@ check("actual probe platform refusal", probe("win32").exit, 2);
 // Same operation serialized into the helper script; real directory discovery and
 // store filesystem boundaries, with only the native record-reader exports substituted.
 {
-  const scratch = await mkdtemp(join(tmpdir(), "native-absence-"));
+  const scratch = await realpath(await mkdtemp(join(tmpdir(), "native-absence-")));
   try {
     const state = join(scratch, "state");
     const dist = join(scratch, "dist");

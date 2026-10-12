@@ -184,7 +184,7 @@ const launchOfProgram = (program: string, cwd: string): Launch => {
 /** Host-independent path text: this machine's path module may prefix a drive and prefer
  *  backslashes; the fake world spells everything with forward slashes from /. */
 function fakePath(text: string): string {
-  return text.replaceAll("\\", "/").replace(/[A-Za-z]:\//g, "");
+  return text.replaceAll("\\", "/").replace(/[A-Za-z]:(?=\/)/g, "");
 }
 
 /** Group 3 of the advice matrix (design 4.2): the refusals the pure entry decisions build,

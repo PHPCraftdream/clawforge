@@ -1043,8 +1043,8 @@
     "total": 2
   },
   "proseHeldFlow": {
-    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1189. No skips, exclusions or re-encoding; future growth requires explicit review.",
-    "total": 1189,
+    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1188. No skips, exclusions or re-encoding; future growth requires explicit review.",
+    "total": 1188,
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 14,
@@ -1081,7 +1081,7 @@
       "tools/checks/integration/agent/recipe.check.ts": 17,
       "tools/checks/integration/apps/app-hooks.check.ts": 5,
       "tools/checks/integration/apps/init-messages.check.ts": 9,
-      "tools/checks/integration/apps/invocation-hints.check.ts": 44,
+      "tools/checks/integration/apps/invocation-hints.check.ts": 43,
       "tools/checks/integration/apps/new-app-acl-warning.check.ts": 3,
       "tools/checks/integration/apps/remove-app.check.ts": 1,
       "tools/checks/integration/init.check.ts": 8,

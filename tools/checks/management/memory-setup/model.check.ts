@@ -32,7 +32,7 @@ for (const patch of [
 assert.equal(approveModel({ ...approval, pluginVersion: "1.2.3-rc.1+build.9" }).pluginVersion, "1.2.3-rc.1+build.9");
 typeAssert("model approval rejects mutable, credentialed and unbounded inputs");
 
-const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "clawforge-model-check-")));
+const root = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), "clawforge-model-check-")));
 fs.chmodSync(root, 0o700);
 const rootIdentity = fs.lstatSync(root, { bigint: true });
 const basenameInRoot = (p: string): string => {
@@ -82,7 +82,7 @@ function childProgram() {
   });
   process.once("message", async (spec: ChildInput) => {
     try {
-      const allocation = fs.realpathSync(spec.root), identity = fs.lstatSync(allocation, { bigint: true });
+      const allocation = fs.realpathSync.native(spec.root), identity = fs.lstatSync(allocation, { bigint: true });
       const relativeTarget = (p: string) => {
         const name = path.relative(allocation, p);
         assert.ok(!path.isAbsolute(name) && name !== ".." && !name.startsWith(".." + path.sep));
@@ -142,7 +142,8 @@ function childProgram() {
         readFileSync: (fd: number, encoding: "utf8") => fs.readFileSync(leased(fd), encoding),
         writeSync: (fd: number, buffer: Buffer, offset: number, length: number) => fs.writeSync(leased(fd), buffer, offset, length),
         writeFileSync: (fd: number, data: string) => fs.writeFileSync(leased(fd), data),
-        fsyncSync: (fd: number) => fs.fsyncSync(leased(fd)),
+        // Node >= 24.20 refuses fsync under the Permission Model; the request itself is what is asserted.
+        fsyncSync: (fd: number) => { try { fs.fsyncSync(leased(fd)); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ERR_ACCESS_DENIED") throw error; } },
         closeSync: (fd: number) => { fs.closeSync(leased(fd)); leases.delete(fd); },
         linkSync: (source: string, destination: string) => {
           const from = relativeTarget(source), to = relativeTarget(destination);

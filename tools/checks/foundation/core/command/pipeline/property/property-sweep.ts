@@ -16,7 +16,8 @@ import { makeVersionGateCommand } from "#framework/integration/version.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { CommandBody } from "#framework/core/command/spec.ts";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
@@ -24,13 +25,15 @@ import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 
 useLinuxHost();
-export const fixture = await createDeploymentFixture();
+// The root is made here, so the declaration writes below are provably under the temp dir.
+const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-sweep-"));
+export const fixture = await createDeploymentFixture({ root: sweepRoot });
 
 // memory index/verify/setup refuse an undeclared or non-local memory before target contact, so
 // the sweep deployment declares the local embeddings those controls are valid against.
 const MEMORY_PATH = "agents.defaults.memorySearch";
 const MODEL = "/home/node/.openclaw/models/control.gguf";
-const DECLARATION_FILE = join(fixture.root, "config", "desired-state.json");
+const DECLARATION_FILE = join(sweepRoot, "config", "desired-state.json");
 const DECLARATION = `${JSON.stringify([
   { path: "gateway.mode", value: "local" },
   { path: "gateway.bind", value: "lan" },

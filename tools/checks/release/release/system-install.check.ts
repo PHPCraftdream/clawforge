@@ -339,6 +339,7 @@ try {
   const inApp = await clawforge(["help"], resolve(scApps, checkoutApp));
   tail(inApp);
   check("in apps/<name> of a checkout the checkout's own gate answers", inApp.code === 0 && inApp.output.includes("new-app"), true);
+  if (!inApp.output.includes(usageFooterHint(installedHint))) process.stderr.write(`help in the app printed: ${inApp.output}\n`);
   check("and its hints keep the name the user typed", inApp.output.includes(usageFooterHint(installedHint)), true);
   const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(scApps, checkoutApp)));
   check("version --json in a checkout app says checkout and the checkout root", [checkoutInfo.source, checkoutInfo.path], ["checkout", await realpath(monorepoRoot)]);

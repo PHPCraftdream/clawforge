@@ -56,6 +56,9 @@ try {
   }
   await writeFile(recipeFile, JSON.stringify({ description: "fixture recipe", migrationBackup }));
 
+  const inspected = await executeCommand(app, "recipe", { kind: "argv", argv: ["inspect", "local"] }, { surface: "mcp", transport: fixture.transport() });
+  check("inspect is a read effect that needs no confirmation", inspected.facts?.effect, "read");
+
   const actions = [
     { action: "recover", argv: ["recover", "local", "--service", "api"] },
     { action: "migrate", argv: ["migrate", "local", "--helper-image", `sha256:${"b".repeat(64)}`, "--shutdown-timeout", "240"] },

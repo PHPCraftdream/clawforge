@@ -203,9 +203,6 @@ try {
   check("recipe verify is mutating for MCP gating like onboard", callFactsFor(openclawCommands.recipe!, ["verify", "probe"]).effect, "destroy");
   check("recipe onboard is mutating for MCP gating", callFactsFor(openclawCommands.recipe!, ["onboard", "probe"]).effect, "destroy");
   check("recipe diagnose is mutating for MCP gating, same reason as verify", callFactsFor(openclawCommands.recipe!, ["diagnose", "probe"]).effect, "destroy");
-  check("recipe inspect is read-only for MCP gating: no lock, no hooks", callFactsFor(openclawCommands.recipe!, ["inspect", "probe"]).effect, "read");
-  check("recipe recover is destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["recover", "probe", "--service", "probe"]).effect, "destroy");
-  check("recipe migrate is destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["migrate", "probe"]).effect, "destroy");
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
   const recipePointer = `${FULL_TEXT_POINTER}=recipe`;
@@ -523,10 +520,7 @@ function conforms(
       import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
       new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
       install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
-      remove: () => { log("sidecar removed"); },
-      inspect: () => { info("sidecar: owned namespace, 1 service"); },
-      recover: () => { log("sidecar service recreated"); },
-      migrate: () => { log("sidecar migration preview"); },
+      remove: () => { log("sidecar removed"); }, inspect: () => { info("sidecar: owned namespace"); }, recover: () => { log("service recreated"); }, migrate: () => { log("migration preview"); },
       status: () => { info("running"); },
       logs: () => { emit("sidecar-gateway  | ready\\n"); },
       verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); },

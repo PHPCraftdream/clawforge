@@ -530,6 +530,9 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
 });
 
 await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", async () => {
+  // npm's Windows wrapper and its PowerShell paste line are Windows-host facts: a POSIX host
+  // renders the pwsh completion as prose for Git Bash instead.
+  await requires("windows-host", "the pwsh Install: line spells npm's Windows wrapper", async () => {
   const pwsh = await pwshCommand();
   if (pwsh === undefined) return;
   const previous = invocation();
@@ -567,6 +570,7 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
   } finally {
     setInvocation(previous);
   }
+  });
 });
 
 // Whether a usable bash exists is a host fact, not a string to sniff: the `bash` capability

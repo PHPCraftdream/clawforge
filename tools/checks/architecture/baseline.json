@@ -232,7 +232,7 @@
     }
   },
   "prosePins": {
-    "comment": "Stage 5 + I9: assertion-owned legacy physical-line pins; fixture inputs and labels do not become assertions. Executed measurement records 384, including operator-approved recipe privacy/Unicode, cold-archive preservation and independent captured memory stderr predicates. No exclusions or fixture re-encoding; future growth requires explicit review.",
+    "comment": "Stage 5 + I9: assertion-owned legacy physical-line pins; fixture inputs and labels do not become assertions. Executed measurement records 377 after readiness wording oracles became structural state/preservation checks. Operator-approved privacy/Unicode, cold archives and captured memory stderr remain counted. No exclusions or re-encoding; future growth requires review.",
     "files": {
       "tools/checks/management/memory.check.ts": 1,
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
@@ -250,7 +250,6 @@
       "tools/checks/integration/agent/provision-agent.check.ts": 4,
       "tools/checks/integration/agent/recipe-hook-freshness/hook-framework-import.check.ts": 2,
       "tools/checks/integration/agent/recipe-hook-freshness/import-graph.check.ts": 5,
-      "tools/checks/integration/agent/recipe-readiness.check.ts": 7,
       "tools/checks/integration/agent/recipe.check.ts": 10,
       "tools/checks/integration/apps/init-messages.check.ts": 6,
       "tools/checks/integration/apps/invocation-hints.check.ts": 13,
@@ -354,7 +353,7 @@
       "tools/checks/runtime/convergence/apply/prepare-refusals.check.ts": 1,
       "tools/checks/sets/lifecycle/set-validate.check.ts": 1
     },
-    "total": 384
+    "total": 377
   },
   "proseMatchers": {
     "comment": "Stage 5: assertion-owned legacy physical-line matcher forms retain category precedence. Executed provenance correction removes unrelated inputs/labels and records 85 without changing predicate text or granting exclusions.",
@@ -1044,8 +1043,8 @@
     "total": 2
   },
   "proseHeldFlow": {
-    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Operator-approved recipe/lock/native and memory stderr preservation fixtures are recorded per file at 1201. No skips, exclusions or re-encoding; future growth requires explicit review.",
-    "total": 1201,
+    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1190. No skips, exclusions or re-encoding; future growth requires explicit review.",
+    "total": 1190,
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 14,
@@ -1060,7 +1059,6 @@
       "tools/checks/foundation/core/command/pipeline/execute.check.ts": 6,
       "tools/checks/foundation/core/command/pipeline/property/property.check.ts": 1,
       "tools/checks/foundation/core/command/spec/binder.check.ts": 1,
-      "tools/checks/foundation/core/command/spec/effect.check.ts": 4,
       "tools/checks/foundation/core/command/spec/materialize.check.ts": 4,
       "tools/checks/foundation/core/command/spec/parse.check.ts": 23,
       "tools/checks/foundation/core/command/spec/view.check.ts": 36,
@@ -1079,7 +1077,7 @@
       "tools/checks/integration/agent/recipe-hook-freshness/hook-framework-import.check.ts": 2,
       "tools/checks/integration/agent/recipe-hook-freshness/import-graph.check.ts": 5,
       "tools/checks/integration/agent/recipe-hook-freshness/loader-isolation.check.ts": 1,
-      "tools/checks/integration/agent/recipe-readiness.check.ts": 8,
+      "tools/checks/integration/agent/recipe-readiness.check.ts": 1,
       "tools/checks/integration/agent/recipe.check.ts": 17,
       "tools/checks/integration/apps/app-hooks.check.ts": 5,
       "tools/checks/integration/apps/init-messages.check.ts": 9,

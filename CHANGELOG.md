@@ -14,6 +14,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   Bound predicate methods, identity assignments and conditional writes retain real operands.
   Reviewed recipe/privacy/native fixtures are explicitly recorded in the operator-approved
   baseline; held/opaque-input analysis, zero ad-hoc skips and existing safety predicates remain intact.
+* Recipe readiness regressions assert structured service degradation, unknown probes and
+  manifest preservation rather than error wording. Public effect/argument checks cover
+  memory, recovery, migration and explicit lock takeover; obsolete renderer/probe pins are removed.
 * Windows checks select local Git Bash and GNU tar through executable identity and real
   filesystem/argv roundtrips; a successful WSL-alias exit never proves a native tool.
 * Write-isolation checks preserve regex boundaries and native promisify capabilities while

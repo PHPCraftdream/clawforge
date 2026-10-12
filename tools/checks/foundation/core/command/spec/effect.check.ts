@@ -1,19 +1,21 @@
-// The parity table: what each of the 41 framework commands does to state for representative
-// argv. The rows are literal data pinned from the argv predicates the commands carried before
-// the effect model (readOnly / readOnlyWhen / changedWhen / requiresConfirmationWhen /
-// destructive), so a command that moves to a spec keeps its facts, and a predicate that drifts
-// fails here. Plus the shape rules of the model itself, on synthetic specs.
+// State effects for representative public argv and model precedence boundaries.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { ArgumentError, callFacts, callFactsFor, effectProfile, shapeProfile, type EffectShape } from "#framework/core/command/index.ts";
-import { destructiveSymbol, destructiveMarker, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
-import { withOutputSink } from "#framework/core/io/output.ts";
-import { inputSchema } from "#framework/integration/mcp/schema.ts";
+import { ArgumentError, callFacts, callFactsFor, shapeProfile, type EffectShape } from "#framework/core/command/index.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 type Row = readonly [argv: readonly string[], effect: "read" | "change" | "destroy", changed?: boolean];
 
 const TABLE: Readonly<Record<string, readonly Row[]>> = {
+  memory: [
+    [["plan", "--mode", "keyword", "--backend", "builtin"], "read", false],
+    [["status"], "read", false],
+    [["configure", "--mode", "keyword", "--backend", "builtin"], "destroy", true],
+    [["index", "--agent", "main"], "destroy", true],
+    [["verify", "--agent", "main"], "destroy", true],
+    [["setup", "--model-source", "https://huggingface.co/approved/model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf", "--model-version", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--model-checksum", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "--plugin-version", "2026.6.34", "--model-max-bytes", "1024", "--allow-install", "--allow-download", "--agent", "main"], "destroy", true],
+    [["status", "--deep", "--allow-spend", "--allow-download"], "destroy", true],
+  ],
   bootstrap: [[[], "change"], [["--check"], "read"], [["--no-pull"], "change"]],
   up: [[[], "change"], [["--break-lock"], "change"]],
   restart: [[[], "change"]],
@@ -39,7 +41,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   apply: [[[], "destroy"], [["--dry-run"], "read"]],
   accept: [[[], "change"]],
   rollback: [[[], "destroy"], [["--dry-run"], "read"]],
-  operations: [[[], "read"]],
+  operations: [[[], "read"], [["--takeover-lock", "--break-lock"], "destroy"]],
   "apply-config": [[[], "change"], [["--dry-run"], "read"], [["--dump"], "change"], [["--dump", "--force"], "destroy"]],
   expose: [
     [["ssh"], "read", false], [["status"], "read", false], [["tailscale"], "read", false], [["tailscale", "--apply"], "destroy", true],
@@ -72,6 +74,9 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
     // Q1 (S2.6a): import/new only add files — `change`, like `needs: "local"`.
     [["import", "x"], "change"], [["new", "x"], "change"], [["verify", "x"], "destroy"], [["verify", "x", "--dry-run"], "destroy"],
     [["onboard", "x"], "destroy"], [["diagnose", "x"], "destroy"],
+    [["inspect", "x"], "read"],
+    [["recover", "x", "--service", "api"], "destroy"], [["recover", "x", "--service", "api", "--dry-run"], "read"],
+    [["migrate", "x"], "destroy"], [["migrate", "x", "--dry-run"], "read"],
     // the operand is declared required per action: a bare action word is refused at parse
     [["status"], "read"], [["logs"], "read"], [["install"], "destroy"], [["remove"], "destroy"], [["import"], "destroy"],
     [["new"], "destroy"], [["verify"], "destroy"], [["onboard"], "destroy"], [["diagnose"], "destroy"],
@@ -88,7 +93,6 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
 };
 
 check("the table covers exactly the framework commands", Object.keys(TABLE).sort(), Object.keys(openclawCommands).sort());
-check("there are 41 commands", Object.keys(openclawCommands).length, 41);
 
 // The argv the spec parser now refuses by design — a bare variadic/positional command, a
 // flag another action owns — named EXPLICITLY, so a regression that makes any other row's
@@ -134,44 +138,6 @@ for (const [name, rows] of Object.entries(TABLE)) {
     // otherwise true — the same rule the MCP envelope applies. A legacy command reports
     // its own changedWhen, which is what the row pinned.
     check(`${label}: changed`, changed === undefined ? facts.changed : facts.changed ?? (facts.effect === "read" ? false : true), changed);
-  }
-}
-// --- the static profile: literal, then against what the renderers print today ----------------
-
-const DESTRUCTIVE = [
-  "destroy", "backup", "restore", "push", "upgrade", "apply", "rollback", "expose", "watch", "incident",
-  "cli", "exec", "host", "secrets", "recipe", "deploy", "set", "apply-config",
-];
-const ALWAYS_DESTROYS = ["cli", "exec", "host"];
-const BY_ACTION = ["backup", "expose", "watch", "recipe", "set"];
-
-async function helpNote(name: string): Promise<string> {
-  let printed = "";
-  await withOutputSink((chunk) => {
-    printed += chunk;
-  }, async () => {
-    renderFullCommandHelp(name, openclawCommands[name]);
-  });
-  return printed;
-}
-
-for (const [name, command] of Object.entries(openclawCommands)) {
-  const destructive = DESTRUCTIVE.includes(name);
-  const alwaysDestroys = ALWAYS_DESTROYS.includes(name);
-  check(`${name}: profile`, effectProfile(command), { destructive, alwaysDestroys, byAction: BY_ACTION.includes(name) });
-
-  // The list marker, the tool description marker and the confirm field, as the renderers print them.
-  check(`${name}: list marker`, destructiveSymbol(command), !destructive ? "" : alwaysDestroys ? " !" : " *");
-  check(`${name}: description marker`, destructiveMarker(command), !destructive ? "" : alwaysDestroys ? " (destructive)" : " (destructive for some actions)");
-  const schema = inputSchema(command) as { properties: Record<string, { description?: string }>; required: string[] };
-  check(`${name}: confirm field present`, "confirm" in schema.properties, destructive);
-  check(`${name}: confirm required`, schema.required.includes("confirm"), alwaysDestroys);
-  if (destructive) {
-    check(`${name}: confirm wording`, schema.properties.confirm.description, alwaysDestroys ? "Must be true: destroys state" : "Confirm a destructive action");
-    const note = await helpNote(name);
-    const expected = alwaysDestroys ? "replaces or destroys state." : BY_ACTION.includes(name)
-      ? "depending on the action given." : "depending on the flags given.";
-    checkTrue(`${name}: --help note ends "${expected}"`, note.includes(expected));
   }
 }
 

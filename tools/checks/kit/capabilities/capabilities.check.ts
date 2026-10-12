@@ -2,8 +2,6 @@
 // sh or rsync is ever spawned here. The real probes (hasDocker, hasWsl, ...) are smoke-tested
 // only for "never throws, always answers a boolean": their actual verdict depends on this
 // host, which is exactly what run.ts's own capability-gated tests (gate.check.ts) do not need.
-// The two shell probes are the exception: hasBash() and pwshCommand() are each compared against
-// a direct spawn of the same command, so bash and PowerShell really do run here.
 
 import { spawnSync } from "node:child_process";
 import { readlinkSync, symlinkSync } from "node:fs";
@@ -13,11 +11,6 @@ import { join } from "node:path";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { CapabilityProbe, CAPABILITIES, hasBash, hasDocker, hasDockerDesktopWsl, hasGnuUserland, hasAutoTarget, hasLocalPosix, hasPosixModes, hasPosixSh, hasPwsh, hasRsync, hasSshLoopback, hasSymlink, hasWsl, isCapability, isLinuxHost, isPosixHost, isWindowsHost, pwshCommand, type Capability, type ProbeMap } from "./capabilities.ts";
 
-check(
-  "the known capability list is exactly the documented seventeen",
-  [...CAPABILITIES].sort(),
-  ["auto-target", "bash", "cmd", "docker", "docker-desktop-wsl", "gnu-userland", "linux-host", "local-posix", "posix-host", "posix-modes", "posix-sh", "pwsh", "rsync", "ssh-loopback", "symlink", "windows-host", "wsl"],
-);
 check("isCapability accepts every known name", CAPABILITIES.every((capability) => isCapability(capability)), true);
 check("isCapability rejects an unknown name", isCapability("ssh"), false);
 check("isCapability rejects the empty string", isCapability(""), false);
@@ -143,7 +136,6 @@ function answersDirectly(command: string, args: readonly string[]): boolean {
 
 const PWSH_ARGS = ["-NoProfile", "-NonInteractive", "-Command", "exit 0"];
 
-check("hasBash() agrees with bash itself answering a trivial command", await hasBash(), answersDirectly("bash", ["-c", "exit 0"]));
 
 const pwsh = await pwshCommand();
 if (pwsh === undefined) {

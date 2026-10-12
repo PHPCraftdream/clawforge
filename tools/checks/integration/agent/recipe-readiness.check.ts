@@ -5,7 +5,8 @@
 // declares `readiness.services` must now catch exactly that: primary down, sidecar up.
 // Split out of recipe.check.ts, which outgrew the check-file line limit when this landed.
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { UserError } from "#framework/core/io/log.ts";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { readName } from "#framework/core/values/names.ts";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -21,15 +22,16 @@ import type { Transport } from "#framework/runtime/transport/transport.ts";
 import type { Stack, StackServiceState } from "#framework/runtime/runtime.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-/** Runs `fn`, returns the thrown message. Records a failure (and returns "") if it did not throw. */
-async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string> {
-  try {
-    await fn();
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-  check(name, "did not throw", "threw");
-  return "";
+function readinessReport(output: string): { recipe: string; status: string; detail: string; services: Record<string, StackServiceState> } {
+  const reports = output.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+  check("exactly one readiness report", reports.length, 1);
+  return reports[0];
+}
+
+async function refusalOf<T>(name: string, fn: () => Promise<T>): Promise<unknown> {
+  try { await fn(); } catch (error) { return error; }
+  check(name, false, true);
+  return undefined;
 }
 
 /** A fresh stub `ctx` whose stack() returns spies recording build/up calls, and whose transport is
@@ -172,16 +174,17 @@ try {
       },
     });
     let output = "";
-    let message = "";
+    let refusal: unknown;
     try {
       await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["install", "multi-service"]));
     } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
+      refusal = error;
     }
     check("build and up still ran before readiness caught the failure", calls, ["build", "up"]);
-    check("install refuses instead of silently reporting running", message.includes("did not reach a ready state"), true);
-    check("the readiness detail names the failed primary service", output.includes("primary"), true);
-    check("the readiness detail does not call this ready", output.includes('"status":"ready"'), false);
+    check("install refuses instead of silently reporting running", refusal instanceof UserError, true);
+    const report = readinessReport(output);
+    check("failed primary report is degraded", report.status, "degraded");
+    check("failed primary remains in consumer report", report.services, { primary: { running: false }, sidecar: { running: true } });
   }
 
   // The healthy counterpart: every declared service running clears readiness and afterStart runs.
@@ -208,25 +211,28 @@ try {
     let output = "";
     await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["install", "multi-service-healthy"]));
     check("build and up ran", calls, ["build", "up"]);
-    check("install reports ready once every declared service is up and healthy", output.includes('"status":"ready"'), true);
+    check("install reports ready once every declared service is up and healthy", readinessReport(output).status, "ready");
   }
 
   // --- malformed ports/variables are rejected at load, isolated at listing, and ----------
   // --- surfaced as a visible catalog entry rather than a thrown render -------------------
 
-  const malformedManifests: Array<{ name: string; json: unknown; expects: string }> = [
-    { name: "bad-port-host-type", json: { description: "port host is not an integer", ports: [{ host: "8080", container: 80 }] }, expects: "ports[0].host must be an integer" },
-    { name: "bad-port-host-range-low", json: { description: "port host is 0", ports: [{ host: 0, container: 80 }] }, expects: "ports[0].host must be an integer between 1 and 65535" },
-    { name: "bad-port-host-range-high", json: { description: "port host exceeds 65535", ports: [{ host: 70000, container: 80 }] }, expects: "ports[0].host must be an integer between 1 and 65535" },
-    { name: "bad-port-null-element", json: { description: "ports array holds a null element", ports: [null] }, expects: "ports[0] must be an object" },
-    { name: "bad-variables-array", json: { description: "variables is an array, not an object", variables: ["FOO"] }, expects: "variables must be an object" },
-    { name: "bad-variables-value-type", json: { description: "variables has a non-string value", variables: { FOO: 42 } }, expects: "variables.FOO must be a string" },
+  const malformedManifests: Array<{ name: string; json: unknown }> = [
+    { name: "bad-port-host-type", json: { description: "port host is not an integer", ports: [{ host: "8080", container: 80 }] } },
+    { name: "bad-port-host-range-low", json: { description: "port host is 0", ports: [{ host: 0, container: 80 }] } },
+    { name: "bad-port-host-range-high", json: { description: "port host exceeds 65535", ports: [{ host: 70000, container: 80 }] } },
+    { name: "bad-port-null-element", json: { description: "ports array holds a null element", ports: [null] } },
+    { name: "bad-variables-array", json: { description: "variables is an array, not an object", variables: ["FOO"] } },
+    { name: "bad-variables-value-type", json: { description: "variables has a non-string value", variables: { FOO: 42 } } },
   ];
 
-  for (const { name, json, expects } of malformedManifests) {
+  for (const { name, json } of malformedManifests) {
     await writeRecipe(name, json);
-    const message = await messageOf(`loadRecipe rejects ${name}`, () => loadRecipe(readName("recipe", name)));
-    check(`${name}: error names the actual problem`, message.includes(expects), true);
+    const manifestPath = resolve(scratch, name, "recipe.json");
+    const before = await readFile(manifestPath, "utf8");
+    const error = await refusalOf(`loadRecipe rejects ${name}`, () => loadRecipe(readName("recipe", name)));
+    check(`${name}: malformed manifest refuses load`, error instanceof Error, true);
+    check(`${name}: refused load preserves manifest`, await readFile(manifestPath, "utf8"), before);
   }
 
   const namesAfterMalformedManifests = (await listRecipes()).map((entry) => entry.name).sort();
@@ -243,10 +249,6 @@ try {
     brokenNames,
     malformedManifests.map((entry) => entry.name).sort(),
   );
-  for (const { name, expects } of malformedManifests) {
-    const found = brokenEntries.find((entry) => entry.name === name);
-    check(`(b) listBrokenRecipes names the actual problem for ${name}`, found !== undefined && found.error.includes(expects), true);
-  }
 
   {
     const { ctx } = stubContext({});
@@ -275,8 +277,8 @@ try {
       description: "stub",
       async mkdirp(_path: string): Promise<void> {},
       async exec(command: string, args: string[]) {
-        if (command === "docker" && args.includes("ps")) {
-          dockerCalls.push(args);
+        if (command === "sh" && args[2] === "recipe-docker" && args[3] === "compose" && args.includes("ps")) {
+          dockerCalls.push(args.slice(3));
           return { code: 0, stdout: psOutput, stderr: "" };
         }
         return { code: 0, stdout: "", stderr: "" };
@@ -307,7 +309,7 @@ try {
     // never having asked — the field is always reported, only its value is unset.
     check(
       "(a) a stopped container is part of the reported states, not filtered out of them",
-      states,
+      { ...states },
       { gateway: { running: true, health: undefined }, worker: { running: false, health: undefined } },
     );
 
@@ -337,15 +339,16 @@ try {
     const { ctx, calls } = stubContext({});
     ctx.runtime.stack = () => stubStack(calls, () => ({ sidecar: { running: true }, worker: { running: false } }));
     let output = "";
-    let message = "";
+    let refusal: unknown;
     try {
       await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["install", "no-readiness-crashed-service"]));
     } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
+      refusal = error;
     }
-    check("(a) default readiness derivation fails install over the stopped service", message.includes("did not reach a ready state"), true);
-    check("(a) the failure names the stopped service instead of accepting the live sidecar", output.includes("not running: worker"), true);
-    check("(a) the default-derived readiness report never calls this ready", output.includes('"status":"ready"'), false);
+    check("(a) default readiness derivation fails install over the stopped service", refusal instanceof UserError, true);
+    const report = readinessReport(output);
+    check("default-derived readiness is degraded", report.status, "degraded");
+    check("stopped worker cannot be answered by sidecar", report.services, { sidecar: { running: true }, worker: { running: false } });
   }
 
   // --- grace: a ready answer must HOLD for the grace window; a flip inside it -------------
@@ -364,15 +367,17 @@ try {
     let poll = 0;
     ctx.runtime.stack = () => stubStack(calls, () => polls[Math.min(poll++, polls.length - 1)]);
     let output = "";
-    let message = "";
+    let refusal: unknown;
     try {
       await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["install", "ready-then-crash"]));
     } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
+      refusal = error;
     }
-    check("(b) a service ready on the first poll but failed within the grace window does not pass", message.includes("did not reach a ready state"), true);
-    check("(b) the flip is attributed to the grace window and names the service", output.includes("grace window") && output.includes("app"), true);
-    check("(b) the grace-window flip is not reported as ready", output.includes('"status":"ready"'), false);
+    check("(b) grace-window failure refuses install", refusal instanceof UserError, true);
+    check("grace window observes more than the initial ready poll", poll >= 2, true);
+    const report = readinessReport(output);
+    check("grace-window flip is degraded", report.status, "degraded");
+    check("grace-window flip retains failed service", report.services, { app: { running: false } });
   }
 
   // --- probe bound: a hung serviceStates() must not defeat the readiness -----------------
@@ -387,15 +392,16 @@ try {
     const { ctx, calls } = stubContext({});
     ctx.runtime.stack = () => stubStack(calls, () => new Promise<Record<string, StackServiceState>>(() => {}));
     let output = "";
-    let message = "";
+    let refusal: unknown;
     const startedAt = Date.now();
     try {
       await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["install", "hung-state-probe"]));
     } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
+      refusal = error;
     }
-    check("(c) a hung state probe still lets the readiness deadline fire", message.includes("did not reach a ready state"), true);
-    check("(c) the failure carries a timeout message and an unknown verdict, not a hang", output.includes("timed out") && output.includes('"status":"unknown"'), true);
+    check("(c) a hung state probe still lets the readiness deadline fire", refusal instanceof UserError, true);
+    check("hung probe is unknown rather than ready or degraded", readinessReport(output).status, "unknown");
+    check("hung probe invents no service observations", readinessReport(output).services, {});
     check("(c) the deadline bounded the hung probe instead of waiting forever", Date.now() - startedAt < 5000, true);
   }
 } finally {

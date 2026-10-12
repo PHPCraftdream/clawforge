@@ -10,6 +10,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Own-product assertions follow lexical bindings, transitive writes and closure captures;
   property labels, shadows and literal keywords do not invent product provenance.
   Generator self-names stay function-local; the measured shrink-only baseline is 305.
+* Prose assertion ownership follows selected record fields, snapshots and callable aliases.
+  Bound predicate methods, identity assignments and conditional writes retain real operands.
+  Reviewed recipe/privacy/native fixtures are explicitly recorded in the operator-approved
+  baseline; held/opaque-input analysis, zero ad-hoc skips and existing safety predicates remain intact.
 * Windows checks select local Git Bash and GNU tar through executable identity and real
   filesystem/argv roundtrips; a successful WSL-alias exit never proves a native tool.
 * Write-isolation checks preserve regex boundaries and native promisify capabilities while

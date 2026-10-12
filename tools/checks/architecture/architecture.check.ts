@@ -26,7 +26,8 @@ import { COMPLETION_ARGUMENTS } from "#framework/integration/completion/index.ts
 import { commandRegistry } from "#framework/integration/gate.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specData, specOf } from "#framework/core/command/index.ts";
-import { measureProseHeld, measureProseHeldFlow, PROSE_EQUALITY, PROSE_MATCHER, PROSE_PIN } from "./prose-held.ts";
+import { measureProseHeld, measureProseHeldFlow } from "./prose-held.ts";
+import { measureLegacyProseAssertions } from "./self/prose-assertions.ts";
 import { grammarCallsInRun, kindCastsOutsideValues, stage7S25Boundaries } from "./command-layer/kind-casts.ts";
 import { runFrameLaw } from "#checks/surfaces/frame-law-counter.ts";
 import { CONTROLS } from "#checks/controls/controls.ts";
@@ -465,39 +466,19 @@ report(ratchet("imageStringOps.total", baseline.imageStringOps.total, imageTotal
 // 6. Prose pins in checks — stage 5 and the cross-cutting I9: checks assert structure
 // (codes, argv, JSON fields); prose belongs in goldens and renderer checks. The generated
 // golden surfaces and this ratchet's own directory are excluded.
+// Keep the legacy physical-line/category projection; operand provenance decides ownership,
+// not a substitution of the broader site-counting API or changes to held/held-flow metrics.
 const proseAfter = new Map<string, number>();
-for (const file of checkFiles) {
-  const content = await readFile(resolve(root, file), "utf8");
-  let count = 0;
-  for (const line of content.split("\n")) if (PROSE_PIN.test(line)) count += 1;
-  if (count > 0) proseAfter.set(file, count);
-}
-report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
-
-// 6b. The other prose forms — stage 5 (design 5.1): translation must not move a pin into
-// startsWith/endsWith/indexOf, a regex, or an equality with a literal that carries a space,
-// nor split one pin across a string join (`includes("a" + " b")`).
-// Equality ratchet: growth means the prose moved into another operator instead of structure.
 let matcherCount = 0;
-for (const file of checkFiles) {
-  const content = await readFile(resolve(root, file), "utf8");
-  for (const line of content.split("\n")) {
-    if (PROSE_PIN.test(line)) continue;
-    if (PROSE_MATCHER.test(line)) matcherCount += 1;
-  }
-}
-report(ratchet("proseMatchers", baseline.proseMatchers.total, matcherCount, [], []));
-
-// 6c. Prose as the third argument of check(name, actual, "literal with a space") — stage 5
-// + cross-cutting (I9): this form escapes both prosePins (includes only) and proseMatchers
-// (equality operator required), so rewriting a === pin into check() lowers proseMatchers
-// while the prose stays. Equality ratchet: growth fails; the sites are not being converted
-// now, this records the honest count.
 let proseEqualityCount = 0;
 for (const file of checkFiles) {
-  const content = await readFile(resolve(root, file), "utf8");
-  for (const line of content.split("\n")) if (PROSE_EQUALITY.test(line)) proseEqualityCount += 1;
+  const measured = measureLegacyProseAssertions(await readFile(resolve(root, file), "utf8"));
+  if (measured.pins > 0) proseAfter.set(file, measured.pins);
+  matcherCount += measured.matchers;
+  proseEqualityCount += measured.equality;
 }
+report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
+report(ratchet("proseMatchers", baseline.proseMatchers.total, matcherCount, [], []));
 report(ratchet("proseEquality", baseline.proseEquality.total, proseEqualityCount, [], []));
 
 // 6d. Original lexical held-prose measurement (HEAD behavior, independent of flow).

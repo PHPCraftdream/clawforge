@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { LocalTransport, type ExecOptions } from "#framework/runtime/transport/transport.ts";
-import { mcpServe } from "#framework/commands/management/credentials/mcp.ts";
+import { mcpServe } from "#framework/commands/management/configuration/credentials/mcp.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot, type Settings } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

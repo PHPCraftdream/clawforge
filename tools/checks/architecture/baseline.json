@@ -232,8 +232,9 @@
     }
   },
   "prosePins": {
-    "comment": "Stage 5 + I9: assertion-owned legacy physical-line pins; fixture inputs and labels do not become assertions. Executed operand-provenance measurement records 383, including operator-approved privacy/Unicode and cold-archive preservation predicates in the two new recipe files. No scanner exclusion or fixture re-encoding; future growth still requires explicit review.",
+    "comment": "Stage 5 + I9: assertion-owned legacy physical-line pins; fixture inputs and labels do not become assertions. Executed measurement records 384, including operator-approved recipe privacy/Unicode, cold-archive preservation and independent captured memory stderr predicates. No exclusions or fixture re-encoding; future growth requires explicit review.",
     "files": {
+      "tools/checks/management/memory.check.ts": 1,
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 7,
       "tools/checks/foundation/cli/gate-commands.check.ts": 1,
@@ -353,15 +354,15 @@
       "tools/checks/runtime/convergence/apply/prepare-refusals.check.ts": 1,
       "tools/checks/sets/lifecycle/set-validate.check.ts": 1
     },
-    "total": 383
+    "total": 384
   },
   "proseMatchers": {
     "comment": "Stage 5: assertion-owned legacy physical-line matcher forms retain category precedence. Executed provenance correction removes unrelated inputs/labels and records 85 without changing predicate text or granting exclusions.",
     "total": 85
   },
   "proseEquality": {
-    "comment": "Stage 5 + I9: assertion-owned legacy check(name, actual, expected) prose equality. Executed provenance correction records 194; structural selections exclude unrelated record fields while true expected prose stays counted.",
-    "total": 194
+    "comment": "Stage 5 + I9: assertion-owned legacy prose equality. Executed measurement records 195, including independently authored upstream stderr preservation in the operator-approved memory fixture. Structural selections exclude unrelated record fields; true expected prose stays counted.",
+    "total": 195
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
@@ -697,16 +698,16 @@
     }
   },
   "proseHeld": {
-    "comment": "Legacy lexical held-prose scanner unchanged. Operator-approved behavioral recipe/lock fixtures add independently checked privacy, native argv and refusal inputs. Executed corpus total is 148; no exclusions, text re-encoding or weakened predicates.",
-    "total": 148
+    "comment": "Legacy lexical held-prose scanner unchanged. Operator-approved recipe/lock/native and memory stderr fixtures retain independently checked protocol and privacy inputs. Executed corpus total is 150; no exclusions, re-encoding or weakened predicates.",
+    "total": 150
   },
   "transportReadSwallowAllow": {
     "comment": "Counted ceiling for transport-read-swallow.check.ts's ALLOW list (shrink-only; the check asserts ALLOW.length <= total). fix33-Z (rf7-tails-Z) measurement widening 14 -> 21: the new all-path rule flags conditional rethrows whose other path ends in fail()/warn()/a fallback read; the 7 newly listed sites are tools/framework/commands/lifecycle/bootstrap/prereqs.ts:127,152,195,218,269,374 and tools/framework/service/secrets.ts:312. Not growth: no product behavior changed, the stricter guard measures what the old any-throw acceptance missed. A new allow-list entry requires raising this total with its reason recorded here.",
     "total": 21
   },
   "writeTargetsUnresolved": {
-    "comment": "stage 7 S4 R2-C; bound write targets the write-isolation evaluator cannot prove temp-rooted or anchored; measured 423 (down from 426) after caller-owned fixture roots and native helper cwd isolation; shrink-only, with exact measured equality enforced.",
-    "total": 423
+    "comment": "Bound write targets not statically proven temp-rooted or anchored. Operator-approved memory model fixture adds 15 explicit UNKNOWN approximations: 14 guarded pathname/descriptor and VM-adapter sites plus one serialized Node invocation. Canonical boundaries, descriptor leases and cancellation were exercised independently; static uncertainty is not labeled CLEAN. Exact measured total is 438, with zero anchored/unbound writes and no allow entries. Future unreviewed growth remains forbidden.",
+    "total": 438
   },
   "ownProductExpectations": {
     "comment": "stage 7 S0.5 (independent expectations, invariant I11): check()/assert.* assertions whose EXPECTED operand and ACTUAL operand share a symbol imported from tools/framework — one product mutation moves both sides. A predicate argument nested in the actual operand (.includes/.startsWith/.endsWith/.match) counts as the expected role. Initial baseline = the measured state after converting the round 18/19 offender sites to literal expectations (schedule crontab read/update/confirm refusals, host probe evidence and --choices, destroy --confirm-name mismatch, lock reinstall advice, recover-env refusals, system-install unknown-command/no-save lines). Exempt: a file a registered negative control covers (C1-C8, C9, C11), a line marked `// control: <id>`. The baseline was first recorded at 301 with the initial scanner. The measurement was then completed (derived locals, template interpolations, combined imports) and the converted sites moved to token-array assertions; the recorded total is now 391 (was 301) — a measurement widening of the new ratchet, not growth. A file absent from `files` must not gain one. S3.2: the 11 sites in set-validate.check.ts became control-exempt when controls C80-C82 registered that check file (exemption is per FILE — architecture.check.ts's CONTROLLED_FILES), so the recorded total is 380 (was 391); a recorded decrease, not growth. C83 registers set-validate-image.check.ts, adding a file exemption for 2 sites (not stronger expectations), so the measured total is 378 (was 380). S1.4: control C127 registers completion-behaviour.check.ts, adding a file exemption for its 3 sites (not stronger expectations), so the measured total is 375 (was 378). Stage 7 S2.5: the one site in set-command.check.ts became a structural assertion with the local-facts-of-arguments migration so the recorded total is 374 (was 375); a recorded decrease, not growth. S2.8: control C143 registers parse.check.ts, exempting its 4 sites per FILE — the recorded total is 370 (was 374); a recorded decrease, not growth. S2.6b records the decrease: gate-commands.check.ts is exempt as negative control C191's check (remove-app's confirm: true sets --yes), 15 own-product expectations fewer (370 -> 355).",
@@ -1043,8 +1044,8 @@
     "total": 2
   },
   "proseHeldFlow": {
-    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Operator-approved recipe/lock/native regression additions and executed removals are recorded per file at 1197. No skips, exclusions or text re-encoding; future growth still requires explicit review.",
-    "total": 1197,
+    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Operator-approved recipe/lock/native and memory stderr preservation fixtures are recorded per file at 1201. No skips, exclusions or re-encoding; future growth requires explicit review.",
+    "total": 1201,
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 14,
@@ -1108,6 +1109,7 @@
       "tools/checks/kit/self/harness.check.ts": 17,
       "tools/checks/kit/self/runtime-guard.check.ts": 2,
       "tools/checks/management/prepare-refusals.check.ts": 4,
+      "tools/checks/management/memory.check.ts": 4,
       "tools/checks/management/recipe/inspect.check.ts": 4,
       "tools/checks/release/release/installed-consumer.check.ts": 1,
       "tools/checks/release/release/lock.check.ts": 10,

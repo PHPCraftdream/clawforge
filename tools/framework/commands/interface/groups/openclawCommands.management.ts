@@ -5,20 +5,23 @@
 import type { AppCommand } from "#src/core/app.ts";
 import { materializeCommands } from "#src/core/command/index.ts";
 
+import { MEMORY } from "#src/commands/management/configuration/memory/index.ts";
 import { STATUS } from "#src/commands/interface/status.ts";
 import { CLI } from "#src/commands/interface/cli.ts";
 import { EXEC } from "#src/commands/interface/exec.ts";
 import { HOST } from "#src/commands/interface/host/index.ts";
 import { CLI_START, CLI_STOP } from "#src/commands/interface/cli-helper.ts";
-import { CONFIGURE_PROVIDER } from "#src/commands/management/credentials/provider.ts";
-import { MCP_SERVE, MCP_SETUP, MCP_CREDS } from "#src/commands/management/credentials/mcp.ts";
+import { CONFIGURE_PROVIDER } from "#src/commands/management/configuration/credentials/provider.ts";
+import { MCP_SERVE, MCP_SETUP, MCP_CREDS } from "#src/commands/management/configuration/credentials/mcp.ts";
 import { DEPLOY } from "#src/commands/management/deploy/index.ts";
 import { LOCK } from "#src/commands/management/lock.ts";
-import { SECRETS } from "#src/commands/management/secrets.ts";
+import { SECRETS } from "#src/commands/management/configuration/secrets.ts";
 import { RECIPE } from "#src/commands/management/recipe/index.ts";
 import { PROVISION_AGENT } from "#src/commands/management/provision-agent/index.ts";
 
 export const managementCommands: Record<string, AppCommand> = materializeCommands({
+  memory: { summary: "Declare, set up, inspect, index and verify memory", group: "change", ...MEMORY, structured: true,
+    details: "Actions: plan, configure, setup, status, index, verify. Plan/configure operate locally on canonical owned leaf declarations; explicitly apply-config and restart separately. Status is safe/read-only unless deep is consented. Setup/index/verify require confirmation, cli-start and serialized instance locking. Keyword expects no embeddings. Setup requires local embeddings, immutable model source/version/checksum, exact plugin version, model byte limit and both allow-install/allow-download consents before target contact; delivery and installation are never automatic. Verify creates an exclusive uid1000 witness and removes only its owned inode before explicit cleanup reindex." },
   status: {
     summary: "Show containers, image, health probes and data usage",
     group: "start-stop",

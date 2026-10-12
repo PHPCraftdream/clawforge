@@ -32,8 +32,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Cold recipe migration distinguishes exact Docker-added mountpoint metadata from unmounted
   application data, including post-stop revalidation. An isolated standard-CLI named-volume
   cutover verified cold archives, healthy target state and retained source recovery artifacts.
+* Memory plan/configure declares embeddings, keyword-only or disabled search while preserving
+  unrelated configuration. Setup requires explicit resource consent and pinned local-model
+  provenance; index/verify scopes agents and uses an isolated owned search witness.
+* Memory resource guards read a coherent native snapshot without repeatedly bootstrapping
+  separate config/inventory CLIs. Verification cleanup and reindex use an independent
+  bounded budget after a primary deadline; successful verification proves owned-witness search.
 * Retired the refactor-only frozen CLI argument count; new arguments remain covered by
   typed binding, effect/confirmation and refusal-boundary contract checks.
+* Legacy prose ratchets retain their original shapes and budgets while excluding fixture
+  initializers.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.

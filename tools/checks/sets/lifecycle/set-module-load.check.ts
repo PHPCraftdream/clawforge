@@ -18,7 +18,7 @@ const CYCLES: Record<string, string[]> = {
   // load.ts owns loading and integrity; install.ts imports it and must never be reached by
   // it — not even transitively (load.ts loads the acceptance grammar lazily for this reason).
   "set load ↔ artifact install": ["set/load.ts", "set/artifacts/install.ts"],
-  "lifecycle state ↔ restore": ["commands/lifecycle/state.ts", "commands/management/secrets.ts", "commands/lifecycle/restore/index.ts"],
+  "lifecycle state ↔ restore": ["commands/lifecycle/state.ts", "commands/management/configuration/secrets.ts", "commands/lifecycle/restore/index.ts"],
   "artifact install ↔ provision-agent ↔ orchestration": [
     "set/artifacts/install.ts",
     "commands/management/provision-agent/index.ts",

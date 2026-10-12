@@ -28,7 +28,7 @@ import { deploymentName } from "#src/runtime/deployment.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";
 import { NATIVE_MANIFEST_NAME } from "#src/commands/lifecycle/backup/index.ts";
 import { buildRestorePlan, printRestorePlan } from "./plan.ts";
-import { preflightSecrets, MissingSecretsError } from "#src/commands/management/secrets.ts";
+import { preflightSecrets, MissingSecretsError } from "#src/commands/management/configuration/secrets.ts";
 import {
   importRestoredPrivatePathsHistory,
   mutatePrivatePathsLedgerState,

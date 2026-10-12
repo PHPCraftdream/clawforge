@@ -6,7 +6,7 @@ import { runApp } from "#framework/entry/cli.ts";
 import { createContext } from "#framework/core/context.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { requirements, requirementsForConfig } from "#framework/service/secrets.ts";
-import { preflightSecrets, secrets as secretsCommand } from "#framework/commands/management/secrets.ts";
+import { preflightSecrets, secrets as secretsCommand } from "#framework/commands/management/configuration/secrets.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";

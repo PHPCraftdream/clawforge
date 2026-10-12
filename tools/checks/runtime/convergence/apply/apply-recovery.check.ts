@@ -7,7 +7,7 @@ import { orchestrationCommands } from "#framework/commands/interface/groups/open
 import { planActions, printPlanActions, planSummaryLine } from "#framework/commands/orchestration/plan.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import { declarationExistsRefusal } from "#framework/commands/orchestration/config.ts";
-import { storeExistsRefusal } from "#framework/commands/management/secrets.ts";
+import { storeExistsRefusal } from "#framework/commands/management/configuration/secrets.ts";
 import { problem } from "#framework/service/inspection.ts";
 import { Journal } from "#framework/service/operations.ts";
 import type { OperationRecord } from "#framework/service/operations.ts";

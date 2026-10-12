@@ -7,7 +7,7 @@ import { log, info, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
-import { preflightSecrets } from "#src/commands/management/secrets.ts";
+import { preflightSecrets } from "#src/commands/management/configuration/secrets.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { preflightPort } from "#src/commands/lifecycle/bootstrap/prereqs.ts";
 import { commandBody, runOnContext, type Values } from "#src/core/command/index.ts";

@@ -116,7 +116,7 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
   },
   {
     id: "C209", finding: "rf7-tails-V",
-    note: "Bypass the counted reader in the secrets apply path; the static sweep must fail.", product: "tools/framework/commands/management/secrets.ts",
+    note: "Bypass the counted reader in the secrets apply path; the static sweep must fail.", product: "tools/framework/commands/management/configuration/secrets.ts",
     search: "let content = await readEnvFileText();",
     replace: "let content = await readFile(envFile(), \"utf8\");",
     check: "tools/checks/foundation/core/command/needs.check.ts", fragment: "no product file reads envFile() past the counted reader",
@@ -224,7 +224,7 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
   },
   {
     id: "C244", finding: "rf7-tails-u", note: "Bypass secrets apply counted reader; dynamic calibration must fail independently of static sweep.",
-    product: "tools/framework/commands/management/secrets.ts", search: "let content = await readEnvFileText();", replace: 'let content = await readFile(envFile(), "utf8");',
+    product: "tools/framework/commands/management/configuration/secrets.ts", search: "let content = await readEnvFileText();", replace: 'let content = await readFile(envFile(), "utf8");',
     check: "tools/checks/foundation/core/command/needs.check.ts", fragment: "secrets apply reads the .env through the counted reader exactly once",
   },
   {
@@ -357,10 +357,23 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     check: "tools/checks/surfaces/advice/checkout-paste.check.ts", fragment: "R3-A-1: checkout-only rendered paste exit 0",
   },
   {
-    id: "C251", finding: "R3-A-2 probe transport", note: "Restore native bash -c script transport: repeated tails already drift before Node runs.",
+    id: "C251", finding: "native Bash literal argv", note: "Collapse distinct consumer words at the native Node handoff.",
     product: "tools/checks/surfaces/advice/checkout-paste.check.ts",
-    search: 'await runProcess("bash", ["-s"], { input: body, timeoutMs })',
-    replace: 'await runProcess("bash", ["-c", body], { timeoutMs })',
-    check: "tools/checks/surfaces/advice/checkout-paste.check.ts", fragment: "R3-A-2: pre-native exact argv",
+    search: '${q(forward(printer))} "$@"',
+    replace: '${q(forward(printer))} "$*"',
+    check: "tools/checks/surfaces/advice/checkout-paste.check.ts", fragment: "R3-A-2: native exact argv",
+  },
+  {
+    id: "C272", finding: "native positive selection", note: "Reject every otherwise usable Bash validator result.",
+    product: "tools/checks/kit/capabilities/native-tools.ts",
+    search: 'tool === "bash" ? validateBash(binary, on) : validateTar(binary, on)',
+    replace: 'tool === "bash" ? Promise.resolve(false) : validateTar(binary, on)',
+    check: "tools/checks/kit/capabilities/native-tools.check.ts", fragment: "independently working native Bash must be selected",
+  },
+  {
+    id: "C274", finding: "real packing payload", note: "Corrupt inventoried payload bytes before real archive creation.",
+    product: "tools/checks/sets/pack.ts",
+    search: 'else await copyFile(source, target);', replace: 'else await writeFile(target, "corrupted payload");',
+    check: "tools/checks/values/name-compat.check.ts", fragment: "the real assembler preserves payload through metacharacter paths",
   },
 ];

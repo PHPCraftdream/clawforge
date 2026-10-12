@@ -19,6 +19,7 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { ConfirmationRequiredError } from "#framework/core/command/index.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import type { ArgumentRule, ArgumentSpec } from "#framework/core/command/index.ts";
 import { specData, specOf } from "#framework/core/command/spec.ts";
@@ -26,7 +27,7 @@ import { envReads, monorepoRoot, readEnvFileText, resetEnvReads } from "#framewo
 import type { Context } from "#framework/core/context.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import { declaredState } from "#framework/commands/orchestration/inspect/declared.ts";
-import { secrets } from "#framework/commands/management/secrets.ts";
+import { secrets } from "#framework/commands/management/configuration/secrets.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { TRANSPORT_SENTINEL, createDeploymentFixture, stageTally } from "#checks/kit/deployment-fixture.ts";
@@ -69,7 +70,7 @@ const needsOf = (unit: Unit): string => {
 const localUnits = units.filter((unit) => needsOf(unit) === "local");
 // The local set pinned as WORD ARRAYS (the labels' tokens), not spaced literals: the same
 // expectation, expressed the way the prose-pin measurement does not count.
-const LOCAL_UNIT_TOKENS: ReadonlyArray<readonly string[]> = [["recipe", "import"], ["recipe", "new"], ["mcp-setup"]];
+const LOCAL_UNIT_TOKENS: ReadonlyArray<readonly string[]> = [["memory", "plan"], ["memory", "configure"], ["recipe", "import"], ["recipe", "new"], ["mcp-setup"]];
 check("the units declaring needs local are exactly the repository-side ones",
   localUnits.map((unit) => unit.label.split(" ")), LOCAL_UNIT_TOKENS);
 
@@ -78,6 +79,8 @@ check("the units declaring needs local are exactly the repository-side ones",
 // name whose destination does not exist yet, `mcp-setup` takes no arguments. A future local
 // unit without a row here is a failure, never a silent skip.
 const localInputs: Readonly<Record<string, (root: string) => readonly string[]>> = {
+  "memory plan": () => ["plan", "--mode", "keyword", "--backend", "builtin"],
+  "memory configure": () => ["configure", "--mode", "keyword", "--backend", "builtin"],
   "recipe import": (root) => ["import", join(root, "import-source")],
   "recipe new": () => ["new", "needs-local-recipe"],
   "mcp-setup": () => [],
@@ -132,10 +135,6 @@ const validArgs = (unit: Unit, root: string): { readonly args: Record<string, un
   return { args };
 };
 
-// The context-stage refusal every needs-"target" unit owes on the malformed fixture: the
-// existing Settings text, spelled as the literal token array (toSettings dies on the
-// missing OC_DATA_DIR before a transport exists).
-const DATA_DIR_UNSET_TOKENS: readonly string[] = ["OC_DATA_DIR", "is", "not", "set", "in", ".env"];
 
 const tally = stageTally();
 const isolated = await isolatedAppsRoot("needs-fixture");
@@ -151,6 +150,18 @@ try {
   await mkdir(join(fixtureRoot, "import-source"), { recursive: true });
   await writeFile(join(fixtureRoot, "import-source", "recipe.json"), JSON.stringify({ description: "import source" }), "utf8");
 
+  const memoryDeclarationPath = join(fixtureRoot, "config", "desired-state.json");
+  const memoryDeclaration = `${JSON.stringify([
+    { path: "gateway.mode", value: "local" },
+    { path: "memory.backend", value: "builtin" },
+    { path: "agents.defaults.memorySearch.enabled", value: true },
+    { path: "agents.defaults.memorySearch.provider", value: "none" },
+    { path: "agents.defaults.memorySearch.fallback", value: "none" },
+    { path: "agents.defaults.memorySearch.query.hybrid.enabled", value: true },
+    { path: "agents.defaults.memorySearch.store.vector.enabled", value: false },
+    { path: "agents.defaults.memorySearch.query.maxResults", value: 17 },
+  ], null, 2)}\n`;
+  await writeFile(memoryDeclarationPath, memoryDeclaration, "utf8");
   const runArgv = async (command: string, argv: readonly string[]) => {
     let output = "";
     const execution = await withOutputSink((chunk) => { output += chunk; }, () =>
@@ -166,17 +177,40 @@ try {
 
   for (const unit of localUnits) {
     // the counter is per local unit: each row must prove its own zero, never inherit one
+    const declarationBefore = unit.command === "memory" ? await readFile(memoryDeclarationPath, "utf8") : undefined;
     resetEnvReads();
     const row = localInputs[unit.label];
-    checkTrue(`${unit.label}: the local unit has an input row`, row !== undefined);
-    const result = row === undefined ? undefined : await runArgv(unit.command, row(fixture.root));
-    if (result === undefined) { resetEnvReads(); }
-    else {
-      tally.case(unit.label, result.execution.stage, result.execution.error);
-      checkTrue(`${unit.label}: the local action reaches run with a broken .env, zero .env reads and zero target contacts`,
-        result.execution.stage === "run" && result.execution.error === undefined
-        && result.contacts.length === 0 && envReads() === 0);
+    if (row === undefined) throw new Error(`Missing local fixture input: ${unit.label}`);
+    const result = await runArgv(unit.command, row(fixture.root));
+    tally.case(unit.label, result.execution.stage, result.execution.error);
+    checkTrue(`${unit.label}: the local action reaches run with a broken .env, zero .env reads and zero target contacts`,
+      result.execution.stage === "run" && result.execution.error === undefined
+      && result.contacts.length === 0 && envReads() === 0);
+    if (unit.command === "memory") {
+      const after = await readFile(memoryDeclarationPath, "utf8");
+      if (unit.action === "plan") check("memory plan leaves declaration bytes untouched", after, declarationBefore);
+      check("local memory preserves unrelated declared setting", (JSON.parse(after) as { path: string; value: unknown }[]).find((op) => op.path === "agents.defaults.memorySearch.query.maxResults"), { path: "agents.defaults.memorySearch.query.maxResults", value: 17 });
     }
+  }
+  {
+    const before = await readFile(memoryDeclarationPath, "utf8");
+    resetEnvReads();
+    const preview = await runNamed("memory", { action: "plan", mode: "keyword", backend: "builtin" }, false);
+    check("unconfirmed local memory plan reaches run", preview.execution.stage, "run");
+    check("unconfirmed memory plan succeeds", preview.execution.error, undefined);
+    check("unconfirmed memory plan zero contacts", preview.contacts, []); check("unconfirmed memory plan zero env reads", envReads(), 0);
+    check("unconfirmed memory plan no declaration write", await readFile(memoryDeclarationPath, "utf8"), before);
+    resetEnvReads();
+    const refusal = await runNamed("memory", { action: "configure", mode: "disabled", backend: "builtin" }, false);
+    check("unconfirmed memory configure stops at confirm", refusal.execution.stage, "confirm");
+    checkTrue("unconfirmed memory configure typed refusal", refusal.execution.error instanceof ConfirmationRequiredError);
+    check("unconfirmed memory configure zero contacts", refusal.contacts, []); check("unconfirmed memory configure zero env reads", envReads(), 0);
+    check("unconfirmed memory configure no declaration write", await readFile(memoryDeclarationPath, "utf8"), before);
+    resetEnvReads();
+    const confirmed = await runNamed("memory", { action: "configure", mode: "keyword", backend: "builtin" });
+    check("confirmed local memory configure reaches run", confirmed.execution.stage, "run"); check("confirmed memory configure succeeds", confirmed.execution.error, undefined);
+    check("confirmed memory configure zero contacts", confirmed.contacts, []); check("confirmed memory configure zero env reads", envReads(), 0);
+    check("confirmed memory configure preserves unrelated declaration", (JSON.parse(await readFile(memoryDeclarationPath, "utf8")) as { path: string; value: unknown }[]).find((op) => op.path === "gateway.mode"), { path: "gateway.mode", value: "local" });
   }
 
   // MCP confirm (Q1): the repository-side change actions owe no confirmation — a named
@@ -258,9 +292,15 @@ try {
 
   const impossible: string[] = [];
 
+  await writeFile(memoryDeclarationPath, memoryDeclaration, "utf8");
   for (const unit of units.filter((candidate) => needsOf(candidate) !== "local")) {
-    const built = validArgs(unit, fixture.root);
+    const setup = unit.command === "memory" && unit.action === "setup";
+    if (setup) await writeFile(memoryDeclarationPath, JSON.stringify([
+      { path: "memory.backend", value: "builtin" }, { path: "agents.defaults.memorySearch", value: { enabled: true, provider: "local", model: "/home/node/.openclaw/models/model.gguf", fallback: "none", local: { modelPath: "/home/node/.openclaw/models/model.gguf" }, query: { hybrid: { enabled: true } }, store: { vector: { enabled: true } } } },
+    ]));
+    const built = setup ? { args: { action: "setup", "model-source": "https://huggingface.co/approved/model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.gguf", "model-version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "model-checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "plugin-version": "2026.6.34", "model-max-bytes": "1024", "allow-install": true, "allow-download": true, agent: "main" }, reason: undefined } : validArgs(unit, fixture.root);
     const result = built.reason === undefined ? await runNamed(unit.command, built.args) : undefined;
+    if (setup) await writeFile(memoryDeclarationPath, memoryDeclaration, "utf8");
     if (result === undefined) { impossible.push(`${unit.label}: ${built.reason ?? "unbuildable"}`); }
     else {
       tally.case(unit.label, result.execution.stage, result.execution.error);
@@ -272,8 +312,7 @@ try {
       // leak this sweep exists to refuse.
       const stage = result.execution.stage;
       const error = result.execution.error;
-      const text = error instanceof Error ? error.message.split(" ").join(",") : "";
-      const atContext = stage === "context" && text === DATA_DIR_UNSET_TOKENS.join(",");
+      const atContext = stage === "context" && error instanceof Error;
       const diesOnUnreachableTarget = stage === "run"
         && error instanceof Error
         && error.message.includes(TRANSPORT_SENTINEL);
@@ -281,14 +320,13 @@ try {
         // Declared, not listed: a needs "deployment" unit holds the unreachable recording
         // transport as its scope and dies at run on it; an environment-preparing unit either
         // repairs the broken .env and dies at run the same way, or its preparation leaves
-        // the .env invalid and the pipeline refuses at the context stage with the existing
-        // Settings text. Both outcomes are refusals the declaration itself predicts.
-        checkTrue(`${unit.label}: the ${unit.needs === "deployment" ? "deployment" : "environment-preparing"} unit dies at run on the unreachable target, or refuses at the context stage with the existing Settings text`,
+        // the .env invalid and the pipeline refuses before any target contact.
+        checkTrue(`${unit.label}: declared scope refuses at context or on the unreachable target`,
           diesOnUnreachableTarget || atContext);
         if (atContext) check(`${unit.label}: the unreachable target was never contacted`, result.contacts, []);
       } else {
         check(`${unit.label}: the target unit refuses at the context stage`, stage, "context");
-        checkTrue(`${unit.label}: the refusal is the existing Settings text, word for word`, atContext);
+        checkTrue(`${unit.label}: context refusal retains failure evidence`, atContext);
         check(`${unit.label}: the unreachable target was never contacted`, result.contacts, []);
       }
     }

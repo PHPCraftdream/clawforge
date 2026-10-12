@@ -23,7 +23,7 @@ import { restoreArchive, prepareRestore } from "./restore/index.ts";
 import type { RestoreOptions } from "./restore/index.ts";
 import { buildRestorePlan, printRestorePlan } from "./restore/plan.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
-import { preflightSecrets, MissingSecretsError } from "#src/commands/management/secrets.ts";
+import { preflightSecrets, MissingSecretsError } from "#src/commands/management/configuration/secrets.ts";
 import type { BackupPurpose } from "#src/core/app.ts";
 import { commandBody, type ArgumentSpec, type ParsedCall, type Values } from "#src/core/command/spec.ts";
 import { PROFILE_ARGUMENT, FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";

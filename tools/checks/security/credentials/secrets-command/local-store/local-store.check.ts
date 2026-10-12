@@ -5,7 +5,7 @@ import { readFile, writeFile, stat, chmod, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { secrets, NOT_OWNER_ONLY, HAS_NOT_READ, INSTANCE_STOPPED_NOTE, INSTANCE_NOT_RUNNING_NOTE, RECREATE_NOTE, REPLACED_NOTE, DOES_NOT_HOLD, CANNOT_READ_RUNNING_ENV } from "#framework/commands/management/secrets.ts";
+import { secrets, NOT_OWNER_ONLY, HAS_NOT_READ, INSTANCE_STOPPED_NOTE, INSTANCE_NOT_RUNNING_NOTE, RECREATE_NOTE, REPLACED_NOTE, DOES_NOT_HOLD, CANNOT_READ_RUNNING_ENV } from "#framework/commands/management/configuration/secrets.ts";
 import { REPO_ENV_COPY_NOTE } from "#framework/service/secrets.ts";
 import { command } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice } from "#framework/core/io/invocation/render.ts";

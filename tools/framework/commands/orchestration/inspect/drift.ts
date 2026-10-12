@@ -17,7 +17,7 @@ import {
   unrecoverableConnectionFacts,
 } from "#src/commands/operate/recover-env/facts.ts";
 import type { ConnectionFacts } from "#src/commands/operate/recover-env/facts.ts";
-import { DEFAULT_SECRET_STORE } from "#src/commands/management/secrets.ts";
+import { DEFAULT_SECRET_STORE } from "#src/commands/management/configuration/secrets.ts";
 import { readName } from "#src/core/values/names.ts";
 import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt } from "./helpers.ts";
 import type { Context } from "#src/core/context.ts";

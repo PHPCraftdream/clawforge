@@ -38,7 +38,7 @@ and which end-to-end check remains unperformed. A missing operation is a framewo
 improve, not a reason to silently establish a second script-based workflow.
 
 From a native Windows shell, use the installed Windows ClawForge launcher or invoke Git Bash
-explicitly. The legacy Windows bash/WSL launcher is not Git Bash: it can
+explicitly. `C:\Windows\System32\bash.exe` is the legacy WSL launcher, not Git Bash: it can
 reinterpret quoted foreign arguments and expand `$` or command substitutions before ClawForge
 receives them. For WSL operation, enter the WSL shell first rather than forwarding scripts
 through that legacy launcher.
@@ -66,7 +66,7 @@ fails before keyword fallback; FTS availability alone does not make that provide
 An explicit per-agent failure remains unknown while retaining reported index/FTS facts;
 pending preparation alone does not imply missing authentication. Disabled memory need not
 enable an embedding provider. Start recovery with
-`cli memory status --json`; prepare the selected backend/provider first, then agree any
+`memory status --json`; prepare the selected backend/provider first, then agree any
 index operation explicitly. Never blindly run `index --force` as a diagnostic remedy.
 OpenClaw's normal status implementation may initialize or checkpoint SQLite metadata;
 this is not a byte-for-byte database-immutability guarantee. The framework requests no
@@ -82,6 +82,21 @@ a mismatched or unknown identity indexed-ready. Explicit provider/requested-prov
 disables embedding readiness even when provider preparation is pending or the upstream
 search-mode label says hybrid. Text inventory names safe agent/backend/provider/requested-provider/
 model values; absent values are unchecked, not an explicit `none`.
+
+Use `memory plan --mode keyword --backend builtin` to preview a keyword-only declaration,
+then `memory configure` with the same options to edit only its owned leaves. Apply and
+restart explicitly when the running configuration differs; these steps are not implicit
+in inspection or indexing. An existing `cli-helper` is required: start it deliberately
+with `cli-start`, rather than expecting a one-off or automatic helper start.
+
+`memory index --agent <id>` indexes an explicitly selected native agent.
+`memory verify --agent <id>` creates, indexes and searches a random framework-owned witness,
+then removes that exact owned file and reindexes. MCP index/verify require `confirm: true`.
+Resource guards use a single validated configuration and native-agent snapshot at each
+boundary; unsupported installed SDK snapshot capabilities refuse without a CLI fallback.
+Cleanup has its own bounded budget, independent of an expired verification budget.
+`search-proven` means the search and cleanup cycle completed; a cleanup or owned-process
+quiescence failure is not success and never authorizes deleting unrelated memory files.
 
 `status --json` and inspection expose `instanceLock`, distinct from the composition pin
 managed by the `lock` command. Observation reads only; it never acquires, refreshes, deletes,

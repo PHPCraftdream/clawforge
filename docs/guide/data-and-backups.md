@@ -77,6 +77,130 @@ than left with an instruction that cannot work.
 `./clawforge up` and `./clawforge bootstrap` refuse to start when something is missing: a refusal with a
 list beats a gateway crash-looping on `SecretRefResolutionError`.
 
+### Declared memory
+
+One `memory` action group uses canonical native desired-state leaf declarations.
+Plan/configure are local-only; configure preserves unknown memory options and SecretRefs,
+splitting existing object operations without replacing live memorySearch. Review the
+complete declaration before explicitly applying it through the existing native batch tool.
+
+```bash
+./clawforge memory plan --mode keyword --backend builtin
+./clawforge memory configure --mode keyword --backend builtin
+./clawforge apply-config --dry-run
+./clawforge apply-config
+./clawforge restart
+./clawforge cli-start
+./clawforge memory status --json
+./clawforge memory index --agent main --json
+./clawforge memory verify --agent main --json
+```
+
+Keyword declares enabled true, provider none, fallback none, hybrid true and vector false.
+Hybrid controls FTS; fallback none means no fallback provider. Keyword search uses the
+builtin FTS path without an embedding provider; verify proves consumer search using an
+isolated owned witness.
+
+Disabled configure intentionally disables memory; index/verify skip without a witness.
+Embedding configure requires explicit provider/model. `--env` uses the existing
+`{source:"env",id:"VAR"}` reference, never a raw key. Existing credentials are retained.
+Local embeddings use a canonical container `--model-path` directly under
+`/home/node/.openclaw/models`. Omit `--model` to infer the same absolute identity;
+an arbitrary model label is refused. Configure records declarations only, preserving
+unknown options and existing SecretRefs; setup does not rewrite them.
+
+Choose an approved immutable Hugging Face source of the form
+`https://huggingface.co/<owner>/<repo>/resolve/<40-lowercase-hex-commit>/<filename.gguf>`,
+a matching model revision, SHA256, exact official plugin version, and maximum bytes
+(no greater than 64 GiB). Substitute reviewed values for the placeholders below:
+
+```bash
+./clawforge memory configure --mode embeddings --backend builtin --provider local --model-path /home/node/.openclaw/models/approved.gguf --model-checksum <sha256> --model-source <immutable-hf-url> --model-version <commit>
+./clawforge apply-config --dry-run
+./clawforge apply-config
+./clawforge restart
+./clawforge cli-start
+./clawforge memory setup --agent main --model-source <immutable-hf-url> --model-version <commit> --model-checksum <sha256> --model-max-bytes <bytes> --plugin-version <exact-version> --allow-install --allow-download --json
+```
+
+Setup requires both resource consents even when the plugin and model are cached, plus
+normal destructive confirmation over MCP. It checks the live backend and approved resource
+bindings for every selected agent before the first native inspection, model hash, database
+access or mutation, then rechecks before resource work. Effective bindings use explicit
+per-agent memorySearch leaves over defaults: provider, fallback, enabled/vector/hybrid state,
+local model path and resource/authentication options must match approval. Ranking and other
+non-resource options need not be identical; a generic local model label does not override
+the absolute local.modelPath. Selection follows native ID normalization; normalized
+collisions fail closed. Existing agents come from the actual native `agents list` inventory,
+not authored overrides. Missing or empty authored `agents.list` is permitted for an existing
+native agent using defaults; an override cannot register an absent agent. Unselected
+resource overrides do not trigger initialization.
+Setup verifies gateway/helper persistent mounts and native plugin
+provenance/policy, and refuses a wrong existing model or conflicting plugin. It installs
+only the missing exact official package without force, creates only a missing owned
+models directory, and streams approved GGUF bytes into an exclusive staging file before
+no-clobber publication. Matching existing models are reused. Explicit disabled/denied
+plugin policy is not overridden; a failure may retain partial installed/downloaded material.
+Installing the missing selected plugin may enable it and add `llama-cpp` to an existing
+restrictive allowlist. This selected policy change is included in installation consent;
+unrelated plugin entries are not selected for repair. Canonical install-record inspection
+can open SQLite and initialize or migrate schema, so `nativeRecordReadAttempted` contributes
+to conservative activity/changed facts even if package installation never starts.
+
+GGUF redirects are limited to three HTTPS hops on `huggingface.co`,
+`cas-bridge.xethub.hf.co`, `cdn-lfs.huggingface.co`, or `cdn-lfs.hf.co`. Redirect query strings
+may carry CDN signatures; URLs with credentials, non-443 ports or fragments are refused.
+All resolved addresses must pass public-address checks, connections pin the checked address
+while retaining TLS hostname verification, and requests send no authentication or cookies.
+Only the verified existing absolute local model path is passed to native initialization;
+setup does not substitute a default model URI.
+
+The selected-agent deep readiness probe embeds a ping, not a chat turn. Native initialization
+may restore, build or download runtime binaries: cached GGUF bytes do not prove no network.
+`--allow-install --allow-download` authorizes this resource scope. Setup refuses before
+delivery if selected-agent deep status capability is unavailable; it does not probe an
+unrestricted inventory. An unselected agent's overrides do not authorize or trigger its
+deep probe; with `--all-agents`, every selected binding must pass before the first probe.
+The separate global `memory status --deep` action remains inventory-wide; it is not the
+selected setup probe. Use `--all-agents` instead of `--agent` only deliberately.
+
+Setup does not apply configuration, restart, index, create witnesses, upgrade, overwrite,
+or automatically roll back. It uses one four-minute operation budget; ordinary calls have
+a 60-second cap, while download uses the remaining budget. Inspect reported activity and
+retained-material facts after failure. Unknown process-group quiescence defers cleanup;
+a token alone is not authority to remove staging without its captured identity receipt.
+Local index/verify remain separate operations requiring model checksum/source/version
+approval and appropriate resource consent.
+
+Index requires selected existing agent inventory and compatible provider/model/FTS/vector
+metadata before force indexing under the instance lock. Keyword accepts known explicit none
+and manager-null representations with requestedProvider none; nested custom pending metadata
+is not an embedding/auth prerequisite. Pending embeddings require explicit
+`--allow-spend --allow-download` deep preflight consent, never a hidden network probe.
+Normal safe status survives a failed deep probe; unsupported shapes fail closed without a
+hardcoded patch-version gate. Per-agent partial outcomes never expose private results.
+
+Plan/status are read actions. Configure/setup/index/verify and status deep conservatively declare
+destroy effects so the existing MCP confirmation gate applies. Ordinary status does not
+index/fix/deep-probe. OpenClaw's status manager can open its database and initialize schema
+on a cold store; this is metadata initialization, not byte-for-byte filesystem immutability.
+Verify consent includes witness creation, force index, token search, owned-inode removal
+and cleanup reindex. The uid1000 helper creates only a missing canonical workspace `memory`
+directory, then exclusively creates its witness, recording file/directory/workspace inode
+and ownership identities plus whether the directory was created by this run. Symlink
+boundaries and collisions refuse without authorizing deletion of user files. Cleanup removes
+only the matching owned witness and, if still matching and empty, its newly created directory;
+existing directories and directories containing concurrent user files remain untouched.
+Replacement identities refuse cleanup. Unconfirmed process-group quiescence defers removal
+and cleanup reindex. Integer result ranges must cover witness line 1, including 1–4.
+Primary and cleanup causes are retained when cleanup fails. No recursive ownership changes
+or nonempty-directory deletion are performed.
+
+Calls use the explicitly started cli-helper. Each discovery-plus-exec call is bounded to
+60 seconds within a four-minute consumer operation budget, with a separate 60-second cleanup
+reserve. Expired work cannot start another exec. Context construction and instance-lock
+acquisition/release are outside these helper execution deadlines.
+
 ### Backup and restore
 
 ```bash

@@ -75,7 +75,7 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     const { RESTORE } = await import(${JSON.stringify(url("commands/lifecycle/restore/index"))});
     const { PUSH } = await import(${JSON.stringify(url("commands/lifecycle/state"))});
     const { DESTROY } = await import(${JSON.stringify(url("commands/lifecycle/instance/destroy"))});
-    const { SECRETS } = await import(${JSON.stringify(url("commands/management/secrets"))});
+    const { SECRETS } = await import(${JSON.stringify(url("commands/management/configuration/secrets"))});
     const { SET } = await import(${JSON.stringify(url("commands/sets/set"))});
     // A body keeps its effects, arguments and phases (prepare included); only its run is stubbed,
     // to echo the plan's set flags and selected action. A multi-action body is stubbed per action.

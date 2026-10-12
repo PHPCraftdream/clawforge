@@ -15,7 +15,7 @@ import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum, frameworkVersion } from "#src/commands/management/lock.ts";
 import { isHealthy, nextActions, nextAdvice, PROBLEM_CODES } from "#src/service/inspection.ts";
 import { applyConfig } from "./config.ts";
-import { secrets } from "#src/commands/management/secrets.ts";
+import { secrets } from "#src/commands/management/configuration/secrets.ts";
 import { up, restart } from "#src/commands/lifecycle/instance/control.ts";
 import { provisionAgent, removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
 import { recoverEnv } from "#src/commands/operate/recover-env/index.ts";

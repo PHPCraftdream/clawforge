@@ -1,9 +1,10 @@
 import { takeLock, readLockHolder, lockPath, lockHome, withInstanceLock } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, captureFailure, presenceModel, FIXTURE_LOCK_PATH, FIXTURE_LOCK_HOME } from "./fixture.ts";
 import { withMutationGuard } from "#framework/security/instance-mutation-guard.ts";
-import { setupFixtureDeployment, teardownFixtureDeployment } from "../inspect/fixture.ts";
-import { envFile } from "#framework/runtime/deployment.ts";
-import { writeFile } from "node:fs/promises";
+import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Context } from "#framework/core/context.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -307,7 +308,10 @@ function failedReport(label: string, output: string, error: unknown, changed: bo
   check("history never executes metadata mutation", f.contacts.some((contact) => contact.command !== undefined && contact.command !== "test" && contact.presence !== true), false);
   noApplicationContact("history", f, true);
 }
-const deploymentFixture = await setupFixtureDeployment();
+const deploymentRoot = await mkdtemp(join(tmpdir(), "clawforge-operations-presence-"));
+const deploymentFixture = await createDeploymentFixture({ root: deploymentRoot }).catch(async (error) => {
+  await rm(deploymentRoot, { recursive: true, force: true }); throw error;
+});
 async function pipelineConsumer(f: ConsumerFixture): Promise<{ output: string; error?: unknown }> {
   const app: AppDefinition = { name: "operations-consumer", description: "fixture",
     settings: () => ({ OC_TARGET_LOCATION: "local", OC_DATA_DIR: "/srv/clawforge" }),
@@ -324,7 +328,7 @@ async function pipelineConsumer(f: ConsumerFixture): Promise<{ output: string; e
 const originalProbe = platformProbes.processStartedAt;
 platformProbes.processStartedAt = async () => ownProcessStartedAt();
 try {
-  await writeFile(envFile(), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawforge\n", "utf8");
+  await writeFile(join(deploymentRoot, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawforge\n", "utf8");
   for (const holder of [historical, deadLocal]) {
     const f = consumerFixture();
     seed(f, holder);
@@ -676,5 +680,5 @@ try {
       heartbeatScheduler.cancel = originalCancel;
     }
   }
-} finally { platformProbes.processStartedAt = originalProbe; await teardownFixtureDeployment(deploymentFixture.deployment); }
+} finally { platformProbes.processStartedAt = originalProbe; await deploymentFixture.dispose(); }
 finish("instance lock misc");

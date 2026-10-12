@@ -17,6 +17,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   Fixture writers allocate and clean their own roots; the unknown-target budget is unchanged.
 * Metadata-only lock takeover requires explicit consent and exact owner revalidation.
   Dangling lock or mutation-guard entries no longer certify absence or quiescence.
+* Recipe inspect/recover/migrate expose readonly diagnostics, explicit endpoint ownership and
+  selective recovery, with proven namespaces, consent and bounded application-owned cold
+  migration contracts. Native staging and PAX archives retain independently checked metadata.
 * Retired the refactor-only frozen CLI argument count; new arguments remain covered by
   typed binding, effect/confirmation and refusal-boundary contract checks.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes

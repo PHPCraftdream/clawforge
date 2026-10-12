@@ -63,7 +63,7 @@ export async function importHookModule(path: string): Promise<Record<string, unk
   // If the deadline ever wins the race the evaluation is still pending in the background;
   // a rejection from it must not surface as an unhandled rejection and crash the process.
   evaluation.catch(() => {});
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timeout: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
       evaluation,

@@ -47,6 +47,9 @@ import {
   runStatusAction,
   runVerifyAction,
 } from "./actions.ts";
+import { runInspectAction } from "./recovery/inspect.ts";
+import { runRecoverAction } from "./recovery/recover.ts";
+import { runMigrateAction } from "./recovery/migrate.ts";
 import { INVALID_MANIFEST } from "./lifecycle.ts";
 import { readName } from "#src/core/values/names.ts";
 import { importNameOf } from "./actions.ts";
@@ -160,7 +163,7 @@ const SOURCE_ARGUMENT = {
 const TAIL_ARGUMENT = {
   name: "tail",
   summary: "lines to return per service",
-  description: "With logs/diagnose: lines to return per service",
+  description: "With logs/diagnose/inspect: lines to return per service",
   kind: "option",
   valueName: "n",
   value: kinds.count("a number of lines"),
@@ -169,7 +172,7 @@ const TAIL_ARGUMENT = {
 const DRY_RUN_ARGUMENT = {
   name: "dry-run",
   summary: "show what would happen",
-  description: "With install/remove: show what would happen",
+  description: "With install/remove/recover/migrate: show what would happen",
   kind: "flag",
   effect: "read",
 } as const satisfies ArgumentSpec;
@@ -290,6 +293,74 @@ export const RECIPE = multiActionBody({
           ? runRemoveDryRun(ctx, name, values.volumes === true)
           : runRemoveAction(ctx, name, values.volumes === true);
       }, values["dry-run"] !== true),
+    }),
+    inspect: defineAction({
+      summary: "Inspect recipe containers without locks or hooks",
+      effect: "read",
+      arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, {
+        name: "json",
+        summary: "emit structured inspection evidence",
+        description: "With inspect: emit inspection evidence as JSON",
+        kind: "flag",
+      }],
+      run: (ctx, values) => runInspectAction(ctx, values.name, values.tail, values.json === true),
+    }),
+    recover: defineAction({
+      summary: "Recreate exactly one recipe service",
+      effect: "destroy",
+      arguments: [NAME_ARGUMENT, {
+        name: "service",
+        summary: "exact service to recover",
+        description: "With recover: exact declared service (dependencies are not started)",
+        kind: "option",
+        valueName: "service",
+        required: true,
+        value: kinds.text("a service name"),
+      }, {
+        name: "build", summary: "build the selected service", description: "With recover: build the selected service", kind: "flag",
+      }, {
+        name: "pull", summary: "pull the selected service image", description: "With recover: pull the selected service image", kind: "flag",
+      }, {
+        ...DRY_RUN_ARGUMENT, description: "With recover: preview without locks or hooks",
+      }, {
+        name: "reconcile-consumer",
+        summary: "run named afterStart after dependency readiness",
+        description: "May mutate consumer configuration and the gateway through afterStart",
+        kind: "flag",
+      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take instance lock" : "Confirm remote lock host" }))],
+      prepare: async (call) => ({
+        name: call.values.name,
+        options: {
+          service: call.values.service,
+          build: call.values.build === true,
+          pull: call.values.pull === true,
+          dryRun: call.values["dry-run"] === true,
+          reconcileConsumer: call.values["reconcile-consumer"] === true,
+        },
+        takeover: takeoverOf(call.values),
+      }),
+      run: (ctx, plan) => runRecoverAction(ctx, plan.name, plan.options, plan.takeover),
+    }),
+    migrate: defineAction({
+      summary: "Migrate a proven owned legacy recipe stack with retained backups",
+      effect: "destroy",
+      arguments: [NAME_ARGUMENT, {
+        ...DRY_RUN_ARGUMENT, description: "With migrate: preview without locks, hooks or target writes",
+      }, {
+        name: "helper-image", summary: "existing local immutable helper image ID", description: "Trusted local sha256 image ID for storage tools; never built or pulled",
+        kind: "option", valueName: "sha256", value: kinds.text("an immutable local image ID"),
+      }, {
+        name: "shutdown-timeout", summary: "gentle shutdown grace in seconds", description: "Finite 1..3600 seconds, default 180; never escalates to forced kill",
+        kind: "option", valueName: "seconds", value: kinds.text("finite shutdown seconds"),
+      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take instance lock" : "Confirm remote lock host" }))],
+      prepare: async (call) => ({
+        name: call.values.name,
+        dryRun: call.values["dry-run"] === true,
+        options: { helperImage: call.values["helper-image"],
+          shutdownTimeoutSeconds: call.values["shutdown-timeout"] === undefined ? undefined : Number(call.values["shutdown-timeout"]) },
+        takeover: takeoverOf(call.values),
+      }),
+      run: (ctx, plan) => runMigrateAction(ctx, plan.name, plan.dryRun, plan.takeover, plan.options),
     }),
     status: defineAction({
       summary: "Show the recipe stack's compose status",

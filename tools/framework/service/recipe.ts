@@ -94,6 +94,52 @@ export interface RecipeReadiness {
   readonly timeoutMs?: number;
 }
 
+export interface RecipeEndpointOwner {
+  readonly recipe: string;
+  readonly service: string;
+  readonly configPath: string;
+}
+
+export interface RecipeConsumerEndpoint {
+  readonly configPath: string;
+  readonly service: string;
+}
+
+interface RecipeMigrationStorageGuarantee {
+  readonly persistentState: "all-in-declared-named-volumes-and-bind-mounts";
+  readonly restore: "application-safe-including-compensation";
+}
+export type RecipeMigrationBackup = RecipeMigrationStorageGuarantee & (
+  | { readonly consistency: "application-cold-safe"; readonly cleanShutdown: "flushes-all-writers" }
+  | { readonly consistency: "application-verified-cold"; readonly cleanShutdown: "verified-by-post-stop-hook";
+      readonly verification: "migration-verify.ts" }
+);
+
+/** Exact unconditional or post-stop conditional author guarantee; never inferred. */
+export function parseMigrationBackup(value: unknown): RecipeMigrationBackup | undefined {
+  if (value === undefined) return undefined;
+  const conditional = value !== null && typeof value === "object"
+    && (value as Record<string, unknown>).consistency === "application-verified-cold";
+  const expected: RecipeMigrationBackup = conditional ? {
+    consistency: "application-verified-cold",
+    persistentState: "all-in-declared-named-volumes-and-bind-mounts",
+    cleanShutdown: "verified-by-post-stop-hook",
+    restore: "application-safe-including-compensation",
+    verification: "migration-verify.ts",
+  } : {
+    consistency: "application-cold-safe",
+    persistentState: "all-in-declared-named-volumes-and-bind-mounts",
+    cleanShutdown: "flushes-all-writers",
+    restore: "application-safe-including-compensation",
+  };
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== Object.keys(expected).length
+    || Object.entries(expected).some(([key, literal]) => (value as Record<string, unknown>)[key] !== literal)) {
+    throw new Error("recipe.json migrationBackup requires the exact application-cold-safe author contract or application-verified-cold post-stop contract");
+  }
+  return Object.freeze({ ...expected });
+}
+
 export interface Recipe {
   /** Validated recipe directory name, part of its Compose project identity. */
   readonly name: string;
@@ -101,6 +147,8 @@ export interface Recipe {
   /** Upstream the Dockerfile builds from, recorded so it is visible without reading it. */
   readonly source?: string;
   readonly ports?: RecipePort[];
+  /** Explicit ownership of consumer configuration paths; never inferred from ports. */
+  readonly consumerEndpoints?: RecipeConsumerEndpoint[];
   /** Variables the recipe expects, with a short explanation each. */
   readonly variables?: Record<string, string>;
   /** Data-relative paths (from the data directory root) this recipe keeps generated
@@ -111,6 +159,7 @@ export interface Recipe {
   readonly privatePaths?: string[];
   /** What install waits for before calling afterStart and reporting success. See
    *  RecipeReadiness. */
+  readonly migrationBackup?: RecipeMigrationBackup;
   readonly readiness?: RecipeReadiness;
   /** Absolute path of the recipe directory on our side. */
   readonly directory: string;
@@ -149,6 +198,7 @@ export function recipeStack(ctx: Context, name: string, definitionPath: string):
   return ctx.runtime.stack(project, definitionPath, {
     verifyOwnership: true,
     legacyProjects,
+    recipeName: name,
   });
 }
 
@@ -255,6 +305,36 @@ function parseReadiness(recipe: string, value: unknown): RecipeReadiness | undef
   return { services: names, timeoutMs: typeof timeoutMs === "number" ? timeoutMs : undefined };
 }
 
+/** Dot-separated configuration keys and Compose service identifiers, not paths or URLs. */
+function parseConsumerEndpoints(recipe: string, value: unknown): RecipeConsumerEndpoint[] | undefined {
+  if (value === undefined) return undefined;
+  const prefix = `recipes/${recipe}/recipe.json: consumerEndpoints`;
+  if (!Array.isArray(value)) throw new Error(`${prefix} must be an array`);
+  const paths = new Set<string>();
+  const unsafe = new Set(["__proto__", "prototype", "constructor"]);
+  return value.map((entry, index) => {
+    const at = `${prefix}[${index}]`;
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`${at} must contain exactly configPath and service`);
+    }
+    const keys = Object.keys(entry);
+    if (keys.length !== 2 || !keys.includes("configPath") || !keys.includes("service")) {
+      throw new Error(`${at} must contain exactly configPath and service`);
+    }
+    const { configPath, service } = entry as Record<string, unknown>;
+    if (typeof configPath !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(configPath)
+      || configPath.split(".").some((part) => unsafe.has(part))) {
+      throw new Error(`${at}.configPath must be a safe non-empty dot configuration path`);
+    }
+    if (typeof service !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(service) || unsafe.has(service)) {
+      throw new Error(`${at}.service must be a safe non-empty Compose service name`);
+    }
+    if (paths.has(configPath)) throw new Error(`${at}: duplicate configPath ${configPath}`);
+    paths.add(configPath);
+    return { configPath, service };
+  });
+}
+
 /** Parses and shape-checks a recipe.json's text — the same JSON.parse, assertShape and
  *  description rule loadRecipe applies. Exported so set validate can report a broken
  *  recipe.json through the same schema instead of a second one drifting apart (R33-08). */
@@ -270,6 +350,8 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   assertShape(parsed, name);
   const description = typeof (parsed as { description?: unknown }).description === "string" ? (parsed as { description: string }).description : "";
   if (description === "") throw new Error(missingDescriptionDetail(name));
+  parseConsumerEndpoints(name, (parsed as { consumerEndpoints?: unknown }).consumerEndpoints);
+  parseMigrationBackup((parsed as { migrationBackup?: unknown }).migrationBackup);
   return parsed;
 }
 
@@ -283,8 +365,11 @@ export async function loadRecipe(name: RecipeName | RecipeRef): Promise<Recipe> 
   let raw: string;
   try {
     raw = await readFile(resolve(directory, "recipe.json"), "utf8");
-  } catch {
-    throw new Error(`recipe "${name}" not found — expected recipes/${name}/recipe.json`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`recipe "${name}" not found — expected recipes/${name}/recipe.json`, { cause: error });
+    }
+    throw new Error(`could not read ${resolve(directory, "recipe.json")}: ${(error as Error).message}`, { cause: error });
   }
 
   const parsed = parseRecipeDefinition(name, raw) as Record<string, unknown>;
@@ -296,8 +381,10 @@ export async function loadRecipe(name: RecipeName | RecipeRef): Promise<Recipe> 
     disabledReason: typeof parsed.disabledReason === "string" ? parsed.disabledReason : undefined,
     source: typeof parsed.source === "string" ? parsed.source : undefined,
     ports: parsePorts(name, parsed.ports),
+    consumerEndpoints: parseConsumerEndpoints(name, parsed.consumerEndpoints),
     variables: parseVariables(name, parsed.variables),
     privatePaths: parsePrivatePaths(name, parsed.privatePaths),
+    migrationBackup: parseMigrationBackup(parsed.migrationBackup),
     readiness: parseReadiness(name, parsed.readiness),
     directory,
     definitionPath: resolve(directory, "compose.yml"),
@@ -323,6 +410,33 @@ export async function listRecipes(): Promise<Recipe[]> {
     }
   }
   return recipes;
+}
+
+/** Strict declaration catalog: broken manifests cannot masquerade as unowned endpoints.
+ *  Agent-only directories are skipped only when recipe.json is absent (ENOENT). */
+export async function recipeEndpointOwners(): Promise<readonly RecipeEndpointOwner[]> {
+  if (explicitRecipesDir === undefined && setSourceDir() === undefined && selectedDeployment() === undefined) return [];
+  const owners: RecipeEndpointOwner[] = [];
+  const paths = new Map<string, string>();
+  for (const name of await recipeNames(recipesDirectory())) {
+    let recipe: Recipe;
+    try {
+      recipe = await loadRecipe(readName("recipe", name));
+    } catch (error) {
+      // Only the loader's actual manifest read ENOENT means this is not a recipe.
+      if (error instanceof Error && (error.cause as NodeJS.ErrnoException | undefined)?.code === "ENOENT") continue;
+      throw error;
+    }
+    for (const endpoint of recipe.consumerEndpoints ?? []) {
+      const previous = paths.get(endpoint.configPath);
+      if (previous !== undefined) {
+        throw new Error(`ambiguous consumerEndpoints configPath ${endpoint.configPath}: recipes ${previous} and ${name}`);
+      }
+      paths.set(endpoint.configPath, name);
+      owners.push({ recipe: name, service: endpoint.service, configPath: endpoint.configPath });
+    }
+  }
+  return owners;
 }
 
 export interface BrokenRecipe {

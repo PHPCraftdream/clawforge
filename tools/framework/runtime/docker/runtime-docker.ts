@@ -17,7 +17,7 @@ import { sleep, type Runtime, type RunOneOffOptions, type Stack } from "../runti
 import { ComposeOperations, serializeComposeEnv } from "./compose-operations.ts";
 import { ContainerIntrospection } from "./container-introspection.ts";
 import { HelperContainer } from "./helper-container.ts";
-import { buildStack } from "./side-stack.ts";
+import { buildStack } from "./side-stack/index.ts";
 
 export { serializeComposeEnv };
 
@@ -72,7 +72,7 @@ export class DockerRuntime implements Runtime {
     this.#helper = new HelperContainer(
       transport,
       (args, stream, allowFailure) => this.#compose.compose(args, stream, allowFailure),
-      (service, all) => this.#introspect.containerId(service, all),
+      (service, all, timeoutMs) => this.#introspect.containerId(service, all, timeoutMs),
     );
   }
 
@@ -211,7 +211,7 @@ export class DockerRuntime implements Runtime {
   }
 
   /** A side stack: separate compose project, separate lifecycle. */
-  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }): Stack {
+  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[]; recipeName?: string }): Stack {
     return buildStack(
       this.#transport,
       this.#paths,

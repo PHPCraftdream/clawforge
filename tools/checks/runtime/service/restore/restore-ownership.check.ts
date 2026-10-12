@@ -2,7 +2,8 @@
 // Direct invocation on Windows uses WSL rather than an unsupported local target.
 // OC_RESTORE_DOCKER_SMOKE=1 selects real Docker containers and an HTTP/data gateway.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { UserError } from "#framework/core/io/log.ts";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -11,7 +12,7 @@ import { LocalPathBridge } from "#framework/core/paths.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport } from "#framework/runtime/transport/transport.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
-import { buildStack } from "#framework/runtime/docker/side-stack.ts";
+import { buildStack } from "#framework/runtime/docker/side-stack/index.ts";
 import { composeProjectOverride, selectedDeployment, useComposeProjectOverride, useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { clearRecipesDir, useRecipesDir, recipeProjectName } from "#framework/service/recipe.ts";
 import { guardedWith, lockHeldHere } from "#framework/runtime/lock/instance-lock.ts";
@@ -48,6 +49,14 @@ const docker = process.env.OC_RESTORE_DOCKER_SMOKE === "1";
 const gateway = `cf-restore-gateway-${id}`;
 const events: string[] = [];
 const records = new Map<string, { file: string; running: boolean }>();
+const containerId = (project: string) => createHash("sha256").update(project).digest("hex");
+let wrappedQueries = 0;
+const ownershipRefusal = (error: unknown): boolean => {
+  assert.ok(error instanceof UserError);
+  assert.equal(error.cause, undefined, "ownership refusal discards raw inventory errors");
+  assert.ok(!String(error).includes("fixture-daemon-secret"));
+  return true;
+};
 const projects = new Set<string>();
 let running = false;
 let healthWaits = 0;
@@ -61,23 +70,42 @@ const transport: Transport = {
   listFiles: base.listFiles.bind(base), clientInvocation: base.clientInvocation.bind(base),
   async exec(command, args, options) {
     if ((command === "mv" && args[0] === data) || (command === "tar" && args.includes("-xzf"))) events.push(command);
-    if (command === "docker" && args[0] === "ps") {
+    const wrapped = command === "sh" && args[2] === "recipe-docker";
+    const dockerArgs = wrapped ? args.slice(3) : command === "docker" ? args : undefined;
+    if (wrapped) {
+      assert.equal(args[0], "-c");
+      assert.equal(options?.allowFailure, true);
+      assert.equal(options?.stream, false);
+      wrappedQueries++;
+    }
+    if (dockerArgs?.[0] === "ps") {
       assert.equal(lockHeldHere(ctx), !preview, "execution holds the lock; preview is read-only and lock-free");
-      if (unknown) throw new Error("recipe inventory unavailable");
+      if (unknown) throw new Error("recipe inventory unavailable: fixture-daemon-secret");
       if (!docker) {
-        const project = args.find((arg) => arg.startsWith("label=com.docker.compose.project="))?.split("=")[2] ?? "";
+        const project = dockerArgs.find((arg) => arg.startsWith("label=com.docker.compose.project="))?.split("=")[2] ?? "";
         const record = records.get(project);
-        return { code: 0, stdout: record !== undefined && (args.includes("--all") || record.running) ? project : "", stderr: "" };
+        return { code: 0, stdout: record !== undefined && (dockerArgs.includes("--all") || record.running) ? containerId(project) : "", stderr: "" };
       }
     }
-    if (!docker && command === "docker" && args[0] === "inspect") {
-      return { code: 0, stderr: "", stdout: JSON.stringify(args.slice(1).map((project) => ({ Config: { Labels: {
-        "com.docker.compose.project": project,
-        "com.docker.compose.project.working_dir": records.get(project)?.file.slice(0, records.get(project)!.file.lastIndexOf("/")),
-        "com.docker.compose.project.config_files": records.get(project)?.file,
-      } } }))) };
+    if (!docker && dockerArgs?.[0] === "inspect") {
+      const requested = dockerArgs.slice(1);
+      assert.ok(requested.every((item) => [...records.keys()].some((project) => containerId(project) === item)), "inspect only known full container IDs");
+      return { code: 0, stderr: "", stdout: JSON.stringify([...records].filter(([project]) => requested.includes(containerId(project))).map(([project, record]) => ({
+        Id: containerId(project), Image: `sha256:${containerId("image")}`,
+        Config: { Env: [], Labels: {
+          "com.docker.compose.project": project,
+          "com.docker.compose.service": "cache",
+          "com.docker.compose.project.working_dir": record.file.slice(0, record.file.lastIndexOf("/")),
+          "com.docker.compose.project.config_files": record.file,
+        } },
+        State: { Status: record.running ? "running" : "exited", ExitCode: 0, Error: "", OOMKilled: false, Paused: false, Restarting: false },
+        Mounts: [{ Type: "bind", Source: `${data}/workspace`, Destination: "/data", RW: false }],
+        HostConfig: { RestartPolicy: { Name: "no" }, Privileged: false, Devices: [], VolumesFrom: [], Tmpfs: {} },
+      }))) };
     }
-    if (!docker && command === "docker") throw new Error(`unexpected recipe mutation: ${args.join(" ")}`);
+    // No deterministic Docker request, including the isolated shell wrapper, reaches the host.
+    if (!docker && (dockerArgs !== undefined || (command === "sh" && args.some((arg) => /\bdocker\b/.test(arg)))))
+      throw new Error("unexpected Docker request in deterministic restore fixture");
     return base.exec(command, args, options);
   },
 };
@@ -105,7 +133,7 @@ const runtime = {
     if (docker) await base.exec("docker", ["exec", gateway, "node", "-e", "const end=Date.now()+10000;(async()=>{while(Date.now()<end){try{if(await (await fetch('http://127.0.0.1:8080')).text()==='B')return}catch{}await require('node:timers/promises').setTimeout(100)}process.exit(1)})()"], { timeoutMs: 15000 });
     else assert.equal(await readData(`${data}/workspace/value`), "B");
   },
-  stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }) {
+  stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[]; recipeName?: string }) {
     return buildStack(transport, paths, () => settings, (action) => action(envFile), project, definition, ownership);
   },
 };
@@ -150,6 +178,20 @@ try {
       if (docker) { projects.add(project); await resetA(); await compose(project, policy === "legacy" ? recipeFile : foreignFile, ["up", "--detach"]); await compose(project, policy === "legacy" ? recipeFile : foreignFile, ["stop"]); }
       else records.set(project, { file: policy === "legacy" ? recipeFile : foreignFile, running: false });
     }
+    // Establish why policy refuses, independently of the sanitized public error.
+    preview = true;
+    const evidence = await runtime.stack(current, recipeFile, { verifyOwnership: true, legacyProjects: [legacy] }).inspect!();
+    if (unknown) {
+      assert.ok(evidence.unknown.length > 0);
+      assert.ok(evidence.unknown.every((item) => item.cause === "transport"));
+      assert.ok(!JSON.stringify(evidence).includes("fixture-daemon-secret"));
+    } else {
+      assert.deepEqual(evidence.unknown, [], "ownership refusal must not be a malformed fixture");
+      assert.equal(evidence.containers.length, 1);
+      assert.equal(evidence.containers[0]?.provenance, policy === "legacy" ? "legacy" : "foreign");
+      assert.equal(evidence.containers[0]?.state, "exited");
+    }
+    preview = false;
     for (const command of ["restore", "no-start", "push"] as const) {
       await resetA();
       let failure: unknown;
@@ -159,7 +201,7 @@ try {
           else await openclawCommands.restore.run(ctx, [archive, "--force", ...(command === "no-start" ? ["--no-start"] : [])]);
         } catch (error) { failure = error; }
       });
-      assert.match(String(failure), policy === "legacy" ? /cutover required/ : policy === "foreign" ? /not verifiably linked/ : /inventory unavailable/);
+      ownershipRefusal(failure);
       const observation = { policy, command, bytes: await base.readFile(`${data}/workspace/value`), running: await runtime.isRunning(), events: [...events], secrets: await base.readFile(`${data}/config/.env`).catch(() => "absent") };
       console.log(JSON.stringify(observation));
       assert.equal(observation.bytes, "A");
@@ -172,7 +214,7 @@ try {
     for (const command of [restore, push]) {
       await resetA();
       await assert.rejects(() => withOutputSink(() => {}, () => command(ctx, [archive, "--dry-run"])),
-        policy === "legacy" ? /cutover required/ : policy === "foreign" ? /not verifiably linked/ : /inventory unavailable/);
+        ownershipRefusal);
       assert.equal(await base.readFile(`${data}/workspace/value`), "A");
       assert.equal(await runtime.isRunning(), true);
       assert.deepEqual(events, []);
@@ -184,10 +226,13 @@ try {
   await withOutputSink(() => {}, () => openclawCommands.restore.run(ctx, [archive, "--force"]));
   assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), true); assert.equal(healthWaits, 1);
   await resetA();
-  let outcome;
+  let outcome: Awaited<ReturnType<typeof restoreArchive>> | undefined;
   // The direct API uses the same execution lock as public restore.
   await withOutputSink(() => {}, async () => { outcome = await guardedWith(ctx, "restore", { breakLock: false }, () => restoreArchive(ctx, archive, { force: true, noStart: true })); });
-  assert.deepEqual(outcome, { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" });
+  assert.ok(outcome);
+  assert.equal(outcome.restored, true);
+  assert.ok(!outcome.started);
+  assert.equal(outcome.reason, "no-start");
   assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
   await resetA();
   await withOutputSink(() => {}, () => openclawCommands.push.run(ctx, [archive, "--force"]));
@@ -195,6 +240,7 @@ try {
   assert.equal(await readData(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
   assert.equal(await runtime.isRunning(), true);
   assert.equal(healthWaits, 2);
+  assert.ok(wrappedQueries > 0, "deterministic restore intercepts isolated sh Docker queries");
   typeAssert("public restore/no-start/push ownership refusal preserves bytes, gateway and secrets; cutover restores and starts");
 } finally {
   unknown = false;

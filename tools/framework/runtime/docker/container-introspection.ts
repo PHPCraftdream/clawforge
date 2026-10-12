@@ -28,7 +28,8 @@ export class ContainerIntrospection {
    *  labels need no environment interpolation, skipping the compose env-file's whole
    *  setup/teardown for a fact plain `docker ps` answers in one call. Asked fresh every call,
    *  never cached: this runtime instance can outlive an external `docker stop`. */
-  async containerId(service: string = this.#getService(), all = true): Promise<string | undefined> {
+  async containerId(service: string = this.#getService(), all = true, timeoutMs?: number): Promise<string | undefined> {
+    if (timeoutMs !== undefined && timeoutMs <= 0) throw new Error("container discovery deadline expired");
     const result = await this.#transport.exec(
       "docker",
       [
@@ -40,9 +41,12 @@ export class ContainerIntrospection {
         "--filter",
         `label=com.docker.compose.service=${service}`,
       ],
-      { allowFailure: true },
+      { allowFailure: true, timeoutMs },
     );
-    if (result.code !== 0) return undefined;
+    if (result.code !== 0 || result.timedOut) {
+      if (timeoutMs !== undefined || result.timedOut) throw new Error(result.timedOut ? "container discovery timed out" : "container discovery failed");
+      return undefined;
+    }
     const id = result.stdout.trim().split("\n")[0]?.trim();
     return id === undefined || id === "" ? undefined : id;
   }

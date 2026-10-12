@@ -8,6 +8,8 @@ import { recipesDir } from "#src/runtime/deployment.ts";
 import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
+import { recipeEndpointOwners, type RecipeEndpointOwner } from "#src/service/recipe.ts";
+import { command as nextCommand } from "#src/core/io/invocation/advice.ts";
 import { readLedger, orphanedBy, foreign } from "#src/set/ownership/ledger.ts";
 import type { DeclaredOwnership, Ledger } from "#src/set/ownership/ledger.ts";
 import { forgetRemedy, provisionRemedy } from "#src/set/advice.ts";
@@ -125,6 +127,15 @@ async function observeEgress(
   }
   // One answer per endpoint, in order, or the probe is broken and must not be read as a verdict.
   if (!Array.isArray(parsed) || parsed.length !== endpoints.length) return undefined;
+  let owners: readonly RecipeEndpointOwner[] = [];
+  if (parsed.some((answer) => answer?.state !== "ok")) {
+    try {
+      owners = await recipeEndpointOwners();
+    } catch {
+      problems.push(problem("SET_RECIPE_INVALID", "Recipe endpoint ownership is invalid or ambiguous; no owner is inferred.",
+        nextCommand(["recipe", "list", "--json"], { note: "repair consumerEndpoints declarations before recipe recovery" })));
+    }
+  }
 
   const observations: EgressObservation[] = [];
   for (let index = 0; index < endpoints.length; index += 1) {
@@ -144,7 +155,12 @@ async function observeEgress(
           ? `${display} (${endpoint.path}) gave no answer within the egress probe's whole deadline`
           : `${display} (${endpoint.path}) resolves from inside the "${GATEWAY_SERVICE}" container but does not answer`;
     if (state !== "ok") {
-      problems.push(problem("EGRESS_UNREACHABLE", detail === undefined ? unreachable : `${unreachable} (${detail})`));
+      const owner = owners.find((entry) => entry.configPath === endpoint.path);
+      const ownership = owner ? `; declared recipe "${owner.recipe}", service "${owner.service}"` : "";
+      problems.push(problem("EGRESS_UNREACHABLE", `${detail === undefined ? unreachable : `${unreachable} (${detail})`}${ownership}`,
+        owner ? nextCommand(["recipe", "inspect", owner.recipe, "--json"], {
+          note: `inspect declared service ${owner.service}; preview selective recovery with recipe recover ${owner.recipe} --service ${owner.service} --dry-run`,
+        }) : undefined));
     }
     const observation: EgressObservation = { path: endpoint.path, endpoint: display, state, ...(detail === undefined ? {} : { detail }) };
     observations.push(observation);

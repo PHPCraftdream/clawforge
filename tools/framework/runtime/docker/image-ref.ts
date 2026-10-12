@@ -12,6 +12,14 @@ const DIGEST = /^[A-Za-z][A-Za-z0-9]*(?:[+._-][A-Za-z][A-Za-z0-9]*)*:[0-9A-Fa-f]
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SHA512 = /^sha512:[0-9a-f]{128}$/;
 
+declare const localImageIdBrand: unique symbol;
+export type LocalImageId = string & { readonly [localImageIdBrand]: true };
+
+// Local image IDs name Docker objects, not repositories, tags, or repository digests.
+export function tryParseLocalImageId(value: string): LocalImageId | undefined {
+  return value.length === 71 && SHA256.test(value) ? value as LocalImageId : undefined;
+}
+
 function validDigest(value: string): boolean {
   if (!DIGEST.test(value)) return false;
   if (value.startsWith("sha256:")) return SHA256.test(value);

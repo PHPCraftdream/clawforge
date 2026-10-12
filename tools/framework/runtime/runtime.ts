@@ -5,6 +5,7 @@
 // would change. That is the whole point of the indirection — it is checked by grepping the
 // command files for "docker" and "compose".
 
+import type { RecipeMigrationBackup } from "../service/recipe.ts";
 import { die } from "../core/io/log.ts";
 import type { ExecResult } from "./transport/transport.ts";
 import type { Context } from "../core/context.ts";
@@ -170,7 +171,7 @@ export interface Runtime {
 
   /** Operates a side stack — deployed next to the instance but isolated, with its own
    *  project name. Used for recipes, so a third-party service can't take the gateway down. */
-  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }): Stack;
+  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[]; recipeName?: string }): Stack;
 }
 
 /** One compose service's state, as `serviceStates()` reports it. */
@@ -183,7 +184,110 @@ export interface StackServiceState {
   readonly health?: string;
 }
 
+/** Safe, allowlisted evidence; no raw Docker Config, environment, or health commands. */
+export interface StackContainerEvidence {
+  readonly id: string;
+  readonly project: string;
+  readonly provenance: "matched" | "legacy" | "foreign" | "unknown";
+  readonly service?: string;
+  readonly state?: string;
+  readonly health?: string;
+  readonly exitCode?: number;
+  readonly startError?: string;
+  readonly imageId?: string;
+  /** Display-only, redacted paths. Executors must verify raw private mount identities,
+   *  never use these strings as storage sources or as drift fingerprints. */
+  readonly mounts?: readonly { type: string; source: string; destination: string; writable: boolean; name?: string }[];
+  readonly logs?: string;
+}
+export interface StackInspection {
+  readonly containers: readonly StackContainerEvidence[];
+  /** Unknown is never reported as an empty stack. */
+  readonly namespaces: readonly { project: string; status: "present" | "absent" | "unknown" }[];
+  readonly unknown: readonly { project: string; cause: "transport" | "malformed"; detail: string }[];
+}
+export interface StackRecoverOptions {
+  readonly service: string;
+  readonly build?: boolean;
+  readonly pull?: boolean;
+  readonly timeoutSeconds?: number;
+}
+export interface StackRecoverPlan {
+  readonly token: string;
+  readonly service: string;
+  readonly imageIds: readonly string[];
+  readonly build: boolean;
+  readonly pull: boolean;
+  readonly containers: readonly StackContainerEvidence[];
+  readonly impacts: readonly string[];
+}
+export type MigrationObservedState = "running" | "stopped" | "partial" | "unknown" | "absent";
+export interface StackMigrationEvidence {
+  readonly applicationVerification: "author-guaranteed" | "pending" | "verified" | "unknown";
+  readonly cleanShutdownVerified: boolean;
+  readonly archivesVerified: boolean;
+  readonly sourceResumeAttempted: boolean;
+  readonly source: MigrationObservedState;
+  readonly target: MigrationObservedState;
+}
+export interface MigrationBackupEvidence {
+  readonly sourceProject: string;
+  readonly targetProject: string;
+  /** Target-clock ISO timestamp captured immediately before stopping source writers. */
+  readonly stopStartedAt: string;
+  readonly containers: readonly {
+    readonly id: string;
+    readonly service: string;
+    readonly exitCode: number;
+    readonly finishedAt: string;
+  }[];
+}
+export interface MigrationBackupVerification {
+  readonly verified: true;
+}
+export interface StackMigrateOptions {
+  /** Loaded recipe author declaration. Optional for source compatibility only; runtime rejects absence. */
+  readonly migrationBackup?: RecipeMigrationBackup;
+  /** Required for conditional contracts, never called by planning. Read-only observer only. */
+  readonly verifyMigrationBackup?: (evidence: MigrationBackupEvidence) => Promise<MigrationBackupVerification>;
+  /** Fresh, absolute target-side private backup directory; retained on every outcome. */
+  readonly backupRoot: string;
+  readonly timeoutSeconds?: number;
+  /** Existing local immutable helper image ID; never fetched or built. */
+  readonly helperImage?: string;
+  /** Gentle shutdown grace, independently bounded from readiness (default 180, max 3600). */
+  readonly shutdownTimeoutSeconds?: number;
+}
+export interface StackMigratePlan {
+  readonly helperImage: string;
+  readonly shutdownTimeoutSeconds: number;
+  readonly migrationBackup: RecipeMigrationBackup;
+  readonly token: string;
+  readonly sourceProject: string;
+  readonly targetProject: string;
+  readonly services: readonly string[];
+  readonly backupRoot: string;
+  readonly volumes: readonly { source: string; target: string }[];
+  readonly inventory: readonly StackContainerEvidence[];
+  readonly images: readonly { service: string; imageId: string }[];
+  readonly impacts: readonly string[];
+}
+export interface StackMigrationResult {
+  readonly migrationBackup: RecipeMigrationBackup;
+  readonly evidence: StackMigrationEvidence;
+  readonly backupRoot: string;
+  readonly journalPath: string;
+  readonly retainedSource: true;
+}
+/** Executor owns neither deployment locks nor hooks. Caller supplies its lock scope. */
+export type StackLock = <T>(action: () => Promise<T>) => Promise<T>;
+
 export interface Stack {
+  inspect?(options?: { logs?: boolean; tail?: number }): Promise<StackInspection>;
+  planRecover?(options: StackRecoverOptions): Promise<StackRecoverPlan>;
+  recover?(plan: StackRecoverPlan, withLock: StackLock): Promise<void>;
+  planMigrate?(options: StackMigrateOptions): Promise<StackMigratePlan>;
+  migrate?(plan: StackMigratePlan, withLock: StackLock): Promise<StackMigrationResult>;
   /** Builds images defined by the stack. */
   build(): Promise<void>;
   /** Starts it in the background. `wait` asks compose to block until every service is

@@ -1,9 +1,12 @@
 // Ownership is a consumer safety boundary, including read-only and malformed-manifest probes.
+import { createHash } from "node:crypto";
+import { UserError } from "#framework/core/io/log.ts";
+import type { Advice } from "#framework/core/io/invocation/advice.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
-import { buildStack } from "#framework/runtime/docker/side-stack.ts";
+import { buildStack } from "#framework/runtime/docker/side-stack/index.ts";
 import { LocalPathBridge } from "#framework/core/paths.ts";
 import { toSettings } from "#framework/core/env.ts";
 import { useDeployment, useComposeProjectOverride, composeProjectOverride, selectedDeployment } from "#framework/runtime/deployment.ts";
@@ -24,6 +27,36 @@ const records = new Map<string, { id: string; file: string; running: boolean }>(
 const volumes = new Set<string>();
 const targetFiles = new Map<string, string>();
 const targetDirectories = new Set<string>();
+const snapshot = (excludedProjects: readonly string[] = []) => structuredClone({
+  records: [...records].filter(([project]) => !excludedProjects.includes(project)),
+  volumes: [...volumes].filter((project) => !excludedProjects.includes(project)),
+  targetFiles: [...targetFiles],
+  targetDirectories: [...targetDirectories],
+});
+const unchanged = async <T>(operation: () => Promise<T>, excludedProjects: readonly string[] = []): Promise<T> => {
+  const before = snapshot(excludedProjects);
+  const result = await operation();
+  assert.deepEqual(snapshot(excludedProjects), before, "operation preserves all unrelated fixture bytes and state");
+  return result;
+};
+const containerId = (name: string) => createHash("sha256").update(name).digest("hex");
+const ownershipRefusal = (error: unknown, named = true): boolean => {
+  assert.ok(error instanceof UserError);
+  assert.equal(error.cause, undefined, "ownership refusals do not retain raw daemon failures");
+  if (named) {
+    assert.deepEqual(error.advice, [
+      { kind: "clawforge", argv: ["recipe", "inspect", "cache"] },
+      { kind: "clawforge", argv: ["recipe", "migrate", "cache"] },
+    ] satisfies Advice[]);
+  } else {
+    assert.equal(error.advice.length, 1);
+    const advice: Advice | undefined = error.advice[0];
+    assert.equal(advice?.kind, "manual");
+    assert.ok(advice?.kind === "manual" && advice.text.trim().length > 0);
+  }
+  return true;
+};
+let wrappedQueries = 0;
 let mutations = 0;
 const transport: Transport = {
   description: "fixture:POSIX-Docker",
@@ -43,7 +76,17 @@ const transport: Transport = {
     return [...targetFiles.keys()].filter((name) => name.startsWith(`${directory}/`)).map((name) => name.slice(directory.length + 1));
   },
   clientInvocation(entryPath, args) { return { command: "node", args: [entryPath, ...args] }; },
-  async exec(_command: string, args: string[]) {
+  async exec(command: string, incoming: string[], options) {
+    const wrapped = command === "sh";
+    if (wrapped) {
+      assert.equal(incoming[0], "-c");
+      assert.equal(incoming[2], "recipe-docker");
+      assert.ok(incoming[1]?.endsWith('docker "$@"'));
+      assert.equal(options?.allowFailure, true);
+      assert.equal(options?.stream, false);
+      wrappedQueries++;
+    } else assert.equal(command, "docker");
+    const args = wrapped ? incoming.slice(3) : incoming;
     let stdout = "";
     if (args[0] === "ps") {
       const project = args.find((arg) => arg.startsWith("label="))?.split("=").at(-1) ?? "";
@@ -51,7 +94,13 @@ const transport: Transport = {
       if (record && (args.includes("--all") || record.running)) stdout = record.id;
     } else if (args[0] === "inspect") {
       stdout = JSON.stringify([...records].filter(([, value]) => args.includes(value.id)).map(([project, value]) => ({
-        Config: { Labels: {
+        Id: value.id,
+        Image: `sha256:${containerId("image")}`,
+        State: { Status: value.running ? "running" : "exited", ExitCode: 0, Error: "", OOMKilled: false, Paused: false, Restarting: false },
+        Mounts: [],
+        HostConfig: { RestartPolicy: { Name: "no" }, Privileged: false, Devices: [], VolumesFrom: [], Tmpfs: {} },
+        Config: { Env: [], Labels: {
+          "com.docker.compose.service": "cache",
           "com.docker.compose.project": project,
           "com.docker.compose.project.working_dir": value.file.slice(0, value.file.lastIndexOf("/")),
           "com.docker.compose.project.config_files": value.file,
@@ -65,7 +114,7 @@ const transport: Transport = {
         mutations += 1;
       } else if (args.includes("logs")) stdout = records.get(project)?.id ?? "";
       else if (args.includes("up")) {
-        records.set(project, { id: `container-${args[args.indexOf("--file") + 1]}`, file: args[args.indexOf("--file") + 1]!, running: true });
+        records.set(project, { id: containerId(args[args.indexOf("--file") + 1]!), file: args[args.indexOf("--file") + 1]!, running: true });
         volumes.add(project);
         mutations += 1;
       } else if (args.includes("build")) mutations += 1;
@@ -77,7 +126,8 @@ const settings = toSettings({ OC_DATA_DIR: "/tmp/recipe-identity-check-data" });
 const paths = new LocalPathBridge([]);
 paths.toTarget = async (path: string) => targetFile(path);
 const ctx = { runtime: {
-  stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }) {
+  stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[]; recipeName?: string }) {
+    assert.ok(["cache", "cache-recipe-worker", "worker"].includes(ownership?.recipeName ?? ""), "recipeStack forwards the real recipe name on positive and refusal paths");
     return buildStack(transport, paths, () => settings, (action) => action("/tmp/check.env"), project, definition, ownership);
   },
 } } as unknown as Context;
@@ -85,13 +135,18 @@ try {
   useDeployment(resolve(root, "a", "deployment"));
   useComposeProjectOverride("team-a");
   const projectA = recipeProjectName("cache");
-  records.set(projectA, { id: "container-A", file: targetFile(fileA), running: true });
-  assert.equal(await recipeStack(ctx, "cache", fileA).readLogs("10"), "container-A");
+  records.set(projectA, { id: containerId("container-A"), file: targetFile(fileA), running: true });
+  assert.equal(await unchanged(() => recipeStack(ctx, "cache", fileA).readLogs("10")), containerId("container-A"));
+  assert.deepEqual((await unchanged(() => recipeStack(ctx, "cache", fileA).inspect!())).namespaces, [
+    { project: projectA, status: "present" },
+    { project: "team-a-recipe-cache", status: "absent" },
+    { project: "deployment-recipe-cache", status: "absent" },
+  ]);
   useDeployment(resolve(root, "b", "deployment"));
   useComposeProjectOverride("team-b");
   const projectB = recipeProjectName("cache");
-  records.set(projectB, { id: "container-B", file: targetFile(fileB), running: true });
-  assert.equal(await recipeStack(ctx, "cache", fileB).readLogs("10"), "container-B");
+  records.set(projectB, { id: containerId("container-B"), file: targetFile(fileB), running: true });
+  assert.equal(await unchanged(() => recipeStack(ctx, "cache", fileB).readLogs("10")), containerId("container-B"));
 
   useDeployment(resolve(root, "a", "deployment"));
   useComposeProjectOverride("team-a");
@@ -100,57 +155,75 @@ try {
   await mkdir(recipeDir, { recursive: true });
   await writeFile(resolve(recipeDir, "recipe.json"), "{broken");
   useRecipesDir(dirname(recipeDir));
-  assert.deepEqual(await runningRecipeStacks(ctx), []);
-  records.set(projectA, { id: "container-A", file: targetFile(fileA), running: true });
-  await assert.rejects(() => runningRecipeStacks(ctx), /invalid manifest/);
+  assert.deepEqual(await unchanged(() => runningRecipeStacks(ctx)), []);
+  records.set(projectA, { id: containerId("container-A"), file: targetFile(fileA), running: true });
+  await unchanged(() => assert.rejects(() => runningRecipeStacks(ctx), Error));
+  assert.equal(mutations, 0);
 
-  records.set(projectA, { id: "foreign", file: targetFile(fileB), running: false });
+  records.set(projectA, { id: containerId("foreign"), file: targetFile(fileB), running: false });
   const foreign = recipeStack(ctx, "cache", fileA);
+  const foreignEvidence = await unchanged(() => foreign.inspect!());
+  assert.deepEqual(foreignEvidence.unknown, [], "foreign refusal has a valid inventory");
+  assert.equal(foreignEvidence.containers[0]?.provenance, "foreign");
   for (const operation of [() => foreign.isRunning(), () => foreign.readLogs("10"), () => foreign.down(true), () => foreign.up(), () => foreign.serviceStates()]) {
-    await assert.rejects(operation, /not verifiably linked/);
+    await unchanged(() => assert.rejects(operation, ownershipRefusal));
   }
   assert.equal(mutations, 0);
-  assert.equal(records.get(projectA)?.id, "foreign");
+  assert.equal(records.get(projectA)?.id, containerId("foreign"));
+  const unnamed = buildStack(transport, paths, () => settings, (action) => action("/tmp/check.env"), projectA, fileA,
+    { verifyOwnership: true, legacyProjects: ["team-a-recipe-cache", "deployment-recipe-cache"] });
+  await unchanged(() => assert.rejects(() => unnamed.down(true), (error) => ownershipRefusal(error, false)));
+  assert.equal(mutations, 0);
+  assert.equal(records.get(projectA)?.id, containerId("foreign"));
   records.delete(projectA);
 
   // Both stopped predecessor schemes refuse all adoption, including default deployments.
   for (const legacy of ["team-a-recipe-cache", "deployment-recipe-cache"]) {
-    records.set(legacy, { id: "legacy", file: targetFile(fileB), running: false });
-    await assert.rejects(() => recipeStack(ctx, "cache", fileA).build(), /cutover required/);
-    await assert.rejects(() => runningRecipeStacks(ctx), /cutover required/);
+    records.set(legacy, { id: containerId("legacy"), file: targetFile(fileA), running: false });
+    const evidence = await unchanged(() => recipeStack(ctx, "cache", fileA).inspect!());
+    assert.deepEqual(evidence.unknown, [], "legacy refusal has a valid inventory, not a malformed fixture");
+    assert.equal(evidence.containers[0]?.provenance, "legacy");
+    assert.deepEqual(evidence.namespaces, [
+      { project: projectA, status: "absent" },
+      { project: "team-a-recipe-cache", status: legacy === "team-a-recipe-cache" ? "present" : "absent" },
+      { project: "deployment-recipe-cache", status: legacy === "deployment-recipe-cache" ? "present" : "absent" },
+    ]);
+    await unchanged(() => assert.rejects(() => recipeStack(ctx, "cache", fileA).build(), ownershipRefusal));
+    await unchanged(() => assert.rejects(() => runningRecipeStacks(ctx), ownershipRefusal));
     assert.equal(mutations, 0);
-    assert.equal(records.get(legacy)?.id, "legacy");
+    assert.equal(records.get(legacy)?.id, containerId("legacy"));
     records.delete(legacy); // Explicit operator cutover, not a framework alias.
   }
   useComposeProjectOverride(undefined);
   const defaultProject = recipeProjectName("cache");
-  records.set(defaultProject, { id: "default", file: targetFile(fileA), running: true });
+  records.set(defaultProject, { id: containerId("default"), file: targetFile(fileA), running: true });
   const single = recipeStack(ctx, "cache", fileA);
-  assert.equal(await single.isRunning(), true);
-  await single.down(true);
+  assert.equal(await unchanged(() => single.isRunning()), true);
+  await unchanged(() => single.down(true), [defaultProject]);
   assert.equal(records.has(defaultProject), false);
-  assert.equal(records.get(projectB)?.id, "container-B");
+  assert.equal(records.get(projectB)?.id, containerId("container-B"));
 
   // Report pair: exercise two real stack objects through creation, logs, reinstall and removal.
   useDeployment(resolve(root, "app-a"));
   useComposeProjectOverride("team");
   const pairA = recipeStack(ctx, "cache-recipe-worker", fileA);
   const keyA = recipeProjectName("cache-recipe-worker");
-  await pairA.up();
+  await unchanged(() => pairA.up(), [keyA]);
   useDeployment(resolve(root, "app-b"));
   useComposeProjectOverride("team-recipe-cache");
   const pairB = recipeStack(ctx, "worker", fileB);
   const keyB = recipeProjectName("worker");
-  await pairB.up();
-  assert.equal(await pairA.readLogs("10"), `container-${targetFile(fileA)}`);
-  assert.equal(await pairB.readLogs("10"), `container-${targetFile(fileB)}`);
-  await pairB.up();
-  await pairA.down(true);
+  await unchanged(() => pairB.up(), [keyB]);
+  assert.equal(await unchanged(() => pairA.readLogs("10")), containerId(targetFile(fileA)));
+  assert.equal(await unchanged(() => pairB.readLogs("10")), containerId(targetFile(fileB)));
+  await unchanged(() => pairB.up(), [keyB]);
+  await unchanged(() => pairA.down(true), [keyA]);
   assert.equal(records.has(keyA), false);
   assert.equal(volumes.has(keyA), false);
   assert.equal(volumes.has(keyB), true);
-  assert.equal(await pairB.isRunning(), true);
-  assert.equal(await pairB.readLogs("10"), `container-${targetFile(fileB)}`);
+  assert.equal(await unchanged(() => pairB.isRunning()), true);
+  assert.equal(await unchanged(() => pairB.readLogs("10")), containerId(targetFile(fileB)));
+  assert.ok(wrappedQueries > 0, "ownership and running queries use the isolated sh Docker wrapper");
 
 } finally {
   clearRecipesDir();

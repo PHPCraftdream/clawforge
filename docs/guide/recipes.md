@@ -27,9 +27,8 @@ directory basename. Component boundaries are preserved even for names containing
 `-recipe-`. Distinct deployments with the same basename must still use distinct
 `OC_COMPOSE_PROJECT` values for both gateway and recipe isolation. All lifecycle
 commands, diagnostics and backup discovery use the same builder, even when a recipe
-manifest is broken. To get the exact project, run `./clawforge recipe status <name>`;
-Compose prints its container names. On the Docker target, inspect a listed container
-with `docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' <container>`.
+manifest is broken. To get the exact project and its ownership evidence, run
+`./clawforge recipe inspect <name> --json`; review the reported namespaces and containers.
 Framework callers can use `recipeProjectName(name)` after selecting the deployment
 and its Compose override; do not reconstruct the identity with string concatenation.
 
@@ -37,38 +36,305 @@ and its Compose override; do not reconstruct the identity with string concatenat
 
 Earlier releases used `<gateway-compose-namespace>-recipe-<name>`; the original
 scheme used `<deployment-basename>-recipe-<name>` even with an override. Both old
-projects are checked, deduplicated when equal. The framework never aliases the derived
-namespace to either old project. If either still has any containers (including stopped
-ones), operations and backups refuse instead of adopting or stopping a possibly foreign
-stack, including default deployments. The refusal reports the exact old and new names.
-Containers in the new project must have Compose `project.working_dir` and
-`project.config_files` labels exactly matching this recipe's target directory and
-definition; a moved checkout, missing labels or another root requires operator cutover too.
+projects are checked, deduplicated when equal. Ordinary lifecycle operations and backups
+refuse when either contains containers, including stopped ones; they do not adopt a legacy
+stack or bypass ownership checks. Containers in the current project must have Compose
+`project.working_dir` and `project.config_files` labels matching the intended recipe's
+root and definition. Foreign, missing or ambiguous provenance is not permission to cut over.
 
-On the Docker target, inspect the specific old project, verify **every** container's
-labels and mounts against the intended root/data, and take an application-consistent
-backup before stopping anything:
+Use the framework inspection and bounded recovery/migration path instead of raw
+`docker compose down`:
 
 ```bash
-old='deployment-recipe-cache' # replace with the exact project reported by the refusal
-docker ps -a --filter "label=com.docker.compose.project=$old"
-ids=$(docker ps -aq --filter "label=com.docker.compose.project=$old")
-test -z "$ids" || docker inspect $ids
-# ONLY after verifying ownership, with the old definition and its private environment:
-docker compose --env-file /verified/old/root/.env --project-name "$old" \
-  --file /verified/old/root/recipes/cache/compose.yml \
-  --project-directory /verified/old/root/recipes/cache down
-# From the intended deployment root, install into its new namespace:
-./clawforge recipe install cache
+./clawforge recipe inspect <name> --json
+# Current owned namespace: recreate exactly one declared service
+./clawforge recipe recover <name> --service <service> --dry-run
+./clawforge recipe recover <name> --service <service>
+# Proven owned legacy namespace: preview the whole migration
+./clawforge recipe migrate <name> --dry-run
+./clawforge recipe migrate <name>
 ```
 
-Do not use `--volumes` for cutover. Bind data stays at its declared path. Compose-managed
-volumes do **not** migrate just because the project name changed: copy/restore each old
-volume into the new project volume while the service is stopped, using its application's
-restore procedure, then install/start. Retain old volumes until the new stack's data is
-verified. External volumes or manually fixed container/volume names remain application
-owned and must themselves be unique. If ownership cannot be verified, leave the old
-project untouched and resolve it with its operator; never run a broad project sweep.
+Review the preview before approving execution. Recover and migrate are destructive effects
+requiring `confirm: true` through the MCP framework pipeline; `--dry-run` is a read effect.
+Both accept the existing optional `--break-lock` / `--break-foreign-lock <hostId>`
+takeover flags; those are not substitutes for ownership proof or execution confirmation.
+Inspection takes no lock, runs no hooks and makes no target writes, even with a held lock
+or legacy containers. It reports sanitized container/service/image/mount evidence and
+unknown observations rather than treating a failed probe as absence. Previews likewise
+run no hooks, acquire no lock and create no target files or recovery directory. Read-only
+runtime planning happens before the executor enters the caller's instance lock.
+Recovery checks namespace ownership before resolving Compose configuration, so a broken
+configuration cannot hide the required legacy cutover or authorize automatic adoption.
+
+Executable resolved Compose documents live in a unique target-native directory under
+`<dataDir>-locks`, not beside a Windows-mounted recipe source. The operation directory
+must be owner-only (700); its regular file must be owner-only (600), single-linked and
+match the verified bytes and digest. Source ownership and modes are not changed.
+Migration reserves and verifies this document before recovery journals, backups or source
+shutdown. Execution rechecks identity, permissions, excluded storage paths and content
+before Compose can mutate the target. A readable retained metadata home may support
+read-only provenance checks without authorizing a new write operation.
+
+Explicitly requested inspection logs can still contain sensitive application data. Diagnostics
+mask known environment values, URLs and labelled password/token/secret/authorization/API-key
+values, but unlabelled unknown secrets cannot be universally detected. Review requested logs
+and start errors before sharing them; bounded, sanitized output is not a guarantee of secrecy.
+
+Migration is bounded to a proven owned inventory: one populated legacy namespace, an
+empty target namespace, and one source replica for every configured service. It requires
+clean stops, proven mounts and writer isolation, exact locally available images, supported
+storage and available helper tools/private staging. Unsupported storage, missing helper
+tools, drift or unproven prerequisites fail closed; there is no build or pull fallback.
+The preview includes all services, sanitized mounts, exact images, named-volume transfers,
+backup location, retained artifacts and disruptive impacts, not opaque plan tokens or
+expanded private environment values.
+
+The preview also exposes the resolved storage helper image and independent shutdown budget.
+`--helper-image sha256:<64 lowercase hex>` selects an **already present local image ID**, not
+an image tag or registry digest reference. Exact local inspect identity is checked in preview
+and revalidated/fingerprinted under the lock. Service images remain unchanged. Without this
+flag, the first source image supplies helper tools; a failed `checkHelper` capability check
+reports unavailable/unknown tools honestly, without choosing another image, installing,
+building or pulling. The operator must trust the helper's code: it runs as root with access
+to application storage and private backups; immutability is identity, not a sandbox or audit.
+
+The intended shutdown contract uses standard `docker stop --timeout -1` against each
+verified full container ID, for both source shutdown and target compensation. Its signal
+must agree with the verified `imageStopSignal` (image `Config.StopSignal`): absent means
+SIGTERM; only SIGTERM and SIGINT are supported. SIGKILL, unknown and numeric signals are
+refused, and effective container/Compose signal overrides must agree. Before final target acceptance, compare the inspected target `effectiveConfig.StopSignal` with the
+verified image signal, source effective signal and target declaration; agreement is an
+acceptance gate, not only a target-compensation prerequisite. Preserve the actual
+restart policy: `no`, `unless-stopped`, `always` or `on-failure[:retry]`, including its retry
+count. The actual source policy and target configuration must agree, including the inspected
+source and target `HostConfig.RestartPolicy`; do not substitute `no` or change the policy to
+make shutdown possible. Standard
+Docker stop supplies its normal manual-stop restart-policy handling, not a generic kill.
+
+`--shutdown-timeout <seconds>` is a finite framework wait budget of 1..3600 seconds
+(default 180, not a 120-second cap), separate from readiness and the fixed post-stop
+verifier deadline. Docker's `--timeout -1` lets the daemon wait indefinitely, with no
+**timeout-triggered SIGKILL**; the framework budget does not shorten that daemon wait.
+Proceed only after a positive, exact stop acknowledgement for every requested full ID
+(**stop ACK**) AND reinspection proving the same owned identities are cleanly stopped
+(exit zero), with the required writer inventory checks. A successful client exit alone,
+partial/mismatched output or merely observing stopped containers is not sufficient.
+
+Client timeout or connection loss can leave the daemon's stop pending. Without the exact
+ACK and clean owned-state proof, create no archives or transfers, start no target, force-kill
+nothing and do not resume source writers. Target compensation requires the same exact ACK
+and clean target-state proof before restoring binds or resuming the source; timeout is not
+permission to bypass either gate. Running/partial/unknown states require separately verified
+manual recovery. The instance lock and inventory checks do not isolate external actors or
+promise safety across an external daemon restart; resolve those uncertainties before recovery.
+This is the intended contract, not a claim that the current runtime or your deployment has
+been verified to implement it.
+
+Execution takes cold storage backups after verifying clean shutdown, transfers supported
+Compose-managed named volumes into fresh target volumes, and preserves bind paths. It
+uses a unique private `.clawforge-recipe-recovery/<UUID>` directory under the target data
+directory's parent; backups and old volumes are retained. Target readiness and final
+acceptance must retain the original contained read-only file proof and verify its identity
+continuity before removing source containers; success does not authorize adopting whichever
+file currently occupies that path. Only after these gates and identity checks are verified
+are old containers removed, without removing their volumes.
+On failure after target writes, compensation attempts to stop every individually proven
+transaction writer, even if only a subset of services started. It must then obtain the same
+exact stop ACKs and prove the same exact target IDs are cleanly stopped and the writer
+inventory is isolated before restoring verified bind backups or resuming old bind writers.
+Foreign or unproven target containers are not
+adopted or stopped. If target shutdown cannot be proved, the old stack is not resumed:
+target writers may still be running, so **do not assume both sides are stopped**. If safe
+restoration/resumption cannot be proved after verified target shutdown, manual recovery is
+still required. Run `./clawforge recipe inspect <name> --json` and review the retained
+private phase/final journals for actual identities, states and unknown observations before
+any separately approved recovery; do not blindly resume either stack. Failed target artifacts, journals,
+backups and old volumes are not automatically cleaned up. This is a supported cold
+filesystem transfer, not a universal application-consistency guarantee; preserve and review
+these artifacts before any separately approved cleanup. These semantics are not a claim
+that migration has been runtime-verified on your deployment.
+
+### Storage boundaries and preservation
+
+Under the intended migration contract, distinguish **container mounts** from **backup roots**.
+A supported contained read-only bind is an existing regular, non-symlink file strictly inside
+one unique, verified writable directory root. For example, Tor's `/tor-socks5/privoxy.config`
+may be a read-only file mount whose canonical host source is strictly inside the verified
+writable host directory mounted at `/tor-socks5`. Source and target retain that same canonical
+file source and read-only flag. Archive the containing directory once; the file mount is not
+an additional archive root or transfer. Read-only access in one mount does not make its
+containing writable storage disposable.
+
+Refuse missing files, symlinks, replaced identities during preflight/execution revalidation,
+unrelated read-only mounts, ambiguous containment, shared writable roots and overlapping
+writable roots. Revalidate canonical paths, mount relationships, ownership and storage
+identity before storage effects, through target readiness and final acceptance, and after
+restoration. Keep the original contained read-only file proof as the comparison baseline;
+do not automatically adopt the current file on success. Only a successful, verified restore
+authorizes replacement identities: validate restored contents, metadata and link topology
+at the retained canonical path before accepting a new identity, rather than demanding
+original inode or ctime equality. This does not permit an unexplained identity replacement
+before restore or adoption of unrelated storage.
+
+Host-path revalidation and inspected mount declarations do not independently establish
+which file inode is mounted inside the container. Inspection reads no private contents;
+host-path continuity and mount-declaration evidence must not be presented as proof of
+container-mounted inode identity.
+
+Supported preservation covers bytes, fractional mtime, numeric ownership, modes and link
+topology. Archives use POSIX/PAX format: native GNU tar's default format truncated fractional
+mtimes during transfer and restore, so a successful byte comparison alone was insufficient.
+Storage with ACLs or extended attributes remains unsupported and is refused.
+
+The actual helper boundary has been exercised in an isolated Linux container with GNU tar
+1.34. Backup, transfer and restore preserved independently observed fractional timestamps
+(including 125.125 and 126.25 seconds), literal binary contents, ownership, modes, symlinks
+and hardlink topology. Nonprivate or tampered archives/checksums, unsafe file identities and
+failed metadata comparisons were rejected without deleting source data.
+
+This verifies helper-script behavior on disposable storage, not complete Docker cutover,
+container-mounted inode identity, arbitrary filesystem metadata or application consistency.
+Those remain separate acceptance gates; ctime and cross-restore inode equality are not
+preservation claims.
+
+### Application-owned migration contract
+
+Migration requires an explicit author guarantee in the loaded `recipe.json`, before any
+runtime planning or mutation. The field is optional for ordinary recipe lifecycle commands;
+absence refuses migration, including preview. Invalid declarations refuse manifest loading.
+The complete interface is:
+
+```ts
+interface RecipeMigrationBackup {
+  readonly consistency: "application-cold-safe";
+  readonly persistentState: "all-in-declared-named-volumes-and-bind-mounts";
+  readonly cleanShutdown: "flushes-all-writers";
+  readonly restore: "application-safe-including-compensation";
+}
+```
+
+```json
+{
+  "migrationBackup": {
+    "consistency": "application-cold-safe",
+    "persistentState": "all-in-declared-named-volumes-and-bind-mounts",
+    "cleanShutdown": "flushes-all-writers",
+    "restore": "application-safe-including-compensation"
+  }
+}
+```
+
+The direct mode accepts exactly these four keys and literals. It guarantees that all
+persistent state lives in declared storage, every clean shutdown flushes every writer,
+and cold restore is safe including compensation. Existing cold-safe apps remain unchanged.
+Do not make a false unconditional flush declaration: even exit zero can accompany a writer
+close failure or producer timeout and lost data (including in a pinned Tor application).
+
+An application which can prove each particular stop may instead declare exactly:
+
+```json
+{
+  "migrationBackup": {
+    "consistency": "application-verified-cold",
+    "persistentState": "all-in-declared-named-volumes-and-bind-mounts",
+    "cleanShutdown": "verified-by-post-stop-hook",
+    "restore": "application-safe-including-compensation",
+    "verification": "migration-verify.ts"
+  }
+}
+```
+
+`RecipeMigrationBackup` is the union of the four-key direct contract above and this
+five-key conditional contract. Mixed modes, additional keys, alternate paths and booleans
+are rejected. Persistent-state and compensation/restore guarantees still apply; a verifier
+is not a database dump protocol or a guarantee about external/remote state.
+
+The app-owned file must have this named export (no default fallback):
+
+```ts
+export async function verifyMigrationBackup(
+  ctx: Context, recipe: Recipe, evidence: MigrationBackupEvidence,
+): Promise<MigrationBackupVerification>
+```
+
+The application implements a read-only assessment of every stopped service. For a Tor
+verifier, require this stop's clean final completion marker and refuse writer-close warnings,
+producer timeouts or insufficient observations; exit zero alone is not sufficient. Read
+bounded logs privately through Context, scoped to verified full IDs and
+`--since evidence.stopStartedAt`; failed/ambiguous reads are unknown, never empty success.
+Do not return or emit raw logs, credentials or private context. The framework does not read
+logs for this callback and supplies no readLogs capability or public log snapshot.
+
+Exact interfaces exported by `runtime/runtime.ts`:
+
+```ts
+interface MigrationBackupEvidence {
+  readonly sourceProject: string;
+  readonly targetProject: string;
+  readonly stopStartedAt: string; // target-clock ISO timestamp before stop
+  readonly containers: readonly {
+    readonly id: string; // full Docker ID
+    readonly service: string;
+    readonly exitCode: number;
+    readonly finishedAt: string; // verified post-stop ISO timestamp
+  }[];
+}
+interface MigrationBackupVerification {
+  readonly verified: true;
+}
+```
+
+Return exactly `{ verified: true }` only after successful assessment; throw on refusal or
+unknown. Boolean true, false, generic `{ ok: true }`, additional keys or other truthy
+values fail closed. Evidence has exactly the fields above: no Config, Env, image/state,
+raw logs, transaction or challenge. The executor captures target UTC time immediately BEFORE
+stop, proves strict source shutdown/identity, and builds a deeply frozen allowlisted snapshot
+from verified source records inspected AFTER stop. Finished timestamps must be at/after the
+boundary with nanosecond comparison. Conditional mode refuses previously exited/created
+sources as insufficient current-stop evidence rather than inventing a no-op stop; direct
+cold-safe mode remains unchanged.
+
+Only after this proof does the command-owned callback import the hook through the existing
+checksum-versioned `importHookModule`. Planning constructs an inert callback and imports
+nothing; inspect never invokes it and direct mode invokes no callback. Runtime callers must
+provide `StackMigrateOptions.verifyMigrationBackup(evidence)` for conditional mode before
+any reads or mutations. Exact success validation precedes archives/transfers; failures use
+the existing verified source-resume compensation. A private `application-stop-verified`
+journal phase records `{ verified: true }`; existing clean-shutdown evidence remains
+separate from application verification.
+
+The whole observer callback has a fixed 30-second deadline, including import. Late results
+are ignored and late rejections handled. As with existing bounded hooks, arbitrary module
+code cannot be cancelled: top-level code AND verifier MUST be read-only, without writes,
+background tasks or start/stop actions. Full context is trusted app code, not a sandbox;
+violating that contract makes safe automatic compensation impossible to guarantee. Timeout
+fails closed and compensates under the read-only contract. Execution retains the destructive
+MCP confirmation and instance lock; no additional preview permission or mutation bypass is
+introduced.
+
+Plan/result/journals record the declared guarantee separately from observed
+`cleanShutdownVerified` and `archivesVerified` evidence. Required `applicationVerification`
+is `author-guaranteed` for direct contracts; conditional mode starts `pending`, becomes
+`verified` only after exact success and source revalidation, or `unknown` on failure/timeout
+before verification. `unknown` includes refusal: arbitrary thrown errors are not reliably
+classifiable, so they never imply successful application verification. Successful verification
+remains recorded if a later storage phase fails. Evidence also records
+`sourceResumeAttempted` and independent source/target states (`running`, `stopped`, `partial`,
+`unknown`, `absent`). These are observations, not an application integrity verification.
+A partially successful start may leave some source writers running; unreadable inventory
+is unknown. Neither case means both stacks stopped. Final journal write failure preserves
+the primary failure and reports the observed statuses in the error; earlier private phase
+journals remain, but may predate the final observation.
+
+The recovery parent must be canonical, non-symlink, owned by the target user and exactly
+mode 700. Ancestors must be searchable directories owned by that user or root, without
+untrusted write access (root-owned sticky ancestors are allowed). Preview validates only,
+creating nothing. Execution exclusively creates a missing parent and revalidates before
+exclusively creating the UUID child. Existing foreign/insecure parents and collisions fail;
+there is no chmod, adoption, recursive mkdir or retry through a race. Operators must resolve
+unsafe parent ownership/location deliberately before re-previewing; backups are private,
+credential-complete retained recovery artifacts, not portable/share-profile exports.
 
 Builds are multi-stage: cloning and compilation happen in the build stage, so neither git
 nor toolchains reach the host or the final image. Everything is built **on the target**, so
@@ -78,7 +344,8 @@ Every mutating recipe action runs under the instance lock. `install` and `remove
 target, and `verify`, `onboard` and `diagnose` run the recipe's own hooks with a full context,
 so the framework cannot know what they touch; `install` holds the lock across the whole
 build, and until it is done other mutating operations are refused with `recipe install
-<name>` named as the holder. `list`, `status` and `logs` take no lock, and neither does
+<name>` named as the holder. `recipe migrate` holds that same lock across its executor. `list`, `status`, `logs` and
+`inspect` take no lock, nor do install/remove/recover/migrate previews. Neither does
 `import` or `new` — both write only the repository's recipes/ directory and never touch the
 instance. An operation that already holds the lock runs recipe actions as its own steps
 instead of refusing itself.
@@ -148,6 +415,37 @@ manual administration. `recipe status` and `recipe logs` observe the stack; `rec
 diagnose` also invokes `verify.ts` and takes the instance lock because the hook may mutate
 state. An ownership/cutover refusal must be resolved deliberately, not hidden by a second
 Compose project or bypassed without the operator's agreement.
+
+Use `recipe inspect` first: unlike `diagnose`, it does not invoke `verify.ts` or other
+hooks, take the instance lock or write the target. Default `recipe recover --service <service>`
+recreates only that service with its existing exact image, starts no dependencies and runs
+no hooks. `--build` or `--pull` explicitly opts into changing the selected image; preview
+those impacts first. Recovery is for the current owned namespace, not an implicit legacy
+cutover; use migration for the latter.
+
+Consumer reconciliation is a separate explicit `--reconcile-consumer` recovery option.
+It invokes the named `prepare.ts:afterStart` export only after the selected service and
+all declared readiness dependencies are already ready; it does not start dependencies.
+The hook may mutate consumer configuration and the gateway, and its evaluation/invocation
+stays inside the executor's instance lock. Preview discloses these effects without importing
+the hook. A recovered service alone is not proof that its consumer works.
+
+Declare consumer endpoint ownership explicitly in `recipe.json`:
+
+```json
+{
+  "consumerEndpoints": [
+    { "configPath": "channels.telegram.proxy", "service": "http-bridge" }
+  ]
+}
+```
+
+Each entry has exactly `configPath` and `service`: a safe dotted configuration path and
+an exact Compose service name. There is no URL, protocol, port or probe field. Paths must
+be unique within the manifest and across recipe owners; malformed declarations or ambiguous
+ownership refuse. An absent declaration means no endpoint ownership; published `ports`
+never infer it. This declaration identifies ownership, not reachability or successful
+Telegram polling.
 
 An emergency change to a running container is not a complete recipe repair. Identify the
 owner of the fault and update its reproducible source: `compose.yml`/`Dockerfile` for

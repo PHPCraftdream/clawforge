@@ -395,6 +395,13 @@ a credential in `args`.
 POSIX targets use modes 700/600, and local Windows targets use a sealed ACL. A Windows
 drive mounted into WSL has a separate Linux access boundary, which the framework reports.
 
+Gateway-dependent OpenClaw commands must use the gateway-sharing CLI service, for example
+`runtime.runOneOff("cli", ["channels", "status", "--probe", "--json"],
+{ profile: "cli", noDeps: true, input: "", allowFailure: true })`.
+A separate one-off `gateway` container has its own loopback and cannot use `127.0.0.1`
+to reach the running gateway. Capture child output with `input: ""`; return sanitized
+facts rather than streaming account identities, credentials or raw diagnostics.
+
 What `recipe install` waits for before calling `afterStart` and reporting success is also
 declared in `recipe.json`, under `readiness`:
 
@@ -438,6 +445,11 @@ recreates only that service with its existing exact image, starts no dependencie
 no hooks. `--build` or `--pull` explicitly opts into changing the selected image; preview
 those impacts first. Recovery is for the current owned namespace, not an implicit legacy
 cutover; use migration for the latter.
+
+Changing a bind-mounted configuration file does not make an already-running process reload it.
+After preparing new inputs, explicitly use `recipe recover <name> --service <service>`
+to apply them to that owned service. A repeated install/up is not proof that the new bytes
+were loaded. Reconcile the consumer separately only when required and approved.
 
 Consumer reconciliation is a separate explicit `--reconcile-consumer` recovery option.
 It invokes the named `prepare.ts:afterStart` export only after the selected service and

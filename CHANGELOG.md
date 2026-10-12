@@ -17,6 +17,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Recipe readiness regressions assert structured service degradation, unknown probes and
   manifest preservation rather than error wording. Public effect/argument checks cover
   memory, recovery, migration and explicit lock takeover; obsolete renderer/probe pins are removed.
+* Native Tor acceptance documents gateway-sharing CLI execution, captured hook output and
+  explicit reload of changed bind configuration. Isolated selective recovery, consumer
+  reconciliation and credential preservation were exercised without restarting live Telegram.
 * Windows checks select local Git Bash and GNU tar through executable identity and real
   filesystem/argv roundtrips; a successful WSL-alias exit never proves a native tool.
 * Write-isolation checks preserve regex boundaries and native promisify capabilities while

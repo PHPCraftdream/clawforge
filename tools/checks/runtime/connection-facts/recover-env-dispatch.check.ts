@@ -1,3 +1,4 @@
+// check:requires docker
 // Two reachability holes, driven through the REAL surfaces rather than by calling
 // the underlying functions — that is the whole point of the regression:
 //

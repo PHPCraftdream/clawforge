@@ -518,6 +518,11 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
         "",
       ].join("\n"), "utf8");
       const proc = spawnSync(bash, [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir, env: bashEnvironment(bash) });
+      if (proc.status !== 0) {
+        // Which bash answered (macOS ships 3.2, whose `source <(...)` does not work) and what it printed.
+        const version = spawnSync(bash, ["--version"], { encoding: "utf8", env: bashEnvironment(bash) });
+        process.stderr.write(`pasted with ${bash}: ${(version.stdout ?? "").split("\n")[0]}\ninstall line: ${install}\n`);
+      }
       check("bash: the pasted Install: line exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
       const registered = (proc.stdout ?? "").split("\n").map((row) => row.trim()).filter((row) => row !== "").map((row) => row.split(" ").slice(-2)).sort();
       check("bash: the paste registered both completer names", registered, [["_clawforge_complete", "./clawforge"], ["_clawforge_complete", "clawforge"]]);

@@ -62,13 +62,14 @@ function withOnPath(directory: string): NodeJS.ProcessEnv {
 }
 
 const expected = (JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { version: string }).version;
-const prefix = await mkdtemp(join(tmpdir(), "clawforge-system-install-"));
-const outside = await mkdtemp(join(tmpdir(), "clawforge-system-apps-"));
+// Real paths: macOS tmpdir() sits behind the /var symlink, while a child's cwd and module paths are real.
+const prefix = await realpath(await mkdtemp(join(tmpdir(), "clawforge-system-install-")));
+const outside = await realpath(await mkdtemp(join(tmpdir(), "clawforge-system-apps-")));
 const checkoutApp = `sys-install-check-${randomBytes(4).toString("hex")}`;
 // A synthetic checkout for the apps/-parent probes: same geometry as the real one (tools/framework
 // manifest + tools/clawforge.ts beside it), with the gate a shim handing off to the real gate, so
 // the hand-over and takeover logic runs physically while every deployment lands in the temp tree.
-const sc = await mkdtemp(join(tmpdir(), "clawforge-system-checkout-"));
+const sc = await realpath(await mkdtemp(join(tmpdir(), "clawforge-system-checkout-")));
 const scApps = join(sc, "apps");
 // Declared here so the finally can clean up even when the failure happens before the
 // assignment inside the try block.

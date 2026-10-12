@@ -81,12 +81,12 @@ its stage histogram so a reviewer can read which phases its cases actually reach
 
 ### Host capability labels
 
-Most checks assert everything without touching a real docker daemon, WSL distro, POSIX shell,
-bash or PowerShell — a stub transport records what a real one would have been asked to run, so
-a file skipping SOME of its own assertions ("real sh not spawnable here") because a tool
-happens to be missing on THIS machine is normal, and stays a small `if (!available) skip(...)`
-inside an otherwise-meaningful file (`tools/checks/kit/harness.ts` has no opinion on this — it
-is a file-local convention).
+Most checks use a recording transport without a real Docker daemon, WSL distro or shell.
+When one case needs an actual host capability, gate that case with the registered
+`requires(capability, caseName, body)` helper below. Missing prerequisites produce named,
+counted skips; `--require` turns a missing expected prerequisite into failure. Do not invent
+file-local skip conventions, infer availability from production output, or replace native
+evidence with a stubbed process/platform identity.
 
 A file that cannot run AT ALL without a host capability — real docker, a real WSL distro, a
 real `sh`, `rsync`, or a Linux host — says so instead, in its header (first 2KB, same budget
@@ -119,6 +119,14 @@ real half) and `symlink` (a file symlink round-trips in a temp dir — what the 
 groups need; Windows without developer mode or elevation answers "absent"). Each is probed at most
 once per run, only when some selected file actually requires it, and a probe failure (missing
 tool, timeout, anything) reads as "absent" rather than crashing the run.
+
+The recipe native boundaries use `recipe-helper-boundary` (`OC_RECIPE_HELPER_BOUNDARY=1`),
+`recipe-staging-boundary` (`OC_RECIPE_STAGING_BOUNDARY=1`) and `recipe-private-parent-boundary`
+(`OC_RECIPE_PRIVATE_PARENT_BOUNDARY=1`). Each nonmutating gate requires this process to run
+on actual Linux with UID and GID both 0, plus explicit parent authorization through its exact
+opt-in value. Missing prerequisites produce honest named skips; forcing an absent capability
+via `--require`/`OC_CHECK_REQUIRE` fails through the existing file/case gates. Native tool
+prerequisites are checked inside authorized bodies and fail rather than skip.
 
 A single case inside an otherwise runnable file can gate the same way: `await requires("docker", "<case name>", body)`
 (`kit/harness.ts`) runs `body` when the capability is present, prints `  SKIP <case name> — needs <cap>`
@@ -274,9 +282,12 @@ merged as the proseHeld ratchet): it reads the token stream — string literals,
 calls, argument positions — so a const-held pin, an `assert.match` regex, an
 `includes(<spaced const>)` and an array expectation are all counted by one implementation
 instead of four regexes that each covered one spelling. The older regex ratchets (prosePins,
-proseMatchers, proseEquality) stay as they are: they are conservative undercounts whose
-baselines already hold, and widening them would renumber recorded state without catching
-anything the tokenizer misses. New prose ratchets are written against the tokenizer.
+proseMatchers, proseEquality) retain their original shapes, categories and per-line budgets,
+but count only matches owned by an assertion operand. This excludes fixture initializers
+and prevents a greedy match from swallowing a later assertion on the same line. They remain
+conservative undercounts; the broader tokenizer and held-value flow measurements stay
+separate. Widening the legacy shapes would renumber recorded state rather than preserve the
+ratchet. New prose ratchets are written against the tokenizer.
 
 ## Pull requests
 

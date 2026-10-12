@@ -96,6 +96,16 @@ The preview includes all services, sanitized mounts, exact images, named-volume 
 backup location, retained artifacts and disruptive impacts, not opaque plan tokens or
 expanded private environment values.
 
+Writable-layer inspection permits only Docker-added placeholders exactly at verified bind
+or named-volume destinations. Changed/deleted entries, descendants, sibling paths and
+malformed observations remain unsupported application data. The same check runs after
+clean shutdown; unproven cold data never authorizes source resume.
+
+An isolated standard-CLI cutover has exercised graceful source stop, verified archives,
+named-volume transfer, healthy target readiness and source-container removal. The target
+retained its application history; source volumes and private backups remained available.
+This is disposable-fixture evidence, not verification of the operator's live deployment.
+
 The preview also exposes the resolved storage helper image and independent shutdown budget.
 `--helper-image sha256:<64 lowercase hex>` selects an **already present local image ID**, not
 an image tag or registry digest reference. Exact local inspect identity is checked in preview

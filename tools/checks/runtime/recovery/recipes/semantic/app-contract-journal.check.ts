@@ -35,6 +35,55 @@ for (const invalid of [undefined, true, { ...declaration, restore: "archive-only
   checkTrue("missing/invalid contract refuses before any runtime call or write", actualError instanceof Error && f.calls.length === 0 && f.writes.length === 0);
 }
 
+function layerFixture(changes: string, cold = false) {
+  const f = fixture(true);
+  const source = f.containers[0]!;
+  source.Mounts = [{ Type: "bind", Source: "/application/data", Destination: "/bind", RW: true }];
+  f.storage.binds.set("/application/data", expectedTree());
+  f.setConfig({ services: { db: { image: "mutable:tag", user: "", environment: { PASSWORD: "container-secret" },
+    volumes: [{ type: "bind", source: "/application/data", target: "/bind" }] } }, volumes: {} });
+  const exec = f.transport.exec.bind(f.transport);
+  let faultObserved = false;
+  f.transport.exec = async (command, args, options) => {
+    const dockerArgs = command === "sh" && args[2] === "recipe-docker" ? args.slice(3) : args;
+    if (dockerArgs[0] !== "diff") return exec(command, args, options);
+    f.calls.push({ command: "docker", args: [...dockerArgs], options });
+    const unsafe = !cold || source.State.Status !== "running";
+    faultObserved ||= unsafe;
+    return { code: 0, stdout: unsafe ? changes : "A /bind\n", stderr: "" };
+  };
+  return { f, faultObserved: () => faultObserved };
+}
+{
+  const { f } = layerFixture("A /bind\n");
+  const plan = await f.stack.planMigrate!({
+    backupRoot: "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: declaration,
+  });
+  const result = await f.stack.migrate!(plan, f.lock);
+  check("created mountpoint metadata permits complete cold cutover", [result.evidence.source, result.evidence.target, result.evidence.archivesVerified],
+    ["absent", "running", true]);
+  check("mountpoint cutover preserves application tree", treeView(f.storage.binds.get("/application/data")!), treeView(expectedTree()));
+}
+for (const changes of ["C /bind\n", "D /bind\n", "A /bind/unbacked\n", "A /bind-sibling\n", "A /bind \n", "invalid\n"]) {
+  for (const cold of [false, true]) {
+    const { f, faultObserved } = layerFixture(changes, cold);
+    let error: unknown;
+    try {
+      const plan = await f.stack.planMigrate!({
+        backupRoot: "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: declaration,
+      });
+      await f.stack.migrate!(plan, f.lock);
+    } catch (caught) { error = caught; }
+    checkTrue("unmounted or changed layer refuses migration", error instanceof Error);
+    check("layer refusal reached the injected planning or cold anomaly", faultObserved(), true);
+    check("unsafe layer never produces an archive", f.storage.archives.size, 0);
+    check("unsafe layer preserves independent source data", treeView(f.storage.binds.get("/application/data")!), treeView(expectedTree()));
+    check("unproven cold layer never authorizes source resume", f.containers.map((c) => [c.Id, c.State.Status]),
+      [["1".repeat(64), cold ? "exited" : "running"]]);
+    check("unsafe layer cannot start target services", f.calls.some((call) => call.args.includes("up")), false);
+  }
+}
+
 // Exercise the real executor catch/finalize path, not a classifier-only mock.
 for (const unreadable of [false, true]) {
   const f = fixture(true);

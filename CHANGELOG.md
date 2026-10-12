@@ -23,6 +23,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Native recipe planning no longer reopens `/dev/stdin` for Compose environment values.
   Quoted stdin preserves credentials without changing target Docker connection settings;
   safe root-owned sticky staging ancestors support standard selective recovery.
+* Cold recipe migration distinguishes exact Docker-added mountpoint metadata from unmounted
+  application data, including post-stop revalidation. An isolated standard-CLI named-volume
+  cutover verified cold archives, healthy target state and retained source recovery artifacts.
 * Retired the refactor-only frozen CLI argument count; new arguments remain covered by
   typed binding, effect/confirmation and refusal-boundary contract checks.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes

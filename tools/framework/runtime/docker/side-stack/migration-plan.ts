@@ -125,6 +125,19 @@ export function rawMounts(raw: Record<string, unknown>) {
       ...(m["Name"] === undefined ? {} : { name: text(m["Name"]) }) };
   });
 }
+export function assertWritableLayerMetadata(changes: string, mounts: readonly { type: string; destination: string }[]): void {
+  if (changes === "") return;
+  const destinations = new Set<string>();
+  for (const mount of mounts) {
+    if (["volume", "bind"].includes(mount.type) && safePath(mount.destination)) destinations.add(mount.destination);
+  }
+  const output = changes.endsWith("\n") ? changes.slice(0, -1) : changes;
+  // Docker creates mountpoint placeholders in the layer; descendants remain application data.
+  for (const line of output.split("\n")) {
+    if (!line.startsWith("A ") || !destinations.has(line.slice(2)))
+      throw new Error("recipe migration writable-layer application data is unsupported");
+  }
+}
 export function volumeNames(stdout: string): string[] {
   const names = stdout === "" ? [] : stdout.trimEnd().split("\n");
   if (names.some((name) => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) || new Set(names).size !== names.length)
@@ -270,13 +283,12 @@ export async function prepareMigration(io: StackIO, options: StackMigrateOptions
     assertRestartPolicy(hostConfig, object(object(sourceDocument["services"])[name]), service);
     if (hostConfig["Privileged"] === true || array(hostConfig["Devices"] ?? []).length || array(hostConfig["VolumesFrom"] ?? []).length
       || Object.keys(object(hostConfig["Tmpfs"] ?? {})).length) throw new Error("recipe migration source isolation is unsupported");
-    // Unmounted application data cannot be omitted from the backup.
-    if ((await io.run(["diff", evidence.id])).stdout.trim()) throw new Error("recipe migration writable-layer application data is unsupported");
+    const actual = rawMounts(container.raw);
+    assertWritableLayerMetadata((await io.run(["diff", evidence.id])).stdout, actual);
     for (const key of ["volumes_from", "devices", "privileged", "container_name", "network_mode", "pid", "ipc", "tmpfs", "secrets", "configs"]) {
       if (service[key] !== undefined) throw new Error("recipe migration unsupported service storage/isolation");
     }
     const declared = array(service["volumes"] ?? []).map(object);
-    const actual = rawMounts(container.raw);
     if (declared.length !== actual.length || new Set(declared.map((m) => text(m["target"]))).size !== declared.length)
       throw new Error("recipe migration has unproven mounts");
     const rewritten: Record<string, unknown>[] = [];

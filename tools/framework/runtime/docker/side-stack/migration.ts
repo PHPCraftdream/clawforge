@@ -3,7 +3,7 @@ import type { MigrationBackupEvidence, MigrationBackupVerification } from "../..
 import type { StackLock, StackMigrateOptions, StackMigratePlan, StackMigrationResult, StackMigrationEvidence, MigrationObservedState } from "../../runtime.ts";
 import { prepareComposeDocument, executePreparedDocument, execResult, object, text, definitionLabel, digestLabel, documentDigest, remainingTimeout, checkDeadline, type StackIO } from "./io.ts";
 import { records, type ContainerRecord } from "./inspection.ts";
-import { prepareMigration, createBackupRoot, verifyWriters, verifyReadonlyBind, assertMigrationConfig, assertRestartPolicy, gentleSignal, shutdownSeconds, type MigrationPrepared, type ReadonlyBindProof } from "./migration-plan.ts";
+import { prepareMigration, createBackupRoot, verifyWriters, verifyReadonlyBind, assertMigrationConfig, assertRestartPolicy, assertWritableLayerMetadata, rawMounts, gentleSignal, shutdownSeconds, type MigrationPrepared, type ReadonlyBindProof } from "./migration-plan.ts";
 import { backupStorage, checkHelper, restoreBind, transferStorage, verifyTopology, verifyTargetVolume } from "./storage.ts";
 import { waitReady } from "./recovery.ts";
 
@@ -69,7 +69,7 @@ export function migrationAPI(io: StackIO): {
       const service = object(object(p.sourceDocument["services"])[c.evidence.service!]);
       assertRestartPolicy(object(c.raw["HostConfig"]), service, service);
       assertMigrationConfig(service, p.imageConfigs[c.evidence.service!]!, [c.raw], p.sourceDocument);
-      if ((await io.run(["diff", c.evidence.id])).stdout.trim()) throw new Error("recipe migration cold writable-layer data unsupported");
+      assertWritableLayerMetadata((await io.run(["diff", c.evidence.id])).stdout, rawMounts(c.raw));
     }
     await verifyWriters(io, p.storage, permitted);
     for (const storage of p.storage) await verifyTopology(io, storage);

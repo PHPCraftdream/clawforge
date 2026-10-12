@@ -1043,8 +1043,8 @@
     "total": 2
   },
   "proseHeldFlow": {
-    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1190. No skips, exclusions or re-encoding; future growth requires explicit review.",
-    "total": 1190,
+    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1189. No skips, exclusions or re-encoding; future growth requires explicit review.",
+    "total": 1189,
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 14,
@@ -1185,7 +1185,7 @@
       "tools/checks/runtime/service/deploy/remote-path.check.ts": 5,
       "tools/checks/runtime/service/deploy/root-boundary.check.ts": 8,
       "tools/checks/runtime/service/image-identity/compose-env.check.ts": 2,
-      "tools/checks/runtime/service/image-identity/runtime-image-identity.check.ts": 2,
+      "tools/checks/runtime/service/image-identity/runtime-image-identity.check.ts": 1,
       "tools/checks/runtime/service/logs-bounded.check.ts": 5,
       "tools/checks/runtime/service/restart.check.ts": 3,
       "tools/checks/runtime/service/restore/restore.check.ts": 14,

@@ -17,7 +17,7 @@
       inspect              What is declared, what is actually running, and where they disagree
       doctor               Say whether anything is wrong and what to run about it
       accept               Run the acceptance checks this deployment's recipes declare
-      operations           What mutating runs did to this instance, and what they left behind
+      operations           What mutating runs did to this instance, and what they left behind *
       watch                Health monitoring with a webhook alert on state change *
     
     Change:
@@ -26,6 +26,7 @@
       apply                Run the plan, then confirm what the instance actually is *
       rollback             Put back the configuration an operation replaced *
       apply-config         Apply the deployment's desired-state.json *
+      memory               Declare, set up, inspect, index and verify memory *
       configure-provider   Configure model providers from target-side environment variables
       secrets              Show required secrets and whether they are in place *
       recipe               Deploy services next to the instance: install, verify, list, and more *
@@ -475,14 +476,24 @@
 
 === operations --help ===
 ==> operations — What mutating runs did to this instance, and what they left behind
-    Usage: ./clawforge operations [<id>] [--limit <n>] [--json]
+    Usage: ./clawforge operations [<id>] [--limit <n>] [--takeover-lock] [--break-lock] [--break-foreign-lock <hostId>] [--confirmed] [--json]
       <id>                   Operation id to show in full
       --limit <n>            How many recent operations to list (default 10)
+      --takeover-lock        Take over and release operation lock metadata only
+      --break-lock           Take over the instance lock held by another operation
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
+      --confirmed            Consent supplied by MCP confirmation
       --json                 Emit the record, or the list, as JSON
+      --takeover-lock requires --break-lock
+      --takeover-lock cannot be combined with any of <id> or --limit
+      --break-lock requires --takeover-lock
+      --break-foreign-lock requires --takeover-lock
     
     Every run that changes the instance writes a journal entry on the target as it goes — step by step, not at the end, because a run that dies halfway is exactly the case the record exists for.
     Without an id this lists the most recent ones; with one it shows that run in full: which steps ran, which failed, which never started, and whether a configuration snapshot was taken that `./clawforge rollback` can put back.
     An operation with no outcome did not reach its own end — killed, disconnected or still running. That is reported as unfinished rather than dressed up as a result.
+    
+    This command can replace or destroy state, depending on the flags given.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
@@ -626,6 +637,47 @@
     A plain recover-env fills only the fact names the file is missing entirely and reports the ones both sides carry differently without writing over them; --adopt-runtime is the container-authoritative direction that also merges those over the file's existing values.
     --dry-run prints what would change and writes nothing.
 
+=== memory --help ===
+==> memory — Declare, set up, inspect, index and verify memory
+    Usage: ./clawforge memory <action> [--mode <mode>] [--backend <backend>] [--provider <id>] [--model <model>] [--env <var>] [--model-path <path>] [--model-checksum <sha256>] [--model-source <source>] [--model-version <version>] [--json] [--plugin-version <version>] [--model-max-bytes <bytes>] [--agent <id>] [--all-agents] [--allow-install] [--allow-download] [--deep] [--allow-spend]
+      <action>               Memory action [plan|configure|setup|status|index|verify] (required)
+      --mode <mode>          Intentional memory mode (plan, configure) [embeddings|keyword|disabled]
+      --backend <backend>    Explicit backend (plan, configure) [builtin]
+      --provider <id>        Explicit embedding provider (plan, configure)
+      --model <model>        Explicit embedding model (plan, configure)
+      --env <var>            Existing target SecretRef name (plan, configure)
+      --model-path <path>    Existing managed container GGUF path (plan, configure)
+      --model-checksum <sha256> Approved GGUF SHA256 (plan, configure, setup, index, verify)
+      --model-source <source> Approved model source (plan, configure, index, verify); Approved immutable HTTPS GGUF source (setup)
+      --model-version <version> Approved model version (plan, configure, index, verify); Approved immutable model revision (setup)
+      --json                 Emit structured outcome
+      --plugin-version <version> Approved exact native plugin version (setup)
+      --model-max-bytes <bytes> Approved maximum GGUF download bytes (setup)
+      --agent <id>           Existing agent id (setup, index, verify)
+      --all-agents           Select every existing agent (setup, index, verify)
+      --allow-install        Consent to approved native plugin installation (setup)
+      --allow-download       Consent to approved GGUF download (setup); Consent to provider probe downloads (status, index, verify)
+      --deep                 Explicit provider readiness probe (status)
+      --allow-spend          Consent to provider probe spend (status, index, verify)
+      plan: --env cannot be combined with any of --model-path, --model-checksum, --model-source or --model-version
+      configure: --env cannot be combined with any of --model-path, --model-checksum, --model-source or --model-version
+      setup: --agent or --all-agents (one required)
+      status: --deep requires --allow-spend and --allow-download
+      status: --allow-spend requires --deep
+      status: --allow-download requires --deep
+      index: --allow-spend requires --allow-download
+      index: --allow-download requires --allow-spend
+      index: --agent or --all-agents (one required)
+      verify: --allow-spend requires --allow-download
+      verify: --allow-download requires --allow-spend
+      verify: --agent or --all-agents (one required)
+    
+    Actions: plan, configure, setup, status, index, verify. Plan/configure operate locally on canonical owned leaf declarations; explicitly apply-config and restart separately. Status is safe/read-only unless deep is consented. Setup/index/verify require confirmation, cli-start and serialized instance locking. Keyword expects no embeddings. Setup requires local embeddings, immutable model source/version/checksum, exact plugin version, model byte limit and both allow-install/allow-download consents before target contact; delivery and installation are never automatic. Verify creates an exclusive uid1000 witness and removes only its owned inode before explicit cleanup reindex.
+    
+    This command can replace or destroy state, depending on the action given.
+    
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
+
 === status --help ===
 ==> status — Show containers, image, health probes and data usage
     Usage: ./clawforge status [--json]
@@ -756,18 +808,24 @@
 
 === recipe --help ===
 ==> recipe — Deploy services next to the instance: install, verify, list, and more
-    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes]
-      <action>               What to do with the recipe [list|import|new|verify|onboard|diagnose|install|remove|status|logs]
-      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, remove, status, logs)
+    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]
+      <action>               What to do with the recipe [list|import|new|verify|onboard|diagnose|install|remove|inspect|recover|migrate|status|logs]
+      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs)
       <new-name>             import under this name instead of the source directory's own name (import)
-      --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list)
+      --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list); With inspect: emit inspection evidence as JSON (inspect)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
-      --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, remove)
-      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, remove)
-      --tail <n>             lines to return per service (diagnose, logs)
+      --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, remove); Take over the instance lock held by another operation (recover, migrate)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, remove); Confirm <hostId> for a recorded remote lock owner (recover, migrate)
+      --tail <n>             lines to return per service (diagnose, inspect, logs)
       --force-disabled       build a recipe marked disabled (install)
-      --dry-run              show what would happen (install, remove)
+      --dry-run              show what would happen (install, remove); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate)
       --volumes              delete its volumes too (remove)
+      --service <service>    exact declared service (dependencies are not started) (recover)
+      --build                build the selected service (recover)
+      --pull                 pull the selected service image (recover)
+      --reconcile-consumer   May mutate consumer configuration and the gateway through afterStart (recover)
+      --helper-image <sha256> Trusted local sha256 image ID for storage tools; never built or pulled (migrate)
+      --shutdown-timeout <seconds> Finite 1..3600 seconds, default 180; never escalates to forced kill (migrate)
     
     A recipe is a third-party service living beside the instance — its own directory under the deployment's recipes/, its own compose project, its own lifecycle.
     It cannot take the gateway down with it and a snapshot never picks up its images or volumes.

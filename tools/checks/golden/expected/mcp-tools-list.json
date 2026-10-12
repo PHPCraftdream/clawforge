@@ -816,7 +816,7 @@
     },
     {
       "name": "operations",
-      "description": "What mutating runs did to this instance, and what they left behind\n\nFull text: call help with command=operations.",
+      "description": "What mutating runs did to this instance, and what they left behind (destructive for some actions)\n\nFull text: call help with command=operations.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -828,9 +828,29 @@
             "type": "string",
             "description": "How many recent operations to list"
           },
+          "takeover-lock": {
+            "type": "boolean",
+            "description": "Take over and release operation lock metadata only"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Orphan host"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "Consent supplied by MCP confirmation"
+          },
           "json": {
             "type": "boolean",
             "description": "Emit the record, or the list, as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
           }
         }
       },
@@ -1102,6 +1122,153 @@
             "description": "Emit the outcome as JSON"
           }
         }
+      }
+    },
+    {
+      "name": "memory",
+      "description": "Declare, set up, inspect, index and verify memory (destructive for some actions)\n\nFull text: call help with command=memory.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Memory action",
+            "enum": [
+              "plan",
+              "configure",
+              "setup",
+              "status",
+              "index",
+              "verify"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "description": "Intentional memory mode (plan, configure)",
+            "enum": [
+              "embeddings",
+              "keyword",
+              "disabled"
+            ]
+          },
+          "backend": {
+            "type": "string",
+            "description": "Explicit backend (plan, configure)",
+            "enum": [
+              "builtin"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "description": "Explicit embedding provider (plan, configure)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Explicit embedding model (plan, configure)"
+          },
+          "env": {
+            "type": "string",
+            "description": "Existing target SecretRef name (plan, configure)"
+          },
+          "model-path": {
+            "type": "string",
+            "description": "Existing managed container GGUF path (plan, configure)"
+          },
+          "model-checksum": {
+            "type": "string",
+            "description": "Approved GGUF SHA256 (plan, configure, setup, index, verify)"
+          },
+          "model-source": {
+            "type": "string",
+            "description": "Approved source (plan, configure, index, verify); GGUF source (setup)"
+          },
+          "model-version": {
+            "type": "string",
+            "description": "Approved revision (plan, configure, index, verify); GGUF revision (setup)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit structured outcome"
+          },
+          "plugin-version": {
+            "type": "string",
+            "description": "Approved exact native plugin version (setup)"
+          },
+          "model-max-bytes": {
+            "type": "string",
+            "description": "Approved maximum GGUF download bytes (setup)"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Existing agent id (setup, index, verify)"
+          },
+          "all-agents": {
+            "type": "boolean",
+            "description": "Select every existing agent (setup, index, verify)"
+          },
+          "allow-install": {
+            "type": "boolean",
+            "description": "Consent to approved native plugin installation (setup)"
+          },
+          "allow-download": {
+            "type": "boolean",
+            "description": "GGUF download (setup); Probe downloads (status, index, verify)"
+          },
+          "deep": {
+            "type": "boolean",
+            "description": "Explicit provider readiness probe (status)"
+          },
+          "allow-spend": {
+            "type": "boolean",
+            "description": "Consent to provider probe spend (status, index, verify)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextSteps": {
+            "type": "array"
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "nextSteps",
+          "result"
+        ]
       }
     },
     {
@@ -1379,13 +1546,16 @@
               "diagnose",
               "install",
               "remove",
+              "inspect",
+              "recover",
+              "migrate",
               "status",
               "logs"
             ]
           },
           "name": {
             "type": "string",
-            "description": "directory to copy the recipe from (import); recipe (new, verify, onboard, diagnose, install, remove, status, logs)"
+            "description": "directory to copy the recipe from (import); recipe (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs)"
           },
           "new-name": {
             "type": "string",
@@ -1393,7 +1563,7 @@
           },
           "json": {
             "type": "boolean",
-            "description": "emit the catalog as JSON (list)"
+            "description": "emit the catalog as JSON (list); emit structured inspection evidence (inspect)"
           },
           "with-hooks": {
             "type": "boolean",
@@ -1401,15 +1571,15 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (verify, onboard, diagnose, install, remove)"
+            "description": "Take lock (verify, onboard, diagnose, install, remove); Take instance lock (recover, migrate)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (verify, onboard, diagnose, install, remove)"
+            "description": "Orphan host (verify, onboard, diagnose, install, remove); Confirm remote lock host (recover, migrate)"
           },
           "tail": {
             "type": "string",
-            "description": "lines to return per service (diagnose, logs)"
+            "description": "lines to return per service (diagnose, inspect, logs)"
           },
           "force-disabled": {
             "type": "boolean",
@@ -1417,11 +1587,35 @@
           },
           "dry-run": {
             "type": "boolean",
-            "description": "show what would happen (install, remove)"
+            "description": "show what would happen (install, remove); show what would happen (recover); show what would happen (migrate)"
           },
           "volumes": {
             "type": "boolean",
             "description": "delete its volumes too (remove)"
+          },
+          "service": {
+            "type": "string",
+            "description": "exact service to recover (recover)"
+          },
+          "build": {
+            "type": "boolean",
+            "description": "build the selected service (recover)"
+          },
+          "pull": {
+            "type": "boolean",
+            "description": "pull the selected service image (recover)"
+          },
+          "reconcile-consumer": {
+            "type": "boolean",
+            "description": "run named afterStart after dependency readiness (recover)"
+          },
+          "helper-image": {
+            "type": "string",
+            "description": "existing local immutable helper image ID (migrate)"
+          },
+          "shutdown-timeout": {
+            "type": "string",
+            "description": "gentle shutdown grace in seconds (migrate)"
           },
           "confirm": {
             "type": "boolean",

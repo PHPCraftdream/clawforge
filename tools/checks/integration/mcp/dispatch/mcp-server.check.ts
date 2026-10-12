@@ -203,13 +203,16 @@ try {
   check("recipe verify is mutating for MCP gating like onboard", callFactsFor(openclawCommands.recipe!, ["verify", "probe"]).effect, "destroy");
   check("recipe onboard is mutating for MCP gating", callFactsFor(openclawCommands.recipe!, ["onboard", "probe"]).effect, "destroy");
   check("recipe diagnose is mutating for MCP gating, same reason as verify", callFactsFor(openclawCommands.recipe!, ["diagnose", "probe"]).effect, "destroy");
+  check("recipe inspect is read-only for MCP gating: no lock, no hooks", callFactsFor(openclawCommands.recipe!, ["inspect", "probe"]).effect, "read");
+  check("recipe recover is destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["recover", "probe", "--service", "probe"]).effect, "destroy");
+  check("recipe migrate is destructive for MCP gating", callFactsFor(openclawCommands.recipe!, ["migrate", "probe"]).effect, "destroy");
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
   const recipePointer = `${FULL_TEXT_POINTER}=recipe`;
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"],
+    ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "inspect", "recover", "migrate", "status", "logs"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
@@ -503,7 +506,7 @@ function conforms(
 {
   const recipeCommand = openclawCommands.recipe!;
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
-  check("the declaration enumerates the actions to sweep", actionChoices.length, 10);
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 13);
 
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
@@ -521,6 +524,9 @@ function conforms(
       new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
       install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
       remove: () => { log("sidecar removed"); },
+      inspect: () => { info("sidecar: owned namespace, 1 service"); },
+      recover: () => { log("sidecar service recreated"); },
+      migrate: () => { log("sidecar migration preview"); },
       status: () => { info("running"); },
       logs: () => { emit("sidecar-gateway  | ready\\n"); },
       verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); },
@@ -542,7 +548,7 @@ function conforms(
       jsonrpc: "2.0",
       id: index + 1,
       method: "tools/call",
-      params: { name: "recipe", arguments: { action, ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
+      params: { name: "recipe", arguments: { action, ...(action === "recover" ? { service: "sidecar" } : {}), ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
     })),
     { jsonrpc: "2.0", id: actionChoices.length + 1, method: "tools/call", params: { name: "notes", arguments: {} } },
   ];
@@ -579,7 +585,7 @@ function conforms(
     check("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
     check("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
     check("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
-    for (const action of ["list", "import", "new", "install", "remove", "status", "logs"]) {
+    for (const action of ["list", "import", "new", "install", "remove", "inspect", "recover", "migrate", "status", "logs"]) {
       check(`${action}: a text action carries its text as the result`, typeof envelopeResult(action) === "string" && String(envelopeResult(action)).length > 0, true);
     }
 

@@ -5,7 +5,7 @@ import { emit } from "#src/core/io/output.ts";
 import { loadRecipe, recipeStack } from "#src/service/recipe.ts";
 import type { Stack, StackRecoverOptions } from "#src/runtime/runtime.ts";
 import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
-import { importHookModule } from "../hook-runtime.ts";
+import { importHookModule } from "#src/commands/management/recipe/hook-runtime.ts";
 
 export interface RecoverCommandOptions extends StackRecoverOptions {
   readonly dryRun: boolean;

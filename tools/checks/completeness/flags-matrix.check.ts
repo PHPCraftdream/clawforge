@@ -67,6 +67,7 @@ const TABLE: Record<string, FlagPosition> = {
   secrets: position({ json: true, dryRun: false, dryRunReason: "not asked for by U9; --apply/--init-store/--dump already require MCP confirm, and status/template need no preview" }),
   "recover-env": position({ json: true, dryRun: true }),
   recipe: position({ json: true, dryRun: true }),
+  memory: position({ json: true, dryRun: false, dryRunReason: "plan is the read-only preview of configure; setup/index/verify are consented, locked effects with no in-between preview" }),
   "provision-agent": position({ json: true, dryRun: false, dryRunReason: "not asked for by U9; every step is idempotent (re-runnable, rewrites declared state)" }),
   deploy: position({ json: true, dryRun: true }),
   "mcp-serve": position({ json: false, jsonReason: CONSOLE_REASON, dryRun: false, dryRunReason: CONSOLE_REASON }),

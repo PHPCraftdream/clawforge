@@ -22,7 +22,7 @@ import type { RecipeRef } from "../core/values/plan.ts";
 import { die } from "../core/io/log.ts";
 import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
 import type { Context } from "../core/context.ts";
-import type { Stack } from "../runtime/runtime.ts";
+import type { RecipeMigrationBackup, Stack } from "../runtime/runtime.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 
@@ -104,16 +104,6 @@ export interface RecipeConsumerEndpoint {
   readonly configPath: string;
   readonly service: string;
 }
-
-interface RecipeMigrationStorageGuarantee {
-  readonly persistentState: "all-in-declared-named-volumes-and-bind-mounts";
-  readonly restore: "application-safe-including-compensation";
-}
-export type RecipeMigrationBackup = RecipeMigrationStorageGuarantee & (
-  | { readonly consistency: "application-cold-safe"; readonly cleanShutdown: "flushes-all-writers" }
-  | { readonly consistency: "application-verified-cold"; readonly cleanShutdown: "verified-by-post-stop-hook";
-      readonly verification: "migration-verify.ts" }
-);
 
 /** Exact unconditional or post-stop conditional author guarantee; never inferred. */
 export function parseMigrationBackup(value: unknown): RecipeMigrationBackup | undefined {

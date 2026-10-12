@@ -205,7 +205,8 @@ function childProgram() {
         report: (receipt: ModelReceipt) => { reportReady = acknowledged("report", receipt); },
         platform: { getuid: () => spec.uid }, process: vmProcess, Buffer, URL, setTimeout, clearTimeout };
       let facts: ModelFacts | undefined;
-      if (spec.mode === "script") await runInNewContext(spec.script, context, { timeout: 1000 });
+      // 10 s is a runaway-loop guard for the in-VM script, not a speed bound: a loaded host must not fail it.
+      if (spec.mode === "script") await runInNewContext(spec.script, context, { timeout: 10_000 });
       else {
         let io: unknown = network;
         if (spec.mode === "stalled") {
@@ -222,7 +223,7 @@ function childProgram() {
             clearTimeout: (id: number) => { const timer = timers.get(id); if (timer) timer.active = false; send({ kind: "clear", id }); },
           });
         }
-        facts = await runInNewContext(`const validate=(${spec.validate});(${spec.primitive})(input,validate,hosts,load,network,report,platform)`, { ...context, network: io }, { timeout: 1000 }) as ModelFacts;
+        facts = await runInNewContext(`const validate=(${spec.validate});(${spec.primitive})(input,validate,hosts,load,network,report,platform)`, { ...context, network: io }, { timeout: 10_000 }) as ModelFacts;
       }
       await reportReady;
       send({ kind: "result", facts, output, exitCode: vmProcess.exitCode });

@@ -3,7 +3,7 @@
 # Install: source <(./clawforge completion bash)
 _clawforge_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
     "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -23,12 +23,13 @@ _clawforge_lookup() {
     "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "first accept") _clawforge_reply="--help --json --set --with-model" ;;
     "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "first expose") _clawforge_reply="--help ssh status tailscale" ;;
     "first watch") _clawforge_reply="--help check install status test uninstall" ;;
     "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
     "first status") _clawforge_reply="--help --json" ;;
     "first lock") _clawforge_reply="--check --help --json" ;;
     "first cli") _clawforge_reply="--help" ;;
@@ -38,7 +39,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import inspect install list logs migrate new onboard recover remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -52,7 +53,7 @@ _clawforge_lookup() {
     "first version") _clawforge_reply="--help --json --verbose" ;;
     "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
     "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
     "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -77,7 +78,7 @@ _clawforge_lookup() {
     "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
     "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
     "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
@@ -91,6 +92,13 @@ _clawforge_lookup() {
     "after watch *") _clawforge_reply="--help" ;;
     "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawforge_reply="--help --json" ;;
     "after status *") _clawforge_reply="--help --json" ;;
     "after lock *") _clawforge_reply="--check --help --json" ;;
     "after cli *") _clawforge_reply="--help" ;;
@@ -108,6 +116,9 @@ _clawforge_lookup() {
     "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
     "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
+    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
     "after recipe *") _clawforge_reply="--help --json" ;;
@@ -153,14 +164,15 @@ _clawforge_lookup() {
     "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
     "valueOptions accept") _clawforge_reply="--set" ;;
     "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
     "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
     "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
     "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
     "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
     "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout" ;;
     "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions deploy") _clawforge_reply="--path" ;;
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
@@ -170,6 +182,10 @@ _clawforge_lookup() {
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawforge_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
     "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
@@ -256,7 +272,7 @@ autoload -Uz bashcompinit
 bashcompinit
 _clawforge_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
     "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -276,12 +292,13 @@ _clawforge_lookup() {
     "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "first accept") _clawforge_reply="--help --json --set --with-model" ;;
     "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "first expose") _clawforge_reply="--help ssh status tailscale" ;;
     "first watch") _clawforge_reply="--help check install status test uninstall" ;;
     "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
     "first status") _clawforge_reply="--help --json" ;;
     "first lock") _clawforge_reply="--check --help --json" ;;
     "first cli") _clawforge_reply="--help" ;;
@@ -291,7 +308,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import inspect install list logs migrate new onboard recover remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -305,7 +322,7 @@ _clawforge_lookup() {
     "first version") _clawforge_reply="--help --json --verbose" ;;
     "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
     "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
     "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -330,7 +347,7 @@ _clawforge_lookup() {
     "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
     "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
     "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
@@ -344,6 +361,13 @@ _clawforge_lookup() {
     "after watch *") _clawforge_reply="--help" ;;
     "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawforge_reply="--help --json" ;;
     "after status *") _clawforge_reply="--help --json" ;;
     "after lock *") _clawforge_reply="--check --help --json" ;;
     "after cli *") _clawforge_reply="--help" ;;
@@ -361,6 +385,9 @@ _clawforge_lookup() {
     "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
     "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
+    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
     "after recipe *") _clawforge_reply="--help --json" ;;
@@ -406,14 +433,15 @@ _clawforge_lookup() {
     "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
     "valueOptions accept") _clawforge_reply="--set" ;;
     "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
     "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
     "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
     "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
     "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
     "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout" ;;
     "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions deploy") _clawforge_reply="--path" ;;
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
@@ -423,6 +451,10 @@ _clawforge_lookup() {
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawforge_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
     "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
@@ -503,7 +535,7 @@ complete -F _clawforge_complete ./clawforge
 # clawforge PowerShell completion — generated from the command declarations.
 # Install: run ./clawforge completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell
 $clawforgeApp = $true
-$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v", "--app")
+$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v", "--app")
 $clawforgeFirst = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -524,12 +556,13 @@ $clawforgeFirst = [hashtable]::new(@{
   "apply" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
   "accept" = @("--help", "--json", "--set", "--with-model")
   "rollback" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
-  "operations" = @("--help", "--json", "--limit")
+  "operations" = @("--break-foreign-lock", "--break-lock", "--confirmed", "--help", "--json", "--limit", "--takeover-lock")
   "apply-config" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
   "expose" = @("--help", "ssh", "status", "tailscale")
   "watch" = @("--help", "check", "install", "status", "test", "uninstall")
   "incident" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
   "recover-env" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "memory" = @("--help", "--json", "configure", "index", "plan", "setup", "status", "verify")
   "status" = @("--help", "--json")
   "lock" = @("--check", "--help", "--json")
   "cli" = @("--help")
@@ -539,7 +572,7 @@ $clawforgeFirst = [hashtable]::new(@{
   "cli-stop" = @("--help")
   "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
   "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
-  "recipe" = @("--help", "--json", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
+  "recipe" = @("--help", "--json", "diagnose", "import", "inspect", "install", "list", "logs", "migrate", "new", "onboard", "recover", "remove", "status", "verify")
   "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
   "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
   "mcp-serve" = @("--help")
@@ -553,7 +586,7 @@ $clawforgeFirst = [hashtable]::new(@{
   "version" = @("--help", "--json", "--verbose")
   "completion" = @("--help", "bash", "pwsh", "zsh")
   "control-mcp" = @("--help")
-  "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
+  "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
 }, [System.StringComparer]::Ordinal)
 $clawforgeAfter = [hashtable]::new(@{
   "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
@@ -580,7 +613,7 @@ $clawforgeAfter = [hashtable]::new(@{
   "apply *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
   "accept *" = @("--help", "--json", "--set", "--with-model")
   "rollback *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
-  "operations *" = @("--help", "--json", "--limit")
+  "operations *" = @("--break-foreign-lock", "--break-lock", "--confirmed", "--help", "--json", "--limit", "--takeover-lock")
   "apply-config *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
   "expose ssh" = @("--help", "--local-port", "--run")
   "expose tailscale" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
@@ -594,6 +627,13 @@ $clawforgeAfter = [hashtable]::new(@{
   "watch *" = @("--help")
   "incident *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
   "recover-env *" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "memory plan" = @("--backend", "--env", "--help", "--json", "--mode", "--model", "--model-checksum", "--model-path", "--model-source", "--model-version", "--provider")
+  "memory configure" = @("--backend", "--env", "--help", "--json", "--mode", "--model", "--model-checksum", "--model-path", "--model-source", "--model-version", "--provider")
+  "memory setup" = @("--agent", "--all-agents", "--allow-download", "--allow-install", "--help", "--json", "--model-checksum", "--model-max-bytes", "--model-source", "--model-version", "--plugin-version")
+  "memory status" = @("--allow-download", "--allow-spend", "--deep", "--help", "--json")
+  "memory index" = @("--agent", "--all-agents", "--allow-download", "--allow-spend", "--help", "--json", "--model-checksum", "--model-source", "--model-version")
+  "memory verify" = @("--agent", "--all-agents", "--allow-download", "--allow-spend", "--help", "--json", "--model-checksum", "--model-source", "--model-version")
+  "memory *" = @("--help", "--json")
   "status *" = @("--help", "--json")
   "lock *" = @("--check", "--help", "--json")
   "cli *" = @("--help")
@@ -611,6 +651,9 @@ $clawforgeAfter = [hashtable]::new(@{
   "recipe diagnose" = @("--break-foreign-lock", "--break-lock", "--help", "--tail")
   "recipe install" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force-disabled", "--help")
   "recipe remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
+  "recipe inspect" = @("--help", "--json", "--tail")
+  "recipe recover" = @("--break-foreign-lock", "--break-lock", "--build", "--dry-run", "--help", "--pull", "--reconcile-consumer", "--service")
+  "recipe migrate" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--helper-image", "--shutdown-timeout")
   "recipe status" = @("--help")
   "recipe logs" = @("--help", "--tail")
   "recipe *" = @("--help", "--json")
@@ -662,14 +705,15 @@ $clawforgeValueOptions = [hashtable]::new(@{
   "apply" = @("--set", "--expect", "--break-foreign-lock")
   "accept" = @("--set")
   "rollback" = @("--operation", "--break-foreign-lock")
-  "operations" = @("--limit")
+  "operations" = @("--limit", "--break-foreign-lock")
   "apply-config" = @("--break-foreign-lock")
   "expose" = @("--local-port", "--break-foreign-lock")
   "watch" = @("--interval", "--break-foreign-lock")
   "incident" = @("--tail", "--break-foreign-lock")
+  "memory" = @("--mode", "--backend", "--provider", "--model", "--env", "--model-path", "--model-checksum", "--model-source", "--model-version", "--plugin-version", "--model-max-bytes", "--agent")
   "configure-provider" = @("--provider", "--env", "--break-foreign-lock")
   "secrets" = @("--store", "--break-foreign-lock")
-  "recipe" = @("--break-foreign-lock", "--tail")
+  "recipe" = @("--break-foreign-lock", "--tail", "--service", "--helper-image", "--shutdown-timeout")
   "provision-agent" = @("--break-foreign-lock")
   "deploy" = @("--path")
   "mcp-setup" = @("--client")
@@ -681,6 +725,10 @@ $clawforgeValues = [hashtable]::new(@{
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
   "verify--profile" = @("full", "migrate", "share")
+  "memoryplan--mode" = @("embeddings", "keyword", "disabled")
+  "memoryconfigure--mode" = @("embeddings", "keyword", "disabled")
+  "memoryplan--backend" = @("builtin")
+  "memoryconfigure--backend" = @("builtin")
   "mcp-setup--client" = @("claude", "codex", "both")
   "setforget--kind" = @("agent", "mcp-server", "cron-job")
 }, [System.StringComparer]::Ordinal)
@@ -772,7 +820,7 @@ Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBl
 # Install: source <(clawforge completion bash)
 _clawforge_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
     "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -792,12 +840,13 @@ _clawforge_lookup() {
     "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "first accept") _clawforge_reply="--help --json --set --with-model" ;;
     "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "first expose") _clawforge_reply="--help ssh status tailscale" ;;
     "first watch") _clawforge_reply="--help check install status test uninstall" ;;
     "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
     "first status") _clawforge_reply="--help --json" ;;
     "first lock") _clawforge_reply="--check --help --json" ;;
     "first cli") _clawforge_reply="--help" ;;
@@ -807,7 +856,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import inspect install list logs migrate new onboard recover remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -818,7 +867,7 @@ _clawforge_lookup() {
     "first version") _clawforge_reply="--help --json --verbose" ;;
     "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
     "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
     "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -843,7 +892,7 @@ _clawforge_lookup() {
     "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
     "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
     "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
@@ -857,6 +906,13 @@ _clawforge_lookup() {
     "after watch *") _clawforge_reply="--help" ;;
     "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawforge_reply="--help --json" ;;
     "after status *") _clawforge_reply="--help --json" ;;
     "after lock *") _clawforge_reply="--check --help --json" ;;
     "after cli *") _clawforge_reply="--help" ;;
@@ -874,6 +930,9 @@ _clawforge_lookup() {
     "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
     "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
+    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
     "after recipe *") _clawforge_reply="--help --json" ;;
@@ -916,14 +975,15 @@ _clawforge_lookup() {
     "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
     "valueOptions accept") _clawforge_reply="--set" ;;
     "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
     "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
     "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
     "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
     "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
     "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout" ;;
     "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions deploy") _clawforge_reply="--path" ;;
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
@@ -932,6 +992,10 @@ _clawforge_lookup() {
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawforge_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
     "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
@@ -1011,7 +1075,7 @@ autoload -Uz bashcompinit
 bashcompinit
 _clawforge_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
+      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
     "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -1031,12 +1095,13 @@ _clawforge_lookup() {
     "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "first accept") _clawforge_reply="--help --json --set --with-model" ;;
     "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--help --json --limit" ;;
+    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "first expose") _clawforge_reply="--help ssh status tailscale" ;;
     "first watch") _clawforge_reply="--help check install status test uninstall" ;;
     "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
     "first status") _clawforge_reply="--help --json" ;;
     "first lock") _clawforge_reply="--check --help --json" ;;
     "first cli") _clawforge_reply="--help" ;;
@@ -1046,7 +1111,7 @@ _clawforge_lookup() {
     "first cli-stop") _clawforge_reply="--help" ;;
     "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
     "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json diagnose import install list logs new onboard remove status verify" ;;
+    "first recipe") _clawforge_reply="--help --json diagnose import inspect install list logs migrate new onboard recover remove status verify" ;;
     "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
     "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
     "first mcp-serve") _clawforge_reply="--help" ;;
@@ -1057,7 +1122,7 @@ _clawforge_lookup() {
     "first version") _clawforge_reply="--help --json --verbose" ;;
     "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
     "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
     "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
     "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
     "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
@@ -1082,7 +1147,7 @@ _clawforge_lookup() {
     "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
     "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
     "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--help --json --limit" ;;
+    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
     "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
     "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
     "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
@@ -1096,6 +1161,13 @@ _clawforge_lookup() {
     "after watch *") _clawforge_reply="--help" ;;
     "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
     "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawforge_reply="--help --json" ;;
     "after status *") _clawforge_reply="--help --json" ;;
     "after lock *") _clawforge_reply="--check --help --json" ;;
     "after cli *") _clawforge_reply="--help" ;;
@@ -1113,6 +1185,9 @@ _clawforge_lookup() {
     "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
     "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
     "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
+    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
     "after recipe status") _clawforge_reply="--help" ;;
     "after recipe logs") _clawforge_reply="--help --tail" ;;
     "after recipe *") _clawforge_reply="--help --json" ;;
@@ -1155,14 +1230,15 @@ _clawforge_lookup() {
     "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
     "valueOptions accept") _clawforge_reply="--set" ;;
     "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit" ;;
+    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
     "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
     "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
     "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
     "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
     "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail" ;;
+    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout" ;;
     "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
     "valueOptions deploy") _clawforge_reply="--path" ;;
     "valueOptions mcp-setup") _clawforge_reply="--client" ;;
@@ -1171,6 +1247,10 @@ _clawforge_lookup() {
     "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
     "values pull--profile") _clawforge_reply="full migrate share" ;;
     "values verify--profile") _clawforge_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawforge_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
     "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
     "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
@@ -1244,7 +1324,7 @@ complete -F _clawforge_complete ./clawforge
 # clawforge PowerShell completion — generated from the command declarations.
 # Install: clawforge completion pwsh | Out-String | Invoke-Expression
 $clawforgeApp = $false
-$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v")
+$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v")
 $clawforgeFirst = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -1265,12 +1345,13 @@ $clawforgeFirst = [hashtable]::new(@{
   "apply" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
   "accept" = @("--help", "--json", "--set", "--with-model")
   "rollback" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
-  "operations" = @("--help", "--json", "--limit")
+  "operations" = @("--break-foreign-lock", "--break-lock", "--confirmed", "--help", "--json", "--limit", "--takeover-lock")
   "apply-config" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
   "expose" = @("--help", "ssh", "status", "tailscale")
   "watch" = @("--help", "check", "install", "status", "test", "uninstall")
   "incident" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
   "recover-env" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "memory" = @("--help", "--json", "configure", "index", "plan", "setup", "status", "verify")
   "status" = @("--help", "--json")
   "lock" = @("--check", "--help", "--json")
   "cli" = @("--help")
@@ -1280,7 +1361,7 @@ $clawforgeFirst = [hashtable]::new(@{
   "cli-stop" = @("--help")
   "configure-provider" = @("--break-foreign-lock", "--break-lock", "--env", "--force", "--help", "--json", "--provider")
   "secrets" = @("--apply", "--break-foreign-lock", "--dump", "--force", "--help", "--init-store", "--json", "--print-template", "--store", "--template")
-  "recipe" = @("--help", "--json", "diagnose", "import", "install", "list", "logs", "new", "onboard", "remove", "status", "verify")
+  "recipe" = @("--help", "--json", "diagnose", "import", "inspect", "install", "list", "logs", "migrate", "new", "onboard", "recover", "remove", "status", "verify")
   "provision-agent" = @("--break-foreign-lock", "--break-lock", "--help", "--json")
   "deploy" = @("--adopt", "--dry-run", "--help", "--json", "--no-bootstrap", "--path")
   "mcp-serve" = @("--help")
@@ -1291,7 +1372,7 @@ $clawforgeFirst = [hashtable]::new(@{
   "version" = @("--help", "--json", "--verbose")
   "completion" = @("--help", "bash", "pwsh", "zsh")
   "control-mcp" = @("--help")
-  "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
+  "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
 }, [System.StringComparer]::Ordinal)
 $clawforgeAfter = [hashtable]::new(@{
   "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
@@ -1318,7 +1399,7 @@ $clawforgeAfter = [hashtable]::new(@{
   "apply *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--expect", "--help", "--json", "--set")
   "accept *" = @("--help", "--json", "--set", "--with-model")
   "rollback *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--no-restart", "--operation", "--previous-set")
-  "operations *" = @("--help", "--json", "--limit")
+  "operations *" = @("--break-foreign-lock", "--break-lock", "--confirmed", "--help", "--json", "--limit", "--takeover-lock")
   "apply-config *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--dump", "--force", "--help", "--json")
   "expose ssh" = @("--help", "--local-port", "--run")
   "expose tailscale" = @("--apply", "--break-foreign-lock", "--break-lock", "--help")
@@ -1332,6 +1413,13 @@ $clawforgeAfter = [hashtable]::new(@{
   "watch *" = @("--help")
   "incident *" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--json", "--keep-exposure", "--tail")
   "recover-env *" = @("--adopt-runtime", "--dry-run", "--help", "--json")
+  "memory plan" = @("--backend", "--env", "--help", "--json", "--mode", "--model", "--model-checksum", "--model-path", "--model-source", "--model-version", "--provider")
+  "memory configure" = @("--backend", "--env", "--help", "--json", "--mode", "--model", "--model-checksum", "--model-path", "--model-source", "--model-version", "--provider")
+  "memory setup" = @("--agent", "--all-agents", "--allow-download", "--allow-install", "--help", "--json", "--model-checksum", "--model-max-bytes", "--model-source", "--model-version", "--plugin-version")
+  "memory status" = @("--allow-download", "--allow-spend", "--deep", "--help", "--json")
+  "memory index" = @("--agent", "--all-agents", "--allow-download", "--allow-spend", "--help", "--json", "--model-checksum", "--model-source", "--model-version")
+  "memory verify" = @("--agent", "--all-agents", "--allow-download", "--allow-spend", "--help", "--json", "--model-checksum", "--model-source", "--model-version")
+  "memory *" = @("--help", "--json")
   "status *" = @("--help", "--json")
   "lock *" = @("--check", "--help", "--json")
   "cli *" = @("--help")
@@ -1349,6 +1437,9 @@ $clawforgeAfter = [hashtable]::new(@{
   "recipe diagnose" = @("--break-foreign-lock", "--break-lock", "--help", "--tail")
   "recipe install" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--force-disabled", "--help")
   "recipe remove" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--volumes")
+  "recipe inspect" = @("--help", "--json", "--tail")
+  "recipe recover" = @("--break-foreign-lock", "--break-lock", "--build", "--dry-run", "--help", "--pull", "--reconcile-consumer", "--service")
+  "recipe migrate" = @("--break-foreign-lock", "--break-lock", "--dry-run", "--help", "--helper-image", "--shutdown-timeout")
   "recipe status" = @("--help")
   "recipe logs" = @("--help", "--tail")
   "recipe *" = @("--help", "--json")
@@ -1397,14 +1488,15 @@ $clawforgeValueOptions = [hashtable]::new(@{
   "apply" = @("--set", "--expect", "--break-foreign-lock")
   "accept" = @("--set")
   "rollback" = @("--operation", "--break-foreign-lock")
-  "operations" = @("--limit")
+  "operations" = @("--limit", "--break-foreign-lock")
   "apply-config" = @("--break-foreign-lock")
   "expose" = @("--local-port", "--break-foreign-lock")
   "watch" = @("--interval", "--break-foreign-lock")
   "incident" = @("--tail", "--break-foreign-lock")
+  "memory" = @("--mode", "--backend", "--provider", "--model", "--env", "--model-path", "--model-checksum", "--model-source", "--model-version", "--plugin-version", "--model-max-bytes", "--agent")
   "configure-provider" = @("--provider", "--env", "--break-foreign-lock")
   "secrets" = @("--store", "--break-foreign-lock")
-  "recipe" = @("--break-foreign-lock", "--tail")
+  "recipe" = @("--break-foreign-lock", "--tail", "--service", "--helper-image", "--shutdown-timeout")
   "provision-agent" = @("--break-foreign-lock")
   "deploy" = @("--path")
   "mcp-setup" = @("--client")
@@ -1415,6 +1507,10 @@ $clawforgeValues = [hashtable]::new(@{
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
   "verify--profile" = @("full", "migrate", "share")
+  "memoryplan--mode" = @("embeddings", "keyword", "disabled")
+  "memoryconfigure--mode" = @("embeddings", "keyword", "disabled")
+  "memoryplan--backend" = @("builtin")
+  "memoryconfigure--backend" = @("builtin")
   "mcp-setup--client" = @("claude", "codex", "both")
   "setforget--kind" = @("agent", "mcp-server", "cron-job")
 }, [System.StringComparer]::Ordinal)

@@ -29,7 +29,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { TRANSPORT_SENTINEL } from "#checks/kit/deployment-fixture.ts";
 import { withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import type { spawnLocal } from "#framework/runtime/transport/transport.ts";
-import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, gateUnits, invalidSamplesOf, runCase, runNamed, stages, sweepOn, sweepUnits, units } from "./property-sweep.ts";
+import { app, controlArtifact, controlFlags, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, gateUnits, invalidSamplesOf, runCase, runNamed, stages, sweepOn, sweepUnits, units } from "./property-sweep.ts";
 let cases = 0;
 {
   const unpacked = await unpackArtifactVerified(controlArtifact);
@@ -144,7 +144,7 @@ for (const unit of sweepUnits) {
         return argument.kind === "variadic" ? Array.from({ length: Array.isArray(value) ? value.length : 1 }, () => real) : argument.kind === "positional" ? [real] : [`--${argument.name}`, real];
       }
       return argument.kind === "positional" || argument.kind === "variadic" ? (Array.isArray(value) ? value : [value]) : [`--${argument.name}`, value as string];
-    })];
+    }), ...controlFlags(unit).map((flag) => `--${flag}`)];
     const terminal = await runCase(unit.command, argv, "terminal", sweepOn(unit));
     cases += 1;
     stages.control(name, terminal.execution.stage);

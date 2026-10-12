@@ -5,10 +5,20 @@
 // would change. That is the whole point of the indirection — it is checked by grepping the
 // command files for "docker" and "compose".
 
-import type { RecipeMigrationBackup } from "../service/recipe.ts";
 import { die } from "../core/io/log.ts";
 import type { ExecResult } from "./transport/transport.ts";
 import type { Context } from "../core/context.ts";
+
+/** What a recipe author guarantees about a cold migration backup (declared, never inferred). */
+interface RecipeMigrationStorageGuarantee {
+  readonly persistentState: "all-in-declared-named-volumes-and-bind-mounts";
+  readonly restore: "application-safe-including-compensation";
+}
+export type RecipeMigrationBackup = RecipeMigrationStorageGuarantee & (
+  | { readonly consistency: "application-cold-safe"; readonly cleanShutdown: "flushes-all-writers" }
+  | { readonly consistency: "application-verified-cold"; readonly cleanShutdown: "verified-by-post-stop-hook";
+      readonly verification: "migration-verify.ts" }
+);
 
 /** Thrown by `execInHelper` when the helper container is not up, so callers can fall back
  *  to `runOneOff` without mistaking it for the command itself having failed. */

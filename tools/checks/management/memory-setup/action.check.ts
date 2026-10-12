@@ -41,7 +41,7 @@ try {
   const badSource = argv.map((value) => value === source ? "https://unapproved.invalid/model.gguf" : value);
   const cases = [
     { label: "nonlocal", ops: configure([], "embeddings", "openai", "remote-model"), args: argv },
-    { label: "invalid source", ops: local, args: badSource },
+    { label: "invalid source", ops: local, args: badSource, stage: "parse" },
     { label: "missing install consent", ops: local, args: argv.filter((value) => value !== "--allow-install") },
     { label: "missing download consent", ops: local, args: argv.filter((value) => value !== "--allow-download") },
     { label: "missing both consents", ops: local, args: argv.filter((value) => !["--allow-install", "--allow-download"].includes(value)) },
@@ -52,7 +52,7 @@ try {
     await writeFile(declarationPath, before);
     resetEnvReads();
     const result = await executeCommand(app, "memory", { kind: "argv", argv: kase.args }, { surface: "mcp", confirmed: true, transport: fixture.transport() });
-    check(`setup ${kase.label} refuses in prepare`, result.stage, "prepare");
+    check(`setup ${kase.label} refuses before the context`, result.stage, kase.stage ?? "prepare");
     checkTrue(`setup ${kase.label} typed refusal`, result.error instanceof ArgumentError);
     check(`setup ${kase.label} zero contacts`, fixture.contacts(), []);
     check(`setup ${kase.label} zero env reads`, envReads(), 0);

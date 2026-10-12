@@ -228,21 +228,41 @@ function withFileOps(transport: Transport): Transport {
 }
 
 {
-  const execOptions: { timeoutMs?: number }[] = [];
+  // A call with a deadline runs under the in-container supervisor, which proves the process
+  // group is gone by printing a nonce-bound receipt on stderr; the stub plays that supervisor.
+  const calls: { args: string[]; timeoutMs?: number }[] = [];
+  let receipt = true;
   const transport = {
     description: "stub",
-    async exec(_command: string, _args: string[], options: { timeoutMs?: number }): Promise<ExecResult> {
-      execOptions.push({ timeoutMs: options?.timeoutMs });
-      if (_args[0] === "compose") return { code: 0, stdout: "abc123\n", stderr: "" };
-      return { code: 0, stdout: "ok\n", stderr: "" };
+    async exec(_command: string, args: string[], options: { timeoutMs?: number }): Promise<ExecResult> {
+      calls.push({ args, timeoutMs: options?.timeoutMs });
+      if (args[0] === "compose") return { code: 0, stdout: "abc123\n", stderr: "" };
+      // node -e <script> <budget ms> <nonce> <command...>
+      const at = args.indexOf("-e");
+      if (at < 0) return { code: 0, stdout: "ok\n", stderr: "" };
+      const stderr = receipt ? `\nCFHELPER:${args[at + 3]}:${JSON.stringify({ kind: "completed", code: 0 })}\n` : "";
+      return { code: 0, stdout: "ok\n", stderr };
     },
   } as unknown as Transport;
   const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
+  const probe = ["-fsS", "http://127.0.0.1:18789/healthz"];
 
-  await runtime.execCommand!("cli-helper", "curl", ["-fsS", "http://127.0.0.1:18789/healthz"], { timeoutMs: 4321 });
-  check("execCommand forwards a deadline to the transport", execOptions.at(-1)?.timeoutMs, 4321);
-  await runtime.execCommand!("cli-helper", "curl", ["-fsS", "http://127.0.0.1:18789/healthz"]);
-  check("execCommand without a deadline forwards none", execOptions.at(-1)?.timeoutMs, undefined);
+  await runtime.execCommand!("cli-helper", "curl", probe, { timeoutMs: 4321 });
+  const supervised = calls.at(-1)!;
+  const at = supervised.args.indexOf("-e");
+  const budget = Number(supervised.args[at + 2]);
+  check("execCommand runs a deadline call under the supervisor", at >= 0, true);
+  check("the supervisor gets the remaining budget of the deadline", budget > 0 && budget <= 4321, true);
+  check("the supervisor wraps the original command", supervised.args.slice(at + 4), ["curl", ...probe]);
+  check("execCommand forwards the budget plus a ten-second supervisor grace to the transport", supervised.timeoutMs, budget + 10_000);
+  await runtime.execCommand!("cli-helper", "curl", probe);
+  check("execCommand without a deadline forwards none", calls.at(-1)?.timeoutMs, undefined);
+  check("execCommand without a deadline is not supervised", calls.at(-1)?.args.includes("-e"), false);
+
+  receipt = false;
+  let refused: unknown;
+  try { await runtime.execCommand!("cli-helper", "curl", probe, { timeoutMs: 4321 }); } catch (error) { refused = error; }
+  check("a deadline call without the supervisor receipt is quiescence-unconfirmed", (refused as { code?: string } | undefined)?.code, "HELPER_QUIESCENCE");
 }
 
 // --- cli(): tries the helper first, falls back only on HelperNotRunning -----------------

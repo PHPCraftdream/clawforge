@@ -7,10 +7,11 @@ import { emit } from "#src/core/io/output.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { declaration, configure, declaredMemory, modeOf, MemoryError } from "./declaration.ts";
 import { SETUP } from "./setup/action.ts";
+import { sha256 } from "./values.ts";
 import { budget, consume, rawStatus, safeStatus, type Consent } from "./consumer.ts";
 const JSON_ARGUMENT = { name: "json", description: "Emit structured outcome", kind: "flag" } as const;
 const MODEL = [
-  { name: "model-checksum", description: "Approved GGUF SHA256", kind: "option", valueName: "sha256", value: kinds.text("a SHA256 checksum") },
+  { name: "model-checksum", description: "Approved GGUF SHA256", kind: "option", valueName: "sha256", value: sha256() },
   { name: "model-source", summary: "Approved source", description: "Approved model source", kind: "option", valueName: "source", value: kinds.text("an approved model source") },
   { name: "model-version", summary: "Approved revision", description: "Approved model version", kind: "option", valueName: "version", value: kinds.text("an approved model version") },
 ] as const;
@@ -19,7 +20,7 @@ const CONSENT = [
   { name: "allow-download", summary: "Probe downloads", description: "Consent to provider probe downloads", kind: "flag" },
 ] as const;
 const CONFIG = [
-  { name: "mode", description: "Intentional memory mode", kind: "option", valueName: "mode", required: true, value: kinds.choice(["disabled", "keyword", "embeddings"] as const) },
+  { name: "mode", description: "Intentional memory mode", kind: "option", valueName: "mode", required: true, value: kinds.choice(["embeddings", "keyword", "disabled"] as const) },
   { name: "backend", description: "Explicit backend", kind: "option", valueName: "backend", required: true, value: kinds.choice(["builtin"] as const) },
   { name: "provider", description: "Explicit embedding provider", kind: "option", valueName: "id", value: kinds.providerId() },
   { name: "model", description: "Explicit embedding model", kind: "option", valueName: "model", value: kinds.text("an embedding model") },
@@ -50,7 +51,6 @@ async function prepareConfig(call: PrepareCall<Values<typeof CONFIG>>, local: Lo
   if (v.mode !== "embeddings" && (v.provider || v.model || v.env || v["model-path"])) return call.refuse("mode", "keyword/disabled refuse embedding options");
   if (v.mode === "embeddings" && (!v.provider || v.provider === "none" || (v.provider !== "local" && !v.model))) return call.refuse("provider", "embeddings require provider and model");
   if (v.provider === "local" && (!v["model-path"] || !v["model-checksum"] || !v["model-source"] || !v["model-version"])) return call.refuse("model-path", "local requires existing managed path and approved checksum/source/version");
-  if (v["model-checksum"] && !/^[a-f0-9]{64}$/.test(v["model-checksum"])) return call.refuse("model-checksum", "requires lower-case SHA256");
   if (v["model-path"] && (!posix.isAbsolute(v["model-path"]) || posix.normalize(v["model-path"]) !== v["model-path"] || v["model-path"].includes("\\") || !v["model-path"].endsWith(".gguf"))) return call.refuse("model-path", "requires absolute persistent GGUF path");
   if (v.provider !== "local" && (v["model-path"] || v["model-checksum"] || v["model-source"] || v["model-version"])) return call.refuse("model-path", "local model approvals only apply to local provider");
   if (v.provider === "local" && v.env) return call.refuse("env", "local uses no remote credential");
@@ -59,9 +59,11 @@ async function prepareConfig(call: PrepareCall<Values<typeof CONFIG>>, local: Lo
   const d = await localDeclaration(local), next = configure(d.ops, v.mode, v.provider, model, v.env, v["model-path"]);
   return { ...v, model, ...d, next };
 }
-const plan = defineAction({ summary: "Preview memory leaf declarations locally", effect: "read", needs: "local", arguments: CONFIG, prepare: prepareConfig,
+// A remote credential reference and local model approvals describe different providers.
+const CONFIG_RULES = [{ rule: "conflicts", name: "env", with: ["model-path", "model-checksum", "model-source", "model-version"] }] as const;
+const plan = defineAction({ summary: "Preview memory leaf declarations locally", effect: "read", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
   async run(_local, p) { emit(`${JSON.stringify({ ok: true, changed: false, mode: p.mode, owned: p.next.filter((op) => op.path.startsWith("agents.defaults.memorySearch.") || op.path === "memory.backend").map((op) => op.path), targetPreflightDeferred: p.provider === "local" })}\n`); } });
-const configureAction = defineAction({ summary: "Persist canonical memory leaf declarations", effect: "destroy", needs: "local", arguments: CONFIG, prepare: prepareConfig,
+const configureAction = defineAction({ summary: "Persist canonical memory leaf declarations", effect: "destroy", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
   async run(_local, p) { const after = `${JSON.stringify(p.next, null, 2)}\n`, changed = after !== p.before; if (changed) await atomicDeclaration(p.path, p.before, after);
     emit(`${JSON.stringify({ ok: true, changed, mode: p.mode, applied: false, next: "Review desired leaf batch, explicitly apply-config, then restart; target local-model prerequisites are checked before indexing." })}\n`); } });
 const statusArgs = [JSON_ARGUMENT, { name: "deep", description: "Explicit provider readiness probe", kind: "flag", effect: "destroy" }, ...CONSENT] as const;
@@ -78,12 +80,12 @@ const status = defineAction({ summary: "Project safe per-agent memory metadata",
   } });
 function consumerAction(verify: boolean) {
   return defineAction({ summary: verify ? "Prove owned witness consumer search" : "Index selected declared memory agents", effect: "destroy", arguments: SELECT,
-    rules: [{ rule: "oneOf", groups: [["agent"], ["all-agents"]], required: true }, { rule: "requires", name: "allow-spend", with: ["allow-download"] }, { rule: "requires", name: "allow-download", with: ["allow-spend"] }],
+    rules: [{ rule: "requires", name: "allow-spend", with: ["allow-download"] }, { rule: "requires", name: "allow-download", with: ["allow-spend"] }, { rule: "oneOf", groups: [["agent"], ["all-agents"]], required: true }],
     async prepare(call, local) { const d = await localDeclaration(local), config = declaredMemory(d.ops); modeOf(config);
       if (!d.ops.some((op) => op.path === "memory.backend" && op.value === "builtin")) return call.refuse("agent", "requires explicit builtin declaration");
       const v = call.values;
       if (modeOf(config) !== "embeddings" && (v["allow-spend"] || v["allow-download"] || v["model-checksum"] || v["model-source"] || v["model-version"])) return call.refuse("agent", "keyword/disabled refuse embedding consent and model approvals");
-      if (modeOf(config) === "embeddings" && config.provider === "local" && (!v["model-checksum"] || !/^[a-f0-9]{64}$/.test(v["model-checksum"]) || !v["model-source"] || !v["model-version"])) return call.refuse("model-checksum", "local indexing requires approved SHA256/source/version before target contact");
+      if (modeOf(config) === "embeddings" && config.provider === "local" && (!v["model-checksum"] || !v["model-source"] || !v["model-version"])) return call.refuse("model-checksum", "local indexing requires approved SHA256/source/version before target contact");
       if (config.provider !== "local" && (v["model-checksum"] || v["model-source"] || v["model-version"])) return call.refuse("model-checksum", "model approvals apply only to local provider");
       return { ...v, config }; },
     async run(ctx, p) { const work = () => consume(ctx, p.config, p.agent, p["all-agents"], verify, consent(p));

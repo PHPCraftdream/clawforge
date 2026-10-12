@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { Context } from "#src/core/context.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import type { MigrationBackupEvidence, MigrationBackupVerification, StackMigrateOptions } from "#src/runtime/runtime.ts";
-import { importHookModule } from "../hook-runtime.ts";
+import { importHookModule } from "#src/commands/management/recipe/hook-runtime.ts";
 
 /** Construction is inert: even module evaluation waits until the executor has stopped source.
  * Module top-level code and verifier MUST be read-only. Import/call deadlines do not cancel

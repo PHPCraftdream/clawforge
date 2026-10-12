@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* Memory setup validates the model source, revision, SHA256 and plugin version when the arguments
+  are parsed, and plan/configure refuse `--env` together with local model options before any read;
+  the declared package types no longer require `@types/node` in a consuming project.
 * Held-value prose analysis preserves callable scopes, conditional returns and property/getter
   flows, while treating array length as metadata rather than prose.
 * Own-product assertions follow lexical bindings, transitive writes and closure captures;

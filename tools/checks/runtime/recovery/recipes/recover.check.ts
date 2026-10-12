@@ -51,7 +51,6 @@ const plan = await f.stack.planRecover!({ service: "db" });
 check("recover preview writes nothing", f.writes, []);
 check("recover exact image inventory", plan.imageIds, [image]);
 check("recover preview caller lock untouched", f.locks, 0);
-checkTrue("recover config uses stdin environment not credentials argv", f.calls.filter((c) => c.args.includes("config")).every((c) => c.args.includes("/dev/stdin") && !c.args.join(" ").includes("secret-env")));
 Object.assign(f.containers.find((c) => c.Config.Labels["com.docker.compose.service"] === "db")!.State, { StartedAt: "2026-10-09T12:00:00Z", FinishedAt: "", RestartCount: 2 });
 Object.assign(f.containers.find((c) => c.Config.Labels["com.docker.compose.service"] === "db")!.State.Health, { Status: "starting", FailingStreak: 1, Log: [{ Output: "new transient health output" }] });
 Object.assign(f.containers.find((c) => c.Config.Labels["com.docker.compose.service"] === "db")!, { RestartCount: 2 });

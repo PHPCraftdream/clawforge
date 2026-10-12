@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import { locksDir, type Settings } from "../../../core/env.ts";
 import type { PathBridge } from "../../../core/paths.ts";
 import type { ExecResult, Transport } from "../../transport/transport.ts";
+const CONNECTION_ENV = new Set(["PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK"]);
 
 export class RecipeReadError extends Error {
   readonly causeKind: "transport" | "malformed";
@@ -92,7 +93,7 @@ check_directory() {
   mode=$(stat -c %a -- "$1")
   case "$mode" in ''|*[!0-7]*) exit 20;; esac
   test "$owner" = "$uid" || test "$owner" = 0
-  test $((0$mode & 0022)) -eq 0
+  test $((0$mode & 0022)) -eq 0 || { test "$owner" = 0; test $((0$mode & 01000)) -ne 0; }
 }
 check_directory /
 ancestor=
@@ -170,18 +171,14 @@ export interface StackIO {
   legacy: readonly string[];
   getSettings: () => Settings;
   file: () => Promise<string>;
-  run: (args: string[], input?: string, timeoutMs?: number) => Promise<ExecResult>;
+  run: (args: string[], environment?: Readonly<Record<string, string>>, timeoutMs?: number) => Promise<ExecResult>;
   config: (namespace?: string) => Promise<Record<string, unknown>>;
   sanitize: (value: string) => string;
 }
 export async function readCompose(io: Pick<StackIO, "file" | "getSettings" | "run" | "project">, args: string[], namespace = io.project): Promise<ExecResult> {
   const target = await io.file();
-  const env = Object.entries(io.getSettings().env).map(([key, value]) => {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || Array.from(value).some((char) => [0, 10, 13].includes(char.charCodeAt(0)))) throw new Error("recipe environment cannot be represented safely");
-    return `${key}='${value.replaceAll("'", "\\'")}'`;
-  }).join("\n") + "\n";
-  return io.run(["compose", "--env-file", "/dev/stdin", "--project-name", namespace,
-    "--file", target, "--project-directory", target.slice(0, target.lastIndexOf("/")), ...args], env);
+  return io.run(["compose", "--env-file", "/dev/null", "--project-name", namespace,
+    "--file", target, "--project-directory", target.slice(0, target.lastIndexOf("/")), ...args], io.getSettings().env);
 }
 export function createIO(transport: Transport, paths: PathBridge, getSettings: () => Settings,
   project: string, definitionPath: string, legacy: readonly string[]): StackIO {
@@ -191,17 +188,22 @@ export function createIO(transport: Transport, paths: PathBridge, getSettings: (
       throw new RecipeReadError("malformed", "definition path");
     return target;
   };
-  const run = async (args: string[], input?: string, timeoutMs = 120_000): Promise<ExecResult> => {
+  const run = async (args: string[], environment?: Readonly<Record<string, string>>, timeoutMs = 120_000): Promise<ExecResult> => {
     const deadline = Date.now() + remainingTimeout(undefined, timeoutMs);
+    const input = environment === undefined ? undefined : Object.entries(environment).map(([key, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || Array.from(value).some((char) => [0, 10, 13].includes(char.charCodeAt(0))))
+        throw new Error("recipe environment cannot be represented safely");
+      return CONNECTION_ENV.has(key) ? "" : `export ${key}='${value.replaceAll("'", "'\\''")}'`;
+    }).join("\n") + '\nexec docker "$@"\n';
     let result: ExecResult;
     try {
       // Clear target-side ambient interpolation variables too (SSH/WSL inheritance is
       // not described by the operator's process.env). Preserve Docker connection only.
-      const launch = 'exec env -i PATH="$PATH" HOME="$HOME" DOCKER_HOST="${DOCKER_HOST-}" DOCKER_CONTEXT="${DOCKER_CONTEXT-}" DOCKER_CONFIG="${DOCKER_CONFIG-}" DOCKER_TLS_VERIFY="${DOCKER_TLS_VERIFY-}" DOCKER_CERT_PATH="${DOCKER_CERT_PATH-}" SSH_AUTH_SOCK="${SSH_AUTH_SOCK-}" docker "$@"';
+      const launch = 'exec env -i PATH="$PATH" HOME="$HOME" DOCKER_HOST="${DOCKER_HOST-}" DOCKER_CONTEXT="${DOCKER_CONTEXT-}" DOCKER_CONFIG="${DOCKER_CONFIG-}" DOCKER_TLS_VERIFY="${DOCKER_TLS_VERIFY-}" DOCKER_CERT_PATH="${DOCKER_CERT_PATH-}" SSH_AUTH_SOCK="${SSH_AUTH_SOCK-}" ' + (input === undefined ? 'docker "$@"' : 'sh -s -- "$@"');
       result = await transport.exec("sh", ["-c", launch, "recipe-docker", ...args], {
         allowFailure: true, stream: false, timeoutMs: remainingTimeout(deadline, timeoutMs),
         ...(input === undefined ? {} : { input }), unsetEnv: [...new Set([...Object.keys(process.env), ...Object.keys(getSettings().env)])]
-          .filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !["PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK", "TMPDIR"].includes(key)),
+          .filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !CONNECTION_ENV.has(key) && key !== "TMPDIR"),
       });
     } catch { throw new RecipeReadError("transport", "Docker operation failed"); }
     checkDeadline(deadline);

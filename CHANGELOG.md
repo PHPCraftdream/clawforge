@@ -20,6 +20,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Recipe inspect/recover/migrate expose readonly diagnostics, explicit endpoint ownership and
   selective recovery, with proven namespaces, consent and bounded application-owned cold
   migration contracts. Native staging and PAX archives retain independently checked metadata.
+* Native recipe planning no longer reopens `/dev/stdin` for Compose environment values.
+  Quoted stdin preserves credentials without changing target Docker connection settings;
+  safe root-owned sticky staging ancestors support standard selective recovery.
 * Retired the refactor-only frozen CLI argument count; new arguments remain covered by
   typed binding, effect/confirmation and refusal-boundary contract checks.
 * Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes

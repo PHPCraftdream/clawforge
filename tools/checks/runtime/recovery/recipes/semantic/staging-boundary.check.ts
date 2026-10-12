@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, lstat, chmod, chown, symlink, link, rename, readlink, readdir, realpath, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { posix, join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { type Settings } from "#framework/core/env.ts";
 import { LocalTransport, type ExecOptions, type ExecResult } from "#framework/runtime/transport/transport.ts";
@@ -11,7 +12,7 @@ import { RecipeReadError, stagingLayout, verifyStaging, prepareComposeDocument, 
 
 // Opt-in native shell boundary only; no Docker, mount or concurrency proof.
 // Requires isolated Linux root; missing capabilities fail after opt-in.
-// Safe /var/lib ancestry avoids writable /tmp without modifying existing dirs.
+// Owned native fixtures only; no existing directory permissions change.
 await requires("recipe-staging-boundary", "recipe native staging boundary: authorized isolated root and nonroot shell", nativeBoundary);
 finish("recipe native staging boundary");
 
@@ -80,6 +81,27 @@ async function nativeBoundary(): Promise<void> {
       }
     }
     const transport = new NativeStagingTransport();
+    const temporary = await mkdtemp(join(tmpdir(), "recipe-staging-sticky-"));
+    try {
+      await chmod(temporary, 0o755);
+      const home = join(temporary, "home");
+      await ownedDirectory(home, 0o700);
+      const layout: ComposeStaging = { home, prefix: `${home}/operation-`, excluded: [] };
+      const before = await lstat(home, { bigint: true });
+      check("root-owned sticky ancestor permits native readonly planning", await verifyStaging({ transport }, layout), "verified");
+      const after = await lstat(home, { bigint: true });
+      check("planning preserves private home identity and permissions", [after.dev, after.ino, after.mode, after.uid, after.gid],
+        [before.dev, before.ino, before.mode, before.uid, before.gid]);
+      for (const owner of [0, 65534]) {
+        await chown(temporary, owner, owner);
+        await chmod(temporary, owner === 0 ? 0o777 : 0o1777);
+        let error: unknown;
+        try { await verifyStaging({ transport }, layout); } catch (caught) { error = caught; }
+        checkTrue("nonsticky or nonroot-owned shared ancestor refuses native planning", error instanceof RecipeReadError);
+        const retained = await lstat(temporary);
+        check("refusal does not repair shared ancestor", [retained.uid, retained.mode & 0o7777], [owner, owner === 0 ? 0o777 : 0o1777]);
+      }
+    } finally { await rm(temporary, { recursive: true, force: true }); }
     let sequence = 0;
     const document = { services: { service: { image: "fixture:unused", volumes: [] } } };
     const bytes = '{"services":{"service":{"image":"fixture:unused"}}}';

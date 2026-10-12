@@ -67,6 +67,12 @@ runtime planning happens before the executor enters the caller's instance lock.
 Recovery checks namespace ownership before resolving Compose configuration, so a broken
 configuration cannot hide the required legacy cutover or authorize automatic adoption.
 
+Compose inspection receives selected interpolation values as shell-quoted stdin assignments
+inside an isolated child environment. Secrets do not enter argv or a temporary env file,
+and Compose does not reopen `/dev/stdin`; actual target Docker connection settings remain
+unchanged. Native staging accepts root-owned sticky ancestors such as `/tmp`, but refuses
+nonsticky shared ancestors and nonroot-owned writable shared directories.
+
 Executable resolved Compose documents live in a unique target-native directory under
 `<dataDir>-locks`, not beside a Windows-mounted recipe source. The operation directory
 must be owner-only (700); its regular file must be owner-only (600), single-linked and

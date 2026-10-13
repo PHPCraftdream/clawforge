@@ -140,6 +140,35 @@ declaration equal to or above a declared mount destination refuses migration. Se
 [executor notes](../internal/recipe-migration-executor.md#writable-layer-inspection-and-ephemeralpaths)
 for the matching and refusal rules.
 
+### Reconcile helpers (`@clawforge/framework/recipe-kit`)
+
+For converging an owned path onto a desired set of members, the recipe-kit `reconcile`
+module exposes four helpers (worked example in the
+[cookbook](recipes-cookbook.md#reconcile-an-owned-set)):
+
+- `reconcilePlanView(plan, options?)` — read-only redacted view of a plan: entry keys
+  pseudonymized (or stable `#<index>` markers without a pseudonym context), values reduced
+  to short fingerprints, plus the numeric summary. It leaks no raw key or value, so it is
+  the right shape for reporting, logging and dry-run output. The raw full-fidelity planner
+  is internal: it is not exported from the entry, and a hook gets its plan from
+  `reconcileApply`'s guarded flow.
+- `reconcileApply(source, options)` — guards ownership, protected segments and removal
+  bounds, then applies the desired set as one batch patch with a durable journal intent
+  before and a result after; dry-run plans and reports without writing.
+- `appConfigAccessor(ctx, path)` — default accessor behind `reconcileApply`: reads through
+  `config get <path> --json`, writes through `appConfigPatch`; supply a fake in checks.
+- `reconcilePendingIntents(journal)` — reports pending journal intents (the crash gap); a
+  precomputed plan is refused while any exist, forcing a fresh computation.
+
+Removals are bounded by `RECONCILE_MAX_REMOVED_COUNT` (100) and
+`RECONCILE_MAX_REMOVED_FRACTION` (0.5); the bounds are not caller-raisable —
+`maxRemovedCount`/`maxRemovedFraction` only lower them — and only the exported
+`RECONCILE_LARGE_REMOVAL_CONSENT` symbol lifts the defaults. Protected segments
+(`owners`, `approvers`, `credentials`, extended by `protectedPaths` — extend only, never
+shrink) are enforced across plan keys and the nested keys of added/changed values. Keys present without recorded provenance surface as overlap — adopted
+only with `adoptOverlaps: true`, which keeps their current values and records provenance,
+never overwrites.
+
 ### Recipe actions
 
 A recipe can declare operator-facing actions in `recipe.json`, each backed by a file inside

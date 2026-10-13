@@ -52,6 +52,27 @@ The `@clawforge/framework/recipe-kit` helpers are stdin-only by construction:
   auth, proxies and the URL itself never appear in argv, are registered for redaction, and
   responses are capped, sanitized and optionally header-filtered.
 
+For converging an owned config path onto a desired set, the `reconcile` module of
+`@clawforge/framework/recipe-kit` provides four more helpers, covered in
+[Reconcile an owned set](#reconcile-an-owned-set):
+
+- `reconcilePlanView(plan, options?)` is a read-only redacted view of a plan: entry keys
+  are pseudonymized (or stable `#<index>` markers without a pseudonym context) and values
+  are reduced to short fingerprints, alongside the numeric summary. It never exposes a raw
+  key or value, which makes it the right shape for reporting, logging and dry-run output.
+  The full-fidelity planner behind it is internal and not exported from the entry; a hook
+  gets its plan from `reconcileApply`'s guarded flow.
+- `reconcileApply(source, options)` recomputes the plan against the live projection, guards
+  ownership, protected segments and removal bounds, then applies one batch patch with a
+  durable intent before and a result after. `source` is the desired entries or a
+  precomputed plan; a plan with a pending intent from a crash gap is refused — only a fresh
+  computation may proceed.
+- `appConfigAccessor(ctx, path)` is the default accessor behind `reconcileApply`: reads the
+  projection through `config get <path> --json` and writes through `appConfigPatch`.
+  Supply a fake implementing `read()`/`patch()` in check files.
+- `reconcilePendingIntents(journal)` reports the crash gap — pending journal intents — so a
+  hook can surface it before deciding to apply.
+
 For arbitrary commands, `execWithSecrets(ctx, command, args, { env })` from
 `@clawforge/framework/private-config` runs a target command with secret environment values
 that never appear in any process's argv: the values are written once to an owner-only
@@ -90,6 +111,91 @@ reproducible path: the entrypoint migrates, the hook then safely consumes the ne
 Never edit the migrated config from the host in place; the reproducible source is the
 recipe, and changing a bind-mounted file does not reload a running process — see
 [Durable repair and verification](recipes.md#durable-repair-and-verification).
+
+## Reconcile an owned set
+
+When a hook must keep an owned config path converged onto a desired set of members —
+whatever the domain — use the reconcile primitive instead of a hand-rolled read-modify-write.
+The generic shape:
+
+```ts
+import { reconcileApply } from "@clawforge/framework/recipe-kit";
+
+const OWNED_PATH = "plugins.widget.entries";
+
+const desired = [
+  { key: "alpha", value: { weight: 1 } },
+  { key: "beta", value: { weight: 2 } },
+];
+```
+
+There is no public planning step: the hook hands the desired entries to `reconcileApply`,
+which computes the full-fidelity plan internally inside its guarded flow. For reporting,
+logging or dry-run output, `reconcilePlanView` renders a pure redacted view of a plan —
+classification only, pseudonym-or-index keys, keyed fingerprints, a numeric summary.
+Every result `reconcileApply` returns (dry-run, no-op, applied, refused, failed) carries
+the same redacted view of the plan it computed in its `view` field, so callers never need
+the raw plan for reporting. View entry keys are pseudonym tokens when a pseudonym context
+is supplied and `#<index>` markers otherwise. Fingerprints exist only when derived from a
+key — an explicit `fingerprintKey`, or the deployment's pseudonym key via the context
+(keyed HMAC, unlinkable without the key). There is no unkeyed digest: a view without any
+key omits the `fingerprint` field entirely, and a read-only view (`readOnlyKey: true`,
+used by dry runs) whose key file does not yet exist reports the literal `"unavailable"`,
+index keys and `keyed: false` — it creates nothing.
+`reconcileApply` RETURNS a result for every expected outcome instead of throwing: a stable
+`status` ("applied" | "no-op" | "dry-run" | "refused" | "failed"), a content-free `reason`
+code, the numeric `summary`, and `view` whenever a plan was computed (the verification
+mismatch carries the already-computed view). `view` is absent only when no plan ever
+existed — a source failure or guard refusal before planning. `RecipeKitRefusal` is thrown
+only for programmer errors: invalid options, paths or journal.
+Removal candidates are provenance-backed keys only — a key the desired set no longer lists
+but no earlier reconcile recorded is never removed. Keys present in the config and the
+desired set without recorded provenance surface as `overlap`, never as silent adoption.
+After a crash gap, pending intents are resolved before planning: a pending member whose
+value still matches the recorded fingerprint is recovered as provenance for the same run's
+plan — it reports as `unchanged` (or is removed in that same run, consent permitting), and
+absent or diverged pending members are dropped without promotion.
+
+Dry-run is free: pass the desired entries to `reconcileApply` while `ctx.dryRun` is set and
+it plans, guards and reports the summary without writing anything at all — no patch, no
+journal record, no provenance, and (via the read-only key path) no pseudonym key file or
+parent directories.
+
+```ts
+const result = await reconcileApply(desired, {
+  path: OWNED_PATH,
+  recipe: recipe.name,
+  owners: recipeOwnsCatalog,
+  journal: {
+    ctx, journalPath: `${dataDir}/vault/journal.jsonl`,
+    statePath: `${dataDir}/vault/reconcile-state.json`,
+    pseudonymDir: `${dataDir}/vault/pseudonym-key.json`,
+    recipe: recipe.name, namespace: "widget-entry",
+  },
+  adoptOverlaps: true,
+  reason: "converge widget entries",
+});
+```
+
+`reconcileApply` always recomputes the plan against the current projection — it never
+replays a stored plan after a crash gap. Before the patch it records a durable intent in the
+journal and afterwards a matching result; the projection is re-read and compared to what was
+intended, and a mismatch records a failed result and refuses. The write is one batch patch,
+so readers never see a half-applied set. Member keys are stored pseudonymized in provenance
+unless the namespace is declared non-identifying (`identifying: false`).
+
+Two guards bound the blast radius. Removals are limited by `RECONCILE_MAX_REMOVED_COUNT`
+(100) and `RECONCILE_MAX_REMOVED_FRACTION` (0.5 of current members); these bounds are not
+caller-raisable — `maxRemovedCount`/`maxRemovedFraction` may only lower them — and passing
+the exported `RECONCILE_LARGE_REMOVAL_CONSENT` symbol — distinct from, and not derivable
+from, the MCP `confirm` token — is the only way to exceed the defaults. Keys under the
+built-in protected segments (`owners`, `approvers`, `credentials`) are never touched, and
+enforcement covers plan keys and the nested keys of added/changed values alike;
+`protectedPaths` can extend the list, never shrink it.
+
+With `adoptOverlaps: true`, overlap keys are adopted: their current values are kept and
+provenance is recorded, so a later reconcile can manage them. Without it they are reported
+and left alone — adoption never overwrites an operator's value.
 
 ## Planned
 

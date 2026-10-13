@@ -5,6 +5,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `@clawforge/framework/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
+  single-batch apply that re-reads and verifies, redacted plan views (keyed pseudonyms, no raw values), intent/result journalling
+  with two-phase provenance so a crash never loses ownership, operator entries are never removed, removals above a fixed bound need
+  a dedicated consent token, and protected path segments (`owners`, `approvers`, `credentials`) are refused at any depth.
 * Recipes can publish operator-facing actions: `recipe.json` `actions` declares each action's hook file, effect
   (`read`, `change` or `destroy`) and typed arguments; `recipe run <recipe> <action> key=value [--dry-run] [--json]` runs
   it through one entry on the CLI and the MCP `recipe` tool. The declared effect drives confirmation and locking

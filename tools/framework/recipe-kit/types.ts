@@ -1,9 +1,16 @@
-/** Output-free refusal from a recipe helper; never carries transport causes. */
+/** Output-free refusal from a recipe helper; never carries transport causes. The optional
+ *  detail is caller-sanitized and content-free (counts only), e.g. large-removal refusals. */
 export class RecipeKitRefusal extends Error {
   readonly reason: RecipeKitReason;
-  constructor(reason: RecipeKitReason) {
-    super(`recipe-kit refused: ${reason}`);
+  /** Content-free detail echoed by callers that need it; compare this field, not the message. */
+  readonly detail?: string;
+  /** Structured counts (e.g. removal bounds); never member keys or values. */
+  readonly info?: Readonly<Record<string, number>>;
+  constructor(reason: RecipeKitReason, detail?: string, info?: Readonly<Record<string, number>>) {
+    super(`recipe-kit refused: ${reason}${detail === undefined ? "" : ` (${detail})`}`);
     this.reason = reason;
+    this.detail = detail;
+    this.info = info;
     this.name = "RecipeKitRefusal";
   }
 }

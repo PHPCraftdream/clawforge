@@ -159,6 +159,19 @@ export async function privatePseudonymKey(ctx: Context, dirPath: string): Promis
   });
 }
 
+/** Read-only sibling of privatePseudonymKey: returns the deployment's pseudonym key when the
+ *  key file already exists (validated like the normal read path, registered on success), and
+ *  undefined when it does not. NEVER creates the key, its parents, or a ledger record — safe
+ *  for dry runs and other read-only inspections. Tampering still refuses content-free. */
+export async function privatePseudonymKeyIfPresent(ctx: Context, dirPath: string): Promise<string | undefined> {
+  return safeOperation(async () => {
+    const { target } = await gate(ctx, dirPath);
+    const existing = await readValidatedKey(ctx, target);
+    if (existing !== undefined) registerKey(existing);
+    return existing;
+  });
+}
+
 /** HMAC-SHA-256 over length-prefixed (recipe, namespace, value); deterministic per input. */
 function mac(key: string, recipe: string, namespace: string, value: string): Buffer {
   const hmac = createHmac("sha256", Buffer.from(key, "base64"));

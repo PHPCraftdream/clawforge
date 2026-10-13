@@ -98,6 +98,11 @@ export const RULES: readonly Rule[] = [
     reason: "packaging, release and layout checks read repo-level config and CI files directly, never via imports",
   },
   {
+    changed: [".github/workflows/**"],
+    select: ["ci/ci-tiers.check.ts"],
+    reason: "the workflow-structure check parses ci.yml as text, with no import edge from the YAML",
+  },
+  {
     changed: ["tools/framework/commands/**"],
     select: [
       "integration/mcp/",

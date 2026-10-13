@@ -40,6 +40,16 @@ The related mode is a convenience, not a guarantee: invisible dependencies are o
 the rule table, so a change can still escape it. The full suite (`npm test`) stays the gate
 before a release.
 
+### CI tiers
+
+CI runs two tiers. The fast tier — typecheck, lint, and `check --related` against
+`origin/main`, which includes the always-run fast tier of checks — runs on pushes to non-main
+branches. The full suite gates everything else: pull requests, pushes to `main`, the nightly
+`schedule`, and `workflow_dispatch` runs with the `full` input; a dispatch without it runs the
+fast tier. Because `--related` needs the merge-base, CI checks out with full depth, computes
+the merge-base with `origin/main` explicitly, and passes it as `--base`. Each job prints the check timing summary (`check --timings`)
+at the end of its log, also on failure.
+
 ## Writing a check
 
 A check is any `tools/checks/**/*.check.ts` file. `tools/checks/kit/run.ts` finds every one of
@@ -190,7 +200,7 @@ as JSON for upload as an artifact; `OC_CHECK_TIMINGS=off` disables the repositor
 
 ## CI jobs and the host × target matrix
 
-`.github/workflows/ci.yml` runs four jobs on every push/PR, one per named cell of the
+`.github/workflows/ci.yml` runs four jobs on every push/PR (fast tier on non-main pushes — see "CI tiers" above), one per named cell of the
 host × target matrix in `docs/guide/requirements.md` ("Windows, `local`" is refused by the
 framework itself, so it has no job); `.github/workflows/windows-full.yml` is a fifth,
 manual (`workflow_dispatch`) job on a self-hosted runner with a real WSL2 distro and Docker.

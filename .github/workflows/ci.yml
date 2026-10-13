@@ -3,6 +3,23 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run the full check suite instead of the fast tier"
+        type: boolean
+        default: false
+  schedule:
+    # Nightly full-suite gate; time chosen off the hour to dodge scheduler load.
+    - cron: "17 3 * * *"
+
+# The tier is expressed once here: every job's steps key off FULL_TIER.
+env:
+  FULL_TIER: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full) }}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -18,7 +35,10 @@ jobs:
         node: [24]
     steps:
       - name: Check out
+        # Full depth: the fast tier's --related needs the merge-base with origin/main.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -28,10 +48,22 @@ jobs:
       - name: Install development dependencies
         run: npm ci --include=dev
 
+      - name: Fast tier — typecheck, lint, affected checks
+        if: env.FULL_TIER != 'true'
+        shell: bash
+        # --base takes a revision, not a branch policy: the merge-base with origin/main is
+        # computed here (checkout is fetch-depth: 0, so origin/main is present) and passed
+        # explicitly. check --related never computes a merge-base itself when --base is given.
+        run: |
+          npm run typecheck
+          npm run lint
+          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+
       # ubuntu-latest ships openssh-client but not always a running sshd: install it if
       # missing, start it, and authorize a passphrase-less key for the `ssh-loopback`
       # capability probe (`ssh -o BatchMode=yes ... localhost true`, see CONTRIBUTING.md).
       - name: Provision ssh-loopback capability
+        if: env.FULL_TIER == 'true'
         run: |
           set -euo pipefail
           if ! dpkg -s openssh-server >/dev/null 2>&1; then
@@ -49,6 +81,7 @@ jobs:
           ssh -o BatchMode=yes -o ConnectTimeout=5 localhost true
 
       - name: Run checks
+        if: env.FULL_TIER == 'true'
         # ubuntu-latest ships a working docker daemon, a GNU userland (linux-host, posix-sh,
         # rsync come preinstalled), bash and PowerShell, and now a loopback sshd: a check that
         # requires any of these and still cannot reach it should fail loudly, not skip (see the
@@ -65,6 +98,7 @@ jobs:
       # The system-wide install a user runs, then the command from PATH in a fresh app folder:
       # the check suite drives the installer into a scratch prefix, this is the real one.
       - name: Install system-wide and use it in an app folder
+        if: env.FULL_TIER == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -79,13 +113,21 @@ jobs:
           ./clawforge version
 
       - name: Typecheck and lint
+        if: env.FULL_TIER == 'true'
         run: npm run format:check
 
       - name: Build package
+        if: env.FULL_TIER == 'true'
         run: npm run build
 
       - name: Verify package contents
+        if: env.FULL_TIER == 'true'
         run: npm run pack:check
+
+      - name: Check timing summary
+        if: always()
+        # The E3 run-timings feature: prints the stored ranking even when a check step failed.
+        run: node --experimental-strip-types tools/clawforge.ts check --timings
 
   macos-checks:
     # Matrix cell: macOS host, ssh target only — no local target on macOS by design
@@ -100,7 +142,10 @@ jobs:
         node: [24]
     steps:
       - name: Check out
+        # Full depth: the fast tier's --related needs the merge-base with origin/main.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -110,12 +155,24 @@ jobs:
       - name: Install development dependencies
         run: npm ci --include=dev
 
+      - name: Fast tier — typecheck, lint, affected checks
+        if: env.FULL_TIER != 'true'
+        shell: bash
+        # --base takes a revision, not a branch policy: the merge-base with origin/main is
+        # computed here (checkout is fetch-depth: 0, so origin/main is present) and passed
+        # explicitly. check --related never computes a merge-base itself when --base is given.
+        run: |
+          npm run typecheck
+          npm run lint
+          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+
       # `setremotelogin` is the documented way to turn on sshd on GitHub's hosted macOS
       # runners without a GUI session; ASSUMPTION (unverified here — no Actions run available):
       # it completes synchronously on macos-latest and needs no reboot/wait loop. If that
       # assumption is wrong, `ssh -o BatchMode=yes ... localhost true` below fails loudly and
       # names the real cause instead of the check step failing with an opaque skip/require error.
       - name: Provision ssh-loopback capability
+        if: env.FULL_TIER == 'true'
         run: |
           set -euo pipefail
           sudo systemsetup -setremotelogin on
@@ -129,6 +186,7 @@ jobs:
           ssh -o BatchMode=yes -o ConnectTimeout=5 localhost true
 
       - name: Run checks
+        if: env.FULL_TIER == 'true'
         # ssh-loopback plus the two shells a check executes for real (bash, pwsh) are demanded:
         # macOS ships both, and demanding them is also what proves pwsh is on the runner. This
         # job still claims no docker/wsl/rsync/posix-sh — macOS has no local target, see
@@ -141,6 +199,7 @@ jobs:
       # The system-wide install a user runs, then the command from PATH in a fresh app folder:
       # the check suite drives the installer into a scratch prefix, this is the real one.
       - name: Install system-wide and use it in an app folder
+        if: env.FULL_TIER == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -155,7 +214,13 @@ jobs:
           ./clawforge version
 
       - name: Typecheck and lint
+        if: env.FULL_TIER == 'true'
         run: npm run format:check
+
+      - name: Check timing summary
+        if: always()
+        # The E3 run-timings feature: prints the stored ranking even when a check step failed.
+        run: node --experimental-strip-types tools/clawforge.ts check --timings
 
   windows-checks:
     # Matrix cell: Windows host, no WSL — the "no-WSL" cell. The same `npm run check` every
@@ -175,7 +240,10 @@ jobs:
         node: [24]
     steps:
       - name: Check out
+        # Full depth: the fast tier's --related needs the merge-base with origin/main.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -185,7 +253,19 @@ jobs:
       - name: Install development dependencies
         run: npm ci --include=dev
 
+      - name: Fast tier — typecheck, lint, affected checks
+        if: env.FULL_TIER != 'true'
+        shell: bash
+        # --base takes a revision, not a branch policy: the merge-base with origin/main is
+        # computed here (checkout is fetch-depth: 0, so origin/main is present) and passed
+        # explicitly. check --related never computes a merge-base itself when --base is given.
+        run: |
+          npm run typecheck
+          npm run lint
+          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+
       - name: Run checks
+        if: env.FULL_TIER == 'true'
         # The two shells a check executes for real are demanded too: bash (Git for Windows) and
         # pwsh (PowerShell 5.1 through the powershell.exe fallback when pwsh is absent) — both
         # ship on the runner image, so a check requiring either fails loudly, never skips.
@@ -196,6 +276,7 @@ jobs:
       # The system-wide install a user runs, then the command from PATH in a fresh app folder:
       # the check suite drives the installer into a scratch prefix, this is the real one.
       - name: Install system-wide and use it in an app folder
+        if: env.FULL_TIER == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -210,6 +291,7 @@ jobs:
           ./clawforge version
 
       - name: The system-wide command from PowerShell
+        if: env.FULL_TIER == 'true'
         shell: pwsh
         run: |
           # help is written to stderr; Actions runs pwsh with Stop, which 2>&1 must not trip.
@@ -222,13 +304,21 @@ jobs:
           $version
 
       - name: Typecheck and lint
+        if: env.FULL_TIER == 'true'
         run: npm run format:check
 
       - name: Build package
+        if: env.FULL_TIER == 'true'
         run: npm run build
 
       - name: Verify package contents
+        if: env.FULL_TIER == 'true'
         run: npm run pack:check
+
+      - name: Check timing summary
+        if: always()
+        # The E3 run-timings feature: prints the stored ranking even when a check step failed.
+        run: node --experimental-strip-types tools/clawforge.ts check --timings
 
   windows-wsl:
     # Matrix cell: Windows host, WSL2 target — the only hosted-runner attempt at exercising a
@@ -247,7 +337,10 @@ jobs:
     continue-on-error: true
     steps:
       - name: Check out
+        # Full depth: the fast tier's --related needs the merge-base with origin/main.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -257,7 +350,19 @@ jobs:
       - name: Install development dependencies
         run: npm ci --include=dev
 
+      - name: Fast tier — typecheck, lint, affected checks
+        if: env.FULL_TIER != 'true'
+        shell: bash
+        # --base takes a revision, not a branch policy: the merge-base with origin/main is
+        # computed here (checkout is fetch-depth: 0, so origin/main is present) and passed
+        # explicitly. check --related never computes a merge-base itself when --base is given.
+        run: |
+          npm run typecheck
+          npm run lint
+          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+
       - name: Provision a real WSL2 distro (best-effort)
+        if: env.FULL_TIER == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -269,6 +374,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Ubuntu-24.04 could not start (WSL2 VM likely unavailable on this hosted runner; see windows-full.yml for the self-hosted path)' }
 
       - name: Run checks (WSL required)
+        if: env.FULL_TIER == 'true'
         # Only wsl is demanded: docker is not required here (no Linux-container docker on
         # hosted Windows runners). This job installs nothing else inside the distro — no check
         # currently declares `// check:requires wsl` that also needs anything beyond a distro
@@ -278,3 +384,8 @@ jobs:
           OC_WSL_DISTRO: Ubuntu-24.04
           OC_CHECK_REQUIRE: wsl
         run: npm run check
+
+      - name: Check timing summary
+        if: always()
+        # The E3 run-timings feature: prints the stored ranking even when a check step failed.
+        run: node --experimental-strip-types tools/clawforge.ts check --timings

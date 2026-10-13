@@ -41,6 +41,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   being swallowed.
 
 ### Changed
+* `ci.yml` runs two tiers: pushes to non-main branches run the type check, lint and `check --related` against the
+  merge-base with `origin/main`; the full suite gates pushes to `main`, pull requests, the nightly schedule and
+  `workflow_dispatch` with `full: true`. Concurrent runs on a branch cancel the older one.
 * MCP `tools/list` wording is shorter (command and argument summaries, the help pointer, the confirmation marker,
   repeated dry-run clauses): 35190 to 31556 bytes against the 35840 budget. Safety-relevant phrases and the full
   CLI help text are unchanged.

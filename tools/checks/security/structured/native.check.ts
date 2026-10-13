@@ -1,6 +1,7 @@
-import { readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { LocalTransport } from "#framework/runtime/transport/transport.ts";
 import { readPrivateState, writePrivateState, appendPrivateJournal, PrivateDataError } from "#framework/security/privacy/private-config.ts";
@@ -34,7 +35,8 @@ await requires("linux-host", "native private structured", async () => {
         await requires("symlink", "final symlink refusal and replacement", async () => {
           const outside = `${f.root}/outside`;
           const link = `${f.root}/vault/link.json`;
-          await writeFile(outside, "unchanged"); await symlink(outside, link);
+          // Created through the target shell: the fixture root is a temp directory made in fixture.ts.
+          await ctx.transport.exec("sh", ["-c", "printf unchanged > \"$1\" && ln -s \"$1\" \"$2\"", "sh", outside, link]);
           let code: unknown;
           try { await readPrivateState(ctx, link, { version: 1 }); } catch (error) { code = error instanceof PrivateDataError ? error.code : error; }
           check("native final symlink read", code, "symlink");
@@ -60,7 +62,7 @@ await requires("linux-host", "native private structured", async () => {
         });
         function worker(writer: string): Promise<{ writer: string; accepted: number[]; attempts: Array<{ index: number; attempts: number; elapsedMs: number; lastError?: string }> }> {
           return new Promise((resolve, reject) => {
-            const child = spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("./worker.ts", import.meta.url)), f.root, writer], { stdio: ["ignore", "pipe", "pipe"] });
+            const child = spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("./worker.ts", import.meta.url)), f.root, writer], { cwd: tmpdir(), stdio: ["ignore", "pipe", "pipe"] });
             let output = "", errors = "";
             child.stdout.on("data", chunk => { output += chunk; }); child.stderr.on("data", chunk => { errors += chunk; });
             const timer = setTimeout(() => { child.kill(); reject(Error(`worker ${writer} timeout; stdout=${output}; stderr=${errors}`)); }, 120_000);

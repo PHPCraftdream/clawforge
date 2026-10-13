@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* Recipe hooks get schema-versioned private state (`readPrivateState` / `writePrivateState`) and a bounded,
+  secret-refusing private journal (`appendPrivateJournal` / `readPrivateJournal`) in
+  `@clawforge/framework/private-config`. New ancestor directories are created owner-only from the start.
 * Recipes can own application-config paths: `recipe.json` accepts an optional `owns` array (`value` or
   `list-member` mode, optional segment-wise prefixes). Owned paths are refused in `desired-state.json`, skipped
   by `apply-config` and never reported as drift, and `inspect` / `recipe inspect` show the owner; overlapping
@@ -22,6 +25,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `recipe check <name>` runs a recipe's own `*.check.ts` files, each in its own Node process, with a
   per-file timeout, bounded output and a non-zero exit on failure. It needs no instance, Docker or lock;
   `--dry-run` lists the files without executing code.
+
+### Fixed
+* A release racing a concurrent claim of the instance-lock mutation guard no longer leaves its own stale lock behind:
+  the vanished-guard race is retried with the same atomic claim, the guarded cleanup is retried a bounded number of
+  times when a live competitor holds the guard, and a cleanup that still fails is reported as blocking instead of
+  being swallowed.
 
 ### Changed
 * MCP `tools/list` wording is shorter (command and argument summaries, the help pointer, the confirmation marker,

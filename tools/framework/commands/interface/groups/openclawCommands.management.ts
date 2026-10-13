@@ -20,10 +20,10 @@ import { RECIPE } from "#src/commands/management/recipe/index.ts";
 import { PROVISION_AGENT } from "#src/commands/management/provision-agent/index.ts";
 
 export const managementCommands: Record<string, AppCommand> = materializeCommands({
-  memory: { summary: "Declare, set up, inspect, index and verify memory", group: "change", ...MEMORY, structured: true,
+  memory: { summary: "Declare, set up, inspect, index, verify memory", group: "change", ...MEMORY, structured: true,
     details: "Actions: plan, configure, setup, status, index, verify. Plan/configure operate locally on canonical owned leaf declarations; explicitly apply-config and restart separately. Status is safe/read-only unless deep is consented. Setup/index/verify require confirmation, cli-start and serialized instance locking. Keyword expects no embeddings. Setup requires local embeddings, immutable model source/version/checksum, exact plugin version, model byte limit and both allow-install/allow-download consents before target contact; delivery and installation are never automatic. Verify creates an exclusive uid1000 witness and removes only its owned inode before explicit cleanup reindex." },
   status: {
-    summary: "Show containers, image, health probes and data usage",
+    summary: "Show containers, image, health, data usage",
     group: "start-stop",
     ...STATUS,
     details:
@@ -36,7 +36,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "image, health, serviceUrl, dataUsage.",
   },
   lock: {
-    summary: "Pin what this instance is made of, or check it still matches",
+    summary: "Pin the instance's composition, or verify it",
     group: "save-move",
     ...LOCK,
     details:
@@ -75,7 +75,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // mechanism invented for this one command.
   },
   exec: {
-    summary: "Run an arbitrary command in the same sidecar as `cli`",
+    summary: "Run a command in the same sidecar as `cli`",
     group: "low-level",
     ...EXEC,
     details:
@@ -89,7 +89,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // Same reasoning as `cli`: it can run anything, so it gets the same MCP confirmation.
   },
   host: {
-    summary: "Run one command on the operator's own machine, not in a container",
+    summary: "Run a command on the host, not in a container",
     group: "low-level",
     ...HOST,
     details:
@@ -119,7 +119,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // through, the same tradeoff exec makes.
   },
   "cli-start": {
-    summary: "Start the persistent CLI helper (no per-call container overhead)",
+    summary: "Start the persistent CLI helper",
     group: "low-level",
     ...CLI_START,
     details:
@@ -140,7 +140,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     details: "`{clawforge cli}`/`{clawforge mcp-serve}` fall back to a one-off container once this is stopped.",
   },
   "configure-provider": {
-    summary: "Configure model providers from target-side environment variables",
+    summary: "Configure model providers from target env vars",
     group: "change",
     ...CONFIGURE_PROVIDER,
     details:
@@ -150,7 +150,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "never enter openclaw.json. {--provider} and {--env} make any provider convention explicit.",
   },
   secrets: {
-    summary: "Show required secrets and whether they are in place",
+    summary: "Show required secrets and their state",
     group: "change",
     ...SECRETS,
     details:
@@ -189,7 +189,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "refused together with {--template}/{--print-template}/{--init-store}/{--apply}/{--dump}.",
   },
   recipe: {
-    summary: "Deploy services next to the instance: install, verify, list, and more",
+    summary: "Deploy service recipes beside the instance",
     group: "change",
     ...RECIPE,
     // One envelope for every action's answer, declared once as the tool's outputSchema:
@@ -256,7 +256,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "target, no lock.",
   },
   "provision-agent": {
-    summary: "Wire a recipe's MCP server to its own OpenClaw agent, with optional cron",
+    summary: "Wire a recipe's MCP server to an OpenClaw agent",
     group: "change",
     ...PROVISION_AGENT,
     details:
@@ -276,7 +276,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "Requires the gateway to be running ({clawforge up}).",
   },
   deploy: {
-    summary: "Deploy to a server over SSH and bootstrap it there",
+    summary: "Deploy over SSH and bootstrap the server",
     group: "save-move",
     ...DEPLOY,
     details:
@@ -316,7 +316,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     consoleOnly: true,
   },
   "mcp-setup": {
-    summary: "Configure project MCP servers for Claude Code and Codex",
+    summary: "Configure project MCP servers (Claude Code, Codex)",
     group: "integrations",
     ...MCP_SETUP,
     details:
@@ -332,7 +332,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     structured: true,
   },
   "mcp-creds": {
-    summary: "Print service URL, token and MCP client config for both servers",
+    summary: "Print service URL, token and MCP client config",
     group: "integrations",
     ...MCP_CREDS,
     // Its whole job is handing over the credential: masking its healthy output (the

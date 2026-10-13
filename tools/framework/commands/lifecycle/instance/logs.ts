@@ -6,9 +6,9 @@ import * as kinds from "#src/core/values/kinds.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 
 export const LOGS_ARGUMENTS = [
-  { name: "tail", description: "Lines to return when reading rather than following", kind: "option", valueName: "n", value: kinds.count("a number of lines") },
-  { name: "since", summary: "Only lines at or after this duration/timestamp", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp", value: kinds.since },
-  { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern", value: kinds.pattern() },
+  { name: "tail", description: "Lines to return", kind: "option", valueName: "n", value: kinds.count("a number of lines") },
+  { name: "since", summary: "Lines at or after this time", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp", value: kinds.since },
+  { name: "grep", description: "Only matching lines", kind: "option", valueName: "pattern", value: kinds.pattern() },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted; anywhere

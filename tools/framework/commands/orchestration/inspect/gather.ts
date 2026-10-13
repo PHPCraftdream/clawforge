@@ -42,7 +42,7 @@ import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
 export const INSPECT_ARGUMENTS = [
-  { name: "json", description: "Emit the whole inspection as JSON", kind: "flag" },
+  { name: "json", description: "Whole inspection as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const RECREATE_SWITCHES_IMAGES = "the next recreate (up, restart after compose changes, apply) would switch images";
@@ -386,7 +386,7 @@ export function printProblem(entry: Problem): void {
  *  it: an instance with no lock file works, and a command that fails on everything it has
  *  an opinion about stops being consulted. */
 export const DOCTOR_ARGUMENTS = [
-  { name: "json", description: "Emit the verdict, problems and next actions as JSON", kind: "flag" },
+  { name: "json", description: "Verdict and next actions as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const DOCTOR = commandBody({

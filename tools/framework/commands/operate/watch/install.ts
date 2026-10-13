@@ -54,7 +54,7 @@ export const NOTHING_INSTALLED = "no watch schedule was installed for this deplo
 export const WATCH_INSTALL_ARGUMENTS = [
   {
     name: "interval",
-    summary: "time between checks — a bare number is minutes",
+    summary: "Time between checks",
     description: "With install: time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24)",
     kind: "option",
     valueName: "interval",
@@ -76,7 +76,7 @@ export const WATCH_INSTALL_ARGUMENTS = [
   },
   {
     name: "apply",
-    summary: "Change target crontab, not just print",
+    summary: "Change the crontab",
     description: "With install/uninstall: mutate the target's crontab instead of only printing it",
     kind: "flag",
     effect: "destroy",
@@ -88,7 +88,7 @@ export const WATCH_INSTALL_ARGUMENTS = [
 export const WATCH_UNINSTALL_ARGUMENTS = [
   {
     name: "apply",
-    summary: "Change target crontab, not just print",
+    summary: "Change the crontab",
     description: "With install/uninstall: mutate the target's crontab instead of only printing it",
     kind: "flag",
     effect: "destroy",

@@ -37,7 +37,7 @@ const removeAppBody = commandBody({
   effect: "read",
   arguments: [
     { name: "name", description: "Deployment name", kind: "positional", required: true, value: kinds.name("deployment", "read") },
-    { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy", setByConfirm: true },
+    { name: "yes", description: "Perform the removal, not a dry run", kind: "flag", effect: "destroy", setByConfirm: true },
   ],
   run: async (_on, plan) => removeApp(plan.name, plan.yes),
 });
@@ -46,8 +46,8 @@ const listBody = commandBody({
   needs: "nothing",
   effect: "read",
   arguments: [
-    { name: "json", description: "Emit as a JSON array instead of text", kind: "flag" },
-    { name: "no-status", description: "Configuration only — do not query any target", kind: "flag" },
+    { name: "json", description: "JSON array, not text", kind: "flag" },
+    { name: "no-status", description: "Config only; do not query targets", kind: "flag" },
   ],
   run: async (_on, plan) => {
     const checkStatus = plan["no-status"] !== true;
@@ -65,7 +65,7 @@ const checkBody = commandBody({
   // A variadic is declared last (the body model's structural rule), so the flags come first
   // on the usage line.
   arguments: [
-    { name: "list", description: "Print the matching check paths instead of running them", kind: "flag" },
+    { name: "list", description: "Print matching check paths only", kind: "flag" },
     {
       name: "jobs",
       summary: "Concurrent check-file processes",
@@ -76,7 +76,7 @@ const checkBody = commandBody({
     },
     {
       name: "require",
-      summary: "Capabilities that must fail a check instead of skipping it",
+      summary: "Capabilities that must fail, not skip",
       description:
         "Comma-separated capabilities (docker, wsl, posix-sh, rsync, linux-host) whose absence must fail a " +
         "check that needs them, instead of skipping it — merged with OC_CHECK_REQUIRE",
@@ -86,7 +86,7 @@ const checkBody = commandBody({
     },
     {
       name: "filter",
-      summary: "Only run checks whose relative path contains this text",
+      summary: "Run checks whose path contains this text",
       description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any",
       kind: "variadic",
       value: kinds.text("check path filter", { leadingDash: "allow" }),
@@ -106,7 +106,7 @@ const checkBody = commandBody({
 export const checkoutGateCommands: readonly GateCommand[] = [
   materializeGate({
     name: "check",
-    summary: "Run the framework's own checks (no instance needed)",
+    summary: "Framework preflight checks (no instance needed)",
     details:
       "Paths, archives, the argument contract, what a server delivery contains, secret " +
       "masking — the parts where a mistake is silent. `{clawforge smoke}` covers a live instance " +
@@ -156,7 +156,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
   }),
   materializeGate({
     name: "list",
-    summary: "Overview of every deployment under apps/",
+    summary: "List deployments under apps/",
     details:
       "One line per apps/<name>: target (OC_TARGET_LOCATION, plus OC_SSH_HOST for ssh), " +
       "gateway port, image (pinned when it carries @sha256:), and whether the gateway is " +

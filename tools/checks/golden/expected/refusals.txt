@@ -215,9 +215,9 @@ error: --no-status is a flag and takes no value
 error: --no-status is a flag and takes no value
 
 === <command> --help without a deployment: status --help — checkout root (./clawforge) ===
-==> status — Show containers, image, health probes and data usage
+==> status — Show containers, image, health, data usage
     Usage: ./clawforge status [--json]
-      --json                 Emit status as JSON instead of text
+      --json                 Status as JSON
     
     Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
     because they can disagree: an image whose healthcheck binary is missing
@@ -225,9 +225,9 @@ error: --no-status is a flag and takes no value
     --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
 
 === <command> --help without a deployment: status --help — named deployment (./clawforge --app demo) ===
-==> status — Show containers, image, health probes and data usage
+==> status — Show containers, image, health, data usage
     Usage: ./clawforge --app demo status [--json]
-      --json                 Emit status as JSON instead of text
+      --json                 Status as JSON
     
     Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
     because they can disagree: an image whose healthcheck binary is missing
@@ -235,9 +235,9 @@ error: --no-status is a flag and takes no value
     --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
 
 === <command> --help without a deployment: status --help — installed command (clawforge) ===
-==> status — Show containers, image, health probes and data usage
+==> status — Show containers, image, health, data usage
     Usage: clawforge status [--json]
-      --json                 Emit status as JSON instead of text
+      --json                 Status as JSON
     
     Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
     because they can disagree: an image whose healthcheck binary is missing
@@ -245,9 +245,9 @@ error: --no-status is a flag and takes no value
     --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
 
 === <command> --help without a deployment: status --help — sole deployment (./clawforge --app demo) ===
-==> status — Show containers, image, health probes and data usage
+==> status — Show containers, image, health, data usage
     Usage: ./clawforge --app demo status [--json]
-      --json                 Emit status as JSON instead of text
+      --json                 Status as JSON
     
     Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
     because they can disagree: an image whose healthcheck binary is missing

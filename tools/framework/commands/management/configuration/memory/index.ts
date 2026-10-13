@@ -9,28 +9,28 @@ import { declaration, configure, declaredMemory, modeOf, MemoryError } from "./d
 import { SETUP } from "./setup/action.ts";
 import { sha256 } from "./values.ts";
 import { budget, consume, rawStatus, safeStatus, type Consent } from "./consumer.ts";
-const JSON_ARGUMENT = { name: "json", description: "Emit structured outcome", kind: "flag" } as const;
+const JSON_ARGUMENT = { name: "json", description: "Structured outcome", kind: "flag" } as const;
 const MODEL = [
   { name: "model-checksum", description: "Approved GGUF SHA256", kind: "option", valueName: "sha256", value: sha256() },
   { name: "model-source", summary: "Approved source", description: "Approved model source", kind: "option", valueName: "source", value: kinds.text("an approved model source") },
   { name: "model-version", summary: "Approved revision", description: "Approved model version", kind: "option", valueName: "version", value: kinds.text("an approved model version") },
 ] as const;
 const CONSENT = [
-  { name: "allow-spend", description: "Consent to provider probe spend", kind: "flag" },
+  { name: "allow-spend", summary: "Probe spend", description: "Consent to provider probe spend", kind: "flag" },
   { name: "allow-download", summary: "Probe downloads", description: "Consent to provider probe downloads", kind: "flag" },
 ] as const;
 const CONFIG = [
-  { name: "mode", description: "Intentional memory mode", kind: "option", valueName: "mode", required: true, value: kinds.choice(["embeddings", "keyword", "disabled"] as const) },
+  { name: "mode", summary: "Memory mode", description: "Intentional memory mode", kind: "option", valueName: "mode", required: true, value: kinds.choice(["embeddings", "keyword", "disabled"] as const) },
   { name: "backend", description: "Explicit backend", kind: "option", valueName: "backend", required: true, value: kinds.choice(["builtin"] as const) },
-  { name: "provider", description: "Explicit embedding provider", kind: "option", valueName: "id", value: kinds.providerId() },
-  { name: "model", description: "Explicit embedding model", kind: "option", valueName: "model", value: kinds.text("an embedding model") },
-  { name: "env", description: "Existing target SecretRef name", kind: "option", valueName: "var", value: kinds.envVar() },
-  { name: "model-path", description: "Existing managed container GGUF path", kind: "option", valueName: "path", value: kinds.text("an existing managed GGUF path") },
+  { name: "provider", summary: "Embedding provider", description: "Explicit embedding provider", kind: "option", valueName: "id", value: kinds.providerId() },
+  { name: "model", summary: "Embedding model", description: "Explicit embedding model", kind: "option", valueName: "model", value: kinds.text("an embedding model") },
+  { name: "env", summary: "Target SecretRef", description: "Existing target SecretRef name", kind: "option", valueName: "var", value: kinds.envVar() },
+  { name: "model-path", summary: "Managed GGUF path", description: "Existing managed container GGUF path", kind: "option", valueName: "path", value: kinds.text("an existing managed GGUF path") },
   ...MODEL, JSON_ARGUMENT,
 ] as const satisfies readonly ArgumentSpec[];
 const SELECT = [
   { name: "agent", description: "Existing agent id", kind: "option", valueName: "id", value: kinds.providerId() },
-  { name: "all-agents", description: "Select every existing agent", kind: "flag" },
+  { name: "all-agents", summary: "Every agent", description: "Select every existing agent", kind: "flag" },
   ...CONSENT, ...MODEL, JSON_ARGUMENT,
 ] as const satisfies readonly ArgumentSpec[];
 function consent(v: Record<string, unknown>): Consent { return { spend: v["allow-spend"] === true, download: v["allow-download"] === true, checksum: v["model-checksum"] as string | undefined, source: v["model-source"] as string | undefined, version: v["model-version"] as string | undefined }; }
@@ -66,7 +66,7 @@ const plan = defineAction({ summary: "Preview memory leaf declarations locally",
 const configureAction = defineAction({ summary: "Persist canonical memory leaf declarations", effect: "destroy", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
   async run(_local, p) { const after = `${JSON.stringify(p.next, null, 2)}\n`, changed = after !== p.before; if (changed) await atomicDeclaration(p.path, p.before, after);
     emit(`${JSON.stringify({ ok: true, changed, mode: p.mode, applied: false, next: "Review desired leaf batch, explicitly apply-config, then restart; target local-model prerequisites are checked before indexing." })}\n`); } });
-const statusArgs = [JSON_ARGUMENT, { name: "deep", description: "Explicit provider readiness probe", kind: "flag", effect: "destroy" }, ...CONSENT] as const;
+const statusArgs = [JSON_ARGUMENT, { name: "deep", summary: "Provider probe", description: "Explicit provider readiness probe", kind: "flag", effect: "destroy" }, ...CONSENT] as const;
 const status = defineAction({ summary: "Project safe per-agent memory metadata", effect: "read", arguments: statusArgs,
   rules: [{ rule: "requires", name: "deep", with: ["allow-spend", "allow-download"] }, { rule: "requires", name: "allow-spend", with: ["deep"] }, { rule: "requires", name: "allow-download", with: ["deep"] }],
   async prepare(_call, local) { const d = await localDeclaration(local); return { ..._call.values, disabled: declaredMemory(d.ops).enabled === false }; },

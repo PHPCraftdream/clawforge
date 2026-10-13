@@ -38,7 +38,7 @@ import * as kinds from "#src/core/values/kinds.ts";
 export const VERIFY_ARGUMENTS = [
   { name: "archive", description: "Archive to inspect", kind: "positional", required: true, value: kinds.text("archive to inspect", { leadingDash: "refuse" }) },
   PROFILE_ARGUMENT,
-  { name: "json", summary: "Emit the verdict and findings as JSON", description: "Emit the verdict and findings as JSON — locations and kinds only, never credential values", kind: "flag" },
+  { name: "json", summary: "Verdict as JSON", description: "Emit the verdict and findings as JSON — locations and kinds only, never credential values", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** One thing verifySnapshot found. `detail` is a path, a rule name or a provider id —

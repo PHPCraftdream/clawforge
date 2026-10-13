@@ -49,10 +49,10 @@ export * from "./set-try-env.ts";
 const SET_ARTIFACT = kinds.localFile("a set artifact path");
 
 export const SET_TRY_ARGUMENTS = [
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", required: true, value: SET_ARTIFACT },
+  { name: "set", description: "Built set artifact", kind: "option", valueName: "artifact", required: true, value: SET_ARTIFACT },
   {
     name: "with-model",
-    summary: "include acceptance checks that call the model",
+    summary: "Include model checks",
     description: "With try: include acceptance checks that call the model",
     kind: "flag",
   },

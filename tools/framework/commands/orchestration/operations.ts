@@ -25,19 +25,19 @@ import type { OperationId } from "#src/core/values/plan.ts";
 const OPERATION_ID = kinds.operationId("20260101000000000-apply-ab12cd");
 
 export const OPERATIONS_ARGUMENTS = [
-  { name: "id", description: "Operation id to show in full", kind: "positional", value: OPERATION_ID },
+  { name: "id", description: "Operation id to show", kind: "positional", value: OPERATION_ID },
   {
     name: "limit",
-    summary: "How many recent operations to list",
+    summary: "Operations to list",
     description: "How many recent operations to list (default 10)",
     kind: "option",
     valueName: "n",
     value: kinds.positive(),
   },
-  { name: "takeover-lock", description: "Take over and release operation lock metadata only", kind: "flag", effect: "destroy" },
+  { name: "takeover-lock", description: "Release lock metadata only", kind: "flag", effect: "destroy" },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "confirmed", description: "Consent supplied by MCP confirmation", kind: "flag", setByConfirm: true },
-  { name: "json", description: "Emit the record, or the list, as JSON", kind: "flag" },
+  { name: "confirmed", description: "MCP confirmation consent", kind: "flag", setByConfirm: true },
+  { name: "json", description: "Record or list as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** What the run needs, decided from the arguments alone in the prepare stage. */

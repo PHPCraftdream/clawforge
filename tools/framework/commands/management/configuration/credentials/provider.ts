@@ -16,12 +16,12 @@ import * as kinds from "#src/core/values/kinds.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
 export const CONFIGURE_PROVIDER_ARGUMENTS = [
-  { name: "provider", description: "Provider id, for example openai", kind: "option", valueName: "id", value: kinds.providerId() },
-  { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option", valueName: "var", value: kinds.envVar() },
-  { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
+  { name: "provider", description: "Provider id, e.g. openai", kind: "option", valueName: "id", value: kinds.providerId() },
+  { name: "env", description: "Secret variable, e.g. OPENAI_API_KEY", kind: "option", valueName: "var", value: kinds.envVar() },
+  { name: "force", description: "Replace an existing SecretRef", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** Gateway flags used by headless onboarding. */

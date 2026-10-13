@@ -58,8 +58,8 @@ function versionMismatchDetail(lockVersion: number): string {
 }
 
 export const LOCK_ARGUMENTS = [
-  { name: "check", description: "Compare against the existing lock instead of writing one", kind: "flag", effect: "read" },
-  { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
+  { name: "check", description: "Compare instead of writing", kind: "flag", effect: "read" },
+  { name: "json", description: "Lock or differences as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** Printed once the lock is written. Its own constant so it stays consistent with

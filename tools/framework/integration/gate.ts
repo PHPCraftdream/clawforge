@@ -418,7 +418,7 @@ export const HELP_ENTRY_SUMMARY = "same as: <command> --help";
 /** The description the `help` command's own positional takes. */
 // Short: the tool summary beside it already says the bare call lists every command, and the
 // enum of names is what the schema spends its bytes on.
-export const HELP_COMMAND_DESCRIPTION = "Command name; omit to list every command";
+export const HELP_COMMAND_DESCRIPTION = "Command name; omit lists all";
 
 /** The details body shared by `help control-mcp` and `control-mcp --help` — control-mcp is
  *  dispatched by runApp (entry/cli.ts) before the app.commands lookup, so no AppCommand

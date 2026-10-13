@@ -4,7 +4,6 @@
 // importers keep importing from "./server.ts" unchanged.
 
 import type { CommandArgument } from "../../core/app.ts";
-import { destructiveMarker } from "../../core/io/help-render.ts";
 import { effectProfile, argumentScopes, type ArgumentScope } from "../../core/command/index.ts";
 import type { Effect } from "../../core/command/index.ts";
 
@@ -78,10 +77,27 @@ export const STRUCTURED_OUTPUT_SCHEMA = {
 } as const;
 
 /** The tool description: one-line summary plus a pointer to the `help` tool for the full text. */
-export const FULL_TEXT_POINTER = "Full text: call help with command";
+export const FULL_TEXT_POINTER = "Full text: help command";
+
+/** MCP-specific compact destructive marker: same facts as help-render's destructiveMarker,
+ *  but a few bytes shorter on the many-tool payload; the `confirm` property carries the
+ *  exact requirement. Always destructive keeps help-render's minimal form; partial keeps
+ *  the meaning that confirmation may be required for some actions. */
+/** MCP-specific compact marker for a command that is destructive only for some actions:
+ *  help-render's `DESTRUCTIVE_SOME` keeps the CLI wording; this shorter form carries the same
+ *  meaning on the many-tool payload, and the `confirm` property carries the exact requirement. */
+export const MCP_PARTIAL_MARKER = " (may require confirm)";
+
+function mcpDestructiveMarker(command: Declared): string {
+  const { destructive, alwaysDestroys } = effectProfile(command);
+  if (!destructive) return "";
+  return alwaysDestroys ? " (destructive)" : MCP_PARTIAL_MARKER;
+}
 
 export function toolDescription(name: string, command: Declared): string {
-  return `${command.summary}${destructiveMarker(command)}\n\n${FULL_TEXT_POINTER}=${name}.`;
+  const summary = `${command.summary}${mcpDestructiveMarker(command)}`;
+  // The `help` tool IS the full text, so it alone carries no pointer to itself.
+  return name === "help" ? summary : `${summary}\n${FULL_TEXT_POINTER}=${name}`;
 }
 
 /** True when the description only restates the argument name (exact or after "the/a/an"). */
@@ -100,7 +116,18 @@ export function schemaArgumentDescription(argument: CommandArgument, scopes?: re
   if (isTrivialDescription(argument.name, argument.description)) return undefined;
   // The actions of a multi-action command that describe this argument differently: one clause
   // per text, each naming its own actions — the composed parts `argumentsView` joins.
-  if (scopes !== undefined) return scopes.map((scope) => `${scope.summary ?? scope.description} (${scope.actions.join(", ")})`).join("; ");
+  if (scopes !== undefined) {
+    // Identical clause text across actions collapses into one clause naming the union of
+    // actions (order of first appearance), so repeated prose is not paid per action.
+    const clauses: { text: string; actions: string[] }[] = [];
+    for (const scope of scopes) {
+      const text = scope.summary ?? scope.description;
+      const found = clauses.find((clause) => clause.text === text);
+      if (found === undefined) clauses.push({ text, actions: [...scope.actions] });
+      else for (const action of scope.actions) if (!found.actions.includes(action)) found.actions.push(action);
+    }
+    return clauses.map((clause) => `${clause.text} (${clause.actions.join(", ")})`).join("; ");
+  }
   const actions = argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`;
   return `${argument.summary ?? argument.description}${actions}`;
 }
@@ -130,7 +157,7 @@ export function inputSchema(command: Declared): Record<string, unknown> {
   if (destructive) {
     properties.confirm = {
       type: "boolean",
-      description: alwaysDestroys ? "Must be true: destroys state" : "Confirm a destructive action",
+      description: alwaysDestroys ? "Required: destroys state" : "Confirm destructive action",
     };
     if (alwaysDestroys) required.push("confirm");
   }

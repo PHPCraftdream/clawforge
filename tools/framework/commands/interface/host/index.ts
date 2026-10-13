@@ -53,7 +53,7 @@ export const HOST_ARGUMENTS = [
   },
   {
     name: "confirm-root",
-    summary: "Second consent; both flags together are required",
+    summary: "Confirm elevation",
     description: "Second consent; both flags together are required — to elevate on target/local, and for an engine command to run at all",
     kind: "flag",
   },

@@ -12,7 +12,7 @@ import { INCIDENT } from "#src/commands/operate/incident/index.ts";
 
 export const operateCommands: Record<string, AppCommand> = materializeCommands({
   expose: {
-    summary: "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale",
+    summary: "Expose the gateway: SSH tunnel or tailscale",
     group: "security-access",
     details:
       "Three actions, narrowest scope first.\n" +
@@ -35,7 +35,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
     ...EXPOSE,
   },
   watch: {
-    summary: "Health monitoring with a webhook alert on state change",
+    summary: "Health monitoring with webhook alerts",
     group: "check",
     details:
       "Five actions.\n" +
@@ -150,7 +150,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
     ...WATCH,
   },
   incident: {
-    summary: "Incident response: contain, preserve evidence, rotate the token, audit",
+    summary: "Contain, collect evidence, rotate tokens, audit",
     group: "security-access",
     details:
       "OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the " +
@@ -192,7 +192,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
     structured: true,
   },
   "recover-env": {
-    summary: "Repair .env's connection facts from the running instance",
+    summary: "Repair .env from the running instance",
     group: "integrations",
     details:
       "OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not " +

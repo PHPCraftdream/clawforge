@@ -27,11 +27,11 @@ import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shar
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "#src/commands/orchestration/inspect/helpers.ts";
 
 export const SECRETS_ARGUMENTS = [
-  { name: "template", description: "Write the secrets template into config/", kind: "flag", effect: "change" },
-  { name: "print-template", description: "Print the template instead of writing it", kind: "flag", effect: "read" },
-  { name: "init-store", description: "Create an empty store to fill in", kind: "flag", effect: "destroy" },
-  { name: "apply", description: "Fill the target from a local store", kind: "flag", effect: "destroy" },
-  { name: "dump", description: "Recover a local store from the running instance", kind: "flag", effect: "destroy" },
+  { name: "template", description: "Write template into config/", kind: "flag", effect: "change" },
+  { name: "print-template", description: "Template only", kind: "flag", effect: "read" },
+  { name: "init-store", description: "Create an empty store", kind: "flag", effect: "destroy" },
+  { name: "apply", description: "Fill the target from a store", kind: "flag", effect: "destroy" },
+  { name: "dump", description: "Save target values to a store", kind: "flag", effect: "destroy" },
   { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name", value: kinds.name("store", "read") },
   {
     name: "force",

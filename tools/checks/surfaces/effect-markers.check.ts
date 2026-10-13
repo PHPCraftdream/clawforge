@@ -31,7 +31,7 @@ check("tool description marker names the some-actions form", destructiveMarker(c
 const schema = inputSchema(command);
 const confirm = (schema.properties as Record<string, { description?: string } | undefined>).confirm;
 const required = schema.required as string[];
-check("confirm reads as advice, not a hard requirement", confirm?.description, "Confirm a destructive action");
+check("confirm reads as advice, not a hard requirement", confirm?.description, "Confirm destructive action");
 checkTrue("confirm is not in required", !required.includes("confirm"));
 
 let help = "";

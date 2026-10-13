@@ -47,7 +47,7 @@ import { FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/comman
 import * as kinds from "#src/core/values/kinds.ts";
 
 export const RESTORE_ARGUMENTS = [
-  { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional", value: kinds.text("path to the archive on the target", { leadingDash: "refuse" }) },
+  { name: "archive", description: "Archive; newest if omitted", kind: "positional", value: kinds.text("path to the archive on the target", { leadingDash: "refuse" }) },
   { ...FORCE_ARGUMENT, setByConfirm: true },
   ...LOCK_TAKEOVER_ARGUMENTS,
   {
@@ -56,8 +56,8 @@ export const RESTORE_ARGUMENTS = [
     description: "Drop identity and paired devices (cloning, not moving)",
     kind: "flag",
   },
-  { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
+  { name: "no-start", summary: "Leave it stopped", description: "Leave the service stopped afterwards", kind: "flag" },
+  { name: "dry-run", description: "What would happen", kind: "flag", effect: "read" },
   { name: "json", summary: "Emit restored data and the gateway startup outcome as JSON", description: "Emit restored data and actual gateway startup outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 

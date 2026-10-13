@@ -46,7 +46,7 @@ export const SET_BUILD_ARGUMENTS = [
 
 export const SET_VALIDATE_ARGUMENTS = [
   { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name", value: kinds.name("set", "read") },
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
+  { name: "set", description: "Built set artifact", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
   { name: "json", summary: "Emit the findings as JSON", description: "Emit the findings as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
@@ -218,7 +218,7 @@ async function buildAction(ctx: Context, plan: BuildPlan): Promise<void> {
 
 export const SET = multiActionBody({
   effect: "change",
-  action: { description: "What to do with sets" },
+  action: { description: "Sets action" },
   actions: {
     build: defineAction({
       summary: "Build the set artifact from the working tree",

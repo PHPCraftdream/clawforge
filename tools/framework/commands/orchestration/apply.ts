@@ -43,11 +43,11 @@ import type { Checksum, LocalArtifact } from "#src/core/values/plan.ts";
 const SET_ARTIFACT = kinds.localFile("a set artifact path");
 
 export const APPLY_ARGUMENTS = [
-  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
-  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum", value: kinds.checksum("hex64", { expected: "a declaration checksum", invalid: () => "takes a declaration checksum — 64 hexadecimal digits", example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }) },
-  { name: "dry-run", description: "Show the steps without running any of them", kind: "flag", effect: "read" },
+  { name: "set", description: "Install a built set", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
+  { name: "expect", description: "Plan checksum", kind: "option", valueName: "checksum", value: kinds.checksum("hex64", { expected: "a declaration checksum", invalid: () => "takes a declaration checksum — 64 hexadecimal digits", example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }) },
+  { name: "dry-run", description: "Show the steps only", kind: "flag", effect: "read" },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** Whether the container is running but its image could not be resolved to any digest at

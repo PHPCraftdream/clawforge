@@ -22,8 +22,7 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { callFactsFor, CONFIRM_REQUIRED, specOf, specShape, bindNamed } from "#framework/core/command/index.ts";
-import { DESTRUCTIVE_SOME } from "#framework/core/io/help-render.ts";
-import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
+import { FULL_TEXT_POINTER, MCP_PARTIAL_MARKER } from "#framework/integration/mcp/schema.ts";
 
 const IMPORT_NOTE = "imported recipe", NOTES_TEXT = "plain notes", progressMasked = "progress mentions ***", gateMasked = "gate says ***";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
@@ -192,8 +191,8 @@ try {
       .find((tool) => tool.name === "recipe"));
     check("recipe MCP schema leaves conditional confirmation optional", (recipeTool?.inputSchema?.required ?? []).includes("confirm"), false);
     check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
-    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes(DESTRUCTIVE_SOME), true);
-    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes(DESTRUCTIVE_SOME), true);
+    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes(MCP_PARTIAL_MARKER), true);
+    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes(MCP_PARTIAL_MARKER) && toolDescription("recipe", openclawCommands.recipe!) === recipeTool?.description, true);
     const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
     check("declaration and generated schema agree", required.includes("confirm"), false);
     check("bare recipe arguments are read-only for MCP gating", callFactsFor(openclawCommands.recipe!, []).effect, "read");
@@ -218,7 +217,7 @@ try {
 
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
-    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes(DESTRUCTIVE_SOME), true);
+    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes(MCP_PARTIAL_MARKER), true);
     check("set build is mutable without confirmation", callFactsFor(openclawCommands.set!, ["build"]).effect, "change");
     check("set try remains destructive for MCP gating", callFactsFor(openclawCommands.set!, ["try", "--set", "x.tar.gz"]).effect, "destroy");
     check("lock check is read-only for MCP gating", callFactsFor(openclawCommands.lock!, ["--check"]).effect, "read");

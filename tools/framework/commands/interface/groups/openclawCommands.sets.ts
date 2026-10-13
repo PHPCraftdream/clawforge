@@ -8,7 +8,7 @@ import { SET } from "#src/commands/sets/set.ts";
 
 export const setsCommands: Record<string, AppCommand> = materializeCommands({
   set: {
-    summary: "Build or validate the set: what a deployment installs, as one artifact",
+    summary: "Build or validate the set artifact",
     group: "change",
     details:
       "Collects every recipe (served content and agent bundle, each file checksummed), " +

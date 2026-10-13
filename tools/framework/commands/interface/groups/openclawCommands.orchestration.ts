@@ -15,7 +15,7 @@ import { ACCEPT } from "#src/commands/orchestration/accept.ts";
 
 export const orchestrationCommands: Record<string, AppCommand> = materializeCommands({
   inspect: {
-    summary: "What is declared, what is actually running, and where they disagree",
+    summary: "Declared versus running, with differences",
     group: "check",
     ...INSPECT,
     details:
@@ -52,7 +52,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     structured: true,
   },
   doctor: {
-    summary: "Say whether anything is wrong and what to run about it",
+    summary: "Report what is wrong and what to run",
     group: "check",
     ...DOCTOR,
     details:
@@ -78,7 +78,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     structured: true,
   },
   plan: {
-    summary: "The ordered actions the declaration implies, without performing them",
+    summary: "Actions the declaration implies, without running",
     group: "change",
     ...PLAN,
     details:
@@ -108,7 +108,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     structured: true,
   },
   apply: {
-    summary: "Run the plan, then confirm what the instance actually is",
+    summary: "Apply the plan, then confirm the instance",
     group: "change",
     ...APPLY,
     details:
@@ -140,7 +140,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     structured: true,
   },
   accept: {
-    summary: "Run the acceptance checks this deployment's recipes declare",
+    summary: "Run this deployment's acceptance checks",
     group: "check",
     ...ACCEPT,
     structured: true,
@@ -165,7 +165,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "blocking issue.",
   },
   rollback: {
-    summary: "Put back the configuration an operation replaced",
+    summary: "Restore the configuration an operation replaced",
     group: "change",
     ...ROLLBACK,
     structured: true,
@@ -189,7 +189,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "only the config-snapshot path above.",
   },
   operations: {
-    summary: "What mutating runs did to this instance, and what they left behind",
+    summary: "What mutating runs did and left behind",
     group: "check",
     ...OPERATIONS,
     structured: true,

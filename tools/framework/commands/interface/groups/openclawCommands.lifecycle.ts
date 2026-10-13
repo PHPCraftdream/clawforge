@@ -20,7 +20,7 @@ import { SMOKE } from "#src/commands/lifecycle/smoke/index.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = materializeCommands({
   bootstrap: {
-    summary: "Bring the instance up from nothing (idempotent)",
+    summary: "Bring the instance up (idempotent)",
     group: "start-stop",
     ...BOOTSTRAP,
     details:
@@ -37,7 +37,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "ok/WARN/FAIL line each, no lock and nothing created — run it before the first bootstrap.",
   },
   up: {
-    summary: "Start the service and wait until it serves",
+    summary: "Start the service; wait until it serves",
     group: "start-stop",
     details:
       "Checks secrets and the gateway port before starting, not after —\n" +
@@ -47,7 +47,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...UP,
   },
   restart: {
-    summary: "Restart the instance so it re-reads its configuration",
+    summary: "Restart so the instance re-reads its config",
     group: "start-stop",
     details:
       "`up` cannot do this: it converges on \"running\", and an instance that is already " +
@@ -94,7 +94,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...DESTROY,
   },
   logs: {
-    summary: "Follow the service log, or read a bounded tail of it",
+    summary: "Follow the service log, or read a tail",
     group: "start-stop",
     details:
       "On a terminal this follows the log until interrupted. Called as a tool it reads the " +
@@ -110,7 +110,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...LOGS,
   },
   backup: {
-    summary: "Snapshot the data directory; list, prune, schedule",
+    summary: "Snapshot data; list, prune, schedule",
     group: "save-move",
     details:
       "With no action: stops the gateway for the duration by default — OpenClaw keeps " +
@@ -164,7 +164,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...BACKUP,
   },
   restore: {
-    summary: "Restore an archive over the current state",
+    summary: "Restore an archive over current state",
     group: "save-move",
     details:
       "The archive is validated before anything is stopped or overwritten —\n" +
@@ -188,7 +188,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...RESTORE,
   },
   pull: {
-    summary: "Snapshot the instance state into the snapshot directory",
+    summary: "Snapshot the instance to the snapshot directory",
     group: "save-move",
     details:
       "Defaults to migrate, unlike `backup`, which defaults to full: moving an instance's " +
@@ -210,7 +210,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...PULL,
   },
   push: {
-    summary: "Push a snapshot back onto the instance",
+    summary: "Push a snapshot onto the instance",
     group: "save-move",
     details:
       "Restores the newest snapshot in the deployment's snapshot directory (or a given " +
@@ -226,7 +226,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...PUSH,
   },
   verify: {
-    summary: "Check a snapshot for credentials before sharing it",
+    summary: "Check a snapshot for credentials",
     group: "save-move",
     details:
       "What `{clawforge pull --share}` runs automatically, callable by hand against any archive.\n" +
@@ -247,7 +247,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     ...VERIFY,
   },
   upgrade: {
-    summary: "Update the image by digest, with automatic rollback on failure",
+    summary: "Update the image by digest; rollback on failure",
     group: "change",
     details:
       "Resolves the target ({--image} <ref>, or the deployment's own OPENCLAW_IMAGE) to a " +

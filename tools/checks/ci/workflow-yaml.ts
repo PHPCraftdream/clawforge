@@ -127,7 +127,7 @@ function parseSequence(lines: SourceLine[], start: number, indent: number): [Yam
     }
     if (findKeyColon(rest) >= 0) {
       // Mapping item whose first key sits inline: re-anchored two columns past the dash.
-      const [value, next] = parseMapping(lines, i + 1, indent + 2, { indent: indent + 2, text: rest });
+      const [value, next] = parseMapping(lines, i + 1, indent + 2, { indent: indent + 2, text: rest, raw: rest });
       items.push(value);
       i = next;
       continue;

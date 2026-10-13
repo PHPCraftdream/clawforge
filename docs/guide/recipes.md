@@ -278,6 +278,33 @@ swaps them gets neither the exclusion nor the write gate, and nothing reports th
 name is copied. The enforced promise about a recipe's private files is the target-side
 `privatePaths` policy, never the portable filter.
 
+**Keyed pseudonyms and intent journals.** When a journal must remember *that* an identifier
+was seen without remembering the identifier, use the keyed-pseudonym helpers from
+`@clawforge/framework/private-config`. `privatePseudonymKey` creates the deployment's HMAC key
+exactly once under a declared private path (exclusive create — an existing key is only ever
+read and validated, never rewritten, and concurrent first-callers converge on one key). The key is versioned, registered for redaction, and never returned to output:
+a tampered, truncated or wrong-version key file refuses with a content-free error.
+`privatePseudonym` hashes the length-prefixed `recipe`, `namespace` and `value` fields with that
+key, so the same input always yields the same `v1.` token, different recipes or namespaces never
+collide even when their concatenations would, and `privatePseudonymLookup` lets an operator
+match a candidate value back to its token without exposing the key. This is pseudonymisation,
+not anonymisation: tokens are unlinkable to their raw values without the key, but an operator
+holding the key can always link them again. For work that must survive a crash between "start"
+and "finished", journal the intent with `appendPrivateIntent`, journal the outcome with
+`appendPrivateResult`, and recover the crash gap — intents without a matching result — with
+`readPendingPrivateIntents`; duplicate intents are reported once, and idempotent retries decide
+over the pending set:
+
+```ts
+import { privatePseudonym, appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents } from "@clawforge/framework/private-config";
+
+const token = await privatePseudonym(ctx, `${dataDir}/vault/pseudonym-key.json`, { recipe: recipe.name, namespace: "user-id", value: rawUserId });
+await appendPrivateIntent(ctx, `${dataDir}/vault/journal.jsonl`, { id: orderId, kind: "sync" });
+try { await syncOrder(orderId); await appendPrivateResult(ctx, `${dataDir}/vault/journal.jsonl`, { id: orderId, kind: "sync", outcome: "done" }); }
+catch { await appendPrivateResult(ctx, `${dataDir}/vault/journal.jsonl`, { id: orderId, kind: "sync", outcome: "failed" }); }
+const pending = await readPendingPrivateIntents(ctx, `${dataDir}/vault/journal.jsonl`, { limit: 100 });
+```
+
 Reading the declarations is strict where it matters, and honest about what it reads: the
 independent `privatePaths` policy reader enumerates every installed recipe's declaration and
 stops the command on a `recipe.json` that exists but cannot be read, parsed or validated for

@@ -15,6 +15,8 @@ import { rememberPrivateSecret } from "./structured/internal.ts";
 export { readPrivateState, writePrivateState, type PrivateStateOptions } from "./structured/state.ts";
 export { appendPrivateJournal, readPrivateJournal, type PrivateJournalReadOptions, type PrivateJournalOptions, type PrivateJournalResult } from "./structured/journal.ts";
 export { PrivateDataError, type PrivateRefusalCode, type JsonValue } from "./structured/internal.ts";
+export { privatePseudonym, privatePseudonymKey, privatePseudonymLookup, type PrivatePseudonymOptions } from "./structured/pseudonym.ts";
+export { appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents, type PrivateIntentRecord, type PrivateResultRecord } from "./structured/intents.ts";
 export { protectPrivateDirectory, createPrivateBinaryFile } from "./private-file.ts";
 
 export interface PrivateFileResult {
@@ -35,13 +37,14 @@ export function registerPrivateSecret(value: string): void {
   registerSecret(value);
 }
 
-function parentPath(path: string): string {
+/** Returns the path's parent directory; a root-level path maps to "/". */
+export function parentPath(path: string): string {
   const slash = path.lastIndexOf("/");
   return slash <= 0 ? "/" : path.slice(0, slash);
 }
 
 /** Creates a target directory and narrows it to owner-only access. */
-async function createPrivateDirectory(ctx: Context, path: string, boundary: string): Promise<void> {
+export async function createPrivateDirectory(ctx: Context, path: string, boundary: string): Promise<void> {
   const root = `${ctx.settings.dataDir}/${boundary}`;
   const parents: string[] = [];
   for (let current = path; current === root || current.startsWith(`${root}/`); current = parentPath(current)) parents.unshift(current);

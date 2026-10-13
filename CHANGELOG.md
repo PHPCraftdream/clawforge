@@ -5,6 +5,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `@clawforge/framework/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
+  length-prefixed recipe, namespace and value, with a per-deployment key created once, exclusively, under a declared
+  `privatePaths` directory and registered for redaction) and intent/result journal records with crash-gap detection
+  (`appendPrivateIntent`, `appendPrivateResult`, `readPendingPrivateIntents`).
 * `check --related [--base <rev>]` runs only the checks affected by the changed files (an inverted static import graph of
   the check tree plus a table of rules for dependencies the graph cannot see); `npm run check:fast` runs type check,
   lint, the always-run structural checks and the related set. `tools/dev/related-audit.ts` reports the selection per commit.

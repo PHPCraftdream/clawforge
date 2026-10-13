@@ -98,10 +98,29 @@ The preview includes all services, sanitized mounts, exact images, named-volume 
 backup location, retained artifacts and disruptive impacts, not opaque plan tokens or
 expanded private environment values.
 
-Writable-layer inspection permits only Docker-added placeholders exactly at verified bind
-or named-volume destinations. Changed/deleted entries, descendants, sibling paths and
-malformed observations remain unsupported application data. The same check runs after
-clean shutdown; unproven cold data never authorizes source resume.
+Writable-layer inspection still permits Docker-added placeholders exactly at verified bind
+or named-volume destinations. A recipe may additionally declare scratch paths, for example
+`"ephemeralPaths": ["/tmp"]`, to ignore added, changed or deleted (A/C/D) diff entries at
+that path or its descendants, segment-wise (`/tmp-other` does not match). A symlink is
+matched by its own diff path without following its target. Entries must be canonical absolute
+POSIX nonroot paths with `/` separators, no backslashes, trailing slash or empty/`.`/`..`
+segments. A declaration equal to or an ancestor of a mount destination refuses migration,
+identifying both paths. Preview and plan report ignored counts from the planning
+observation; result and journal report the execution-preflight observation. These are
+snapshots, not cumulative totals, and repeated cold inspections do not add to them.
+The impact text is `ignored as ephemeral by the recipe: <path> (N entries)`. Other
+unsupported layer data still refuses with a sanitized, JSON-quoted sample of the first
+10 distinct offending roots (excluding descendants of another offending path), optional
+`; more paths omitted`, and an `ephemeralPaths` pointer; malformed observations remain
+refused. The check runs again after clean shutdown;
+unproven cold data never authorizes source resume.
+
+Declaring `/tmp` is the author's guarantee that everything ignored there is disposable,
+not a way to migrate persistent state or bypass the separate required `migrationBackup`
+application-consistency and restore contract. No container layer is archived, exported or
+copied. Existing declared mount storage keeps its full archives unchanged; an ephemeral
+path never excludes mount contents from those backups. Declare only scratch data the
+application can safely lose and recreate, not credentials, databases or required history.
 
 An isolated standard-CLI cutover has exercised graceful source stop, verified archives,
 named-volume transfer, healthy target readiness and source-container removal. The target

@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `recipe.json` may declare `ephemeralPaths`: absolute container paths whose writable-layer contents are
+  disposable. `recipe migrate` ignores changes at or under them, reports the ignored counts, and names the
+  unsupported writable-layer paths (and this field) when it still refuses.
 * A public `@clawforge/framework/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
   application CLI with stdin-only input and guarded JSON results; `consumerFetch` makes one bounded HTTP
   request from the gateway container (its DNS and proxy), with the request on stdin and secrets redacted.

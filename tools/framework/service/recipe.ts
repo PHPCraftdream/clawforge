@@ -17,7 +17,7 @@ import { readdir, readFile, access } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { readName, safeName, type RecipeName } from "../core/values/names.ts";
+import { hasControlCharacter, readName, safeName, type RecipeName } from "../core/values/names.ts";
 import type { RecipeRef } from "../core/values/plan.ts";
 import { die } from "../core/io/log.ts";
 import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
@@ -147,6 +147,7 @@ export interface Recipe {
    *  carrying them, private-config.ts refuses private writes elsewhere. full still
    *  contains them by design. */
   readonly privatePaths?: string[];
+  readonly ephemeralPaths?: readonly string[];
   /** What install waits for before calling afterStart and reporting success. See
    *  RecipeReadiness. */
   readonly migrationBackup?: RecipeMigrationBackup;
@@ -223,6 +224,20 @@ function parsePrivatePaths(recipe: string, value: unknown): string[] | undefined
     if (typeof entry !== "string") throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must be strings`);
     return privatePath(recipe, entry);
   });
+}
+
+export function parseEphemeralPaths(recipe: string, value: unknown): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  const detail = `recipes/${recipe}/recipe.json: ephemeralPaths must be an array of canonical absolute POSIX nonroot paths`;
+  if (!Array.isArray(value)) throw new Error(detail);
+  return Object.freeze(value.map((entry) => {
+    if (typeof entry !== "string" || !entry.startsWith("/") || entry.includes("\\")
+      || hasControlCharacter(entry)
+      || entry.slice(1).split("/").some((part) => part === "" || part === "." || part === "..")) {
+      throw new Error(detail);
+    }
+    return entry;
+  }));
 }
 
 function isPortNumber(value: unknown): value is number {
@@ -341,6 +356,7 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   const description = typeof (parsed as { description?: unknown }).description === "string" ? (parsed as { description: string }).description : "";
   if (description === "") throw new Error(missingDescriptionDetail(name));
   parseConsumerEndpoints(name, (parsed as { consumerEndpoints?: unknown }).consumerEndpoints);
+  parseEphemeralPaths(name, (parsed as { ephemeralPaths?: unknown }).ephemeralPaths);
   parseMigrationBackup((parsed as { migrationBackup?: unknown }).migrationBackup);
   return parsed;
 }
@@ -374,6 +390,7 @@ export async function loadRecipe(name: RecipeName | RecipeRef): Promise<Recipe> 
     consumerEndpoints: parseConsumerEndpoints(name, parsed.consumerEndpoints),
     variables: parseVariables(name, parsed.variables),
     privatePaths: parsePrivatePaths(name, parsed.privatePaths),
+    ephemeralPaths: parseEphemeralPaths(name, parsed.ephemeralPaths),
     migrationBackup: parseMigrationBackup(parsed.migrationBackup),
     readiness: parseReadiness(name, parsed.readiness),
     directory,

@@ -36,8 +36,8 @@ addition to any reader explicitly named in the child row. Thus ports children ar
 by list/install/preview, variables children by install/preview, readiness children by
 install/recover reconciliation, privatePaths children by backup/pull/archive verify/
 private-write policy, privateFiles children by portable carriers, consumerEndpoints
-children by full loading/ownership catalog, and migrationBackup children by loading/
-migrate. This convention applies to every nested row, not only array objects.
+children by full loading/ownership catalog, and migrationBackup and ephemeralPaths children
+by loading/migrate. This convention applies to every nested row, not only array objects.
 
 | Field (including nested fields) | JSON type | Required / default | Validation and readers |
 | --- | --- | --- | --- |
@@ -65,6 +65,8 @@ migrate. This convention applies to every nested row, not only array objects.
 | `consumerEndpoints[]` | object | Each declared entry | Exactly `configPath` and `service`, no other keys. Duplicate `configPath` within a manifest refused. |
 | `consumerEndpoints[].configPath` | string | Required per member | Matches `^[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*$`; segments `__proto__`, `prototype`, `constructor` refused. Configuration key, not URL/filesystem path. |
 | `consumerEndpoints[].service` | string | Required per member | Matches `^[A-Za-z0-9][A-Za-z0-9_-]*$`; the same three unsafe names refused. Ownership declaration, not a reachability probe. |
+| `ephemeralPaths` | array of strings | Optional; absent means no declared disposable paths | Migration declaration for disposable container writable-layer paths, not host or data-root paths. Invalid declarations refuse loading; migration checks mount conflicts and ignores matching diff entries, reporting counts in preview, plan and result. No layer archive, export or copy. [Application-owned migration contract](recipes.md#application-owned-migration-contract). |
+| `ephemeralPaths[]` | string | Each declared entry | Canonical absolute POSIX nonroot path with `/` separators; empty strings, backslashes, control characters, trailing slash and empty/`.`/`..` segments refused. Match the path itself and descendants segment-wise, not sibling prefixes. A declaration equal to or an ancestor of a mount destination refuses migration and identifies both paths. Symlink entries match their own diff path without following the link. |
 | `migrationBackup` | object | Optional; migration refuses absence, even preview | Exactly one of the contracts below. Extra keys, null, arrays, mixed modes and wrong literals refuse load. No inferred guarantee. [Application-owned migration contract](recipes.md#application-owned-migration-contract). |
 | `migrationBackup.consistency` | string | Required in contract | `"application-cold-safe"` or `"application-verified-cold"`. |
 | `migrationBackup.persistentState` | string | Required in both | Exactly `"all-in-declared-named-volumes-and-bind-mounts"`. |
@@ -101,13 +103,15 @@ See [hook walkthrough](recipes.md#recipes-things-that-live-beside-the-instance) 
    Null and nonobjects fail `must contain an object`. The initial object check does not
    explicitly reject arrays, but JSON arrays cannot supply the required description and
    therefore fail `recipes/<name>/recipe.json needs a description`.
-3. `parseRecipeDefinition` checks only description, consumer endpoints and migration
-   contract. It returns the parsed object, including unknown fields. Set validation uses
-   this partial parser; it is **not** the full load validation.
+3. `parseRecipeDefinition` checks only description, consumer endpoints, migration
+   contract and ephemeralPaths. It returns the parsed object, including unknown fields.
+   Set validation uses this partial parser; it is **not** the full load validation.
 4. Full load checks ports, variables, privatePaths and readiness as described in the table,
    and reconstructs the recognized fields. Unknown **top-level** keys are accepted but
    discarded; there is no global unknown-field refusal. Port extras survive loading;
    readiness extras are discarded; endpoint and migration extras are refused.
+   Full load also reconstructs optional `ephemeralPaths`; mount-conflict checks require
+   runtime migration evidence.
 5. `declaredPrivateFiles` independently checks JSON/object shape and privateFiles only.
    The strict privatePaths enumeration independently checks JSON/object shape and
    privatePaths only: it does not require description or validate unrelated fields.
@@ -153,12 +157,29 @@ parent. These are validation errors, not Compose/hook execution errors.
 | `consumerEndpoints[].configPath`, missing/unsafe | P | `consumerEndpoints[<index>].configPath must be a safe non-empty dot configuration path` |
 | `consumerEndpoints[].service`, missing/unsafe | P | `consumerEndpoints[<index>].service must be a safe non-empty Compose service name` |
 | `consumerEndpoints[]`, duplicate path | P | `consumerEndpoints[<index>]: duplicate configPath <configPath>` |
+| `ephemeralPaths`, non-array | P | `ephemeralPaths must be an array of canonical absolute POSIX nonroot paths` |
+| `ephemeralPaths[]`, non-string/empty/noncanonical/nonabsolute/root, backslash, trailing slash, control character or empty/dot/dotdot segment | P | `ephemeralPaths must be an array of canonical absolute POSIX nonroot paths` |
 | `privateFiles`, non-array | F | `privateFiles must be an array of recipe-relative paths` |
 | `privateFiles[]`, non-string/empty | F | `privateFiles entries must be non-empty strings` |
 | `privateFiles[]`, backslash | F | `privateFiles entries are /-separated paths relative to the recipe directory: <value>` |
 | `privateFiles[]`, empty/dot/climbing segment | F | `privateFiles entries must stay inside the recipe directory: <value>` |
 
-The remaining messages have **no P/F prefix**; use the entire template:
+`ephemeralPaths` does not relax malformed diff observations or existing storage refusals.
+Ignored A/C/D entries at or under a declared path are observation snapshots, not
+cumulative totals: preview/plan counts come from planning; result/journal counts come
+from execution preflight. Repeated cold inspections validate the policy without adding
+their counts to those snapshots. Impact text is
+`ignored as ephemeral by the recipe: <path> (N entries)`. Matching is
+segment-wise and uses a symlink's own path, never its target. Existing mount storage keeps
+its full archives unchanged; no container layer is archived, exported or copied.
+
+The remaining messages have **no P/F prefix**; use the entire template. Migration
+writable-layer messages come from `runtime/docker/side-stack/migration-plan.ts`.
+In those rows, `<path>` and `<destination>` are sanitized and JSON-quoted (including
+JSON escaping); `<paths>` is a comma-and-space-separated list of at most the first
+10 distinct offending roots, excluding descendants of another offending path.
+`<omission>` is `; more paths omitted` only when more than 10 roots remain, otherwise
+empty:
 
 | Boundary / field | Exact complete message |
 | --- | --- |
@@ -166,6 +187,9 @@ The remaining messages have **no P/F prefix**; use the entire template:
 | Full/partial parser, null/nonobject | `recipes/<name>/recipe.json must contain an object` |
 | Full/partial parser, invalid JSON | `recipes/<name>/recipe.json: <JSON.parse error message>` |
 | `migrationBackup` and **every nested contract field**, any invalid shape/key/literal | `recipe.json migrationBackup requires the exact application-cold-safe author contract or application-verified-cold post-stop contract` |
+| Migration, `ephemeralPaths[]` equal to or ancestor of a mount destination | `recipe.json ephemeralPaths <path> conflicts with verified mount destination <destination>` |
+| Migration, other unsupported writable-layer data | `recipe migration writable-layer application data is unsupported; offending paths: <paths><omission>; see recipe.json ephemeralPaths` |
+| Migration, malformed Docker diff | `recipe migration writable-layer application data is unsupported; malformed Docker diff; see recipe.json ephemeralPaths` |
 | Full loader, missing manifest | `recipe "<name>" not found — expected recipes/<name>/recipe.json` |
 | Full loader or independent privacy reader, read error | `could not read <manifest>: <underlying error message>` |
 | Independent privatePaths/privateFiles reader, JSON error | `could not parse <manifest>: <JSON.parse error message>` |
@@ -197,7 +221,7 @@ See [application migration](recipes.md#application-owned-migration-contract) and
 | `pull` | Uses backup creation and the same archive/private policy; default profile migrate. Share verifies before publication; migrate checks forbidden declared content before publication. Not recipe image/volume export. | [Private files](recipes.md#private-files-privatepaths-and-privatefiles) |
 | archive `verify` | Strict privatePaths/recorded policy feeds forbidden archive-content checks for portable profiles. Distinct from `recipe verify`; it runs no recipe verify hook. | [Private files](recipes.md#private-files-privatepaths-and-privatefiles) |
 | `recipe verify` / `onboard` / `diagnose` | Full load and hook discovery; first two emit hook result, diagnose combines running/log evidence with verify result or error. All take the instance lock because arbitrary hooks may mutate. | [Durable repair](recipes.md#durable-repair-and-verification) |
-| `recipe migrate` | Full load; requires exact migrationBackup before runtime planning. Conditional callback construction is inert during preview. Planning is read-only; executor enters the instance lock and imports the conditional verifier only after proven stop. No prepare/verify/onboard lifecycle calls or build/pull fallback. | [Application-owned migration contract](recipes.md#application-owned-migration-contract) |
+| `recipe migrate` | Full load; requires exact migrationBackup before runtime planning. Optional ephemeralPaths declares disposable writable-layer paths; mount equal/ancestor conflicts refuse, matching A/C/D diff entries are ignored and counted in preview/plan/result, and other layer data refuses with a sanitized first-10 top-level path sample and ephemeralPaths pointer. Existing mount archives remain full; no layer archive/export/copy. Conditional callback construction is inert during preview. Planning is read-only; executor enters the instance lock and imports the conditional verifier only after proven stop. No prepare/verify/onboard lifecycle calls or build/pull fallback. | [Application-owned migration contract](recipes.md#application-owned-migration-contract) |
 | `recipe recover` | Full load; selective service recovery. Optional consumer reconciliation requires prepare.ts and invokes **named** afterStart under the executor lock after one bounded readiness observation of selected service plus declared dependencies; preview imports nothing. | [Durable repair](recipes.md#durable-repair-and-verification) |
 | `recipe import` | Source binder proves recipe.json exists, not full schema validity. Portable walker checks privateFiles plus generic sensitive names and symlink containment; destination must not exist. Local copy, no Context/instance lock, no hook evaluation. Warns on copied prepare/verify/onboard files. | [Private files](recipes.md#private-files-privatepaths-and-privatefiles) |
 | `recipe inspect` | **Full load still required.** Reads runtime container/namespace evidence using name/definition, never hook imports, lock or target writes. Requests logs with tail default 100, clamped 1–200; JSON contains sanitized diagnostics; human output omits logs/mounts/start errors/details. | [Existing-stack cutover](recipes.md#existing-stack-cutover) |

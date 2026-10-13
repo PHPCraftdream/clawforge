@@ -1,7 +1,8 @@
-import { parseMigrationBackup } from "../../../service/recipe.ts";
+import { parseMigrationBackup, parseEphemeralPaths } from "../../../service/recipe.ts";
+import { hasControlCharacter } from "../../../core/values/names.ts";
 import { probeExists, TargetReadUnknownError, type TargetRead } from "../../transport/transport.ts";
 import { randomUUID } from "node:crypto";
-import type { StackMigrateOptions, StackMigratePlan, StackContainerEvidence } from "../../runtime.ts";
+import type { StackContainerEvidence, StackMigrateOptions, StackMigratePlan, StackMigrationResult } from "../../runtime.ts";
 import { array, execResult, json, object, text, preflightStaging, type StackIO } from "./io.ts";
 import { tryParseLocalImageId } from "../image-ref.ts";
 import { requireOwned, records } from "./inspection.ts";
@@ -23,7 +24,8 @@ export interface ReadonlyBindProof {
   identity: string;
 }
 export interface MigrationPrepared {
-  plan: StackMigratePlan;
+  plan: SideStackMigratePlan;
+  ephemeralPaths: readonly string[];
   raw: Record<string, unknown>[];
   sourceDocument: Record<string, unknown>;
   imageConfigs: Record<string, Record<string, unknown>>;
@@ -125,18 +127,35 @@ export function rawMounts(raw: Record<string, unknown>) {
       ...(m["Name"] === undefined ? {} : { name: text(m["Name"]) }) };
   });
 }
-export function assertWritableLayerMetadata(changes: string, mounts: readonly { type: string; destination: string }[]): void {
-  if (changes === "") return;
+export function assertWritableLayerMetadata(changes: string, mounts: readonly { type: string; destination: string }[],
+  ephemeralPaths: readonly string[] = [], sanitize: (path: string) => string = (path) => path): readonly number[] {
+  const counts = ephemeralPaths.map(() => 0);
+  if (changes === "") return counts;
   const destinations = new Set<string>();
   for (const mount of mounts) {
     if (["volume", "bind"].includes(mount.type) && safePath(mount.destination)) destinations.add(mount.destination);
   }
   const output = changes.endsWith("\n") ? changes.slice(0, -1) : changes;
-  // Docker creates mountpoint placeholders in the layer; descendants remain application data.
-  for (const line of output.split("\n")) {
-    if (!line.startsWith("A ") || !destinations.has(line.slice(2)))
-      throw new Error("recipe migration writable-layer application data is unsupported");
+  const entries = output.split("\n").map((line) => {
+    const match = /^([ACD]) (\/[^\r\n]*)$/.exec(line);
+    const path = match?.[2];
+    if (!path || path.includes("\\") || hasControlCharacter(path)
+      || (path !== "/" && path.slice(1).split("/").some((part) => part === "" || part === "." || part === "..")))
+      throw new Error("recipe migration writable-layer application data is unsupported; malformed Docker diff; see recipe.json ephemeralPaths");
+    return { operation: match![1], path };
+  });
+  const offending: string[] = [];
+  for (const { operation, path } of entries) {
+    if (operation === "A" && destinations.has(path)) continue;
+    const index = ephemeralPaths.findIndex((root) => path === root || path.startsWith(root + "/"));
+    if (index >= 0) counts[index]!++;
+    else offending.push(path);
   }
+  if (offending.length) {
+    const roots = [...new Set(offending)].filter((path) => !offending.some((other) => other !== path && path.startsWith(other + "/")));
+    throw new Error(`recipe migration writable-layer application data is unsupported; offending paths: ${roots.slice(0, 10).map((path) => JSON.stringify(sanitize(path))).join(", ")}${roots.length > 10 ? "; more paths omitted" : ""}; see recipe.json ephemeralPaths`);
+  }
+  return counts;
 }
 export function volumeNames(stdout: string): string[] {
   const names = stdout === "" ? [] : stdout.trimEnd().split("\n");
@@ -237,7 +256,9 @@ export function gentleSignal(config: Record<string, unknown>): "SIGTERM" | "SIGI
   return signal;
 }
 
-export async function prepareMigration(io: StackIO, options: StackMigrateOptions, token: string = randomUUID()): Promise<MigrationPrepared> {
+export async function prepareMigration(io: StackIO, options: SideStackMigrateOptions, token: string = randomUUID()): Promise<MigrationPrepared> {
+  const ephemeralPaths = Object.freeze([...new Set(parseEphemeralPaths("migration", options.ephemeralPaths) ?? [])]);
+  const ignoredCounts = ephemeralPaths.map(() => 0);
   const migrationBackup = parseMigrationBackup(options.migrationBackup);
   if (!migrationBackup) throw new Error("recipe migration requires explicit application-cold-safe author contract before planning");
   if (migrationBackup.consistency === "application-verified-cold" && typeof options.verifyMigrationBackup !== "function")
@@ -284,7 +305,6 @@ export async function prepareMigration(io: StackIO, options: StackMigrateOptions
     if (hostConfig["Privileged"] === true || array(hostConfig["Devices"] ?? []).length || array(hostConfig["VolumesFrom"] ?? []).length
       || Object.keys(object(hostConfig["Tmpfs"] ?? {})).length) throw new Error("recipe migration source isolation is unsupported");
     const actual = rawMounts(container.raw);
-    assertWritableLayerMetadata((await io.run(["diff", evidence.id])).stdout, actual);
     for (const key of ["volumes_from", "devices", "privileged", "container_name", "network_mode", "pid", "ipc", "tmpfs", "secrets", "configs"]) {
       if (service[key] !== undefined) throw new Error("recipe migration unsupported service storage/isolation");
     }
@@ -328,6 +348,16 @@ export async function prepareMigration(io: StackIO, options: StackMigrateOptions
         rewritten.push({ type: "volume", source: key, target: destination, volume: { nocopy: true } });
       }
     }
+    const sanitizePath = migrationPathSanitizer(io, container.raw);
+    for (const path of ephemeralPaths) {
+      for (const mount of actual) {
+        if (path === mount.destination || mount.destination.startsWith(path + "/")) {
+          throw new Error(`recipe.json ephemeralPaths ${JSON.stringify(sanitizePath(path))} conflicts with verified mount destination ${JSON.stringify(sanitizePath(mount.destination))}`);
+        }
+      }
+    }
+    const counts = assertWritableLayerMetadata((await io.run(["diff", evidence.id])).stdout, actual, ephemeralPaths, sanitizePath);
+    counts.forEach((count, index) => { ignoredCounts[index]! += count; });
     const image = tryParseLocalImageId(evidence.imageId!);
     if (image === undefined) throw new Error("recipe migration source requires an immutable local sha256 image ID");
     const imageRecords = array(json((await io.run(["image", "inspect", image])).stdout));
@@ -376,19 +406,60 @@ export async function prepareMigration(io: StackIO, options: StackMigrateOptions
   if (helperRecords.length !== 1 || object(helperRecords[0])["Id"] !== helperImage)
     throw new Error("recipe migration exact local helper image unavailable");
   const helperConfig = object(object(helperRecords[0])["Config"]);
-  const plan: StackMigratePlan = Object.freeze({ helperImage, shutdownTimeoutSeconds, migrationBackup, token, sourceProject, targetProject: io.project,
+  const sanitizePaths = (path: string): string => {
+    for (const container of source) path = migrationPathSanitizer(io, container.raw)(path);
+    return path;
+  };
+  const ignoredEphemeralPaths = freezeIgnored(ephemeralPaths, ignoredCounts, sanitizePaths);
+  const plan: SideStackMigratePlan = Object.freeze({ ignoredEphemeralPaths, helperImage, shutdownTimeoutSeconds, migrationBackup, token, sourceProject, targetProject: io.project,
     services: Object.freeze(serviceNames), backupRoot: options.backupRoot,
     volumes: Object.freeze(storage.filter((s) => s.type === "volume").map((s) => Object.freeze({ source: s.source, target: s.target }))),
     inventory: Object.freeze(source.map((c) => c.evidence)),
     images: Object.freeze(source.map((c) => Object.freeze({ service: c.evidence.service!, imageId: c.evidence.imageId! }))),
-    impacts: Object.freeze(["gracefully stop all source writers", "verify cold full storage archives", "copy named volumes into fresh namespace", "preserve shared bind roots", "start target with exact images; no builds or pulls", "retain source volumes and private backups", "restore bind backups before source resume after target writes"]) });
+    impacts: Object.freeze([...ignoredEphemeralPaths.map(({ path, count }) => `ignored as ephemeral by the recipe: ${path} (${count} entries)`), "gracefully stop all source writers", "verify cold full storage archives", "copy named volumes into fresh namespace", "preserve shared bind roots", "start target with exact images; no builds or pulls", "retain source volumes and private backups", "restore bind backups before source resume after target writes"]) });
   const document = { ...config, services: pinned };
-  return { plan, document, sourceDocument, imageConfigs, raw: source.map((c) => c.raw), containers: source.map((c) => c.evidence), storage,
+  return { plan, ephemeralPaths, document, sourceDocument, imageConfigs, raw: source.map((c) => c.raw), containers: source.map((c) => c.evidence), storage,
     helperImage, seconds, readonlyBindProofs,
-    fingerprint: JSON.stringify(stable({ helperImage, helperConfig, shutdownTimeoutSeconds, migrationBackup, config, sourceDocument, imageConfigs,
+    fingerprint: JSON.stringify(stable({ ephemeralPaths, helperImage, helperConfig, shutdownTimeoutSeconds, migrationBackup, config, sourceDocument, imageConfigs,
       source: source.map(({ raw }) => {
         const state = object(raw["State"]);
         return { id: raw["Id"], image: raw["Image"], config: raw["Config"], hostConfig: raw["HostConfig"], mounts: raw["Mounts"],
           state: { status: state["Status"], exitCode: state["ExitCode"], oomKilled: state["OOMKilled"], paused: state["Paused"], restarting: state["Restarting"] } };
       }).sort((a, b) => text(a.id).localeCompare(text(b.id))), storage, readonlyBindProofs })) };
+}
+
+// Paths a recipe declares disposable (recipe.json ephemeralPaths): only sanitized counts are kept.
+export interface IgnoredEphemeralPath {
+  readonly path: string;
+  readonly count: number;
+}
+export interface SideStackMigrateOptions extends StackMigrateOptions {
+  readonly ephemeralPaths?: readonly string[];
+}
+export interface SideStackMigratePlan extends StackMigratePlan {
+  readonly ignoredEphemeralPaths: readonly IgnoredEphemeralPath[];
+}
+export interface SideStackMigrationResult extends StackMigrationResult {
+  readonly ignoredEphemeralPaths: readonly IgnoredEphemeralPath[];
+}
+export function ignoredEphemeralPaths(value: StackMigratePlan | StackMigrationResult): readonly IgnoredEphemeralPath[] {
+  if (!("ignoredEphemeralPaths" in value)) return Object.freeze([]);
+  const summaries = value.ignoredEphemeralPaths;
+  if (!Array.isArray(summaries) || summaries.some((entry: unknown) => entry === null || typeof entry !== "object"
+    || !("path" in entry) || typeof entry.path !== "string" || !("count" in entry)
+    || typeof entry.count !== "number" || !Number.isSafeInteger(entry.count) || entry.count < 0)) {
+    throw new Error("recipe migration ignored ephemeral summary malformed");
+  }
+  return Object.freeze(summaries.map((entry: IgnoredEphemeralPath) => Object.freeze({ path: entry.path, count: entry.count })));
+}
+export function migrationPathSanitizer(io: Pick<StackIO, "sanitize">, raw: Record<string, unknown>): (path: string) => string {
+  const secrets = array(object(raw["Config"])["Env"] ?? []).map(text)
+    .map((entry) => entry.slice(entry.indexOf("=") + 1)).filter(Boolean).sort((a, b) => b.length - a.length);
+  return (path) => {
+    for (const secret of secrets) path = path.split(secret).join("[redacted]");
+    return io.sanitize(path).slice(0, 512);
+  };
+}
+export function freezeIgnored(paths: readonly string[], counts: readonly number[], sanitize: (path: string) => string): readonly IgnoredEphemeralPath[] {
+  return Object.freeze(paths.map((path, index) => Object.freeze({ path: sanitize(path), count: counts[index] ?? 0 })));
 }

@@ -8,7 +8,7 @@ import { readName } from "#framework/core/values/names.ts";
 import {
   clearRecipesDir, loadRecipe, parseRecipeDefinition, recipeEndpointOwners, useRecipesDir,
 } from "#framework/service/recipe.ts";
-import { ownerOfConfigPath, recipePathOwners } from "#framework/set/ownership/recipe-paths.ts";
+import { ownerOfConfigPath, recipePathOwners, type RecipePathOwner } from "#framework/set/ownership/recipe-paths.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function refusal(body: () => unknown | Promise<unknown>): Promise<unknown> {
@@ -156,7 +156,7 @@ try {
   ]);
 
   // Pure lookup, independent of the filesystem.
-  const owners = [
+  const owners: RecipePathOwner[] = [
     { recipe: "wide", path: "a", mode: "value", prefix: true },
     { recipe: "deep", path: "a.b", mode: "value", prefix: true },
     { recipe: "exact", path: "a.b.c", mode: "value", prefix: false },

@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* The check runner records each file's run time in a local `.check-timings.json`, prints the wall time, serial sum,
+  parallel efficiency and the ten slowest files after every run, and `check --timings` shows the stored ranking.
+  `OC_CHECK_TIMINGS_OUT=<path>` also writes the run's durations for CI artifacts; `OC_CHECK_TIMINGS=off` disables the file.
 * Recipe hooks get schema-versioned private state (`readPrivateState` / `writePrivateState`) and a bounded,
   secret-refusing private journal (`appendPrivateJournal` / `readPrivateJournal`) in
   `@clawforge/framework/private-config`. New ancestor directories are created owner-only from the start.

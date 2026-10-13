@@ -84,6 +84,15 @@ const checkBody = commandBody({
       valueName: "cap,...",
       value: kinds.text("capabilities that must fail a check instead of skipping it"),
     },
+    { name: "timings", description: "Print stored check timings, run nothing", kind: "flag" },
+    {
+      name: "top",
+      summary: "How many timings to list",
+      description: "With --timings: list the top N slowest check files by median (default 20)",
+      kind: "option",
+      valueName: "n",
+      value: kinds.count(),
+    },
     {
       name: "filter",
       summary: "Run checks whose path contains this text",
@@ -95,7 +104,7 @@ const checkBody = commandBody({
   run: async (_on, plan) => {
     const require = plan.require === undefined ? undefined : plan.require.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
     const { runChecks } = await import(CHECK_RUNNER_PATH);
-    return runChecks({ filters: [...plan.filter], list: plan.list, jobs: plan.jobs !== undefined && plan.jobs > 0 ? plan.jobs : undefined, require });
+    return runChecks({ filters: [...plan.filter], list: plan.list, jobs: plan.jobs !== undefined && plan.jobs > 0 ? plan.jobs : undefined, require, timingsOnly: plan.timings === true ? (plan.top !== undefined && plan.top > 0 ? plan.top : 20) : undefined });
   },
 });
 
@@ -119,7 +128,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "A file naming a capability it cannot run without (docker, wsl, posix-sh, rsync, " +
       "linux-host) is skipped, not failed, when this host lacks it. `{--require}` (or " +
       "OC_CHECK_REQUIRE) names capabilities this host is expected to have, turning a skip " +
-      "into a failure for those.",
+      "into a failure for those. `{--timings}` prints the stored per-file timing ranking (median of the recent samples in `.check-timings.json`) without running anything.",
     body: checkBody,
   }),
   materializeGate({

@@ -1959,6 +1959,14 @@
             "type": "string",
             "description": "Capabilities that must fail, not skip"
           },
+          "timings": {
+            "type": "boolean",
+            "description": "Print stored check timings, run nothing"
+          },
+          "top": {
+            "type": "string",
+            "description": "How many timings to list"
+          },
           "filter": {
             "type": "array",
             "items": {

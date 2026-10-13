@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
-import { runCheckFile, runProcess, type CheckResult } from "./spawn.ts";
+import { printStoredTimings, recordRunTimings, renderRunBlock, runCheckFile, runProcess, type CheckResult, type RecordedSample } from "./spawn.ts";
 import { CAPABILITIES, CapabilityProbe, isCapability, type Capability } from "./capabilities/capabilities.ts";
 import { gateFor, parseCaseSkips, parseRequireList, skipLine, summaryLine } from "./capabilities/gate.ts";
 
@@ -31,6 +31,12 @@ export interface RunChecksOptions {
   readonly entries?: readonly LabeledCheck[];
   readonly probe?: Pick<CapabilityProbe, "missing">;
   readonly runFile?: typeof runCheckFile;
+  /** With a number: print the stored check-timing ranking (top n by median) and run nothing. */
+  readonly timingsOnly?: number;
+  /** Directory holding .check-timings.json. Defaults to the monorepo root; tests point this at a temp dir. */
+  readonly timingsDir?: string;
+  /** Injectable clock for a run's wall time. */
+  readonly now?: () => number;
 }
 
 function defaultJobs(): number {
@@ -161,8 +167,11 @@ export interface CheckoutSnapshot {
 // hosts that have one, and .rush/ is the orchestration harness state (locks, sessions) that
 // concurrent rush runs rewrite. tools/framework/dist is observed like any other ignored space: no
 // check writes it (build-output and the release pack checks build into OS temp). The excludes
-// prune before git walks, so the ignored pass stays as cheap as the tracked one.
-const IGNORED_STATUS_EXCLUDES = ["node_modules", "apps", "worktrees", ".rush"];
+// prune before git walks — the .check-timings.json entry keeps the git-status excludes consistent —
+// so the ignored pass stays as cheap as the tracked one. .check-timings.json is the runner's own
+// telemetry file, written by nested `clawforge check` children during a run, so it must not read as
+// a checkout change.
+const IGNORED_STATUS_EXCLUDES = ["node_modules", "apps", "worktrees", ".rush", ".check-timings.json"];
 
 function diffStatusLines(before: string, after: string, prefix: string): readonly string[] {
   const beforeLines = new Set(before.split("\n"));
@@ -386,6 +395,11 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
     return 1;
   }
 
+  if (options.timingsOnly !== undefined) {
+    await printStoredTimings({ dir: options.timingsDir ?? monorepoRoot, top: options.timingsOnly, current: labeled.map((entry) => entry.label) });
+    return 0;
+  }
+
   if (list) {
     for (const entry of selected) {
       emit(entry.requires.length === 0 ? `${entry.label}\n` : `${entry.label} (requires: ${entry.requires.join(", ")})\n`);
@@ -393,10 +407,14 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
     return 0;
   }
 
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  const samples: RecordedSample[] = [];
   let failed = 0;
   let skippedFiles = 0;
   const skippedByCapability = new Map<Capability, number>();
   const report = (result: Outcome): void => {
+    samples.push({ label: result.label, ms: result.durationMs });
     if (result.skipped !== undefined) {
       skippedFiles += 1;
       for (const capability of result.skipped) skippedByCapability.set(capability, (skippedByCapability.get(capability) ?? 0) + 1);
@@ -433,5 +451,7 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
   }
 
   process.stderr.write(summaryLine(selected.length - skippedFiles, failed, skippedByCapability));
+  process.stderr.write(renderRunBlock(now() - startedAt, jobs, samples));
+  await recordRunTimings({ dir: options.timingsDir ?? monorepoRoot, samples, off: process.env.OC_CHECK_TIMINGS === "off" });
   return failed === 0 ? 0 : 1;
 }

@@ -161,6 +161,19 @@ say exactly what a check file printing its own "skip" line to stderr would other
 repeat by hand, and a moved or renamed file keeps working everywhere without anyone updating a
 CI path list.
 
+### Run timings
+
+Every run records each check file's wall-clock duration — skipped and failed files at 0 — in
+`.check-timings.json` at the repository root (gitignored, per-host, the last 5 samples per
+file). A filtered run merges into the existing data instead of replacing it; the file is
+rewritten atomically (temp file + rename), and a corrupt or unknown-version file is ignored
+with one warning, then rewritten. At the end of a run the runner prints where the time went:
+wall time, the serial sum of per-file times, the parallel efficiency (serial sum ÷ wall ×
+jobs) and the ten slowest files with their share. `./clawforge check --timings` prints the
+stored ranking (median per file; `--top <n>` for more or fewer) without running anything.
+CI can set `OC_CHECK_TIMINGS_OUT=<path>` to additionally write the run's per-file durations
+as JSON for upload as an artifact; `OC_CHECK_TIMINGS=off` disables the repository-root file.
+
 ## CI jobs and the host × target matrix
 
 `.github/workflows/ci.yml` runs four jobs on every push/PR, one per named cell of the

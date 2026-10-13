@@ -1,7 +1,7 @@
 // Fixtures stay inside this worktree; no transport, Docker or dependency installation.
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { prepareRecipeCheck, recipeCheckEnvironment, runCheckAction } from "#framework/commands/management/recipe/recovery/checks/check.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
@@ -10,7 +10,7 @@ import { readName } from "#framework/core/values/names.ts";
 import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
-const root = await mkdtemp(join(dirname(fileURLToPath(import.meta.url)), "check-fixture-"));
+const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-recipe-check-")));
 const fixture = await createDeploymentFixture({ root });
 const app = { name: "recipe-check-fixture", description: "fixture", commands: { recipe: openclawCommands.recipe } };
 const directory = join(root, "recipes", "local");

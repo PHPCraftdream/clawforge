@@ -28,7 +28,7 @@ useLinuxHost();
 // The root is made here, so the declaration writes below are provably under the temp dir.
 const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-sweep-"));
 export const fixture = await createDeploymentFixture({ root: sweepRoot });
-await writeFile(join(fixture.root, "recipes", "local", "control.check.ts"), "process.exit(0);\n");
+await writeFile(join(sweepRoot, "recipes", "local", "control.check.ts"), "process.exit(0);\n");
 
 // memory index/verify/setup refuse an undeclared or non-local memory before target contact, so
 // the sweep deployment declares the local embeddings those controls are valid against.

@@ -160,11 +160,51 @@ by a table kept in its private state (U5), and reconciles the allow-list it owns
 approving or revoking through the application's CLI (U7). Every change is journaled. The
 framework contains nothing about what the directory or the labels are.
 
-## Open questions for the owner
+## Decisions (design review, 2026-10-13)
 
-1. Is a single `recipe_run` MCP tool acceptable (arguments typed per action only on the
-   CLI side), given the tools/list byte budget?
-2. Should journal records ever carry user identifiers, or only opaque hashes? (Hash by
-   default, the recipe opts in to plain identifiers.)
-3. May scheduled actions be declared by a recipe and installed with one command, or must
-   the operator list each one explicitly in the deployment configuration?
+The three open questions were put to an independent read-only review of this document
+against the code. Recorded answers, with the changes they force on the blocks above:
+
+1. **MCP exposure and grammar.** Recipe actions go through ONE generic invocation on the
+   existing `recipe` MCP tool (`action: "run"`, the recipe name, a separately named
+   argument for the recipe-declared action, and an argument payload); the CLI form is
+   `recipe run <recipe> <action>`. `tools/list` stays fixed in size however many recipes are
+   installed; per-action argument schemas are discovered on demand (`recipe inspect` or an
+   equivalent read-only catalog). "Typed on the CLI only" never means "validated on the CLI
+   only": both surfaces validate against the same selected action declaration and reject
+   unknown arguments before execution.
+   Framework change implied by U2: effect facts are static today and confirmation is decided
+   before preparation, and only `destroy` needs MCP confirmation. Recipe action metadata must
+   be resolved from the manifest without importing code BEFORE the confirmation decision, and
+   recipe `change` and `destroy` must both require confirmation, without widening the policy
+   of any framework command. The instance lock is taken before hook import. Fallback if this
+   proves wrong: an explicit, bounded, opt-in typed MCP surface for selected actions.
+2. **Journal identifiers.** Default to keyed pseudonyms: HMAC-SHA-256 over a canonical tuple
+   (identifier namespace, value), domain-separated per recipe, with a random per-deployment
+   key stored under a declared `privatePaths` directory, created exclusively, never
+   overwritten, versioned in records, registered for redaction. Clear identifiers need an
+   explicit recipe declaration plus operator opt-in (shorter retention). An unkeyed hash is
+   rejected: small numeric id spaces are enumerable. This is pseudonymisation, not
+   anonymisation: `full` backups carry journal and key. An operator-local lookup computes a
+   candidate's pseudonym without printing the key. New task U5b.
+3. **Schedules.** The operator lists every scheduled action explicitly in version-controlled
+   deployment configuration (recipe, action, cadence, non-secret arguments, runtime limit).
+   A recipe's own schedule is a suggestion, never activation authority; adding a recipe adds
+   no recurring execution. Install previews by default and needs `--apply`; installed state
+   is reported as drift against the declaration; removed entries are reconciled. The shared
+   scheduler's ownership matcher only knows `watch` and `backup` and refuses other entries:
+   U4 must extend exact invocation ownership, not just add a marker.
+
+Additional risks recorded by the review, now requirements:
+
+- U3's large-removal override needs its own explicit consent, separate from the ordinary MCP
+  mutation confirmation, or every confirmed change bypasses the shrinkage guard.
+- Applying configuration and then appending a journal record leaves a crash gap: write a
+  durable intent record before and a result record after, with recovery semantics; do not
+  claim the audit is transactionally complete.
+- A runtime timeout must contain execution before the instance lock is released; the hook
+  import timeout only stops waiting today.
+- Prefix ownership (U1) and list-member reconciliation (U3) need overlap detection and durable
+  member provenance, so operator-owned entries are never deleted.
+- The journal is owner-writable append-only storage, not tamper-evident audit storage; state
+  retention, concurrency and integrity limits plainly.

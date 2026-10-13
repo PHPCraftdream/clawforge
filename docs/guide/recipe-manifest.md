@@ -157,6 +157,13 @@ parent. These are validation errors, not Compose/hook execution errors.
 | `consumerEndpoints[].configPath`, missing/unsafe | P | `consumerEndpoints[<index>].configPath must be a safe non-empty dot configuration path` |
 | `consumerEndpoints[].service`, missing/unsafe | P | `consumerEndpoints[<index>].service must be a safe non-empty Compose service name` |
 | `consumerEndpoints[]`, duplicate path | P | `consumerEndpoints[<index>]: duplicate configPath <configPath>` |
+| `owns`, non-array | P | `owns must be an array` |
+| `owns[]`, nonobject/null/array or wrong/missing keys | P | `owns[<index>] must contain only path, mode and prefix` |
+| `owns[].path`, missing/unsafe | P | `owns[<index>].path must be a safe non-empty dot configuration path` |
+| `owns[].mode`, missing or not a mode literal | P | `owns[<index>].mode must be "value" or "list-member"` |
+| `owns[].prefix`, non-boolean | P | `owns[<index>].prefix must be a boolean` |
+| `owns[]`, `list-member` with `prefix: true` | P | `owns[<index>]: list-member ownership cannot be a prefix` |
+| `owns[]`, duplicate path within manifest | P | `owns[<index>]: duplicate path <configPath>` |
 | `ephemeralPaths`, non-array | P | `ephemeralPaths must be an array of canonical absolute POSIX nonroot paths` |
 | `ephemeralPaths[]`, non-string/empty/noncanonical/nonabsolute/root, backslash, trailing slash, control character or empty/dot/dotdot segment | P | `ephemeralPaths must be an array of canonical absolute POSIX nonroot paths` |
 | `privateFiles`, non-array | F | `privateFiles must be an array of recipe-relative paths` |
@@ -194,7 +201,9 @@ empty:
 | Full loader or independent privacy reader, read error | `could not read <manifest>: <underlying error message>` |
 | Independent privatePaths/privateFiles reader, JSON error | `could not parse <manifest>: <JSON.parse error message>` |
 | Independent privatePaths/privateFiles reader, null/nonobject | `<manifest> must contain an object` |
-| Endpoint catalog, conflicting owners | `ambiguous consumerEndpoints configPath <configPath>: recipes <previous> and <name>` |
+| Endpoint/`owns` catalog, conflicting exact owners (endpoint and endpoint, endpoint and `owns`, or `owns` and `owns`) | `ambiguous consumerEndpoints configPath <configPath>: recipes <previous> and <name>` when both owners are endpoints; otherwise `ambiguous config path ownership <configPath>: recipes <previous> and <name>` |
+| Catalog, exact path under another recipe's prefix, or two prefixes where one covers the other | `overlapping config path ownership <configPath>: recipes <prefix owner> and <path owner>` |
+| Desired-state declaration of an owned path (exact, under a prefix, or an ancestor of one) | `config path <configPath> is declared here but owned by recipe "<name>" — remove it from the declaration or the recipe's owns` |
 | Recipe directory enumeration, error other than ENOENT | `cannot read the recipes directory at <root>: <errno code or underlying error message>` |
 | Loader name, more than 64 characters | `recipe name is too long (max 64 characters)` |
 | Loader name, invalid grammar | `invalid recipe name "<name>" — use lowercase letters, digits and dashes, starting with a letter` |

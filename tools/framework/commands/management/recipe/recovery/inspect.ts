@@ -24,7 +24,8 @@ export async function runInspectAction(
     }
     : await stack.inspect({ logs: true, tail });
   if (jsonOnly || isCaptured()) {
-    emit(`${JSON.stringify({ recipe: recipe.name, tail, ...inspection }, null, 2)}\n`);
+    // Additive `owns`: this recipe's own manifest only — the joined catalog is inspect's job.
+    emit(`${JSON.stringify({ recipe: recipe.name, tail, ...(recipe.owns === undefined ? {} : { owns: recipe.owns }), ...inspection }, null, 2)}\n`);
     return;
   }
   // Human output intentionally excludes raw logs, start errors, mounts and unknown detail.

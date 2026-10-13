@@ -250,13 +250,13 @@ const ALLOW: readonly AllowEntry[] = [
   },
   {
     file: "tools/framework/commands/orchestration/inspect/drift.ts",
-    line: 84,
+    line: 97,
     reason:
       "the outer catch re-probes existence and reports CONFIG_DRIFT 'could not be read or reached' - the unknown becomes a visible finding, never an empty answer, and inspect keeps its other observations",
   },
   {
     file: "tools/framework/commands/orchestration/inspect/drift.ts",
-    line: 91,
+    line: 104,
     reason:
       "the inner re-probe reports the unreachable stat as a CONFIG_DRIFT finding naming the cause and marks the file not-present for the outer handler - reported, never silent",
   },

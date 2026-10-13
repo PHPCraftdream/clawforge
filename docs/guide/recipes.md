@@ -139,6 +139,72 @@ declaration equal to or above a declared mount destination refuses migration. Se
 [executor notes](../internal/recipe-migration-executor.md#writable-layer-inspection-and-ephemeralpaths)
 for the matching and refusal rules.
 
+### Config path ownership (`owns`)
+
+Beyond consumer endpoints, a recipe can declare application-config path ownership in
+`recipe.json`:
+
+```json
+{
+  "owns": [
+    { "path": "plugins.statusBoard", "mode": "value", "prefix": true },
+    { "path": "channels.telegram.allowedSenders", "mode": "list-member" }
+  ]
+}
+```
+
+Each entry has a safe dotted configuration path (the same grammar as
+`consumerEndpoints[].configPath`) and a `mode`: `"value"` means the recipe may set the
+value at that path; `"list-member"` means the path is a list and the recipe may add or
+remove members it created, never reorder the list or touch members it did not create.
+Durable provenance for list members arrives with a later reconcile primitive. With
+`prefix: true` (the default is `false`) the entry covers the path and everything below
+it, segment-wise: `a` covers `a.b` but never `a.bc`. A `list-member` entry cannot be a
+prefix.
+
+Paths must be unique within a manifest, and the ownership catalog — built over all
+recipes, disabled ones included — refuses two owners of one path, an exact path under
+another recipe's prefix, and two prefixes where one covers the other; the refusal names
+both recipes. Malformed declarations refuse loading, exactly like consumerEndpoints.
+Each declared `consumerEndpoints` entry is itself a value-mode owned path, so endpoints
+and `owns` share one catalog.
+
+A desired-state declaration may not touch an owned path: an exact match, a path under an
+owned prefix, or an ancestor of one is refused, because applying it would overwrite the
+owned subtree. `config apply` dies before staging; `config inspect` reports the conflict
+as a `SET_RECIPE_INVALID` problem and lists owned paths as `ownedConfigPaths` in its
+`--json` output. `config apply` never writes owned paths and never reports them as
+drift.
+
+An emergency change to a running container is not a complete recipe repair. Identify the
+owner of the fault and update its reproducible source: `compose.yml`/`Dockerfile` for
+runtime dependencies and mounts, `prepare.ts` for generated configuration, `recipe.json`
+for required services/readiness, and `verify.ts` for the consumer-visible check. Preserve
+existing credentials and application state; a repair must not silently regenerate them or
+overwrite live data. A Docker/host fault is not automatically a recipe-code defect, but the
+recipe should detect an unavailable dependency and must not report it as ready.
+
+Declare every service required by the consumer, including protocol bridges, in readiness.
+A listening socket alone does not prove usable egress. Verification must check command
+success, the expected protocol/status and application result, not accept any positive HTTP
+code. Distinguish dependency reachability, API authentication and active channel processing.
+For a proxy serving Telegram, a successful `getMe` is insufficient while polling is stopped;
+verification should report that channel state as a separate failed or unverified condition.
+If Telegram is optional for the recipe, report it separately rather than silently converting
+an unavailable check into a ready verdict.
+
+Reconcile the consumer after its dependency is ready through the supported lifecycle hook,
+with disruptive effects disclosed. Then verify from the gateway and, with permission, send
+an end-to-end message and observe the reply. Do not send messages or claim a working reply
+without that check. Exercise the repaired recipe's install/verification path on an isolated
+fixture or through an approved live run; a manual repair alone does not prove that the next
+install or recovery reproduces it.
+
+Keep an explicit distinction between recovered service, durable recipe fix and framework
+tool gap. When the supported lifecycle is blocked by migration or a lock, record the blocker
+and the approved temporary recovery instead of claiming the recipe has been fully repaired.
+
+
 ## Private files: `privatePaths` and `privateFiles`
 
 A recipe that generates credentials declares — in the same `recipe.json` — where they live.

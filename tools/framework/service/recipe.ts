@@ -25,6 +25,7 @@ import type { Context } from "../core/context.ts";
 import type { RecipeMigrationBackup, Stack } from "../runtime/runtime.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
+import { parseOwns, recipeOwnershipEntries, safeConfigPath, type RecipeOwnsEntry } from "../set/ownership/recipe-paths.ts";
 
 let explicitRecipesDir: string | undefined;
 
@@ -139,6 +140,8 @@ export interface Recipe {
   readonly ports?: RecipePort[];
   /** Explicit ownership of consumer configuration paths; never inferred from ports. */
   readonly consumerEndpoints?: RecipeConsumerEndpoint[];
+  /** Generalized config-path ownership (U1): exact or prefix, value or list-member. */
+  readonly owns?: RecipeOwnsEntry[];
   /** Variables the recipe expects, with a short explanation each. */
   readonly variables?: Record<string, string>;
   /** Data-relative paths (from the data directory root) this recipe keeps generated
@@ -327,16 +330,13 @@ function parseConsumerEndpoints(recipe: string, value: unknown): RecipeConsumerE
       throw new Error(`${at} must contain exactly configPath and service`);
     }
     const { configPath, service } = entry as Record<string, unknown>;
-    if (typeof configPath !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(configPath)
-      || configPath.split(".").some((part) => unsafe.has(part))) {
-      throw new Error(`${at}.configPath must be a safe non-empty dot configuration path`);
-    }
+    const safePath = safeConfigPath(`${at}.configPath`, configPath);
     if (typeof service !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(service) || unsafe.has(service)) {
       throw new Error(`${at}.service must be a safe non-empty Compose service name`);
     }
-    if (paths.has(configPath)) throw new Error(`${at}: duplicate configPath ${configPath}`);
-    paths.add(configPath);
-    return { configPath, service };
+    if (paths.has(safePath)) throw new Error(`${at}: duplicate configPath ${safePath}`);
+    paths.add(safePath);
+    return { configPath: safePath, service };
   });
 }
 
@@ -356,6 +356,7 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   const description = typeof (parsed as { description?: unknown }).description === "string" ? (parsed as { description: string }).description : "";
   if (description === "") throw new Error(missingDescriptionDetail(name));
   parseConsumerEndpoints(name, (parsed as { consumerEndpoints?: unknown }).consumerEndpoints);
+  parseOwns(name, (parsed as { owns?: unknown }).owns);
   parseEphemeralPaths(name, (parsed as { ephemeralPaths?: unknown }).ephemeralPaths);
   parseMigrationBackup((parsed as { migrationBackup?: unknown }).migrationBackup);
   return parsed;
@@ -388,6 +389,7 @@ export async function loadRecipe(name: RecipeName | RecipeRef): Promise<Recipe> 
     source: typeof parsed.source === "string" ? parsed.source : undefined,
     ports: parsePorts(name, parsed.ports),
     consumerEndpoints: parseConsumerEndpoints(name, parsed.consumerEndpoints),
+    owns: parseOwns(name, parsed.owns),
     variables: parseVariables(name, parsed.variables),
     privatePaths: parsePrivatePaths(name, parsed.privatePaths),
     ephemeralPaths: parseEphemeralPaths(name, parsed.ephemeralPaths),
@@ -419,29 +421,25 @@ export async function listRecipes(): Promise<Recipe[]> {
   return recipes;
 }
 
+/** True when any recipes root override is active — the shared "no recipes configured" guard. */
+export function recipesConfigured(): boolean {
+  return explicitRecipesDir !== undefined || setSourceDir() !== undefined || selectedDeployment() !== undefined;
+}
+
 /** Strict declaration catalog: broken manifests cannot masquerade as unowned endpoints.
- *  Agent-only directories are skipped only when recipe.json is absent (ENOENT). */
+ *  Agent-only directories are skipped only when recipe.json is absent (ENOENT). Derived
+ *  from the same per-recipe walk as the general U1 catalog so the two cannot diverge. */
 export async function recipeEndpointOwners(): Promise<readonly RecipeEndpointOwner[]> {
-  if (explicitRecipesDir === undefined && setSourceDir() === undefined && selectedDeployment() === undefined) return [];
   const owners: RecipeEndpointOwner[] = [];
   const paths = new Map<string, string>();
-  for (const name of await recipeNames(recipesDirectory())) {
-    let recipe: Recipe;
-    try {
-      recipe = await loadRecipe(readName("recipe", name));
-    } catch (error) {
-      // Only the loader's actual manifest read ENOENT means this is not a recipe.
-      if (error instanceof Error && (error.cause as NodeJS.ErrnoException | undefined)?.code === "ENOENT") continue;
-      throw error;
+  for (const entry of await recipeOwnershipEntries()) {
+    if (entry.service === undefined) continue;
+    const previous = paths.get(entry.path);
+    if (previous !== undefined) {
+      throw new Error(`ambiguous consumerEndpoints configPath ${entry.path}: recipes ${previous} and ${entry.recipe}`);
     }
-    for (const endpoint of recipe.consumerEndpoints ?? []) {
-      const previous = paths.get(endpoint.configPath);
-      if (previous !== undefined) {
-        throw new Error(`ambiguous consumerEndpoints configPath ${endpoint.configPath}: recipes ${previous} and ${name}`);
-      }
-      paths.set(endpoint.configPath, name);
-      owners.push({ recipe: name, service: endpoint.service, configPath: endpoint.configPath });
-    }
+    paths.set(entry.path, entry.recipe);
+    owners.push({ recipe: entry.recipe, service: entry.service, configPath: entry.path });
   }
   return owners;
 }

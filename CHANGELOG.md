@@ -5,6 +5,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* Recipes can own application-config paths: `recipe.json` accepts an optional `owns` array (`value` or
+  `list-member` mode, optional segment-wise prefixes). Owned paths are refused in `desired-state.json`, skipped
+  by `apply-config` and never reported as drift, and `inspect` / `recipe inspect` show the owner; overlapping
+  owners are refused.
 * `recipe check` also lints a recipe's Dockerfiles and Compose build contexts for unpinned remote artifacts
   (`ADD` without a checksum, `curl | sh`, unverified downloads, floating base tags, unpinned git clones). Findings
   carry a code, severity and file:line; errors make the command exit non-zero, and a single rule can be waived

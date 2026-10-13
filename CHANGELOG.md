@@ -33,6 +33,8 @@ All notable changes to `@clawforge/framework` will be documented here.
   `--dry-run` lists the files without executing code.
 
 ### Fixed
+* The discovery self-check no longer creates the checkout's `apps/`, and the deployment-fixture self-check compares the
+  repository root and the contents of the checkout's `apps/`, so concurrent checks no longer make it fail intermittently.
 * A release racing a concurrent claim of the instance-lock mutation guard no longer leaves its own stale lock behind:
   the vanished-guard race is retried with the same atomic claim, the guarded cleanup is retried a bounded number of
   times when a live competitor holds the guard, and a cleanup that still fails is reported as blocking instead of

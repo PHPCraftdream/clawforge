@@ -20,7 +20,7 @@ import {
   validateFixtureDeployment,
 } from "../deployment-fixture.ts";
 import { clearDeployment, selectedDeployment, useDeployment } from "#framework/runtime/deployment.ts";
-import { parseEnv } from "#framework/core/env.ts";
+import { monorepoRoot, parseEnv } from "#framework/core/env.ts";
 
 // The OS temp dir is shared with the rest of the suite — sibling check files create their own
 // clawforge-deployment-fixture-* fixtures concurrently, so entries beyond this test's own
@@ -31,15 +31,38 @@ async function prefixedTempEntries(): Promise<string[]> {
   return entries.filter((name) => name.slice(0, FIXTURE_TEMP_PREFIX.length) === FIXTURE_TEMP_PREFIX);
 }
 
+// The runner's own telemetry file (.check-timings.json) appears at the repository root during
+// a run and is not a checkout change. git's --ignored=matching pass emits an outermost ignored
+// directory as one bare marker line — observed: :(exclude) pathspecs do not prune it, and
+// everything inside it collapses into that one line — so a marker line carries no file
+// evidence; only markers and the telemetry file are filtered, every file-level line compares,
+// and the repo-root readdir comparison keeps checkout apps/ visible so an escaped fixture is
+// still detected.
+const CONCURRENT_ROOT_ENTRIES = new Set([".check-timings.json"]);
+function visibleRootEntries(entries: readonly string[]): string[] {
+  return entries.filter((name) => !CONCURRENT_ROOT_ENTRIES.has(name));
+}
+function visibleGitStatus(text: string): string {
+  return text.split("\n").filter((line) => {
+    const path = line.slice(3);
+    return !CONCURRENT_ROOT_ENTRIES.has(path) && !path.endsWith("/");
+  }).join("\n");
+}
+
 const fixtureUrl = pathToFileURL(resolve(import.meta.dirname, "..", "deployment-fixture.ts")).href;
 
 // --- checkout cleanliness: git must see nothing before and after the whole fixture cycle ------
 
-const repoRoot = resolve(import.meta.dirname, "../../..");
+const repoRoot = monorepoRoot;
 const cwdValueBefore = process.cwd();
-const cwdListBefore = await readdir(cwdValueBefore);
-// Concurrent suite members may legitimately write under apps/ and rebuild dist/, so those
-// ignored zones are excluded exactly like the runner's own guard excludes them.
+const cwdListBefore = visibleRootEntries(await readdir(cwdValueBefore));
+// Git's ignored pass collapses an existing ignored apps/ into one marker line, so the
+// checkout's apps/ contents are compared directly, as the runner's own guard does.
+const checkoutApps = join(monorepoRoot, "apps");
+const checkoutAppsEntries = async (): Promise<string[]> =>
+  (await readdir(checkoutApps, { recursive: true }).catch(() => [] as string[])).map(String).sort();
+const appsBefore = await checkoutAppsEntries();
+// The pathspec excludes prune the tracked pass cheaply; the ignored pass keeps its bare directory markers, which visibleGitStatus filters.
 const gitArgs = ["status", "--porcelain", "--ignored=matching", "--", ":(exclude)apps", ":(exclude)node_modules", ":(exclude)worktrees", ":(exclude)tools/framework/dist"];
 const gitBefore = await runProcess("git", gitArgs, { cwd: repoRoot });
 // git may be absent in a bare environment: that skips the comparison, never fails the suite.
@@ -314,11 +337,12 @@ check("disposing with no previous selection clears the selection", selectedDeplo
 // A failing setup must remove the fixture-created root and leave the selection untouched.
 clearDeployment();
 useDeployment(join(tmpdir(), "selection-sentinel-b"));
-const tempBeforeFail = await prefixedTempEntries();
+let failedRoot = "";
 let thrown = "";
 try {
   await createDeploymentFixture({
     validate: (root) => {
+      failedRoot = root;
       throw new SetupError(`injected failure under ${root}`);
     },
   });
@@ -327,7 +351,7 @@ try {
 }
 checkTrue("a failing setup rejects", thrown !== "");
 check("the rejection is the injected SetupError", thrown.split(" ").slice(0, 2), ["injected", "failure"]);
-check("a failed setup removes the fixture-created root", await prefixedTempEntries(), tempBeforeFail);
+check("a failed setup removes the fixture-created root", (await prefixedTempEntries()).includes(basename(failedRoot)), false);
 check("a failed setup leaves the previous selection untouched", selectedDeployment(), join(tmpdir(), "selection-sentinel-b"));
 
 // A failing setup on a caller-injected root must never remove that root: pre-place a file
@@ -355,14 +379,16 @@ try {
 if (gitAvailable) {
   const gitAfter = await runProcess("git", gitArgs, { cwd: repoRoot });
   checkTrue("the after-cycle git status exits cleanly", gitAfter.code === 0);
-  check("the fixture cycle leaves the checkout clean", gitAfter.stdout, gitBefore.stdout);
+  check("the fixture cycle leaves the checkout clean", visibleGitStatus(gitAfter.stdout), visibleGitStatus(gitBefore.stdout));
 } else {
   // git was unavailable: the comparison is skipped rather than failing the suite.
   checkTrue("the fixture cycle leaves the checkout clean (git unavailable, skipped)", true);
 }
 
+check("the fixture cycle leaves the checkout's apps/ contents untouched", await checkoutAppsEntries(), appsBefore);
+
 // readdir of the repo root is stable: nothing in the suite writes the repository root.
 const cwdValueAfter = process.cwd();
-check("the check's working directory never changed", [cwdValueAfter, await readdir(cwdValueAfter)], [cwdValueBefore, cwdListBefore]);
+check("the check's working directory never changed", [cwdValueAfter, visibleRootEntries(await readdir(cwdValueAfter))], [cwdValueBefore, cwdListBefore]);
 
 finish("deployment fixture");

@@ -30,7 +30,7 @@ import { renderFullCommandHelp } from "../core/io/help-render.ts";
 import { frameFromInvocation, handoverOf, launchFromHandover, type Frame } from "../core/io/invocation/frame.ts";
 import { installedGate } from "./registry.ts";
 import { delegateToOwnFramework, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
-import { defaultFrame } from "./root.ts";
+import { defaultFrame, warnForEntry } from "./root.ts";
 import { findCheckoutRootIn, missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
 import type { AppDefinition } from "../core/app.ts";
 import { CANNOT_LOAD } from "./resolve.ts";
@@ -82,6 +82,8 @@ const launchArgv = [...entry.launchArgv];
 // Installed system-wide, this may not be the framework this deployment runs on.
 delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver, frame);
 resolveFrameworkFromSelf();
+// The retry already diagnosed this copy before re-executing it.
+if (process.env.CLAWFORGE_TYPE_STRIPPING_RETRY !== "1") warnForEntry(import.meta.url);
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
 // consumer repo. `check` is absent: it needs this repository's own test suite, unshipped. One

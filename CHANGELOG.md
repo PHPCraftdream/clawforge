@@ -5,6 +5,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Changed
+* A checkout deployment warns on stderr when the framework sources are newer than `dist` (run `npm run build`
+  from the checkout root); stdout and `--json` are untouched, `OC_NO_STALE_DIST_WARNING=1` silences it.
 * The bash completion install line is `eval "$(clawforge completion bash)"`: macOS ships bash 3.2,
   whose `source <(...)` does not run. zsh and PowerShell lines are unchanged.
 * Memory setup validates the model source, revision, SHA256 and plugin version when the arguments

@@ -40,6 +40,10 @@ const FAST_GUARD = spaced("env.FULL_TIER", "!=", "'true'");
 const GROUP_EXPRESSION = spaced("ci-${{", "github.workflow", "}}-${{", "github.ref", "}}");
 const CANCEL_EXPRESSION = spaced("${{", "github.ref", "!=", "'refs/heads/main'", "}}");
 const MERGE_BASE_COMMAND = spaced("check", "--related", "--base", '"$(git', "merge-base", "origin/main", 'HEAD)"');
+// Windows jobs keep a PowerShell step: under bash the MSYS mkdir leads PATH and breaks the instance lock.
+const WINDOWS_JOBS = new Set(["windows-checks", "windows-wsl"]);
+const WINDOWS_MERGE_BASE = spaced("$base", "=", "git", "merge-base", "origin/main", "HEAD");
+const WINDOWS_RELATED = spaced("check", "--related", "--base", "$base");
 const FAST_STEP_NAME = "Fast tier — typecheck, lint, affected checks";
 
 // Steps allowed in BOTH tiers; every other step must carry the full-tier guard.
@@ -347,12 +351,15 @@ for (const job of EXPECTED_JOBS) {
   const fastRun = asText(fast?.run);
   checkTrue(`${job}: has a fast-tier step`, fast !== undefined);
   checkTrue(`${job}: fast-tier step guarded with env.FULL_TIER != 'true'`, asText(fast?.if) === FAST_GUARD);
-  checkTrue(`${job}: fast-tier step runs under shell: bash`, asText(fast?.shell) === "bash");
+  const windows = WINDOWS_JOBS.has(job);
+  checkTrue(`${job}: fast-tier step runs under the host's own shell`, asText(fast?.shell) === (windows ? "pwsh" : "bash"));
   checkTrue(`${job}: fast-tier step runs npm run typecheck`, containsText(fastRun, "npm run typecheck"));
   checkTrue(`${job}: fast-tier step runs npm run lint`, containsText(fastRun, "npm run lint"));
   checkTrue(
     `${job}: fast-tier step passes an explicit merge-base as --base`,
-    containsText(fastRun, MERGE_BASE_COMMAND),
+    windows
+      ? containsText(fastRun, WINDOWS_MERGE_BASE) && containsText(fastRun, WINDOWS_RELATED)
+      : containsText(fastRun, MERGE_BASE_COMMAND),
   );
 
   const fullGuarded = steps.some((step) =>

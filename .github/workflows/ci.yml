@@ -255,14 +255,20 @@ jobs:
 
       - name: Fast tier — typecheck, lint, affected checks
         if: env.FULL_TIER != 'true'
-        shell: bash
-        # --base takes a revision, not a branch policy: the merge-base with origin/main is
-        # computed here (checkout is fetch-depth: 0, so origin/main is present) and passed
-        # explicitly. check --related never computes a merge-base itself when --base is given.
+        # Windows keeps its default shell: a bash step puts MSYS coreutils first on PATH, and their
+        # mkdir cannot apply modes to Windows paths (the instance lock records ownership with it).
+        # --base takes a revision, not a branch policy: the merge-base with origin/main is computed
+        # here (checkout is fetch-depth: 0, so origin/main is present) and passed explicitly.
+        shell: pwsh
         run: |
           npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run lint
-          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $base = git merge-base origin/main HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --experimental-strip-types tools/clawforge.ts check --related --base $base
+          exit $LASTEXITCODE
 
       - name: Run checks
         if: env.FULL_TIER == 'true'
@@ -352,14 +358,20 @@ jobs:
 
       - name: Fast tier — typecheck, lint, affected checks
         if: env.FULL_TIER != 'true'
-        shell: bash
-        # --base takes a revision, not a branch policy: the merge-base with origin/main is
-        # computed here (checkout is fetch-depth: 0, so origin/main is present) and passed
-        # explicitly. check --related never computes a merge-base itself when --base is given.
+        # Windows keeps its default shell: a bash step puts MSYS coreutils first on PATH, and their
+        # mkdir cannot apply modes to Windows paths (the instance lock records ownership with it).
+        # --base takes a revision, not a branch policy: the merge-base with origin/main is computed
+        # here (checkout is fetch-depth: 0, so origin/main is present) and passed explicitly.
+        shell: pwsh
         run: |
           npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run lint
-          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $base = git merge-base origin/main HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --experimental-strip-types tools/clawforge.ts check --related --base $base
+          exit $LASTEXITCODE
 
       - name: Provision a real WSL2 distro (best-effort)
         if: env.FULL_TIER == 'true'

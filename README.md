@@ -212,6 +212,8 @@ Framework:
   `watch`, `incident`, the security gate and suppressions
 * [docs/guide/recipes.md](docs/guide/recipes.md) — recipes, `provision-agent`, the
   `privatePaths`/`privateFiles` contract
+* [docs/guide/recipe-manifest.md](docs/guide/recipe-manifest.md) — complete recipe.json fields,
+  validation rules, readers and hook contracts
 * [docs/guide/sets.md](docs/guide/sets.md) — installing, trying and rolling back sets;
   semantic diff and acceptance evidence
 * [docs/guide/deploy-and-mcp.md](docs/guide/deploy-and-mcp.md) — several deployments side by

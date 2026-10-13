@@ -1,5 +1,7 @@
 # Recipes: things that live beside the instance
 
+See the [recipe.json reference](recipe-manifest.md) for all manifest fields, validation rules and hook contracts.
+
 A recipe is a third-party application deployed alongside: a `recipes/<name>/` directory. It
 comes in two flavours, and a recipe may be either or both.
 

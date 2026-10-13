@@ -73,6 +73,17 @@ try {
   check("inspect identifies selected recipe without --json", (await run(["inspect", "local"])).recipe, "local");
   check("default log tail is bounded", calls.at(-1), { logs: true, tail: 100 });
   check("explicit JSON identifies selected recipe", (await run(["inspect", "local", "--json"])).recipe, "local");
+  check("inspect lists the manifest action", (await run(["inspect", "local"])).actions, [
+    { name: "x", effect: "read", description: ["no-op", "control", "action"].join(String.fromCharCode(32)), arguments: [] },
+  ]);
+  {
+    // The human path prints to stderr; capture it by borrowing the writer for one call.
+    const original = process.stderr.write.bind(process.stderr);
+    let human = "";
+    process.stderr.write = ((chunk: unknown) => { human += String(chunk); return true; }) as typeof process.stderr.write;
+    try { await recipe(ctx, ["inspect", "local"]); } finally { process.stderr.write = original; }
+    checkTrue("the human inspect line lists the action", human.includes(["action", JSON.stringify("x"), "(read)"].join(String.fromCharCode(32))));
+  }
   for (const [raw, expected] of [["0", 1], ["1", 1], ["200", 200], ["999999", 200]] as const) {
     const result = await run(["inspect", "local", "--tail", raw]);
     check(`tail ${raw} is clamped in report`, result.tail, expected);

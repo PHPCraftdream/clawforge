@@ -260,9 +260,36 @@ async function executeSpec(name: string, body: CommandBody, input: CallInput, io
   } catch (error) {
     return failed("parse", error, undefined, undefined, undefined, input.kind === "argv" ? jsonTokenGiven(shape, input.argv) : false);
   }
-  const facts = callFacts(shape, call);
+  let facts = callFacts(shape, call);
+  // The recipes-directory selection happens here — before the effectOf resolver reads any
+  // manifest — so the resolver, the confirm decision and preparation all read the same
+  // root. Fail closed: a selection failure is the prepare-stage refusal.
+  if (app !== undefined) {
+    try {
+      useApplicationRecipesDir(app.recipesDir);
+      clearRecipesDir();
+    } catch (error) {
+      return failed("prepare", error, facts, shape, call.action, call.given.includes("json"));
+    }
+  }
   io.observe?.("parse");
-  if (io.surface === "mcp" && facts.effect === "destroy" && io.confirmed !== true) {
+  // The selected unit's per-call effect resolver, before the confirm decision: an effect that
+  // depends on data in a manifest can require confirmation like destroy does. A declared read
+  // flag given wins (dry-run stays a read): the resolver is not consulted at all. On throw the
+  // static facts stand (fail closed — a resolver error must not skip a confirmation).
+  const resolver = data.kind === "single" ? data.effectOf : data.actions[call.action!]?.effectOf;
+  if (resolver !== undefined && facts.effect !== "read") {
+    try {
+      const resolved = await resolver(call.values, call.given);
+      if (resolved !== undefined) {
+        const confirm = resolved.confirm === true || resolved.effect === "destroy";
+        facts = { ...facts, effect: resolved.effect, ...(confirm ? { confirm: true } : {}) };
+      }
+    } catch {
+      // keep the static facts
+    }
+  }
+  if (io.surface === "mcp" && (facts.effect === "destroy" || facts.confirm === true) && io.confirmed !== true) {
     return failed("confirm", new ConfirmationRequiredError(name), facts, shape, call.action, call.given.includes("json"));
   }
   io.observe?.("confirm");
@@ -275,10 +302,7 @@ async function executeSpec(name: string, body: CommandBody, input: CallInput, io
   }
   let plan: unknown;
   try {
-    if (app !== undefined) {
-      useApplicationRecipesDir(app.recipesDir);
-      clearRecipesDir();
-    }
+    // Recipes-directory selection already ran before the effectOf resolver (same root).
     plan = await preparedPlan(phases, call);
   } catch (error) {
     return failed("prepare", error, facts, shape, call.action, call.given.includes("json"));

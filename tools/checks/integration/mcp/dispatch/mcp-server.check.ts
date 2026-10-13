@@ -208,7 +208,7 @@ try {
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "new", "check", "verify", "onboard", "diagnose", "install", "remove", "inspect", "recover", "migrate", "status", "logs"],
+    ["list", "import", "new", "check", "verify", "onboard", "diagnose", "install", "remove", "inspect", "recover", "migrate", "status", "logs", "run"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
@@ -494,19 +494,20 @@ function conforms(
 // declaration's own input schema, every action is driven through the real server loop,
 // and each response is validated against the schema tools/list itself declared. The
 // command runs are stood in for — status/logs/install/remove need an engine to succeed —
-// each emitting exactly the shape its real implementation emits when captured (one JSON
-// document for the hook/report actions, plain progress text for the rest), while the
-// metadata under test — structured, readOnlyWhen, destructive, arguments — is the real
-// list and import above also exercise real command implementations.
+// each emitting exactly its real implementation's captured shape; the run action alone
+// reaches its REAL pipeline against the fixture manifest written below. The metadata
+// under test — structured, readOnlyWhen, destructive, arguments — is the real list and
+// import above also exercise real command implementations.
 {
   const recipeCommand = openclawCommands.recipe!;
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
-  check("the declaration enumerates the actions to sweep", actionChoices.length, 14);
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 15);
 
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
   await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
-  const script = `
+  await mkdir(join(sweepRoot, "recipes", "sidecar", "actions"), { recursive: true });
+  await writeFile(join(sweepRoot, "recipes", "sidecar", "recipe.json"), JSON.stringify({ description: "sweep fixture recipe", actions: { announce: { file: "actions/announce.ts", effect: "read", arguments: [] } } }), "utf8");  await writeFile(join(sweepRoot, "recipes", "sidecar", "actions", "announce.ts"), "export function run() { return { ok: true }; }\n", "utf8");  const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
@@ -516,21 +517,18 @@ function conforms(
     const outputs = {
       list: () => { log("available recipes"); info("sidecar          a probe service"); },
       import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
-      check: () => { info("1 recipe check file(s) passed, 0 failed"); },
-      new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
+      check: () => { info("1 recipe check file(s) passed, 0 failed"); }, new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
       install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
       remove: () => { log("sidecar removed"); }, inspect: () => { info("sidecar: owned namespace"); }, recover: () => { log("service recreated"); }, migrate: () => { log("migration preview"); },
-      status: () => { info("running"); },
-      logs: () => { emit("sidecar-gateway  | ready\\n"); },
-      verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); },
-      onboard: () => { emit(JSON.stringify({ ok: true, steps: ["dashboard ready"] }) + "\\n"); },
+      status: () => { info("running"); }, logs: () => { emit("sidecar-gateway  | ready\\n"); },
+      verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); }, onboard: () => { emit(JSON.stringify({ ok: true, steps: ["dashboard ready"] }) + "\\n"); }, run: () => { emit(JSON.stringify({ ok: true }) + "\\n"); },
       diagnose: () => { emit(JSON.stringify({ recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" }) + "\\n"); },
     };
     await useDeployment(${JSON.stringify(sweepRoot)});
     await serveMcp({
       name: "sweep",
       commands: {
-        recipe: { ...managementCommands.recipe, run: async (_ctx, args) => { (outputs[args[0] ?? "list"] ?? outputs.list)(); } },
+        recipe: { ...managementCommands.recipe, run: async (ctx, args) => { if ((args[0] ?? "list") === "run") return managementCommands.recipe.run(ctx, args); (outputs[args[0] ?? "list"] ?? outputs.list)(); } },
         notes: { summary: "a text-only tool that declares no envelope", run: async () => { log(NOTES_TEXT); } },
       },
     });
@@ -541,7 +539,7 @@ function conforms(
       jsonrpc: "2.0",
       id: index + 1,
       method: "tools/call",
-      params: { name: "recipe", arguments: { action, ...(action === "recover" ? { service: "sidecar" } : {}), ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
+      params: { name: "recipe", arguments: { action, ...(action === "recover" ? { service: "sidecar" } : {}), ...(action === "run" ? { name: "sidecar", "recipe-action": "announce" } : {}), ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
     })),
     { jsonrpc: "2.0", id: actionChoices.length + 1, method: "tools/call", params: { name: "notes", arguments: {} } },
   ];
@@ -577,6 +575,7 @@ function conforms(
       (byId.get(actionChoices.indexOf(action) + 1)?.result as { structuredContent?: { result?: unknown } } | undefined)?.structuredContent?.result;
     check("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
     check("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
+    check("run: the fixture action's JSON rides in the envelope whole", envelopeResult("run"), { ok: true });
     check("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
     for (const action of ["list", "import", "new", "install", "remove", "inspect", "recover", "migrate", "status", "logs"]) {
       check(`${action}: a text action carries its text as the result`, typeof envelopeResult(action) === "string" && String(envelopeResult(action)).length > 0, true);

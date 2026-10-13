@@ -5,6 +5,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* Recipes can publish operator-facing actions: `recipe.json` `actions` declares each action's hook file, effect
+  (`read`, `change` or `destroy`) and typed arguments; `recipe run <recipe> <action> key=value [--dry-run] [--json]` runs
+  it through one entry on the CLI and the MCP `recipe` tool. The declared effect drives confirmation and locking
+  per call, results are size-bounded and secret-masked, and `recipe inspect` lists the declared actions.
 * `@clawforge/framework/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
   length-prefixed recipe, namespace and value, with a per-deployment key created once, exclusively, under a declared
   `privatePaths` directory and registered for redaction) and intent/result journal records with crash-gap detection

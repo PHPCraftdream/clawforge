@@ -120,7 +120,7 @@ function readinessProblemDetail(problems: { missing: string[]; notRunning: strin
   ].filter((entry): entry is string => entry !== undefined).join("; ");
 }
 
-import { timeoutMessage } from "./lifecycle.ts";
+import { timeoutMessage } from "./run/lifecycle.ts";
 
 /** Bounds one awaited operation to `budgetMs`: a hung service-state probe must not outwait
  *  the readiness deadline bounding the whole loop. The operation keeps running past the

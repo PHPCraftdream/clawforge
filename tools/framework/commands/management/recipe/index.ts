@@ -51,7 +51,10 @@ import {
 import { runInspectAction } from "./recovery/inspect.ts";
 import { runRecoverAction } from "./recovery/recover.ts";
 import { runMigrateAction } from "./recovery/migrate.ts";
-import { INVALID_MANIFEST } from "./lifecycle.ts";
+import { INVALID_MANIFEST } from "./run/lifecycle.ts";
+import { prepareRecipeRun } from "./run/arguments.ts";
+import { runRecipeActionCommand } from "./run/invocation.ts";
+import { resolveRecipeActionEffectOf } from "./run/effect.ts";
 import { readName } from "#src/core/values/names.ts";
 import { importNameOf } from "./actions.ts";
 
@@ -389,6 +392,39 @@ export const RECIPE = multiActionBody({
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
       run: (ctx, values) => runLogsAction(ctx, values.name, values.tail),
+    }),
+    run: defineAction({
+      summary: "Run a recipe-declared action from its manifest",
+      // Static strongest; resolveRecipeActionEffectOf lowers per call (the declared action's
+      // effect, read under --dry-run) and change/destroy owe an MCP confirmation.
+      effect: "destroy",
+      effectOf: resolveRecipeActionEffectOf,
+      arguments: [NAME_ARGUMENT, {
+        name: "recipe-action",
+        summary: "Recipe action",
+        description: "With run: the action declared in the recipe's manifest (recipe inspect lists them)",
+        kind: "positional",
+        required: true,
+        value: kinds.text("a recipe action name"),
+      }, {
+        ...DRY_RUN_ARGUMENT,
+        description: "With run: pass dryRun to the action; treated as read-only",
+      }, ...RECIPE_LOCK_ARGUMENTS, {
+        name: "json",
+        summary: "Run result as JSON",
+        description: "With run: emit the action's result as JSON",
+        kind: "flag",
+      }, {
+        // Variadic must be declared last (checkArguments), though its tokens may appear
+        // anywhere in the argv after the positionals.
+        name: "arg",
+        summary: "Action argument",
+        description: "With run: action argument as key=value",
+        kind: "variadic",
+        value: kinds.text("a key=value argument"),
+      }],
+      prepare: prepareRecipeRun,
+      run: (ctx, plan) => runRecipeActionCommand(ctx, plan),
     }),
   },
 });

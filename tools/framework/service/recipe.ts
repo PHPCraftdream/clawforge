@@ -26,6 +26,7 @@ import type { RecipeMigrationBackup, Stack } from "../runtime/runtime.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 import { parseOwns, recipeOwnershipEntries, safeConfigPath, type RecipeOwnsEntry } from "../set/ownership/recipe-paths.ts";
+import { parseRecipeActions, type RecipeActionDeclaration } from "../set/ownership/recipe-actions.ts";
 
 let explicitRecipesDir: string | undefined;
 
@@ -155,6 +156,8 @@ export interface Recipe {
    *  RecipeReadiness. */
   readonly migrationBackup?: RecipeMigrationBackup;
   readonly readiness?: RecipeReadiness;
+  /** Operator-facing actions declared by the manifest (U2). */
+  readonly actions?: ReadonlyMap<string, RecipeActionDeclaration>;
   /** Absolute path of the recipe directory on our side. */
   readonly directory: string;
   /** The stack definition inside it. Part of the recipe format, so applications do not
@@ -357,6 +360,7 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   if (description === "") throw new Error(missingDescriptionDetail(name));
   parseConsumerEndpoints(name, (parsed as { consumerEndpoints?: unknown }).consumerEndpoints);
   parseOwns(name, (parsed as { owns?: unknown }).owns);
+  parseRecipeActions(name, (parsed as { actions?: unknown }).actions);
   parseEphemeralPaths(name, (parsed as { ephemeralPaths?: unknown }).ephemeralPaths);
   parseMigrationBackup((parsed as { migrationBackup?: unknown }).migrationBackup);
   return parsed;
@@ -395,6 +399,7 @@ export async function loadRecipe(name: RecipeName | RecipeRef): Promise<Recipe> 
     ephemeralPaths: parseEphemeralPaths(name, parsed.ephemeralPaths),
     migrationBackup: parseMigrationBackup(parsed.migrationBackup),
     readiness: parseReadiness(name, parsed.readiness),
+    actions: parseRecipeActions(name, parsed.actions),
     directory,
     definitionPath: resolve(directory, "compose.yml"),
     preparePath: await access(resolve(directory, "prepare.ts")).then(() => resolve(directory, "prepare.ts"), () => undefined),

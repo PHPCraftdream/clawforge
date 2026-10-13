@@ -14,6 +14,7 @@ comes in two flavours, and a recipe may be either or both.
 ./clawforge recipe install <name>
 ./clawforge recipe status <name>
 ./clawforge recipe verify <name>
+./clawforge recipe run <name> <recipe-action> [<key>=<value> ...] [--dry-run]
 ./clawforge recipe onboard <name>
 ./clawforge recipe remove <name> [--volumes]
 ```
@@ -138,6 +139,70 @@ declaration equal to or above a declared mount destination refuses migration. Se
 [Existing-stack cutover](#existing-stack-cutover) and the
 [executor notes](../internal/recipe-migration-executor.md#writable-layer-inspection-and-ephemeralpaths)
 for the matching and refusal rules.
+
+### Recipe actions
+
+A recipe can declare operator-facing actions in `recipe.json`, each backed by a file inside
+the recipe directory. `recipe inspect <name>` lists the declared actions with their effects
+and arguments; `recipe run <name> <recipe-action> [<key>=<value> ...] [--dry-run]` executes
+one. An action is a hook like any other: plain TypeScript, run with the operator's rights,
+reviewed like the rest of the recipe's code.
+
+```json
+{
+  "actions": {
+    "rotate-token": {
+      "file": "actions/rotate-token.ts",
+      "effect": "change",
+      "description": "Rotate the sidecar's API token and reload it",
+      "arguments": [
+        { "name": "graceSeconds", "kind": "integer" },
+        { "name": "mode", "kind": "choice", "choices": ["hot", "cold"], "optional": true }
+      ]
+    }
+  }
+}
+```
+
+At most 16 actions; names are lowercase kebab of at most 40 characters. Each entry has
+exactly `file` (a relative `.ts` path that stays inside the recipe directory), `effect` and
+`arguments`, plus an optional `description`. The hook file must export `run` (or default),
+called as `run(ctx, recipe, input)` with `input = { action, args, dryRun }`.
+
+The `effect` is read from the manifest **before** the MCP confirmation decision, and no hook
+code is imported to determine it. `change` and `destroy` both require `confirm: true` over
+MCP; `read` does not. `--dry-run` is treated as a read: no lock, no confirmation, and the
+flag is passed to the hook as `input.dryRun`. **Trust boundary: the hook must return its
+plan without writes — the framework cannot enforce that.** Review the code before trusting
+a dry run the same way you review any hook.
+
+Locking follows the effect: `change` and `destroy` take the instance lock **before the hook
+module is imported**, so a hung or hostile top-level import cannot slip past a lock another
+operation holds; `read` never locks.
+
+Arguments travel as `key=value` tokens and are validated in the prepare stage against the
+selected declaration, before any hook module is loaded. Kinds are `text`, `integer`
+(strict base-10), `choice` (value must be one of `choices`) and `flag` (`true`/`false`,
+boolean in `args`). A missing required argument, unknown key, duplicate key, wrong kind or
+out-of-choices value is an argument refusal naming the argument.
+
+The result may be any JSON-serializable value, bounded at 64 KiB after
+`JSON.stringify` and secret-redacted (registered secrets masked in strings and keys);
+`undefined` becomes `{ "ok": true }`. A thrown error is a refusal whose message is
+secret-redacted. Keep payloads safe to share — a result is printed, not stored.
+
+```ts
+// recipes/status-board/actions/announce.ts
+export async function run(ctx, recipe, input) {
+  if (input.dryRun) return { wouldAnnounce: input.args.message }; // plan only — no writes
+  // ... perform the announcement with ctx.settings / runtime access ...
+  return { announced: input.args.message };
+}
+```
+
+```bash
+./clawforge recipe run status-board announce message="deploy finished" --dry-run
+```
 
 ### Config path ownership (`owns`)
 

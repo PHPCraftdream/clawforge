@@ -9,10 +9,22 @@ import { parseCall, parseDeclaredArgs } from "#src/core/command/parse/index.ts";
 import { specOf, specShape } from "#src/core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "#src/core/command/spec.ts";
 
-/** `changed` is only what a command's own `changedWhen` says; absent otherwise. */
+/** The per-call effect resolver an EffectShape or one action may declare: returns the call's
+ *  actual effect once its values are known, or undefined to keep the static facts. */
+export interface EffectResolverResult {
+  readonly effect: Effect;
+  /** Set only by the per-call resolver: this call owes an MCP confirmation even though its effect is not destroy. */
+  readonly confirm?: boolean;
+}
+export type EffectOf = (values: Readonly<Record<string, unknown>>, given: readonly string[]) => Promise<EffectResolverResult | undefined>;
+
+/** `changed` is only what a command's own `changedWhen` says; absent otherwise.
+ *  `confirm` is set only by the per-call resolver: the call owes an MCP confirmation even
+ *  though its effect is not destroy. */
 export interface CallFacts {
   readonly effect: Effect;
   readonly changed?: boolean;
+  readonly confirm?: boolean;
 }
 
 /** `alwaysDestroys`: every call destroys (no read form). `byAction`: the effect depends on the action word. */
@@ -69,8 +81,10 @@ export function effectProfile(command: EffectDeclaration): EffectProfile {
 /** The effect-relevant part of a spec: the body's effect, per-action effects, flag effects. */
 export interface EffectShape {
   readonly effect: Effect;
+  /** Single bodies only: the per-call resolver (a multi-action body puts one on each action). */
+  readonly effectOf?: EffectOf;
   readonly arguments?: readonly ArgumentSpec[];
-  readonly actions?: Readonly<Record<string, { readonly effect?: Effect; readonly arguments?: readonly ArgumentSpec[] }>>;
+  readonly actions?: Readonly<Record<string, { readonly effect?: Effect; readonly arguments?: readonly ArgumentSpec[]; readonly effectOf?: EffectOf }>>;
 }
 
 function flagEffects(args: readonly ArgumentSpec[] | undefined): Effect[] {

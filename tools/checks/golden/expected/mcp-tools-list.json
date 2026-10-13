@@ -1551,20 +1551,32 @@
               "recover",
               "migrate",
               "status",
-              "logs"
+              "logs",
+              "run"
             ]
           },
           "name": {
             "type": "string",
-            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs); recipe whose checks you trust (check)"
+            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs, run); recipe whose checks you trust (check)"
           },
           "new-name": {
             "type": "string",
             "description": "Name to import under (import)"
           },
+          "recipe-action": {
+            "type": "string",
+            "description": "Recipe action (run)"
+          },
+          "arg": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Action argument (run)"
+          },
           "json": {
             "type": "boolean",
-            "description": "Catalog as JSON (list); Inspect as JSON (inspect)"
+            "description": "Catalog as JSON (list); Inspect as JSON (inspect); Run result as JSON (run)"
           },
           "with-hooks": {
             "type": "boolean",
@@ -1572,15 +1584,15 @@
           },
           "dry-run": {
             "type": "boolean",
-            "description": "what would happen (check, install, remove, recover, migrate)"
+            "description": "what would happen (check, install, remove, recover, migrate, run)"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (verify, onboard, diagnose, install, remove); Instance lock (recover, migrate)"
+            "description": "Take lock (verify, onboard, diagnose, install, remove, run); Instance lock (recover, migrate)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (verify, onboard, diagnose, install, remove); Remote lock host (recover, migrate)"
+            "description": "Orphan host (verify, onboard, diagnose, install, remove, run); Remote lock host (recover, migrate)"
           },
           "tail": {
             "type": "string",

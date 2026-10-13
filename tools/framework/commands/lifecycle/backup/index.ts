@@ -33,7 +33,7 @@ import {
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
-import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";
+import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/run/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { BackupPurpose } from "#src/core/app.ts";

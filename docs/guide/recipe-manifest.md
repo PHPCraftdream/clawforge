@@ -73,6 +73,18 @@ by loading/migrate. This convention applies to every nested row, not only array 
 | `migrationBackup.cleanShutdown` | string | Required in both | Direct: `"flushes-all-writers"`; conditional: `"verified-by-post-stop-hook"`. |
 | `migrationBackup.restore` | string | Required in both | Exactly `"application-safe-including-compensation"`. |
 | `migrationBackup.verification` | string | Required only in conditional; forbidden in direct | Exactly `"migration-verify.ts"`; no alternate hook path. |
+| `actions` | object | Optional; absent | Non-null, non-array object; at most 16 actions. Declares operator-facing actions executed by `recipe run` and listed by `recipe inspect`; the effect is read from this declaration before the MCP confirmation decision, without importing hook code. [Recipe actions](recipes.md#recipe-actions). |
+| `actions.<name>` | object | Each declared action | Key matches `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, at most 40 characters. Exactly `file`, `effect`, `arguments` and optional `description`; unknown keys refused. |
+| `actions.<name>.file` | string | Required per action | Recipe-relative path ending `.ts`, at most 200 characters, no drive letter or backslash, no empty/`.`/`..` segments; the resolved file must stay inside the recipe directory. |
+| `actions.<name>.effect` | string | Required per action | Exactly `"read"`, `"change"` or `"destroy"`. Resolved from the manifest before confirmation; change and destroy require MCP `confirm: true`, read does not. `--dry-run` is treated as read. |
+| `actions.<name>.description` | string | Optional; absent | Non-empty string of at most 200 characters. |
+| `actions.<name>.arguments` | array of objects | Required per action; may be empty | At most 16 entries. `recipe run` validates `key=value` tokens against it in the prepare stage; missing/unknown/duplicate/mis-kinded values refuse naming the argument, before any hook module is imported. |
+| `actions.<name>.arguments[]` | object | Each entry | Exactly `name`, `kind`, `optional`, `choices` and optional `description`; unknown keys refused. |
+| `actions.<name>.arguments[].name` | string | Required per entry | Matches `^[a-z][a-zA-Z0-9]*$` (camelCase), at most 40 characters, unique within the action. |
+| `actions.<name>.arguments[].kind` | string | Required per entry | Exactly `"text"`, `"integer"`, `"choice"` or `"flag"`. |
+| `actions.<name>.arguments[].optional` | boolean | Optional; absent means required | Must be a boolean when present. |
+| `actions.<name>.arguments[].choices` | array of strings | Required for kind `choice`; forbidden otherwise | Non-empty and at most 32 entries; entries non-empty strings of at most 64 characters, unique. An out-of-choices value refuses. |
+| `actions.<name>.arguments[].description` | string | Optional; absent | Non-empty string of at most 200 characters. |
 
 ### Loaded fields that are not manifest settings
 
@@ -111,7 +123,8 @@ See [hook walkthrough](recipes.md#recipes-things-that-live-beside-the-instance) 
    discarded; there is no global unknown-field refusal. Port extras survive loading;
    readiness extras are discarded; endpoint and migration extras are refused.
    Full load also reconstructs optional `ephemeralPaths`; mount-conflict checks require
-   runtime migration evidence.
+   runtime migration evidence. Full load validates `actions` as declared; a manifest whose
+   `actions` cannot be parsed refuses every reader that full-loads it.
 5. `declaredPrivateFiles` independently checks JSON/object shape and privateFiles only.
    The strict privatePaths enumeration independently checks JSON/object shape and
    privatePaths only: it does not require description or validate unrelated fields.
@@ -130,6 +143,8 @@ rows below, prepend **P = `recipes/<name>/recipe.json: `** or
 **F = `<manifest>: `** as indicated. `<manifest>` is the reader's resolved manifest
 path; no machine path is prescribed here. `<index>` is the zero-based array index,
 `<key>` the variable key, and `<value>`/`<configPath>` the offending input, inserted
+verbatim. In the `actions` rows, `<name>` is the offending action key, `<argument>` the
+duplicate argument name, `<entry>` the duplicate choice and `<file>` the declared file, all
 verbatim. Each field row inherits the readers and walkthrough link of its field-table
 parent. These are validation errors, not Compose/hook execution errors.
 
@@ -157,6 +172,34 @@ parent. These are validation errors, not Compose/hook execution errors.
 | `consumerEndpoints[].configPath`, missing/unsafe | P | `consumerEndpoints[<index>].configPath must be a safe non-empty dot configuration path` |
 | `consumerEndpoints[].service`, missing/unsafe | P | `consumerEndpoints[<index>].service must be a safe non-empty Compose service name` |
 | `consumerEndpoints[]`, duplicate path | P | `consumerEndpoints[<index>]: duplicate configPath <configPath>` |
+| `actions`, nonobject/null/array | P | `actions must be an object` |
+| `actions`, more than 16 keys | P | `actions must declare at most 16 actions` |
+| `actions` key, invalid grammar or more than 40 characters | P | `actions key <name> must match ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ and be at most 40 characters` |
+| `actions.<name>`, nonobject/null/array | P | `actions.<name> must be an object` |
+| `actions.<name>`, unknown key | P | `actions.<name> has an unknown key <key>` |
+| `actions.<name>.file`, missing/non-string/empty | P | `actions.<name>.file must be a non-empty string` |
+| `actions.<name>.file`, more than 200 characters | P | `actions.<name>.file must be at most 200 characters` |
+| `actions.<name>.file`, absolute/backslash/drive prefix | P | `actions.<name>.file must be a relative path without drive letters or backslashes` |
+| `actions.<name>.file`, empty/`.`/`..` segment | P | `actions.<name>.file must stay inside the recipe directory` |
+| `actions.<name>.file`, not ending `.ts` | P | `actions.<name>.file must end with .ts` |
+| `actions.<name>.effect`, missing/not an effect literal | P | `actions.<name>.effect must be one of read, change, destroy` |
+| `actions.<name>.description`, non-string/empty | P | `actions.<name>.description must be a non-empty string` |
+| `actions.<name>.description`, more than 200 characters | P | `actions.<name>.description must be at most 200 characters` |
+| `actions.<name>.arguments`, non-array | P | `actions.<name>.arguments must be an array` |
+| `actions.<name>.arguments`, more than 16 entries | P | `actions.<name>.arguments must have at most 16 entries` |
+| `actions.<name>.arguments`, duplicate name | P | `actions.<name>.arguments contains the duplicate name <argument>` |
+| `actions.<name>.arguments[<index>]`, nonobject/null/array | P | `actions.<name>.arguments[<index>] must be an object` |
+| `actions.<name>.arguments[<index>]`, unknown key | P | `actions.<name>.arguments[<index>] has an unknown key <key>` |
+| `actions.<name>.arguments[<index>].name`, missing/invalid/too long | P | `actions.<name>.arguments[<index>].name must match ^[a-z][a-zA-Z0-9]*$ and be at most 40 characters` |
+| `actions.<name>.arguments[<index>].kind`, missing/not a kind literal | P | `actions.<name>.arguments[<index>].kind must be one of text, integer, choice, flag` |
+| `actions.<name>.arguments[<index>].optional`, non-boolean | P | `actions.<name>.arguments[<index>].optional must be a boolean` |
+| `actions.<name>.arguments[<index>].choices`, missing/empty for kind choice | P | `actions.<name>.arguments[<index>].choices must be a non-empty array for kind choice` |
+| `actions.<name>.arguments[<index>].choices[]`, non-string/empty/more than 64 characters | P | `actions.<name>.arguments[<index>].choices entries must be non-empty strings of at most 64 characters` |
+| `actions.<name>.arguments[<index>].choices`, duplicate entry | P | `actions.<name>.arguments[<index>].choices contains the duplicate entry <entry>` |
+| `actions.<name>.arguments[<index>].choices`, more than 32 entries | P | `actions.<name>.arguments[<index>].choices must have at most 32 entries` |
+| `actions.<name>.arguments[<index>].choices`, present for a non-choice kind | P | `actions.<name>.arguments[<index>].choices is only allowed for kind choice` |
+| `actions.<name>.arguments[<index>].description`, non-string/empty | P | `actions.<name>.arguments[<index>].description must be a non-empty string` |
+| `actions.<name>.arguments[<index>].description`, more than 200 characters | P | `actions.<name>.arguments[<index>].description must be at most 200 characters` |
 | `owns`, non-array | P | `owns must be an array` |
 | `owns[]`, nonobject/null/array or wrong/missing keys | P | `owns[<index>] must contain only path, mode and prefix` |
 | `owns[].path`, missing/unsafe | P | `owns[<index>].path must be a safe non-empty dot configuration path` |
@@ -190,6 +233,7 @@ empty:
 
 | Boundary / field | Exact complete message |
 | --- | --- |
+| `actions.<name>.file` resolves outside the recipe directory (segment-wise, at run time) | no prefix | `recipe action file <file> resolves outside the recipe directory` |
 | `description`, absent/non-string/empty | `recipes/<name>/recipe.json needs a description` |
 | Full/partial parser, null/nonobject | `recipes/<name>/recipe.json must contain an object` |
 | Full/partial parser, invalid JSON | `recipes/<name>/recipe.json: <JSON.parse error message>` |
@@ -233,7 +277,8 @@ See [application migration](recipes.md#application-owned-migration-contract) and
 | `recipe migrate` | Full load; requires exact migrationBackup before runtime planning. Optional ephemeralPaths declares disposable writable-layer paths; mount equal/ancestor conflicts refuse, matching A/C/D diff entries are ignored and counted in preview/plan/result, and other layer data refuses with a sanitized first-10 top-level path sample and ephemeralPaths pointer. Existing mount archives remain full; no layer archive/export/copy. Conditional callback construction is inert during preview. Planning is read-only; executor enters the instance lock and imports the conditional verifier only after proven stop. No prepare/verify/onboard lifecycle calls or build/pull fallback. | [Application-owned migration contract](recipes.md#application-owned-migration-contract) |
 | `recipe recover` | Full load; selective service recovery. Optional consumer reconciliation requires prepare.ts and invokes **named** afterStart under the executor lock after one bounded readiness observation of selected service plus declared dependencies; preview imports nothing. | [Durable repair](recipes.md#durable-repair-and-verification) |
 | `recipe import` | Source binder proves recipe.json exists, not full schema validity. Portable walker checks privateFiles plus generic sensitive names and symlink containment; destination must not exist. Local copy, no Context/instance lock, no hook evaluation. Warns on copied prepare/verify/onboard files. | [Private files](recipes.md#private-files-privatepaths-and-privatefiles) |
-| `recipe inspect` | **Full load still required.** Reads runtime container/namespace evidence using name/definition, never hook imports, lock or target writes. Requests logs with tail default 100, clamped 1–200; JSON contains sanitized diagnostics; human output omits logs/mounts/start errors/details. | [Existing-stack cutover](recipes.md#existing-stack-cutover) |
+| `recipe run <name> <action>` | Full load; executes the declared action's `file` with `run(ctx, recipe, input)`. Effect comes from the manifest, before confirmation and without importing hook code; change/destroy confirm over MCP and take the instance lock across the module import, read does not lock. `--dry-run` is a read passed as `input.dryRun`. Argument refusals happen in prepare and name the argument. | [Recipe actions](recipes.md#recipe-actions) |
+| `recipe inspect` | **Full load still required.** Reads runtime container/namespace evidence using name/definition, never hook imports, lock or target writes. Lists declared `actions` with their effects and arguments. Requests logs with tail default 100, clamped 1–200; JSON contains sanitized diagnostics; human output omits logs/mounts/start errors/details. | [Existing-stack cutover](recipes.md#existing-stack-cutover) |
 | Endpoint owner catalog | Full load, including disabled owners; missing manifest skipped, other errors propagate. Duplicate owners across manifests refused. | [Durable repair](recipes.md#durable-repair-and-verification) |
 | Private-file helpers / portable carriers | Helpers pool privatePaths with recorded writes; portable content uses privateFiles for import/set build/mirror and deploy refusal. Neither is a sandbox or a content-based secret detector. | [Private files](recipes.md#private-files-privatepaths-and-privatefiles) |
 

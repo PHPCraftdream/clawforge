@@ -183,7 +183,35 @@ Adding a check that genuinely cannot run without one of these: add the header, n
 `if (process.platform === "win32") return` — the runner's skip line and summary count already
 say exactly what a check file printing its own "skip" line to stderr would otherwise have to
 repeat by hand, and a moved or renamed file keeps working everywhere without anyone updating a
-CI path list.
+### Which run, when
+
+Pick the run by the moment, not by habit:
+
+| Moment | Run | Why |
+| --- | --- | --- |
+| Editing, a few minutes in | the one check file you changed: `node --experimental-strip-types tools/checks/<path>.check.ts` | seconds |
+| A task is done, before committing | `npm run check:fast` | type check, lint, the always-run structural checks (layout, architecture ratchets, static hygiene, needs) and the checks related to the diff |
+| A change touches a command declaration, the MCP surface, goldens, docs or packaging | add the family explicitly: `./clawforge check mcp golden completion flags property binder help docs packaging` | whole-surface checks are reached by rules, not by imports |
+| A stage or sprint ends, before a push to `main` or a release | the full suite: `npm test` | the gate; invisible dependencies are only covered here |
+| A push to a feature branch | nothing extra: CI runs the fast tier; the full tier runs on pull requests, `main` and nightly | see "CI tiers" |
+
+Read the exit code of the run itself, not the tail of its output: a pipeline reports the last
+command's status, and the summary line of a long log hides a failed file above it.
+
+A ratchet or layout failure after a "narrow" run is the usual sign that a family was skipped:
+`check:fast` includes them for exactly that reason. If a flaky file fails once under the full
+suite's own parallelism, treat it as a bug to fix, not noise to rerun.
+
+#### For task prompts given to agents
+
+Copy this into a task description so the agent verifies at the right level:
+
+```text
+Verification: run your own check files directly while you work. Before you report, run
+`npm run check:fast` and, if you touched commands, the MCP surface, goldens, docs or packaging,
+the matching families from CONTRIBUTING.md ("Which run, when"). Do not run the full suite; the
+orchestrator runs it at the end of the stage. Report each command with its real exit code.
+```
 
 ### Run timings
 

@@ -328,7 +328,20 @@ async function claim(ctx: Context, breakLock: boolean, breakForeignLockHost?: st
 
   if (acquired.code === 0) return claimFreshGuard(ctx, guard, claimPath(ctx, generation), content, candidate);
 
-  return claimExistingGuard(ctx, guard, acquired, generation, content, candidate, breakLock, breakForeignLockHost);
+  // A failed mkdir followed by an absent guard means the previous owner RELEASED between our
+  // mkdir and the follow-up — the guard vanished under us, not "someone else holds it". Retry
+  // immediately and boundedly: the plain mkdir is the same atomic primitive the fresh path
+  // uses, so winning a retry is a genuinely fresh claim, and falling through to the existing
+  // paths when it loses is exactly today's behavior.
+  let attempt: ExecResult = acquired;
+  for (let tries = 0; tries < 3; tries++) {
+    const present = await ctx.transport.exec("test", ["-d", guard], { allowFailure: true });
+    if (present.code === 0) break; // Someone holds the guard after all — contested path.
+    attempt = await ctx.transport.exec("mkdir", [guard], { allowFailure: true });
+    if (attempt.code === 0) return claimFreshGuard(ctx, guard, claimPath(ctx, generation), content, candidate);
+  }
+
+  return claimExistingGuard(ctx, guard, attempt, generation, content, candidate, breakLock, breakForeignLockHost);
 }
 
 async function release(ctx: Context, owner: MutationOwner): Promise<void> {

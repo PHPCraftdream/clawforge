@@ -181,6 +181,13 @@ export async function claimOwnedLockDirectory(ctx: Context, generation: string):
   }
 }
 
+/** Whether this acquisition's generation marker is still in place - i.e. the lock directory
+ *  is still this acquisition's to clean up. */
+export async function ownsLockGeneration(ctx: Context, generation: string): Promise<boolean> {
+  const present = await ctx.transport.exec("test", ["-e", generationMarkerPath(ctx, generation)], { allowFailure: true });
+  return present.code === 0;
+}
+
 /** Empties a lock directory this caller has proven it owns: the parked marker, the holder
  *  file while still this acquisition's, then the root via plain rmdir, never recursive —
  *  anything that appeared inside meanwhile makes rmdir fail, leaving a stale lock for a

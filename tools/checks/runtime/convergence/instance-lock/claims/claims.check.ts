@@ -9,7 +9,7 @@
 
 import { takeLock, withInstanceLock, readLockHolder, lockPath } from "#framework/runtime/lock/instance-lock.ts";
 import { machineName } from "#framework/runtime/lock/process-identity.ts";
-import { stubContext, refused } from "./fixture.ts";
+import { stubContext, refused } from "../fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- taking and releasing --------------------------------------------------------------------

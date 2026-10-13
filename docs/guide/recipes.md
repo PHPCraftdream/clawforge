@@ -505,6 +505,27 @@ Keep an explicit distinction between recovered service, durable recipe fix and f
 tool gap. When the supported lifecycle is blocked by migration or a lock, record the blocker
 and the approved temporary recovery instead of claiming the recipe has been fully repaired.
 
+### Local recipe checks
+
+Run `./clawforge recipe check <name>` before deploying recipe-code changes. The command
+recursively discovers portable `*.check.ts` files, excludes `node_modules` paths, sorts
+files, and runs each with `node --experimental-strip-types` in the recipe directory.
+It requires no instance, Docker or instance lock and does not invoke lifecycle hooks.
+Unknown recipes, broken manifests and recipes with no checks found are refused.
+
+Use `./clawforge recipe check <name> --dry-run` to list files without executing code.
+Real execution requires confirmation over MCP, like verify/onboard: checks run with the
+operator's rights and are not sandboxed. Only a minimal environment is passed; deployment
+settings and secrets are not injected, but code can still read host files or contact the
+network. Review unfamiliar checks before running them. Each direct child has a 30-second
+limit and 64-KiB combined output budget; descendants are not sandboxed or collectively
+terminated. Failures print their retained output and make the command exit nonzero.
+
+Discovery uses the shared portable-content walker, including its contained-link and
+private-file policies. Top-level `node_modules` is pruned; nested `node_modules` is walked
+before filtering, so unsafe links there can refuse discovery even though its checks are
+never executed.
+
 ## Private files: `privatePaths` and `privateFiles`
 
 A recipe that generates credentials declares — in the same `recipe.json` — where they live.
@@ -639,8 +660,8 @@ Keep recipe code easy to maintain: use small typed modules with one responsibili
 constants for paths and protocol values, pure renderers for generated files, and thin lifecycle
 hooks that orchestrate those functions. Validate inputs at the boundary, keep secrets inside
 private-file helpers, return safe structured results, and document only the decisions a future
-maintainer cannot infer from the code. Run the repository typecheck, linter and recipe checks
-before shipping a recipe.
+maintainer cannot infer from the code. Run the repository typecheck and linter, then
+`./clawforge recipe check <name>` before shipping a recipe.
 
 **An MCP server plus an agent to use it**: `server.ts` (a stdio MCP server) and an `agent/`
 directory.

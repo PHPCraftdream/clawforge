@@ -88,7 +88,7 @@ is unchanged.
 | `memory` | `<action> [--mode <mode>] [--backend <backend>] [--provider <id>] [--model <model>] [--env <var>] [--model-path <path>] [--model-checksum <sha256>] [--model-source <source>] [--model-version <version>] [--json] [--plugin-version <version>] [--model-max-bytes <bytes>] [--agent <id>] [--all-agents] [--allow-install] [--allow-download] [--deep] [--allow-spend]` | Declare, set up, inspect, index and verify memory (destructive for some actions) |
 | `configure-provider` | `[--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Configure model providers from target-side environment variables |
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]` | Show required secrets and whether they are in place (destructive for some actions) |
-| `recipe` | `[<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]` | Deploy services next to the instance: install, verify, list, and more (destructive for some actions) |
+| `recipe` | `[<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]` | Deploy services next to the instance: install, verify, list, and more (destructive for some actions) |
 | `provision-agent` | `<recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Wire a recipe's MCP server to its own OpenClaw agent, with optional cron |
 | `set` | `<action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]` | Build or validate the set: what a deployment installs, as one artifact (destructive for some actions) |
 
@@ -154,6 +154,8 @@ its arguments and its one-line summary; the full text of any of them is
 
 * `backup` — the schedules `install`/`uninstall` write, archive rotation and the native
   snapshot path: [data-and-backups.md](data-and-backups.md)
+* `recipe check <name>` — recursive local `*.check.ts` checks, trust boundary and limits;
+  no instance, Docker or lock: [Local recipe checks](recipes.md#local-recipe-checks)
 * `watch` — findings, alert and heartbeat wiring, staleness, notification formats:
   [Health monitoring: `watch`](monitoring-and-access.md#health-monitoring-watch)
 * `incident` — the runbook phase by phase:

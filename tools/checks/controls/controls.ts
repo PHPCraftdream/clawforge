@@ -28,6 +28,16 @@ export interface ControlDecl {
 
 export const CONTROLS: readonly ControlDecl[] = [
   {
+    id: "F5-recipe-check-failure",
+    finding: "F5",
+    note: "recipe check propagates subprocess failures to the command verdict",
+    product: "tools/framework/commands/management/recipe/recovery/checks/check.ts",
+    search: "return failed === 0 ? 0 : 1;",
+    replace: "return 0;",
+    check: "tools/checks/management/recipe/check-action.check.ts",
+    fragment: "failing checks return nonzero",
+  },
+  {
     id: "C1",
     finding: "R19-06",
     note: "late argument refusal: the binder's parse must own set --name — a kind whose parse accepts everything lets every invalid sample flow past parse to set build's run-stage refusal, failing the sweep's stage assertion",

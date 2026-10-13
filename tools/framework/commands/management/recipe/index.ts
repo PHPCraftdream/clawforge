@@ -34,6 +34,7 @@ import {
 } from "#src/service/recipe.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import { prepareRecipeCheck, runCheckAction } from "./recovery/checks/check.ts";
 import {
   runDiagnoseAction,
   runImportAction,
@@ -248,6 +249,21 @@ export const RECIPE = multiActionBody({
         return { name, withHooks: call.values["with-hooks"] === true };
       },
       run: (_ctx, plan) => runNewAction(plan.name, plan.withHooks),
+    }),
+    check: defineAction({
+      summary: "Run untrusted local checks; no instance/Docker/lock",
+      effect: "destroy",
+      needs: "local",
+      arguments: [{
+        ...NAME_ARGUMENT,
+        summary: "recipe whose checks you trust",
+        description: "Untrusted code: operator rights, not sandboxed",
+      }, {
+        ...DRY_RUN_ARGUMENT,
+        description: "With check: list files without executing recipe code",
+      }],
+      prepare: (call) => prepareRecipeCheck(call.values.name, call.values["dry-run"] === true),
+      run: (_local, plan) => runCheckAction(plan),
     }),
     verify: defineAction({
       summary: "Run the recipe's verify.ts hook",

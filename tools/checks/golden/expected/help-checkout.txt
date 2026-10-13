@@ -808,17 +808,17 @@
 
 === recipe --help ===
 ==> recipe — Deploy services next to the instance: install, verify, list, and more
-    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]
-      <action>               What to do with the recipe [list|import|new|verify|onboard|diagnose|install|remove|inspect|recover|migrate|status|logs]
-      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs)
+    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]
+      <action>               What to do with the recipe [list|import|new|check|verify|onboard|diagnose|install|remove|inspect|recover|migrate|status|logs]
+      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs); Untrusted code: operator rights, not sandboxed (check)
       <new-name>             import under this name instead of the source directory's own name (import)
       --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list); With inspect: emit inspection evidence as JSON (inspect)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
+      --dry-run              list files without executing recipe code (check); With install/remove/recover/migrate: show what would happen (install, remove); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate)
       --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, remove); Take over the instance lock held by another operation (recover, migrate)
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, remove); Confirm <hostId> for a recorded remote lock owner (recover, migrate)
       --tail <n>             lines to return per service (diagnose, inspect, logs)
       --force-disabled       build a recipe marked disabled (install)
-      --dry-run              show what would happen (install, remove); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate)
       --volumes              delete its volumes too (remove)
       --service <service>    exact declared service (dependencies are not started) (recover)
       --build                build the selected service (recover)

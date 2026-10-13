@@ -1541,6 +1541,7 @@
               "list",
               "import",
               "new",
+              "check",
               "verify",
               "onboard",
               "diagnose",
@@ -1555,7 +1556,7 @@
           },
           "name": {
             "type": "string",
-            "description": "directory to copy the recipe from (import); recipe (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs)"
+            "description": "directory to copy the recipe from (import); recipe (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs); recipe whose checks you trust (check)"
           },
           "new-name": {
             "type": "string",
@@ -1568,6 +1569,10 @@
           "with-hooks": {
             "type": "boolean",
             "description": "add commented prepare.ts/verify.ts stubs (new)"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "show what would happen (check); show what would happen (install, remove); show what would happen (recover); show what would happen (migrate)"
           },
           "break-lock": {
             "type": "boolean",
@@ -1584,10 +1589,6 @@
           "force-disabled": {
             "type": "boolean",
             "description": "build a recipe marked disabled (install)"
-          },
-          "dry-run": {
-            "type": "boolean",
-            "description": "show what would happen (install, remove); show what would happen (recover); show what would happen (migrate)"
           },
           "volumes": {
             "type": "boolean",

@@ -4,6 +4,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ## Unreleased
 
+### Added
+* `recipe check <name>` runs a recipe's own `*.check.ts` files, each in its own Node process, with a
+  per-file timeout, bounded output and a non-zero exit on failure. It needs no instance, Docker or lock;
+  `--dry-run` lists the files without executing code.
+
 ### Changed
 * A checkout deployment warns on stderr when the framework sources are newer than `dist` (run `npm run build`
   from the checkout root); stdout and `--json` are untouched, `OC_NO_STALE_DIST_WARNING=1` silences it.

@@ -209,7 +209,7 @@ try {
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "inspect", "recover", "migrate", "status", "logs"],
+    ["list", "import", "new", "check", "verify", "onboard", "diagnose", "install", "remove", "inspect", "recover", "migrate", "status", "logs"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
@@ -498,12 +498,11 @@ function conforms(
 // each emitting exactly the shape its real implementation emits when captured (one JSON
 // document for the hook/report actions, plain progress text for the rest), while the
 // metadata under test — structured, readOnlyWhen, destructive, arguments — is the real
-// declaration. list and import are additionally driven for real against the actual
-// command above.
+// list and import above also exercise real command implementations.
 {
   const recipeCommand = openclawCommands.recipe!;
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
-  check("the declaration enumerates the actions to sweep", actionChoices.length, 13);
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 14);
 
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
@@ -518,6 +517,7 @@ function conforms(
     const outputs = {
       list: () => { log("available recipes"); info("sidecar          a probe service"); },
       import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
+      check: () => { info("1 recipe check file(s) passed, 0 failed"); },
       new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
       install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
       remove: () => { log("sidecar removed"); }, inspect: () => { info("sidecar: owned namespace"); }, recover: () => { log("service recreated"); }, migrate: () => { log("migration preview"); },

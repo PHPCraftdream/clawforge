@@ -212,8 +212,13 @@ Framework:
   `watch`, `incident`, the security gate and suppressions
 * [docs/guide/recipes.md](docs/guide/recipes.md) — recipes, `provision-agent`, the
   `privatePaths`/`privateFiles` contract
+* [docs/internal/recipe-migration-executor.md](docs/internal/recipe-migration-executor.md) —
+  implementation notes behind `recipe migrate`/`recover`: journal phases, storage and
+  helper-image verification, compensation and recovery-directory rules
 * [docs/guide/recipe-manifest.md](docs/guide/recipe-manifest.md) — complete recipe.json fields,
   validation rules, readers and hook contracts
+* [docs/guide/recipes-cookbook.md](docs/guide/recipes-cookbook.md) — worked recipe patterns:
+  pinned release downloads, secret-free config changes, upstream config migrations
 * [docs/guide/sets.md](docs/guide/sets.md) — installing, trying and rolling back sets;
   semantic diff and acceptance evidence
 * [docs/guide/deploy-and-mcp.md](docs/guide/deploy-and-mcp.md) — several deployments side by

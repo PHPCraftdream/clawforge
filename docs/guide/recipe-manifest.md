@@ -393,35 +393,6 @@ with a genuine unconditional flush guarantee, replace migrationBackup with exact
 See [application migration](recipes.md#application-owned-migration-contract) and
 [private declaration coordinate systems](recipes.md#private-files-privatepaths-and-privatefiles).
 
-## Code versus walkthrough caveats
-
-The following describe the examined code, not changes to implementation:
-
-- [Private files](recipes.md#private-files-privatepaths-and-privatefiles) says privateFiles
-  has only the import reader. The shared portable policy also applies it to set build,
-  provision-agent mirroring and deploy refusal.
-- That section says deleting a manifest makes the next portable snapshot include the
-  former private runtime files. Recorded private writes instead remain protected by the
-  deployment ledger; removing the declaration does not erase history. Unrecorded container
-  writes still require a current declaration and are not intercepted by helpers.
-- That section's broad “broken manifest stops backup/pull/verify” wording is stronger than
-  the independent privatePaths reader: it validates JSON/object/privatePaths, not all
-  fields. Cold backup separately full-loads running stacks; stopped malformed stacks can
-  be tolerated there. Likewise privateFiles is not checked by full manifest loading.
-- The [readiness walkthrough](recipes.md#recipes-things-that-live-beside-the-instance)
-  says “If the deadline passes first” and distinguishes the observation end from a probe
-  deadline. This is not a contradiction: in code, first readiness begins a full grace
-  window which can extend the initial timeout. The qualification matters when interpreting
-  timeoutMs, which also does not bound the whole build/install duration.
-- The hook walkthrough's “relative imports stay in the recipe” is not an enforced ordinary
-  relative-import boundary; only package-internal resolution performs that containment
-  validation. Hooks already have full operator rights.
-- [Existing-stack cutover](recipes.md#existing-stack-cutover) describes explicitly requested
-  inspection logs. The command currently always calls stack.inspect with `logs: true`,
-  even without a supplied tail; human rendering hides the logs, structured output can
-  include sanitized logs. It also full-loads the manifest before inspection, even though
-  the common stack identity builder itself can be used with broken manifests.
-
 ## Source map
 
 The authoritative implementation paths are repository-relative:

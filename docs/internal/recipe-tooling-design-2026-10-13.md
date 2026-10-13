@@ -116,8 +116,9 @@ In `@clawforge/framework/private-config`:
 
 ## U6 - external API through the consumer's route
 
-`ctx.runtime.consumerFetch({ service: "gateway", url, method, headers, bodyBytesMax,
-timeoutMs })`: runs a bounded HTTP request from the gateway container, so it takes exactly
+`consumerFetch(ctx, { service: "gateway", url, method, headers, bodyBytesMax, timeoutMs })`
+(exported from the new public entry `@clawforge/framework/recipe-kit`, so `Context` itself does
+not change): runs a bounded HTTP request from the gateway container, so it takes exactly
 the consumer's egress path (proxy, DNS). Secrets referenced as `{ fromEnv: "NAME" }` are
 resolved inside the container and substituted there; request config travels on stdin.
 Response is size-bounded and returned as status, selected headers and a body the hook
@@ -125,10 +126,10 @@ parses. The URL and headers are registered for redaction in logs.
 
 ## U7 - typed application CLI
 
-`ctx.app.cli(args, { json: true })`: runs the gateway-sharing CLI service (the existing
+`appCli(ctx, args, { json: true })` (same `recipe-kit` entry): runs the gateway-sharing CLI service (the existing
 `runOneOff("cli", ..., { profile: "cli", noDeps: true, input: "" })` rules), bounded time and
 output, JSON parse with a result type check supplied by the caller, secrets only by stdin,
-`allowFailure` mapped to a typed refusal. `ctx.app.configPatch(object)` wraps `config patch
+`allowFailure` mapped to a typed refusal. `appConfigPatch(ctx, object)` wraps `config patch
 --stdin` with a dry-run mode.
 
 ## Order and dependencies

@@ -25,6 +25,19 @@ const distDir = await mkdtemp(join(tmpdir(), "clawforge-build-output-"));
 try {
   await build(distDir);
 
+  // Recipe-kit public declarations must remain self-contained and Node-free.
+  const recipeDeclarations = ["index", "types", "app", "consumer"];
+  for (const name of recipeDeclarations) {
+    const declaration = await readFile(resolve(distDir, "recipe-kit", `${name}.d.ts`), "utf8");
+    const imports = [...declaration.matchAll(/\bfrom\s+["']([^"']+)["']/g)].map((match) => match[1]);
+    if (/node:|NodeJS|\bany\b/.test(declaration) || imports.some((specifier) =>
+      /core\/|\.\.\/runtime|safety|curl/.test(specifier))) {
+      throw new Error(`recipe-kit ${name} declaration leaks a private or Node-dependent type`);
+    }
+  }
+  await readFile(resolve(distDir, "recipe-kit", "index.js"), "utf8");
+  process.stderr.write("recipe-kit runtime entry and Node-free declaration graph passed\n");
+
   const binPath = resolve(distDir, "entry", "bin.js");
   const firstLine = (await readFile(binPath, "utf8")).split("\n")[0];
 

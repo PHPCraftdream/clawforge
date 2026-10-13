@@ -85,6 +85,7 @@ export const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
   "./mounts": "runtime/mounts.ts",
   "./commands": "commands/interface/index.ts",
   "./private-config": "security/privacy/private-config.ts",
+  "./recipe-kit": "recipe-kit/index.ts",
 };
 
 /** The checkout source file a `@clawforge/framework` specifier maps to, or undefined when

@@ -33,7 +33,9 @@ const exported = (name: string, types: string, runtime: string): boolean => {
 };
 if (!exported("./app", "./dist/core/app.d.ts", "./dist/core/app.js") ||
     !exported("./mounts", "./dist/runtime/mounts.d.ts", "./dist/runtime/mounts.js") ||
-    !exported("./commands", "./dist/commands/interface/index.d.ts", "./dist/commands/interface/index.js")) {
+    !exported("./commands", "./dist/commands/interface/index.d.ts", "./dist/commands/interface/index.js") ||
+    !exported("./private-config", "./dist/security/privacy/private-config.d.ts", "./dist/security/privacy/private-config.js") ||
+    !exported("./recipe-kit", "./dist/recipe-kit/index.d.ts", "./dist/recipe-kit/index.js")) {
   throw new Error("the package exports must follow the source layout");
 }
 // "main": "index.js" sat here naming a file the package does not ship and never did. Nothing

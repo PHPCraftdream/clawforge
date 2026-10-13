@@ -119,8 +119,8 @@ In `@clawforge/framework/private-config`:
 `consumerFetch(ctx, { service: "gateway", url, method, headers, bodyBytesMax, timeoutMs })`
 (exported from the new public entry `@clawforge/framework/recipe-kit`, so `Context` itself does
 not change): runs a bounded HTTP request from the gateway container, so it takes exactly
-the consumer's egress path (proxy, DNS). Secrets referenced as `{ fromEnv: "NAME" }` are
-resolved inside the container and substituted there; request config travels on stdin.
+the consumer's egress path (proxy, DNS). Secrets are values the hook passes in (`secrets`, credentials, an
+authorization header); each is registered for redaction and the whole request config travels on stdin.
 Response is size-bounded and returned as status, selected headers and a body the hook
 parses. The URL and headers are registered for redaction in logs.
 

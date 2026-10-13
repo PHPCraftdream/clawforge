@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* A public `@clawforge/framework/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
+  application CLI with stdin-only input and guarded JSON results; `consumerFetch` makes one bounded HTTP
+  request from the gateway container (its DNS and proxy), with the request on stdin and secrets redacted.
 * `recipe check <name>` runs a recipe's own `*.check.ts` files, each in its own Node process, with a
   per-file timeout, bounded output and a non-zero exit on failure. It needs no instance, Docker or lock;
   `--dry-run` lists the files without executing code.

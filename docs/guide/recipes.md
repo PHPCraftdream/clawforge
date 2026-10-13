@@ -527,12 +527,46 @@ and the approved temporary recovery instead of claiming the recipe has been full
 ### Local recipe checks
 
 Run `./clawforge recipe check <name>` before deploying recipe-code changes. The command
-recursively discovers portable `*.check.ts` files, excludes `node_modules` paths, sorts
-files, and runs each with `node --experimental-strip-types` in the recipe directory.
+first lints portable Dockerfiles, then recursively discovers portable `*.check.ts` files,
+excludes `node_modules` paths, sorts files, and runs each with
+`node --experimental-strip-types` in the recipe directory.
 It requires no instance, Docker or instance lock and does not invoke lifecycle hooks.
-Unknown recipes, broken manifests and recipes with no checks found are refused.
+Unknown recipes, broken manifests and recipes with neither checks nor Dockerfile/Compose
+lint input are refused. A lint-only recipe does not need its own check file.
 
-Use `./clawforge recipe check <name> --dry-run` to list files without executing code.
+Lint discovery walks `Dockerfile`, `Dockerfile.*` and `*.Dockerfile` anywhere in the portable
+recipe tree. Root `compose.yml` services can also name a Dockerfile relative to their build
+context; only contained portable recipe files are read. Compose parsing supports common
+block mappings and build-argument lists without dependencies or interpolation. Unsupported,
+malformed or nonportable definitions emit `compose-unparsed` warnings; name-discovered
+Dockerfiles are still linted. No Compose command, build, download or recipe hook runs.
+
+| Code | Severity | Rule |
+| --- | --- | --- |
+| `remote-add-unpinned` | error | HTTP(S) `ADD` requires `--checksum=sha256:<64 lowercase hex>`. Checksum ARG references must be declared; visible ARG defaults and Compose build args must be valid hashes. |
+| `remote-add-checksum-unverified` | info | A declared checksum ARG has no statically visible value; runtime validity is unknown. |
+| `curl-pipe-shell` | error | `curl` or `wget` piped directly into `sh` or `bash`. |
+| `download-without-verification` | warning | Download to a file followed by extraction/execution of that file in the same RUN without `sha256sum -c`/`--check` or `shasum -a 256 -c`. |
+| `floating-base-tag` | warning | `FROM` uses `latest` or no tag/digest, except `scratch` and earlier build stages. |
+| `git-clone-unpinned` | warning | Remote clone/fetch lacks commit-SHA checkout or pinned fetch in the same RUN; ARG references are accepted. |
+| `unparsed-construct` | info | Unsupported text constructs, including heredocs, are skipped rather than treated as verified. |
+
+These are small static text rules, not a Dockerfile/shell interpreter or artifact trust proof.
+Continuations, comments, shell RUN and common exec RUN forms are recognized. Findings carry
+code, severity, file and physical starting line. To waive a single rule, put a nonempty reason
+on the immediately preceding physical line (no intervening blank line):
+
+```dockerfile
+# recipe-check: allow floating-base-tag reviewed upstream compatibility requirement
+FROM example:latest
+```
+
+The finding becomes info `waived`, retaining the waived code, location and reason. Errors
+or failing own check files exit 1; warnings/info alone exit 0. Lint findings print before
+own check execution; lint errors do not suppress those checks.
+
+Use `./clawforge recipe check <name> --dry-run` to list lint targets and own check files
+without executing recipe code; preview exits 0.
 Real execution requires confirmation over MCP, like verify/onboard: checks run with the
 operator's rights and are not sandboxed. Only a minimal environment is passed; deployment
 settings and secrets are not injected, but code can still read host files or contact the

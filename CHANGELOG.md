@@ -5,6 +5,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `recipe check` also lints a recipe's Dockerfiles and Compose build contexts for unpinned remote artifacts
+  (`ADD` without a checksum, `curl | sh`, unverified downloads, floating base tags, unpinned git clones). Findings
+  carry a code, severity and file:line; errors make the command exit non-zero, and a single rule can be waived
+  with a `# recipe-check: allow <code> <reason>` comment above the line.
 * `recipe.json` may declare `ephemeralPaths`: absolute container paths whose writable-layer contents are
   disposable. `recipe migrate` ignores changes at or under them, reports the ignored counts, and names the
   unsupported writable-layer paths (and this field) when it still refuses.

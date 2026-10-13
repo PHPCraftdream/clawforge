@@ -1,3 +1,5 @@
+import { prepareLint } from "./lint/plan.ts";
+import type { LintPlan } from "./lint/plan.ts";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { info } from "#src/core/io/log.ts";
@@ -13,6 +15,7 @@ export interface RecipeCheckPlan {
   readonly name: RecipeName | RecipeRef;
   readonly directory: string;
   readonly files: readonly string[];
+  readonly lint: LintPlan;
   readonly dryRun: boolean;
 }
 
@@ -20,9 +23,11 @@ export async function prepareRecipeCheck(name: RecipeName | RecipeRef, dryRun: b
   const { directory } = await loadRecipe(name);
   // Nested node_modules is walked before filtering; unsafe dependency links still refuse.
   const walked = await collectPortableRecipeFiles(directory, { excludeTop: "node_modules" });
-  const files = walked.files.filter((file) => !file.split("/").includes("node_modules") && file.endsWith(".check.ts")).sort();
-  if (files.length === 0) throw new Error(`recipe "${name}": no checks found — add *.check.ts files anywhere recursively under the recipe directory`);
-  return { name, directory, files, dryRun };
+  const portable = walked.files.filter((file) => !file.split("/").includes("node_modules")).sort();
+  const files = portable.filter((file) => file.endsWith(".check.ts"));
+  const lint = await prepareLint(directory, portable);
+  if (files.length === 0 && lint.targets.length === 0 && !portable.includes("compose.yml")) throw new Error(`recipe "${name}": no checks found — add *.check.ts files anywhere recursively under the recipe directory`);
+  return { name, directory, files, lint, dryRun };
 }
 
 /** Explicit allowlist: never inherit NODE_OPTIONS, app settings or credential variables. */
@@ -74,11 +79,14 @@ export async function runCheckAction(plan: RecipeCheckPlan, timeoutMs = RECIPE_C
     throw new Error(`recipe check timeout must be 1..${RECIPE_CHECK_TIMEOUT_MS}ms`);
   }
   if (plan.dryRun) {
+    for (const file of plan.lint.targets) info(`would lint ${file}`);
     for (const file of plan.files) info(`would run ${file}`);
     info(`${plan.files.length} recipe check file(s); dry-run: no code executed`);
     return 0;
   }
   let failed = 0;
+  for (const finding of plan.lint.findings) info(`${finding.severity} ${finding.code} ${finding.file}:${finding.line} ${finding.message}`);
+  const lintFailed = plan.lint.findings.some((finding) => finding.severity === "error");
   for (const file of plan.files) {
     // Revalidate the tree before each spawn; earlier checks may have changed it.
     const current = await prepareRecipeCheck(plan.name, false);
@@ -88,5 +96,5 @@ export async function runCheckAction(plan: RecipeCheckPlan, timeoutMs = RECIPE_C
     if (!result.ok) { failed++; if (result.output !== "") info(result.output); }
   }
   info(`${plan.files.length - failed} recipe check file(s) passed, ${failed} failed`);
-  return failed === 0 ? 0 : 1;
+  return failed === 0 && !lintFailed ? 0 : 1;
 }

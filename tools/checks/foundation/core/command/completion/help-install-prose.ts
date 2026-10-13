@@ -6,7 +6,7 @@
 
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { check, checkTrue } from "#checks/kit/harness.ts";
-import { tokenizeLine } from "#checks/kit/shells.ts";
+import { tokenizeLine } from "#checks/surfaces/advice/shells.ts";
 
 // the template span that names an install token
 const INSTALL_OPEN = "{install ";

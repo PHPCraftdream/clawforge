@@ -665,7 +665,7 @@ stages.print("pipeline: property");
 // rule. Replacing a gate argument's declared kind with kinds.text therefore fails here
 // (negative control C190: remove-app's <name> kind -> text), unless the argument is
 // declared text AND listed as plain.
-const PLAIN_TEXT_GATE_ARGUMENTS = new Set(["check --require", "check <filter…>"]);
+const PLAIN_TEXT_GATE_ARGUMENTS = new Set(["check --require", "check --base", "check <filter…>"]);
 // oxlint-disable-next-line no-control-regex -- Raw C0/DEL samples are refused by plain text too.
 const RAW_CONTROL = /[\u0000-\u001f\u007f]/;
 for (const unit of gateUnits) {

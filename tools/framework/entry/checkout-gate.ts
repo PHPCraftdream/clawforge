@@ -93,6 +93,15 @@ const checkBody = commandBody({
       valueName: "n",
       value: kinds.count(),
     },
+    { name: "related", summary: "Run only checks touched by changes", description: "Select checks affected by changes between --base and the working tree", kind: "flag" },
+    {
+      name: "base",
+      summary: "Change base for --related",
+      description: "Revision --related diffs against (default: merge-base with the upstream branch, else HEAD~1)",
+      kind: "option",
+      valueName: "rev",
+      value: kinds.text("git revision --related diffs against"),
+    },
     {
       name: "filter",
       summary: "Run checks whose path contains this text",
@@ -104,7 +113,7 @@ const checkBody = commandBody({
   run: async (_on, plan) => {
     const require = plan.require === undefined ? undefined : plan.require.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
     const { runChecks } = await import(CHECK_RUNNER_PATH);
-    return runChecks({ filters: [...plan.filter], list: plan.list, jobs: plan.jobs !== undefined && plan.jobs > 0 ? plan.jobs : undefined, require, timingsOnly: plan.timings === true ? (plan.top !== undefined && plan.top > 0 ? plan.top : 20) : undefined });
+    return runChecks({ filters: [...plan.filter], list: plan.list, jobs: plan.jobs !== undefined && plan.jobs > 0 ? plan.jobs : undefined, require, timingsOnly: plan.timings === true ? (plan.top !== undefined && plan.top > 0 ? plan.top : 20) : undefined, related: plan.related, base: plan.base });
   },
 });
 
@@ -128,7 +137,10 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "A file naming a capability it cannot run without (docker, wsl, posix-sh, rsync, " +
       "linux-host) is skipped, not failed, when this host lacks it. `{--require}` (or " +
       "OC_CHECK_REQUIRE) names capabilities this host is expected to have, turning a skip " +
-      "into a failure for those. `{--timings}` prints the stored per-file timing ranking (median of the recent samples in `.check-timings.json`) without running anything.",
+      "into a failure for those. `{--timings}` prints the stored per-file timing ranking (median of the recent samples in `.check-timings.json`) without running anything.\n" +
+      "{--related} selects instead the checks the changes between {--base} (default: merge-base " +
+      "with the upstream branch, else HEAD~1) and the working tree touch; substring filters " +
+      "then narrow the related set down further.",
     body: checkBody,
   }),
   materializeGate({

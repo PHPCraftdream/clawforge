@@ -1967,6 +1967,14 @@
             "type": "string",
             "description": "How many timings to list"
           },
+          "related": {
+            "type": "boolean",
+            "description": "Run only checks touched by changes"
+          },
+          "base": {
+            "type": "string",
+            "description": "Change base for --related"
+          },
           "filter": {
             "type": "array",
             "items": {

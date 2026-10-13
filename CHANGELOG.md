@@ -5,6 +5,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `check --related [--base <rev>]` runs only the checks affected by the changed files (an inverted static import graph of
+  the check tree plus a table of rules for dependencies the graph cannot see); `npm run check:fast` runs type check,
+  lint, the always-run structural checks and the related set. `tools/dev/related-audit.ts` reports the selection per commit.
 * The check runner records each file's run time in a local `.check-timings.json`, prints the wall time, serial sum,
   parallel efficiency and the ten slowest files after every run, and `check --timings` shows the stored ranking.
   `OC_CHECK_TIMINGS_OUT=<path>` also writes the run's durations for CI artifacts; `OC_CHECK_TIMINGS=off` disables the file.

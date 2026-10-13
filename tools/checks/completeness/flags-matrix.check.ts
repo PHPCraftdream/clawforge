@@ -117,7 +117,7 @@ interface GateCommandLike {
 }
 
 const GATE_TABLE: Record<string, { readonly flags: readonly string[]; readonly json: boolean }> = {
-  check: { flags: ["filter", "list", "jobs", "require", "timings", "top"], json: false },
+  check: { flags: ["base", "filter", "list", "jobs", "related", "require", "timings", "top"], json: false },
   "new-app": { flags: ["name"], json: false },
   "remove-app": { flags: ["name", "yes"], json: false },
   list: { flags: ["json", "no-status"], json: true },

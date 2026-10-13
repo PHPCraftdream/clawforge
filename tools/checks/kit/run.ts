@@ -15,6 +15,9 @@ import { emit } from "#framework/core/io/output.ts";
 import { printStoredTimings, recordRunTimings, renderRunBlock, runCheckFile, runProcess, type CheckResult, type RecordedSample } from "./spawn.ts";
 import { CAPABILITIES, CapabilityProbe, isCapability, type Capability } from "./capabilities/capabilities.ts";
 import { gateFor, parseCaseSkips, parseRequireList, skipLine, summaryLine } from "./capabilities/gate.ts";
+import { alwaysChecks } from "./selection/always.ts";
+import { buildImportGraph, selectRelatedChecks } from "./selection/import-graph.ts";
+import { checksFromRules } from "./selection/rules.ts";
 
 export interface RunChecksOptions {
   /** Substrings a check's relative path must contain at least one of. Every check when empty. */
@@ -27,6 +30,10 @@ export interface RunChecksOptions {
    *  absence must fail a file that requires them, instead of skipping it — merged with
    *  OC_CHECK_REQUIRE. */
   readonly require?: readonly string[];
+  /** Select the checks the changes between --base and the working tree touch, plus the fast tier. */
+  readonly related?: boolean;
+  /** The revision --related diffs against; default is the merge-base with the upstream branch, else HEAD~1. */
+  readonly base?: string;
   readonly checkoutRoot?: string;
   readonly entries?: readonly LabeledCheck[];
   readonly probe?: Pick<CapabilityProbe, "missing">;
@@ -370,6 +377,81 @@ async function runPooled(
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
+// --- --related: the checks the current changes touch -------------------------------------------
+
+/** Paths (repo-relative POSIX) changed between `base` and the working tree — committed diff plus
+ *  everything `git status` sees (staged, unstaged, untracked, rename sources). Read-only through
+ *  git; returns null (with a stderr note already written) when git is unusable or the base is bogus. */
+async function relatedChangedFiles(base: string | undefined, cwd: string): Promise<readonly string[] | null> {
+  const plain = await runProcess("git", ["rev-parse", "--git-dir"], { cwd, timeoutMs: 60_000 });
+  if (plain.error !== undefined || plain.code !== 0) {
+    process.stderr.write("check --related: git is not available here — cannot compute the changed set\n");
+    return null;
+  }
+  let baseRef: string;
+  if (base !== undefined) {
+    const verify = await runProcess("git", ["rev-parse", "--verify", "--quiet", base], { cwd, timeoutMs: 60_000 });
+    if (verify.error !== undefined || verify.code !== 0) {
+      process.stderr.write(`check --related: --base "${base}" is not a resolvable revision\n`);
+      return null;
+    }
+    baseRef = base;
+  } else {
+    const mergeBase = await runProcess("git", ["merge-base", "HEAD", "@{u}"], { cwd, timeoutMs: 60_000 });
+    if (mergeBase.error === undefined && mergeBase.code === 0 && mergeBase.stdout.trim() !== "") {
+      baseRef = mergeBase.stdout.trim();
+    } else {
+      const fallback = await runProcess("git", ["rev-parse", "--verify", "--quiet", "HEAD~1"], { cwd, timeoutMs: 60_000 });
+      if (fallback.error !== undefined || fallback.code !== 0) {
+        process.stderr.write("check --related: no upstream and no HEAD~1 to diff against — pass --base <rev>\n");
+        return null;
+      }
+      baseRef = "HEAD~1";
+    }
+  }
+  const committed = await runProcess("git", ["diff", "--name-only", "-z", baseRef], { cwd, timeoutMs: 60_000 });
+  if (committed.error !== undefined || committed.code !== 0) {
+    process.stderr.write(`check --related: git diff against "${baseRef}" failed\n`);
+    return null;
+  }
+  const status = await runProcess("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd, timeoutMs: 60_000 });
+  if (status.error !== undefined || status.code !== 0) {
+    process.stderr.write("check --related: git status failed\n");
+    return null;
+  }
+  const changed = new Set(committed.stdout.split("\0").filter((path) => path !== ""));
+  for (const record of porcelainRecords(status.stdout)) {
+    changed.add(record.path);
+    if (record.source !== undefined) changed.add(record.source);
+  }
+  return [...changed].map((path) => path.replaceAll("\\", "/")).sort();
+}
+
+/** The related selection over the discovered checks: reasons per label (first tier wins:
+ *  graph, then rule, then always) and the tier each label was picked by, for stable grouping. */
+function relatedReasons(
+  labeled: readonly LabeledCheck[],
+  changed: readonly string[],
+): { readonly reasons: ReadonlyMap<string, string>; readonly tiers: ReadonlyMap<string, number>; readonly relatedAndRules: ReadonlySet<string> } {
+  const prefix = "tools/checks/";
+  const labels = labeled.map((entry) => entry.label);
+  const reasons = new Map<string, string>();
+  const tiers = new Map<string, number>();
+  const put = (label: string, reason: string, tier: number): void => {
+    if (!reasons.has(label)) {
+      reasons.set(label, reason);
+      tiers.set(label, tier);
+    }
+  };
+  for (const found of selectRelatedChecks(buildImportGraph(), changed).checks) {
+    put(found.file.slice(prefix.length), `changed via ${found.via} (depth ${found.depth})`, 0);
+  }
+  for (const [label, reason] of checksFromRules(changed, labels).reasons) put(label, reason, 1);
+  const relatedAndRules = new Set(reasons.keys());
+  for (const label of alwaysChecks(labels)) put(label, "fast tier", 2);
+  return { reasons, tiers, relatedAndRules };
+}
+
 export async function runChecks(options: RunChecksOptions = {}): Promise<number> {
   const filters = options.filters ?? [];
   const list = options.list ?? false;
@@ -388,7 +470,27 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
 
   const labeled = options.entries ?? await discoverChecks();
   const matching = new Set(selectChecks(labeled.map((entry) => entry.label), filters));
-  const selected = labeled.filter((entry) => matching.has(entry.label));
+  let selected = labeled.filter((entry) => matching.has(entry.label));
+
+  if (options.related === true) {
+    // The related set (graph + rules), then the always tier, then filters narrow it down.
+    const changed = await relatedChangedFiles(options.base, monorepoRoot);
+    if (changed === null) return 1;
+    const { reasons, tiers, relatedAndRules } = relatedReasons(labeled, changed);
+    if (relatedAndRules.size === 0) process.stderr.write("no related checks — running the fast tier only\n");
+    selected = labeled.filter((entry) => reasons.has(entry.label));
+    if (filters.length > 0) selected = selected.filter((entry) => filters.some((filter) => entry.label.includes(filter)));
+    if (selected.length === 0) {
+      reportError(`no check matches: ${filters.join(", ")}`);
+      return 1;
+    }
+    if (!list) {
+      // One line per selected check, grouped by tier (graph, rules, always), label order within.
+      for (const entry of [...selected].sort((a, b) => (tiers.get(a.label) ?? 9) - (tiers.get(b.label) ?? 9) || (a.label < b.label ? -1 : 1))) {
+        process.stderr.write(`  ${entry.label} — ${reasons.get(entry.label)}\n`);
+      }
+    }
+  }
 
   if (selected.length === 0 && filters.length > 0) {
     reportError(`no check matches: ${filters.join(", ")}`);
@@ -450,7 +552,10 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
     process.stderr.write(`  FAIL the run changed the checkout\n    ${changed.join("\n    ")}\n`);
   }
 
-  process.stderr.write(summaryLine(selected.length - skippedFiles, failed, skippedByCapability));
+  const summary = summaryLine(selected.length - skippedFiles, failed, skippedByCapability);
+  process.stderr.write(
+    options.related === true ? summary.replace(/\n$/, ` — selected ${selected.length} of ${labeled.length} checks\n`) : summary,
+  );
   process.stderr.write(renderRunBlock(now() - startedAt, jobs, samples));
   await recordRunTimings({ dir: options.timingsDir ?? monorepoRoot, samples, off: process.env.OC_CHECK_TIMINGS === "off" });
   return failed === 0 ? 0 : 1;

@@ -5,7 +5,7 @@
 
 import { resolve } from "node:path";
 import { resolveInstalledEntry, type FsProbe } from "#framework/entry/resolve.ts";
-import { parsePaste } from "#checks/kit/shells.ts";
+import { parsePaste } from "#checks/surfaces/advice/shells.ts";
 import { changeDirectory, command } from "#framework/core/io/invocation/advice.ts";
 import { CWD_CONFLICT_NOTE, renderAdviceRows, renderFrameAdvice } from "#framework/core/io/invocation/render.ts";
 import { forShell, type Frame } from "#framework/core/io/invocation/frame.ts";

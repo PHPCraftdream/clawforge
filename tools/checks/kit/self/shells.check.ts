@@ -7,7 +7,7 @@
 // containment checks instead of spaced literal expectations.
 
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { cmdRawWords, msvcrtArgv, parsePaste, programArgv, tokenizeLine, type Shell } from "#checks/kit/shells.ts";
+import { cmdRawWords, msvcrtArgv, parsePaste, programArgv, tokenizeLine, type Shell } from "#checks/surfaces/advice/shells.ts";
 
 const tokens = (line: string, shell: Shell): string[] => tokenizeLine(line, shell);
 

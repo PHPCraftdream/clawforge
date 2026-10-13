@@ -26,7 +26,7 @@ import { SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { completionScenarios, type CompletionScenario } from "./scenarios.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
-import { tokenizeLine } from "#checks/kit/shells.ts";
+import { tokenizeLine } from "#checks/surfaces/advice/shells.ts";
 import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
@@ -433,7 +433,7 @@ const NOTE_MARK = String.fromCharCode(32, 32, 40);
   // Item 5 (S1.4): these checks run over the CURRENT composer output — never the committed
   // snapshot. Under a checkout frame the pwsh Install line is the sentence form (the bash
   // shim has no pwsh pipeline); every rendered command tokenizes in its own shell
-  // (kit/shells.ts) and opens with the frame's program spelling.
+  // (surfaces/advice/shells.ts) and opens with the frame's program spelling.
   const previous = invocation();
   setInvocation({ program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
   try {

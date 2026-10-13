@@ -134,7 +134,7 @@ is unchanged.
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `check` | `[--list] [--jobs <n>] [--require <cap,...>] [--timings] [--top <n>] [<filter…>]` | Framework preflight checks (no instance needed) (checkout only) |
+| `check` | `[--list] [--jobs <n>] [--require <cap,...>] [--timings] [--top <n>] [--related] [--base <rev>] [<filter…>]` | Framework preflight checks (no instance needed) (checkout only) |
 | `new-app` | `<name>` | Create a deployment under apps/ (checkout only) |
 | `remove-app` | `<name> [--yes]` | Delete apps/<name> (destructive for some actions) (checkout only) |
 | `list` | `[--json] [--no-status]` | List deployments under apps/ (checkout only) |

@@ -26,6 +26,20 @@ path under `tools/checks/` contains at least one substring — e.g. `./clawforge
 without running them; a filter that matches nothing is refused rather than silently falling
 back to the whole suite.
 
+`./clawforge check --related` selects only the checks affected by the changes between `--base`
+(default: the merge-base with the upstream branch, else `HEAD~1`) and the working tree — both
+committed and uncommitted files count. Selection uses the static import graph plus a data rule
+table for dependencies the graph cannot see: checks that spawn CLIs or servers, docs, goldens,
+packaging, and whole-surface families. Substring filters still work and narrow (intersect) the
+related set. An always-run fast tier (layout, architecture, static hygiene, needs) is included.
+
+`npm run check:fast` is a shortcut for typecheck + lint + the fast tier + `--related`; use it
+while iterating instead of the whole suite.
+
+The related mode is a convenience, not a guarantee: invisible dependencies are only covered by
+the rule table, so a change can still escape it. The full suite (`npm test`) stays the gate
+before a release.
+
 ## Writing a check
 
 A check is any `tools/checks/**/*.check.ts` file. `tools/checks/kit/run.ts` finds every one of

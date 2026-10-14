@@ -23,7 +23,8 @@ import type {
 
 /** Default accessor: the projection read goes through `config get <path> --json` and the
  *  batch write through appConfigPatch (`config patch --stdin`), both on the journal
- *  context's runtime; ctx.dryRun turns the patch into a CLI dry-run. */
+ *  context's runtime; ctx.dryRun turns the patch into a CLI dry-run. A projection whose
+ *  read was redacted is refused before anything is written. */
 export function appConfigAccessor(ctx: RecipeContext, path: string): ReconcileAccessor {
   return {
     async read() {
@@ -31,6 +32,8 @@ export function appConfigAccessor(ctx: RecipeContext, path: string): ReconcileAc
         json: true,
         guard: (value: unknown): value is ReconcileValue | undefined => value === undefined || isReconcileValue(value),
       });
+      // A masked projection would be patched back with the mask over the operator's value.
+      if (result.redacted) throw new RecipeKitRefusal("guard", "projection contains a registered secret");
       return result.data;
     },
     async patch(projection) {

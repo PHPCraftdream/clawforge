@@ -156,7 +156,11 @@ module exposes four helpers (worked example in the
   bounds, then applies the desired set as one batch patch with a durable journal intent
   before and a result after; dry-run plans and reports without writing.
 - `appConfigAccessor(ctx, path)` — default accessor behind `reconcileApply`: reads through
-  `config get <path> --json`, writes through `appConfigPatch`; supply a fake in checks.
+  `config get <path> --json`, writes through `appConfigPatch`; supply a fake in checks. When
+  the read contains a registered secret, `appCli` masks it and reports `redacted: true`; the
+  accessor then refuses (`guard`) before anything is written, because patching the masked
+  projection would overwrite the real value. Use an accessor that reads full-fidelity data
+  for a projection that holds secrets.
 - `reconcilePendingIntents(journal)` — reports pending journal intents (the crash gap); a
   precomputed plan is refused while any exist, forcing a fresh computation.
 

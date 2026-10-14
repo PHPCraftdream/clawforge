@@ -119,6 +119,13 @@ try {
   await write(betaManifest, { description: "Wider", owns: [{ path: "a.b", mode: "value", prefix: true }] });
   checkTrue("prefix covering another recipe's prefix refuses", (await refusal(() => recipePathOwners())) instanceof Error);
 
+  // Equal roots across recipes conflict whatever their prefix flags.
+  await write(alphaManifest, { description: "Root", owns: [{ path: "a", mode: "value", prefix: true }] });
+  await write(betaManifest, { description: "Same root", owns: [{ path: "a", mode: "value", prefix: true }] });
+  checkTrue("equal prefix roots across recipes refuse", (await refusal(() => recipePathOwners())) instanceof Error);
+  await write(betaManifest, { description: "Same root exact", owns: [{ path: "a", mode: "value" }] });
+  checkTrue("exact path equal to another recipe's prefix root refuses", (await refusal(() => recipePathOwners())) instanceof Error);
+
   // Segment-wise prefixes do not conflict textually.
   await write(alphaManifest, { description: "Segment", owns: [{ path: "a.b", mode: "value", prefix: true }] });
   await write(betaManifest, { description: "Sibling", owns: [{ path: "a.bc", mode: "value" }] });

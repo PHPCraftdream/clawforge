@@ -103,7 +103,7 @@ function underPrefix(prefix: string, path: string): boolean {
   return head.length < tail.length && head.every((segment, index) => segment === tail[index]);
 }
 
-/** The general catalog: exact duplicates and prefix overlaps across recipes are refusals;
+/** The general catalog: equal paths (whatever their prefix flags) and prefix overlaps across recipes are refusals;
  *  an exact path inside its own recipe's prefix is fine. */
 export async function recipePathOwners(): Promise<readonly RecipePathOwner[]> {
   const entries = await recipeOwnershipEntries();
@@ -126,14 +126,14 @@ export async function recipePathOwners(): Promise<readonly RecipePathOwner[]> {
   for (const owned of exact.values()) {
     for (const prefixEntry of prefixes) {
       if (prefixEntry.recipe === owned.recipe) continue;
-      if (underPrefix(prefixEntry.path, owned.path)) {
+      if (prefixEntry.path === owned.path || underPrefix(prefixEntry.path, owned.path)) {
         throw new Error(`overlapping config path ownership ${owned.path}: recipes ${prefixEntry.recipe} and ${owned.recipe}`);
       }
     }
   }
   for (const wide of prefixes) {
     for (const narrow of prefixes) {
-      if (wide.recipe === narrow.recipe || !underPrefix(wide.path, narrow.path)) continue;
+      if (wide.recipe === narrow.recipe || (wide.path !== narrow.path && !underPrefix(wide.path, narrow.path))) continue;
       throw new Error(`overlapping config path ownership ${narrow.path}: recipes ${wide.recipe} and ${narrow.recipe}`);
     }
   }

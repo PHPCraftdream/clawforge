@@ -162,6 +162,25 @@ const owners = [{ recipe: "fixture", path: "vault.projection", mode: "value" as 
     checkTrue("secrets never reach argv", calls.every((call) => call.args.every((arg) => !arg.includes("wiring-secret-55a"))));
     check("accessor patch stdin is the intended JSON", calls[1]?.options?.input, '{"vault.projection":{"member":"wiring-secret-55a"}}');
 
+    // A projection holding a registered secret reads back masked; patching it would write the
+    // mask over the operator's value, so the default accessor refuses before any write.
+    const maskedCalls: string[][] = [];
+    const maskedCtx = {
+      runtime: { async runOneOff(_service: string, args: string[]) {
+        maskedCalls.push(args);
+        return { code: 0, stdout: '{"kept":"wiring-secret-55a","other":"plain"}\n', stderr: "" };
+      } },
+    } as unknown as Context;
+    const maskedJournal = journalFor(maskedCtx, "apply-masked", false);
+    await refusal("masked projection read", () => appConfigAccessor(maskedJournal.ctx, "vault.projection").read(), "guard");
+    const maskedApplyJournal = journalFor(r.ctx, "apply-masked", false);
+    const maskedApply = await reconcileApply([{ key: "added", value: "new" }],
+      { path: "vault.projection", recipe: "fixture", owners, journal: maskedApplyJournal, accessor: appConfigAccessor(maskedJournal.ctx, "vault.projection") });
+    check("apply over a masked projection fails closed", { status: maskedApply.status, applied: maskedApply.applied, reason: maskedApply.reason },
+      { status: "failed", applied: false, reason: "guard" });
+    check("apply over a masked projection never patches", maskedCalls.map((args) => args[1]), ["get", "get"]);
+    check("apply over a masked projection writes no journal record", r.files.get(maskedApplyJournal.journalPath), undefined);
+
     // Requirement 9: idempotence — same desired set again is an empty plan, no patch, no record.
     const journalBefore = r.files.get(journal.journalPath);
     const again = await reconcileApply(desired, { path: "vault.projection", recipe: "fixture", owners, journal, accessor });

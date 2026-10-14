@@ -52,8 +52,9 @@ export interface AppCliJsonOptions<T> extends Omit<AppCliOptions, "json"> {
   json: true;
   guard: (value: unknown) => value is T;
 }
-/** Guarded machine output plus bounded sanitized diagnostic streams. */
-export interface AppCliJsonResult<T> extends CommandResult { data: T }
+/** Guarded machine output plus bounded sanitized diagnostic streams; `redacted` is true when
+ *  a registered secret was masked in stdout, so `data` is not the application's real value. */
+export interface AppCliJsonResult<T> extends CommandResult { data: T; redacted: boolean }
 /** Config patch preview invokes the application CLI with --dry-run. */
 export interface ConfigPatchOptions extends AppCliOptions { dryRun?: boolean }
 /** Stdin-only HTTP request from the gateway's route. */

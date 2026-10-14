@@ -32,7 +32,7 @@ export async function appCli<T>(ctx: RecipeContext, args: readonly string[], opt
   try {
     if (!options.guard(data)) throw new RecipeKitRefusal("guard");
   } catch { throw new RecipeKitRefusal("guard"); }
-  return { ...result, data };
+  return { ...result, data, redacted: stdout !== raw.stdout };
 }
 
 /** Sends a config-shaped JSON object on stdin; previews invoke the CLI with --dry-run. */

@@ -5,6 +5,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `recipe pin <name> --version <v> [--artifact <file>] [--apply]` refreshes a recipe's pinned release artifact: it reads the
+  published `.sha256` (or `SHA256SUMS`) of the release asset over bounded HTTPS from GitHub hosts only, previews the two build-arg
+  changes with the checksum's source, and with `--apply` rewrites exactly those two `ARG` lines under the instance lock. It
+  refuses anything it cannot attribute to one artifact, including artifacts that share a version or checksum `ARG`.
 * `recipe trial <name> [--dry-run]` builds and starts a recipe against a throwaway copy of its declared `privatePaths` data in a
   separate compose project: every published port is removed, build images get trial-only tags, the merged configuration is
   proven to publish nothing and to reference no live volume, network, bind mount or image before anything starts, and the

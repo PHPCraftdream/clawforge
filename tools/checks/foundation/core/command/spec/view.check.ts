@@ -163,7 +163,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   check("backup.break-foreign-lock scopes its action", scopedActions("backup", "break-foreign-lock"), ["prune-replaced", "install", "uninstall"]);
   check("expose.break-lock scopes its action", scopedActions("expose", "break-lock"), ["tailscale"]);
   check("watch.break-lock scopes its actions", scopedActions("watch", "break-lock"), ["install", "uninstall"]);
-  check("recipe.break-lock scopes its actions", scopedActions("recipe", "break-lock"), ["verify", "onboard", "diagnose", "install", "trial", "remove", "recover", "migrate", "run"]);
+  check("recipe.break-lock scopes its actions", scopedActions("recipe", "break-lock"), ["verify", "onboard", "diagnose", "install", "trial", "remove", "recover", "migrate", "pin", "run"]);
   check("set.break-lock scopes its action", scopedActions("set", "break-lock"), ["forget"]);
   // A gate command's argument carries no `summary`: the declared description reaches the
   // schema whole — the cut used to trim both of these, and the option used to gain a

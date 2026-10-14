@@ -208,7 +208,7 @@ try {
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "new", "check", "verify", "onboard", "diagnose", "install", "trial", "remove", "inspect", "recover", "migrate", "status", "logs", "run"],
+    ["list", "import", "new", "check", "verify", "onboard", "diagnose", "install", "trial", "remove", "inspect", "recover", "migrate", "status", "logs", "pin", "run"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
@@ -501,7 +501,7 @@ function conforms(
 {
   const recipeCommand = openclawCommands.recipe!;
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
-  check("the declaration enumerates the actions to sweep", actionChoices.length, 16);
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 17);
 
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));

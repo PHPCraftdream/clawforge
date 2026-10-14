@@ -34,6 +34,33 @@ table is in [Local recipe checks](recipes.md#local-recipe-checks).
 These are static text rules, not a verification of the artifact itself: they prove the
 build is pinned to bytes you recorded, not that those bytes are what the upstream intended.
 
+## Bump a pinned release
+
+Use `recipe pin` to refresh a recipe's pinned version and checksum defaults from the upstream project's GitHub release metadata. Preview first, review the selected asset and proposed edits, then apply:
+
+```bash
+./clawforge recipe pin status-board --version 2.0.0
+./clawforge recipe pin status-board --version 2.0.0 --apply
+```
+
+If the recipe has multiple recognized declarations, pass `--artifact` with the current expanded asset basename to select one:
+
+```bash
+./clawforge recipe pin status-board --version 2.0.0 --artifact status-board-linux-amd64.tar.gz
+```
+
+For example, a Dockerfile may declare its version and checksum as build arguments and use the checksum with `ADD`:
+
+```dockerfile
+ARG RELEASE_VERSION=1.2.3
+ARG RELEASE_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+ADD --checksum=sha256:${RELEASE_SHA256} https://github.com/example/status-board/releases/download/v${RELEASE_VERSION}/status-board-linux-amd64.tar.gz /usr/local/bin/status-board.tar.gz
+```
+
+The version is a token, not a path or URL: letters and digits followed only by letters, digits, `_`, `.`, `+` or `-`. Pinning the same version again is refused. Apply changes both Docker `ARG` defaults atomically under the instance lock; no manifest fields are changed. The command reads a `.sha256` checksum first, falling back to `SHA256SUMS` only on 404. The selected checksum entry must include the exact asset name and a 64-character hexadecimal digest; bare digests do not qualify. Metadata requests are HTTPS-only and restricted to `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`, with an eight-second timeout, 64 KiB response limit and at most five redirects. The artifact itself is never downloaded or hashed. This relies on the project's release page and does not replace release-signature verification.
+
+Updating pins does not restart an already-running service. After applying, continue with the recipe's existing install workflow; when an upgrade recipe is available, use that workflow next.
+
 ## Change a consumer config without a secret in argv
 
 A secret is never a command-line argument: argv is readable by any process on the target.

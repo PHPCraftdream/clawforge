@@ -1,9 +1,10 @@
+import { ArgResolver, artifactReference, parseArgDeclaration } from "./artifacts.ts";
 import { instructions, runTokens, shellTokens } from "./text.ts";
+
 import type { Finding } from "./text.ts";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64}|\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\}))$/;
-const reference = /^\$(?:([A-Za-z_]\w*)|\{([A-Za-z_]\w*)\})$/;
 const executable = (word: string): string => word.split("/").at(-1) ?? word;
 
 // A tag sits on the last path segment; earlier segments may carry a registry port.
@@ -14,10 +15,7 @@ const LATEST_TAG = /:latest$/i;
 export function lintDockerfile(source: string, file: string, buildArgs: Readonly<Record<string, string | undefined>> = {}): Finding[] {
   const findings: Finding[] = [];
   const physical = source.split(/\r?\n/);
-  const globalArgs = new Map<string, string | undefined>();
-  let args = globalArgs;
-  let stageIndex = 0;
-  const stages = new Map<string, Map<string, string | undefined>>();
+  const globalArgs = new ArgResolver();
   const emit = (code: string, severity: Finding["severity"], line: number, message: string): void => {
     const waiver = /^\s*#\s*recipe-check:\s*allow\s+(\S+)\s+(\S.*)\s*$/.exec(physical[line - 2] ?? "");
     findings.push(waiver?.[1] === code
@@ -29,20 +27,18 @@ export function lintDockerfile(source: string, file: string, buildArgs: Readonly
     if (instruction.unparsed) { emit("unparsed-construct", "info", line, "construct skipped (including heredoc bodies)"); continue; }
     try {
       if (command === "ARG") {
-        const match = /^([A-Za-z_]\w*)(?:=(.*))?$/.exec(text.trim());
-        if (match) args.set(match[1], match[2] === undefined ? args.get(match[1]) ?? globalArgs.get(match[1]) : shellTokens(match[2])[0] ?? "");
+        const parsed = parseArgDeclaration(text);
+        if (parsed) globalArgs.arg(parsed, line);
       }
       if (command === "FROM") {
         const lexemes = shellTokens(text).filter((token) => !token.startsWith('--'));
         const image = lexemes[0] ?? "";
-        const previous = stages.get(image.toLowerCase());
+        const previous = globalArgs.hasStage(image.toLowerCase());
         if (image.toLowerCase() !== "scratch" && !previous && !/@/.test(image) && (!TAGGED_IMAGE.test(image) || LATEST_TAG.test(image))) {
           emit("floating-base-tag", "warning", line, "base image has latest or no tag/digest");
         }
-        args = new Map(previous ?? []);
         const alias = lexemes[1]?.toUpperCase() === "AS" ? lexemes[2]?.toLowerCase() : undefined;
-        stages.set(String(stageIndex++), args);
-        if (alias) stages.set(alias, args);
+        globalArgs.fromStage(image.toLowerCase(), alias);
       }
       if (command === "ADD") {
         const lexemes = shellTokens(text);
@@ -50,11 +46,12 @@ export function lintDockerfile(source: string, file: string, buildArgs: Readonly
         const checksum = lexemes.find((token) => token.startsWith('--checksum='))?.slice(11);
         const prefix = (checksum ?? "").startsWith(CHECKSUM_ALGORITHM) ? CHECKSUM_ALGORITHM : "";
         let valid = /^sha256:[0-9a-f]{64}$/.test(checksum ?? "");
-        const ref = reference.exec(prefix ? checksum!.slice(prefix.length) : checksum ?? "");
+        const ref = artifactReference(prefix ? checksum!.slice(prefix.length) : checksum ?? "");
         if (ref) {
-          const name = ref[1] ?? ref[2];
-          if (args.has(name)) {
-            const visible = [args.get(name), buildArgs[name]].filter((entry): entry is string => entry !== undefined);
+          const name = ref.name;
+          const declared = globalArgs.get(name);
+          if (declared !== undefined) {
+            const visible = [declared.value, buildArgs[name]].filter((entry): entry is string => entry !== undefined);
             const defaults = visible.filter((entry) => !/\$(?:[A-Za-z_]|\{)/.test(entry));
             const isValid = (entry: string): boolean => prefix ? SHA256.test(entry) : /^sha256:[0-9a-f]{64}$/.test(entry);
             if (defaults.length === 0) {

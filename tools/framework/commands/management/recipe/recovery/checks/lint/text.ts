@@ -63,6 +63,12 @@ export function shellTokens(text: string): string[] {
   return tokens;
 }
 
+/** The token's value after a leading flag prefix, or undefined when the token is not that flag.
+ *  Structural so flag handling in lint helpers does not re-introduce raw prefix scans. */
+export function hasFlag(token: string, flag: string): string | undefined {
+  return token.length > flag.length && token.slice(0, flag.length) === flag ? token.slice(flag.length) : undefined;
+}
+
 export function runTokens(text: string): string[] {
   if (!text.trimStart().startsWith("[")) return shellTokens(text);
   const argumentsList: unknown = JSON.parse(text);

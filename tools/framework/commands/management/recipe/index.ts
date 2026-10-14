@@ -56,6 +56,8 @@ import { INVALID_MANIFEST } from "./run/lifecycle.ts";
 import { prepareRecipeRun } from "./run/arguments.ts";
 import { runRecipeActionCommand } from "./run/invocation.ts";
 import { resolveRecipeActionEffectOf } from "./run/effect.ts";
+import { resolveRecipePinEffectOf } from "./run/pin/effect.ts";
+import { runRecipePin } from "./run/pin/invocation.ts";
 import { readName } from "#src/core/values/names.ts";
 import { importNameOf } from "./actions.ts";
 
@@ -401,6 +403,19 @@ export const RECIPE = multiActionBody({
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
       run: (ctx, values) => runLogsAction(ctx, values.name, values.tail),
+    }),
+    pin: defineAction({
+      summary: "Update a recipe Dockerfile artifact version and checksum",
+      effect: "change",
+      effectOf: resolveRecipePinEffectOf,
+      arguments: [NAME_ARGUMENT, {
+        name: "version", summary: "Artifact version", description: "With pin: new plain-token release version", kind: "option", valueName: "version", required: true, value: kinds.text("a plain version token"),
+      }, {
+        name: "artifact", summary: "Artifact basename", description: "With pin: select a declaration by its expanded asset basename (version placeholders use the current version)", kind: "option", valueName: "basename", value: kinds.text("an artifact basename"),
+      }, {
+        name: "apply", summary: "Write the pin", description: "With pin: confirm and atomically update the Dockerfile", kind: "flag",
+      }, ...RECIPE_LOCK_ARGUMENTS],
+      run: (ctx, values) => runRecipePin(ctx, { name: values.name, version: values.version!, artifact: values.artifact, apply: values.apply === true, takeover: takeoverOf(values) }),
     }),
     run: defineAction({
       summary: "Run a recipe-declared action from its manifest",

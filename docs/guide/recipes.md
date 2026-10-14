@@ -470,6 +470,22 @@ private-file helpers, return safe structured results, and document only the deci
 maintainer cannot infer from the code. Run the repository typecheck and linter, then
 `./clawforge recipe check <name>` before shipping a recipe.
 
+### Updating a pinned artifact
+
+Use `recipe pin` to update the version and checksum defaults for a pinned release artifact in a recipe Dockerfile:
+
+```bash
+./clawforge recipe pin <name> --version <V>
+./clawforge recipe pin <name> --version <V> --apply
+```
+
+Without `--apply`, the command previews the proposed change. `--apply` updates the two Docker `ARG` defaults atomically while holding the instance lock. If the Dockerfile contains more than one recognized pinned-artifact declaration, identify the intended current asset with `--artifact <basename>`; the value is the expanded asset basename, not a path or URL. The requested version must be a simple token containing letters and digits, followed only by letters, digits, `_`, `.`, `+` or `-`; paths and URLs are not versions. A request for the already-pinned version is refused.
+
+The command does not edit `recipe.json` or add manifest fields. It retrieves checksum metadata from the project's GitHub release page over HTTPS only: first the asset's `.sha256` checksum, then `SHA256SUMS` only when the former returns 404. The checksum entry must name the exact asset and contain 64 hexadecimal characters; a bare digest is not accepted. Requests have an eight-second timeout, a 64 KiB response limit and at most five redirects, restricted to `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`. It does not download or hash the release asset. This trusts the project's release page; it is not a substitute for verifying a release signature.
+
+Changing the pins does not restart a running service. When an upgrade recipe is available, continue with the [recipe upgrade workflow](recipes-cookbook.md#bump-a-pinned-release); otherwise install the recipe using its existing workflow.
+
+
 ### Local recipe checks
 
 Run `./clawforge recipe check <name>` before deploying recipe-code changes. The command

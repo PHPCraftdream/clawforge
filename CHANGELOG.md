@@ -5,6 +5,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `recipe trial <name> [--dry-run]` builds and starts a recipe against a throwaway copy of its declared `privatePaths` data in a
+  separate compose project: every published port is removed, build images get trial-only tags, the merged configuration is
+  proven to publish nothing and to reference no live volume, network, bind mount or image before anything starts, and the
+  scratch home and trial resources are removed in reverse order afterwards. Anything it cannot prove is refused; after a
+  signal or a failed call over SSH it waits for the remote command to expire before cleaning up, and lists leftovers by name.
 * `@clawforge/framework/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
   single-batch apply that re-reads and verifies, redacted plan views (keyed pseudonyms, no raw values), intent/result journalling
   with two-phase provenance so a crash never loses ownership, operator entries are never removed, removals above a fixed bound need

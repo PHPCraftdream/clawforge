@@ -814,16 +814,16 @@
 === recipe --help ===
 ==> recipe — Deploy service recipes beside the instance
     Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]
-      <action>               Recipe action [list|import|new|check|verify|onboard|diagnose|install|remove|inspect|recover|migrate|status|logs|run]
-      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs, run); Untrusted code: operator rights, not sandboxed (check)
+      <action>               Recipe action [list|import|new|check|verify|onboard|diagnose|install|trial|remove|inspect|recover|migrate|status|logs|run]
+      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, status, logs, run); Untrusted code: operator rights, not sandboxed (check)
       <new-name>             import under this name instead of the source directory's own name (import)
       <recipe-action>        the action declared in the recipe's manifest (recipe inspect lists them) (run)
       <arg…>                 action argument as key=value (run)
       --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list); With inspect: emit inspection evidence as JSON (inspect); With run: emit the action's result as JSON (run)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
-      --dry-run              list files without executing recipe code (check); With install/remove/recover/migrate: show what would happen (install, remove); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate); With run: pass dryRun to the action; treated as read-only (run)
-      --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, remove, run); Take over the instance lock held by another operation (recover, migrate)
-      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, remove, run); Confirm <hostId> for a recorded remote lock owner (recover, migrate)
+      --dry-run              list files without executing recipe code (check); With install/remove/recover/migrate: show what would happen (install, remove); With trial: show what would be copied, the project name and the override (trial); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate); With run: pass dryRun to the action; treated as read-only (run)
+      --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, trial, remove, run); Take over the instance lock held by another operation (recover, migrate)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, trial, remove, run); Confirm <hostId> for a recorded remote lock owner (recover, migrate)
       --tail <n>             lines to return per service (diagnose, inspect, logs)
       --force-disabled       build a recipe marked disabled (install)
       --volumes              delete its volumes too (remove)

@@ -25,6 +25,9 @@ export interface ExecOptions {
   unsetEnv?: string[];
   allowFailure?: boolean;
   timeoutMs?: number;
+  /** Abort the child (same SIGTERM→SIGKILL tree kill the timeout uses) when this signal
+   *  fires. Cancellation for callers that own a longer-lived scope than one call. */
+  signal?: AbortSignal;
 }
 
 export interface ExecResult {
@@ -99,6 +102,8 @@ export function composeExecFailure(command: string, args: string[], result: Exec
 export interface Transport {
   /** Human-readable name for diagnostics: "local", "wsl:Ubuntu-24.04", "ssh:user@host". */
   readonly description: string;
+  /** True only when aborting the local child confirms target-command termination. */
+  readonly cancellation?: "confirmed-local" | "local-only" | "unsupported";
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   /** Reads UTF-8 text only; decoding binary files is lossy. For archives, use exec with
    *  target-side base64 and decode on the operator, or a binary-safe scp/rsync transfer. */
@@ -286,6 +291,19 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
         escalate = setTimeout(() => void killTree("SIGKILL"), 5000);
       }, options.timeoutMs);
 
+    // Cancellation rides the exact same kill path as the deadline: the caller's signal
+    // SIGTERMs the tree, then SIGKILLs after the same grace period. It does not set
+    // `timedOut` — the caller asked to cancel, the child did not overrun a deadline.
+    const onAbort = (): void => {
+      void killTree("SIGTERM");
+      escalate = setTimeout(() => void killTree("SIGKILL"), 5000);
+    };
+    const signal = options.signal;
+    if (signal !== undefined) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+
     // Handle early stdin closure and wait for the complete child result.
     child.stdin?.on("error", (error) => {
       if (protocol && (error as NodeJS.ErrnoException).code === "EPIPE") {
@@ -306,6 +324,7 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
       child.stderr?.unpipe(process.stderr);
       if (timer) clearTimeout(timer);
       if (escalate !== undefined) clearTimeout(escalate);
+      if (signal !== undefined) signal.removeEventListener("abort", onAbort);
       forwardStdout?.flush();
       forwardStderr?.flush();
       const result: ExecResult = {

@@ -9,6 +9,7 @@ import { PUBLISH_STAGING_MARKER } from "./quoting.ts";
 
 export class LocalTransport implements Transport {
   readonly description = "local";
+  readonly cancellation = "confirmed-local" as const;
 
   async exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
     try {

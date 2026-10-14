@@ -163,6 +163,8 @@ async function nativeBoundary(): Promise<void> {
         run: async () => { runCalls++; return { code: 0, stdout: "", stderr: "" }; },
         config: async () => { throw new Error("staging-boundary must never resolve Compose"); },
         sanitize: (value) => value,
+        writePrivateFile: async () => { throw new Error("staging-boundary must never write a private file"); },
+        mkdirPrivate: async () => { throw new Error("staging-boundary must never mkdir privately"); },
       };
       const layout = stagingLayout(settings, io.project, definition, [document], [extra]);
       const homeLeaf = posix.basename(layout.home);

@@ -49,6 +49,7 @@ import {
   runVerifyAction,
 } from "./actions.ts";
 import { runInspectAction } from "./recovery/inspect.ts";
+import { runTrialAction, runTrialDryRun } from "./recovery/trial/index.ts";
 import { runRecoverAction } from "./recovery/recover.ts";
 import { runMigrateAction } from "./recovery/migrate.ts";
 import { INVALID_MANIFEST } from "./run/lifecycle.ts";
@@ -297,6 +298,14 @@ export const RECIPE = multiActionBody({
           ? runInstallDryRun(ctx, name, values["force-disabled"] === true)
           : runInstallAction(ctx, name, values["force-disabled"] === true);
       }, values["dry-run"] !== true),
+    }),
+    trial: defineAction({
+      summary: "Build and run a recipe against a copy of its data (no hooks run)",
+      arguments: [NAME_ARGUMENT, {
+        ...DRY_RUN_ARGUMENT,
+        description: "With trial: show what would be copied, the project name and the override",
+      }, ...RECIPE_LOCK_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "trial", values, () => values["dry-run"] === true ? runTrialDryRun(ctx, values.name) : runTrialAction(ctx, values.name), values["dry-run"] !== true),
     }),
     remove: defineAction({
       summary: "Stop and remove a recipe's stack",

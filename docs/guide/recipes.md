@@ -525,6 +525,41 @@ private-file policies. Top-level `node_modules` is pruned; nested `node_modules`
 before filtering, so unsafe links there can refuse discovery even though its checks are
 never executed.
 
+### Trying a recipe against a copy of its data
+
+`./clawforge recipe trial <name>` builds the recipe and runs its stack against a copy of
+the live data, without touching the live stack. It copies the recipe's declared
+`privatePaths` from the live data directory into a target-side scratch directory and starts
+the trial from that copy. The live stack, its ports and its data are never touched, and no
+lifecycle hook runs: `prepare`, `verify`, `onboard` and `afterStart` are skipped, so a
+trial exercises build and runtime only.
+
+Requirements: a `compose.yml` in the recipe; declared `privatePaths` that fit under the
+256 MiB copy bound; Docker Compose v2.24.0 or newer — the trial strips every port
+publication with the `!override` merge tag and refuses older or unreadable Compose
+versions in both the real run and `--dry-run` — and a transport with private-file
+support, since the data is copied as private files.
+
+In `--dry-run` the merged-config publication proof is skipped, because proving the merge
+requires writing the override file and a dry-run writes nothing; the report says so
+explicitly (`configProof: "skipped (requires writing the override); the real run refuses
+on failure"`), and the real run refuses if the proof fails. Nothing is faked either way.
+
+Teardown begins only after a local mutation has settled or (for SSH) after the
+conservative target watchdog duration plus its rounding and kill grace. If that wait
+cannot be completed or a second signal arrives, cleanup is skipped, the command exits
+nonzero, and the trial project and scratch home are named as possible leftovers. SSH
+cancellation only confirms that the local SSH client stopped, not the remote process; WSL
+trial cancellation is unsupported and refused. Isolation analysis conservatively refuses
+additional build tags, cache sources/destinations, additional build contexts, build
+secrets/configs, service configs/secrets, and top-level config/secret file sources.
+Unknown compose constructs are not analysed and are outside the trial safety guarantee;
+this is not a general-purpose sandbox.
+
+A trial is not isolation from the network: the build and the running services still reach
+the network and any external account their credentials allow. A trial of a service that
+talks to an external system with live credentials is not isolated from that system.
+
 ## Durable repair and verification
 
 Use the framework's recipe commands to diagnose and recover a sidecar before resorting to

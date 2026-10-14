@@ -1546,6 +1546,7 @@
               "onboard",
               "diagnose",
               "install",
+              "trial",
               "remove",
               "inspect",
               "recover",
@@ -1557,7 +1558,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, remove, inspect, recover, migrate, status, logs, run); recipe whose checks you trust (check)"
+            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, status, logs, run); recipe whose checks you trust (check)"
           },
           "new-name": {
             "type": "string",
@@ -1584,15 +1585,15 @@
           },
           "dry-run": {
             "type": "boolean",
-            "description": "what would happen (check, install, remove, recover, migrate, run)"
+            "description": "what would happen (check, install, remove, trial, recover, migrate, run)"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (verify, onboard, diagnose, install, remove, run); Instance lock (recover, migrate)"
+            "description": "Take lock (verify, onboard, diagnose, install, trial, remove, run); Instance lock (recover, migrate)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (verify, onboard, diagnose, install, remove, run); Remote lock host (recover, migrate)"
+            "description": "Orphan host (verify, onboard, diagnose, install, trial, remove, run); Remote lock host (recover, migrate)"
           },
           "tail": {
             "type": "string",

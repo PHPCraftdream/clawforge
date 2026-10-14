@@ -10,6 +10,9 @@ import { checkTrue, finish } from "#checks/kit/harness.ts";
 import { ref, captured, messageOf, trialFixture, useRecipesRoot } from "../../fixture.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
+// Test seam: the check needs the timeout BEHAVIOUR, not the 60 s wait; product default unchanged.
+process.env.OC_TRIAL_TEARDOWN_TIMEOUT_MS = "1000";
+
 const root = await useRecipesRoot("clawforge-recipe-trial-hang");
 /** The check-side ceiling: above the product's own per-step teardown deadline, so the
  *  race wins and the check passes; below it, the old timer-only code would hang here. */
@@ -36,9 +39,10 @@ try {
   };
 
   const started = Date.now();
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const run = (): Promise<void> => Promise.race([
     runTrialAction(fixture.ctx, ref("subject")),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`CHECK${String.fromCharCode(32)}TIMED${String.fromCharCode(32)}OUT: the run never finished despite a hung cleanup step`)), CHECK_BUDGET_MS)),
+    new Promise<never>((_, reject) => { budgetTimer = setTimeout(() => reject(new Error(`CHECK${String.fromCharCode(32)}TIMED${String.fromCharCode(32)}OUT: the run never finished despite a hung cleanup step`)), CHECK_BUDGET_MS); budgetTimer?.unref(); }),
   ]).then(() => undefined);
   const { chunks, result } = await captured(async () => ({ thrown: await messageOf("the hung-step run", run) }));
   const runError = `${chunks.join("")}\n${result.thrown}`;

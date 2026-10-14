@@ -7,6 +7,15 @@ import { die, warn } from "#src/core/io/log.ts";
 import type { TrialTargets } from "./targets.ts";
 
 export const TRIAL_TEARDOWN_TIMEOUT_MS = 60_000;
+// Test seam: checks can shorten the per-step teardown deadline without changing the product default.
+export function trialTeardownTimeoutMs(): number {
+  const raw = process.env.OC_TRIAL_TEARDOWN_TIMEOUT_MS;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return TRIAL_TEARDOWN_TIMEOUT_MS;
+}
 const TRIAL_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 const SIGNAL_EXIT_CODES: Record<(typeof TRIAL_SIGNALS)[number], number> = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 };
 
@@ -20,17 +29,18 @@ export interface TeardownStep {
 }
 
 async function runTeardownSteps(steps: readonly TeardownStep[], failures: string[], secondSignal: () => boolean): Promise<void> {
+  const stepTimeoutMs = trialTeardownTimeoutMs();
   for (const step of [...steps].reverse()) {
     if (secondSignal()) return;
     let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<void>((resolve) => {
-      timer = setTimeout(() => { timedOut = true; resolve(); }, TRIAL_TEARDOWN_TIMEOUT_MS);
+      timer = setTimeout(() => { timedOut = true; resolve(); }, stepTimeoutMs);
     });
     const execution = Promise.resolve().then(step.run).finally(() => clearTimeout(timer));
     try {
       await Promise.race([execution, deadline]);
-      if (timedOut) failures.push(`${step.name} did not finish within ${TRIAL_TEARDOWN_TIMEOUT_MS}ms — it may remain`);
+      if (timedOut) failures.push(`${step.name} did not finish within ${stepTimeoutMs}ms — it may remain`);
     } catch (error) {
       failures.push(`${step.name}: ${error instanceof Error ? error.message : String(error)}`);
     } finally { clearTimeout(timer); }

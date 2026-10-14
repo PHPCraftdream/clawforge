@@ -1,12 +1,10 @@
 // Checks that a malformed JSON-RPC line does not take down the whole MCP server.
-//
 // `null`, a number, a string and an array are all valid JSON but not a JSON-RPC request —
 // JSON.parse accepts them, and reading `.method` off `null` used to throw uncaught,
 // crashing the process before a later, well-formed request ever got a reply. This spawns
 // the real server over real stdio, the same way tools/checks/deploy.check.ts stands in for
 // a server that isn't reachable: process survival is not observable through a direct
 // function call.
-//
 // A scratch deployment is created and removed for the duration: control-mcp only needs
 // apps/<name>/app.ts to exist (initialize and the malformed lines never reach a command
 // that would need a bootstrapped instance), and the check must not depend on whichever
@@ -67,8 +65,9 @@ const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;
 // top-level try, so it lives at module scope and is disposed just before finish()).
 const apps = await isolatedAppsRoot("mcp-server");
 
-try {
-  await createApp(createName("deployment", deploymentName));
+const mainSection = async (): Promise<void> => {
+  try {
+    await createApp(createName("deployment", deploymentName));
 
   // A real `recipe import` round trip: one of the plain-text actions, driven end to end.
   const importSource = resolve(apps.root, deploymentName, "fixture-source");
@@ -140,13 +139,14 @@ try {
   check("the recipe tool declares one envelope schema for every action", byName.get("recipe")?.outputSchema !== undefined, true);
   check("and it is the envelope schema itself", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
-} finally {
-  await rm(resolve(apps.root, deploymentName), { recursive: true, force: true });
-}
+  } finally {
+    await rm(resolve(apps.root, deploymentName), { recursive: true, force: true });
+  }
+};
 
 // Mixed command groups gate only mutating actions. This keeps the MCP contract safe when a
 // caller selects `recipe remove --volumes`, while list remains callable without a confirmation.
-{
+const recipeSection = async (): Promise<void> => {
   const recipeDeployment = `mcp-check-recipe-${randomBytes(4).toString("hex")}`;
   const recipeLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true } } },
@@ -225,9 +225,8 @@ try {
   } finally {
     await rm(resolve(apps.root, recipeDeployment), { recursive: true, force: true });
   }
-}
+};
 
-// --- import is expressible over MCP: both CLI forms round-trip the real schema ------------
 //
 // The declaration used to carry only action and name, so the dispatcher's third positional —
 // the rename — could not be expressed at all (the natural arguments shape was answered with
@@ -249,7 +248,7 @@ try {
 
 // A structured read-only command reports changed:false, while the corresponding write remains
 // gated and reports changed:true after an explicit confirmation.
-{
+const lockSection = async (): Promise<void> => {
   const lockDeployment = `mcp-check-lock-${randomBytes(4).toString("hex")}`;
   const lockLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lock", arguments: { check: true, json: true } } },
@@ -293,16 +292,14 @@ try {
   } finally {
     await rm(resolve(apps.root, lockDeployment), { recursive: true, force: true });
   }
-}
+};
 
-// --- app-owned verify runs recipe code, so it is gated like onboard -----------------------
-//
 // verify.ts is an app-owned hook invoked with the full Context — the same access prepare.ts
 // gets, and prepare may mutate the target. Being named "verify" is not evidence it is
 // read-only, so until something the framework itself verified says otherwise, the call
 // demands confirm: true like onboard does, and the envelope may not report changed:false on
 // the strength of the action's name alone.
-await requires("gnu-userland", "recipe verify and onboard over MCP", async () => {
+const verifySection = (): Promise<void> => requires("gnu-userland", "recipe verify and onboard over MCP", async () => {
   const verifyDeployment = `mcp-check-verify-${randomBytes(4).toString("hex")}`;
   const recipeDir = resolve(apps.root, verifyDeployment, "recipes", "probe");
   const verifyLines = [
@@ -367,12 +364,15 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
   }
 });
 
-// --- a malformed tools/call params.name must not crash the process ------------------------
-//
 // String(params.name ?? "") used to throw when params.name was an object whose toString is
 // not callable — confirmed directly: String({toString: null}) throws "Cannot convert object
 // to primitive value". Uncaught inside the dispatch loop, that took the whole process down
 // before any request queued after it (including a later initialize) got answered.
+
+// Each server-spawning section owns its own scratch deployment with unique random names, so the
+// children (whose cost is dominated by the framework import) run concurrently: a Promise.all of
+// at most four tasks. Sections that never spawn a server stay sequential.
+await Promise.all([mainSection(), recipeSection(), lockSection(), verifySection()]);
 
 {
   const badCallDeployment = `mcp-check-badcall-${randomBytes(4).toString("hex")}`;
@@ -407,8 +407,6 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
   }
 }
 
-// --- the envelope itself -----------------------------------------------------------------
-//
 // What an agent reads instead of the log. Built from the command's output alone, so the one
 // case that matters most is a command that reports findings and then fails on them: the
 // document it emitted is still valid and is still what the caller needs.
@@ -485,8 +483,6 @@ function conforms(
   check("nor does JSON that is not a document", structuredResult({ summary: "s", structured: true }, "42", "op-5"), undefined);
 }
 
-// --- the declared schema is checked against EVERY action's actual response ---------------
-//
 // tools/list used to declare the outputSchema by asking structuredWhen for the one action
 // name it happened to return true for, while the dispatcher attached structuredContent to
 // a different hardcoded set — nothing ever compared the declaration with what the actions

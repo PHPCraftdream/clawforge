@@ -404,6 +404,40 @@ catch { await appendPrivateResult(ctx, `${dataDir}/vault/journal.jsonl`, { id: o
 const pending = await readPendingPrivateIntents(ctx, `${dataDir}/vault/journal.jsonl`, { limit: 100 });
 ```
 
+**Versioned state and raw journals.** For data a recipe keeps between runs, the same entry
+exports `writePrivateState` / `readPrivateState` and `appendPrivateJournal` /
+`readPrivateJournal`. All four refuse a path outside a declared `privatePaths` entry and a
+symlink as the final component; refusals are a `PrivateDataError` whose `code` is one of
+`policy`, `io`, `symlink`, `invalid`, `version`, `validation`, `size`, `secret` or `busy`, and
+never echo the content. None of them knows about `--dry-run`: a hook skips the write itself when
+`ctx.dryRun` is set.
+
+```ts
+import { readPrivateState, writePrivateState, appendPrivateJournal, readPrivateJournal } from "@clawforge/framework/private-config";
+
+const isCursor = (value: unknown): value is { cursor: number } =>
+  typeof value === "object" && value !== null && typeof (value as { cursor?: unknown }).cursor === "number";
+
+const statePath = `${ctx.settings.dataDir}/vault/state.json`;
+const state = await readPrivateState(ctx, statePath, { version: 1, validate: isCursor }); // undefined when absent
+if (!ctx.dryRun) {
+  await writePrivateState(ctx, statePath, { cursor: (state?.cursor ?? 0) + 1 }, { version: 1, validate: isCursor });
+  await appendPrivateJournal(ctx, `${ctx.settings.dataDir}/vault/events.jsonl`, { event: "advanced" });
+}
+const { records, corrupt, truncated } = await readPrivateJournal(ctx, `${ctx.settings.dataDir}/vault/events.jsonl`, { limit: 50 });
+```
+
+State is one strict `{version, value}` JSON envelope of at most 1 MiB, published atomically
+(mode 600, parent 700); a missing file reads as `undefined`, a different stored `version` refuses
+with `version`, and a rejecting `validate` refuses with `validation`, so a format change is an
+explicit migration rather than a silent misread. The journal appends one JSON line per record
+under the instance lock, overwrites a reserved UTC `timestamp`, refuses a record carrying a
+registered secret, and rotates at `maxBytes` (default 256 KiB, at most 1 MiB) keeping
+`maxRotations` old files (default 3, at most 8, `0` keeps none). Reads return newest-first
+records, `limit` between 1 and 1,000, scanning at most 9 files and 10,000 lines; corrupt lines
+are counted in `corrupt`, never echoed, and `truncated` reports records left unscanned. Full
+backups keep these files; `migrate` and `share` archives exclude them as declared private paths.
+
 Reading the declarations is strict where it matters, and honest about what it reads: the
 independent `privatePaths` policy reader enumerates every installed recipe's declaration and
 stops the command on a `recipe.json` that exists but cannot be read, parsed or validated for
@@ -488,7 +522,7 @@ Without `--apply`, the command previews the proposed change. `--apply` updates t
 
 The command does not edit `recipe.json` or add manifest fields. It retrieves checksum metadata from the project's GitHub release page over HTTPS only: first the asset's `.sha256` checksum, then `SHA256SUMS` only when the former returns 404. The checksum entry must name the exact asset and contain 64 hexadecimal characters; a bare digest is not accepted. Requests have an eight-second timeout, a 64 KiB response limit and at most five redirects, restricted to `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`. It does not download or hash the release asset. This trusts the project's release page; it is not a substitute for verifying a release signature.
 
-Changing the pins does not restart a running service. When an upgrade recipe is available, continue with the [recipe upgrade workflow](recipes-cookbook.md#bump-a-pinned-release); otherwise install the recipe using its existing workflow.
+Changing the pins does not restart a running service: rebuild and restart it with `recipe install <name>`. A worked example is in the [cookbook](recipes-cookbook.md#bump-a-pinned-release).
 
 
 ### Local recipe checks

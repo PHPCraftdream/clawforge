@@ -74,5 +74,5 @@ export async function executePin(plan: PinPlan, options: { fetcher?: FetchSeam; 
     try { await writeFile(temp, output, { flag: "wx", mode }); await chmod(temp, mode); if (!(await readFile(path)).equals(plan.snapshot)) throw new PinError("stale", `${plan.file} changed since the plan was prepared; rerun the pin command`); await rename(temp, path); }
     catch (error) { await unlink(temp).catch(() => undefined); throw error; }
   }
-  return { old: { version: plan.oldVersion, checksum: plan.oldChecksum }, new: { version: plan.version, checksum: checksum.digest }, digest: checksum.digest, sourceURL: checksum.sourceURL, assetURL: plan.assetURL, applied: options.apply === true, file: plan.file, versionLine: plan.versionLine, checksumLine: plan.checksumLine, diff: `-${plan.oldVersion} / ${plan.oldChecksum}\n+${plan.version} / ${checksum.digest}`, next: "recipe upgrade/install" };
+  return { old: { version: plan.oldVersion, checksum: plan.oldChecksum }, new: { version: plan.version, checksum: checksum.digest }, digest: checksum.digest, sourceURL: checksum.sourceURL, assetURL: plan.assetURL, applied: options.apply === true, file: plan.file, versionLine: plan.versionLine, checksumLine: plan.checksumLine, diff: `-${plan.oldVersion} / ${plan.oldChecksum}\n+${plan.version} / ${checksum.digest}`, next: "recipe install" };
 }

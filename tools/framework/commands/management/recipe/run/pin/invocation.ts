@@ -13,7 +13,7 @@ export function pinReportLines(name: string, result: Awaited<ReturnType<typeof e
     details: [
       `checksum ${result.old.checksum} -> ${result.new.checksum}`,
       `checksum from ${result.sourceURL} for ${result.assetURL}`,
-      `${result.applied ? "applied" : "preview"}; next: recipe upgrade/install ${name}`,
+      `${result.applied ? "applied" : "preview"}; next: recipe install ${name}`,
     ],
   };
 }

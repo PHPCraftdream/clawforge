@@ -59,7 +59,7 @@ ADD --checksum=sha256:${RELEASE_SHA256} https://github.com/example/status-board/
 
 The version is a token, not a path or URL: letters and digits followed only by letters, digits, `_`, `.`, `+` or `-`. Pinning the same version again is refused. Apply changes both Docker `ARG` defaults atomically under the instance lock; no manifest fields are changed. The command reads a `.sha256` checksum first, falling back to `SHA256SUMS` only on 404. The selected checksum entry must include the exact asset name and a 64-character hexadecimal digest; bare digests do not qualify. Metadata requests are HTTPS-only and restricted to `github.com`, `objects.githubusercontent.com` and `release-assets.githubusercontent.com`, with an eight-second timeout, 64 KiB response limit and at most five redirects. The artifact itself is never downloaded or hashed. This relies on the project's release page and does not replace release-signature verification.
 
-Updating pins does not restart an already-running service. After applying, continue with the recipe's existing install workflow; when an upgrade recipe is available, use that workflow next.
+Updating pins does not restart an already-running service. After applying, rebuild and restart it with `recipe install <name>`.
 
 ## Change a consumer config without a secret in argv
 

@@ -184,7 +184,7 @@ printf 'synthetic backup\\n' > '${dataDir}/config/openclaw.json.bak-old'
       "-c",
       script,
     ]));
-    check(`real tar ${profile} fixture created the exclusion targets`, await transport.exists(`${dataDir}/config/.env`) && await transport.exists(`${dataDir}/config/openclaw.json.bak-old`), true);
+    check(`real tar ${profile} fixture created the exclusion targets`, await transport.exists(`${dataDir}/config/.env`) && await transport.exists(`${dataDir}/config/openclaw.json.bak-old`) && await transport.exists(`${dataDir}/config/logs/fixture.log`), true);
     const ctx = {
       settings: { dataDir, backupDir, env: { OC_BACKUP_KEEP: "10" } },
       transport,

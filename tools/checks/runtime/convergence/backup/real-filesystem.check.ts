@@ -136,7 +136,7 @@ async function globProfile(profile: "migrate" | "share", transport: Transport): 
       `printf 'synthetic backup\\n' > ${q(`${dataDir}/config/openclaw.json.bak-old`)}`,
     ]);
     await execFixture(transport, fixture);
-    check(`real tar ${profile} fixture created the exclusion targets`, await transport.exists(`${dataDir}/config/.env`) && await transport.exists(`${dataDir}/config/openclaw.json.bak-old`), true);
+    check(`real tar ${profile} fixture created the exclusion targets`, await transport.exists(`${dataDir}/config/.env`) && await transport.exists(`${dataDir}/config/openclaw.json.bak-old`) && await transport.exists(`${dataDir}/config/logs/fixture.log`), true);
     const ctx = {
       settings: { dataDir, backupDir, env: { OC_BACKUP_KEEP: "10" } },
       transport,

@@ -745,7 +745,7 @@
       "tools/checks/runtime/convergence/backup/retention.check.ts": 3,
       "tools/checks/runtime/convergence/backup/rotation.check.ts": 7,
       "tools/checks/runtime/convergence/inspect/checksums.check.ts": 1,
-      "tools/checks/runtime/convergence/inspect/connectivity/egress-credentials.check.ts": 2,
+      "tools/checks/runtime/convergence/inspect/connectivity/egress-credentials.check.ts": 1,
       "tools/checks/runtime/convergence/inspect/connectivity/egress.check.ts": 0,
       "tools/checks/runtime/convergence/inspect/folder.check.ts": 6,
       "tools/checks/runtime/convergence/inspect/lock.check.ts": 0,
@@ -785,7 +785,7 @@
       "tools/checks/sets/parity.check.ts": 3,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 305
+    "total": 304
   },
   "frameReads": {
     "comment": "stage 7 S1.3 (design docs/internal/refactor-stage7-frame-design.md §8): occurrences of invocation()/currentFrame() in product code outside the exempt modules core/io/invocation/**, core/io/help-render.ts, core/io/log.ts. Scan scope: tools/framework/**/*.ts plus tools/clawforge.ts. Measured at the S1.3 resolver refactor: 0 — the reads the design lists as pre-S1.3 (entry/resolve.ts, entry/delegate.ts, entry/bin.ts, integration/deployment/scaffold.ts, tools/clawforge.ts) are gone; the only remaining raw reads are the exempt ones (help-render.ts: 2 invocation() default arguments; invocation/{index,render,prose}.ts). Shrink-only at target 0: any occurrence fails.",

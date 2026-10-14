@@ -6,7 +6,7 @@
 // store mix a real secret with the plumbing, so nothing parsed from them is printable. See
 // fixture.ts for the shared stub and on-disk deployment.
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gatherInspection, renderJson, printProblem, RECREATE_SWITCHES_IMAGES } from "#framework/commands/orchestration/inspect/gather.ts";
@@ -90,6 +90,9 @@ const COMPLETE_STORE = "ZAI_API_KEY=k\nOPENCLAW_GATEWAY_TOKEN=stored-gateway-tok
 const INCOMPLETE_STORE = "OPENCLAW_GATEWAY_TOKEN=stored-gateway-token\n";
 
 const CLEAN = { targetEnv: COMPLETE_STORE, mirrorChecksums: goodChecksums };
+// The fixture's own lock file, captured verbatim — the K case re-pins the lock and then
+// restores exactly these bytes instead of re-deriving the composition a second time.
+const ORIGINAL_LOCK = await readFile(lockFile(), "utf8");
 
 // Between cases: bare folder again, declaration exactly as the fixture wrote it.
 async function reset(): Promise<void> {
@@ -403,8 +406,8 @@ try {
     check("and both digests — what it now resolves to, and what is actually running", [moved?.detail.includes(MOVED_DIGEST), moved?.detail.includes(RUNNING_DIGEST)], [true, true]);
     check("and explains what a recreate would do", moved?.detail.includes(RECREATE_SWITCHES_IMAGES) ?? false, true);
     check("both findings are warnings, not blocking", inspection.problems.every((entry) => entry.severity === "warning"), true);
-    // Restored for every case after this one.
-    await writeFile(lockFile(), `${JSON.stringify(await currentComposition(stubContext({})), null, 2)}\n`, "utf8");
+    // Restored byte-for-byte for every case after this one.
+    await writeFile(lockFile(), ORIGINAL_LOCK, "utf8");
   }
 
   {

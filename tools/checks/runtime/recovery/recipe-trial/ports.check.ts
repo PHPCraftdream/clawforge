@@ -130,6 +130,11 @@ checkTrue("resolved symlink escape refused",
   /refuses.web.volumes.*resolves.to.\/etc.*outside/.test(await refusalOf("symlinkOut",
     { services: { web: { volumes: [{ type: "bind", source: "/srv/trial/data/state", target: "/state" }] } } }, allowed,
     (paths) => Promise.resolve(paths.map((path) => (path === "/srv/trial/data/state" ? "/etc" : path))))));
+// The recipe directory is the LIVE definition: sharing it is allowed only read-only.
+checkTrue("a writable bind of the live recipe directory is refused",
+  (await refusalOf("writableRecipeDir", { services: { web: { volumes: [{ type: "bind", source: "/srv/recipes/subject/config", target: "/config" }] } } })) !== "accepted");
+checkTrue("a read-only bind of the live recipe directory is accepted",
+  (await refusalOf("readOnlyRecipeDir", { services: { web: { volumes: [{ type: "bind", source: "/srv/recipes/subject/config", target: "/config", read_only: true }] } } })) === "accepted");
 checkTrue("confined bind accepted",
   (await refusalOf("insideBind", { services: { web: { volumes: [{ type: "bind", source: "/srv/trial/data/state", target: "/state" }] } } })) === "accepted");
 checkTrue("a tmpfs mount is accepted",

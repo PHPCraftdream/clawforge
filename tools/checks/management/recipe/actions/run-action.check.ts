@@ -52,6 +52,7 @@ registerSecret(SECRET);
 // their top-level write still proves whether the module was imported at all.
 const hooks: Record<string, string> = {
   "actions/change.ts": hookSource("change", `return { dryRun: input.dryRun, args: input.args };`),
+  "actions/ctxdry.ts": hookSource("ctxdry", `return { ctxDry: _ctx.dryRun === true };`),
   "actions/read.ts": hookSource("read", `return { dryRun: input.dryRun };`),
   "actions/read-markerless.ts": `export function run() { return undefined; }\n`,
   "actions/big.ts": `export function run() { return "x".repeat(100000); }\n`,
@@ -79,6 +80,7 @@ export function run() { return { ok: true }; }
 const manifest = {
   description: "run-action fixture",
   actions: {
+    ctxdry: { file: "actions/ctxdry.ts", effect: "change", arguments: [] },
     change: {
       file: "actions/change.ts",
       effect: "change",
@@ -271,6 +273,11 @@ export function run() { return { where: "custom" }; }
   checkTrue("dry-run raises no ConfirmationRequiredError", !(dry.error instanceof ConfirmationRequiredError));
   check("dry-run resolves the facts to read", dry.facts?.effect, "read");
   checkTrue("the dry-run result document says dryRun true", (dry.json as { dryRun?: boolean } | undefined)?.dryRun === true);
+  // Helpers read ctx.dryRun: the hook's context must carry the flag on a dry run only.
+  const ctxDryOn = await executeNamed({ action: "run", name: "local", "recipe-action": "ctxdry", "dry-run": true }, { surface: "mcp" });
+  check("a dry-run hook context says dryRun", (ctxDryOn.json as { ctxDry?: boolean } | undefined)?.ctxDry, true);
+  const ctxDryOff = await executeNamed({ action: "run", name: "local", "recipe-action": "ctxdry" }, { surface: "mcp", confirmed: true });
+  check("a real-run hook context does not", (ctxDryOff.json as { ctxDry?: boolean } | undefined)?.ctxDry, false);
   await clearMarker(MARKER);
   const heldDry = await takeLock(lock.ctx, "recipe run fixture", "op-held-dry");
   try {

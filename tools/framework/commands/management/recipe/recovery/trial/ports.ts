@@ -139,7 +139,7 @@ export async function analyzeEffectiveConfig(config: unknown, allowedBindPrefixe
       refuseLiveDefinition(kind, name, definition, project);
     }
   }
-  const binds: { service: string; source: string }[] = [];
+  const binds: { service: string; source: string; readOnly: boolean }[] = [];
   const services = Object.entries(record(document["services"] ?? {}, "services")).map(([name, value]) => {
     const service = record(value, `services.${name}`);
     if (service["configs"] !== undefined) die(`recipe trial refuses ${name}.configs: service configs are unsupported`);
@@ -182,7 +182,7 @@ export async function analyzeEffectiveConfig(config: unknown, allowedBindPrefixe
       const source = scalar(mount["source"], `services.${name}.volumes.source`);
       if (!source.startsWith("/"))
         die(`recipe trial refuses ${name}.volumes: the bind mount ${source} is not an absolute path`);
-      binds.push({ service: name, source });
+      binds.push({ service: name, source, readOnly: mount["read_only"] === true });
     }
     const builds = service["build"] !== undefined;
     if (expectedBuildTags !== undefined) {
@@ -213,8 +213,12 @@ export async function analyzeEffectiveConfig(config: unknown, allowedBindPrefixe
       const real = resolved[index];
       if (real === undefined)
         die(`recipe trial refuses ${bind.service}.volumes: the bind mount ${bind.source} could not be resolved on the target`);
-      if (!real.startsWith("/") || !allowedBindPrefixes.some((prefix) => real === prefix || real.startsWith(`${prefix}/`)))
+      const within = (prefix: string): boolean => real === prefix || real.startsWith(`${prefix}/`);
+      if (!real.startsWith("/") || !allowedBindPrefixes.some(within))
         die(`recipe trial refuses ${bind.service}.volumes: the bind mount ${bind.source} resolves to ${real}, outside the trial scratch home and the recipe directory`);
+      // Only the first prefix (the scratch data copy) may be written; the live recipe directory is shared, so it must be read-only.
+      if (!bind.readOnly && !within(allowedBindPrefixes[0] ?? ""))
+        die(`recipe trial refuses ${bind.service}.volumes: the bind mount ${bind.source} shares the live recipe directory writable; mark it read_only so the trial cannot modify it`);
     }
   }
   return { services };

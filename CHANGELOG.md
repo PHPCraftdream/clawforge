@@ -50,6 +50,8 @@ All notable changes to `@clawforge/framework` will be documented here.
   `--dry-run` lists the files without executing code.
 
 ### Fixed
+* `recipe trial` refuses a writable bind mount of the live recipe directory (it must be `read_only`), and recipe action hooks run
+  with a context that carries `dryRun` on `recipe run --dry-run`, so `appConfigPatch` and `reconcileApply` preview instead of writing.
 * The discovery self-check no longer creates the checkout's `apps/`, and the deployment-fixture self-check compares the
   repository root and the contents of the checkout's `apps/`, so concurrent checks no longer make it fail intermittently.
 * A release racing a concurrent claim of the instance-lock mutation guard no longer leaves its own stale lock behind:

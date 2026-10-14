@@ -44,7 +44,10 @@ export async function runRecipeActionCommand(ctx: Context, plan: RecipeRunPlan):
     // its plan without writes — the framework cannot enforce it.
     let result: unknown;
     try {
-      result = await hook(ctx, recipe, { action: plan.action, args: plan.args, dryRun: plan.dryRun });
+      // Recipe-kit helpers (appConfigPatch, reconcileApply) read ctx.dryRun: a dry-run action
+      // must hand them a context that says so, not only the input flag.
+      const hookCtx = plan.dryRun ? Object.create(ctx, { dryRun: { value: true, enumerable: true } }) : ctx;
+      result = await hook(hookCtx, recipe, { action: plan.action, args: plan.args, dryRun: plan.dryRun });
     } catch (error) {
       die(maskSecrets(error instanceof Error ? error.message : String(error)));
     }

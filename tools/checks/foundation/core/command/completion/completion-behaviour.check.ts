@@ -37,6 +37,8 @@ import type { GateCommand } from "#framework/integration/gate.ts";
 // the gate over the finished array), which is what makes its own shell choices completable.
 const gateCommands: GateCommand[] = [];
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+/** The bash driver forks per sweep case; on a loaded Windows host the run measured 140 s alone, so the ceiling leaves room. */
+const BASH_DRIVER_TIMEOUT_MS = 900_000;
 const registry = surfaceRegistry();
 const data = completionData(registry, true);
 const installed = completionData(registry, false);
@@ -595,10 +597,11 @@ await requires("bash", "the generated bash script, sourced by a real bash", asyn
     const driverPath = join(dir, "driver.sh");
     await writeFile(driverPath, bashDriver(scriptPath), "utf8");
     const proc = spawnSync(bash, [driverPath], {
-      timeout: 360_000, encoding: "utf8",
+      timeout: BASH_DRIVER_TIMEOUT_MS, encoding: "utf8",
       env: bashEnvironment(bash, [dir]),
     });
-    check("bash: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
+    // status null with ETIMEDOUT is machine load (the sweep forks per case), not a wrong answer.
+    check("bash: the driver exited 0", [proc.status, (proc.error as NodeJS.ErrnoException | undefined)?.code ?? null, (proc.stderr ?? "").trim()], [0, null, ""]);
     const answers = replies(proc.stdout, " ");
     assertShellAnswers("bash", answers, bashDivergent);
     check("bash: the generated script parses (bash -n)", spawnSync(bash, ["-n", scriptPath], { timeout: 15_000, env: bashEnvironment(bash) }).status, 0);

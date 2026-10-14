@@ -179,7 +179,8 @@ A recipe can declare operator-facing actions in `recipe.json`, each backed by a 
 the recipe directory. `recipe inspect <name>` lists the declared actions with their effects
 and arguments; `recipe run <name> <recipe-action> [<key>=<value> ...] [--dry-run]` executes
 one. An action is a hook like any other: plain TypeScript, run with the operator's rights,
-reviewed like the rest of the recipe's code.
+reviewed like the rest of the recipe's code. Worked patterns are in the
+[recipe cookbook](recipes-cookbook.md#run-a-one-off-action-against-a-running-recipe).
 
 ```json
 {

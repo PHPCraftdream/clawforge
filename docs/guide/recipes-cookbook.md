@@ -126,15 +126,17 @@ has two cooperating pieces:
    application never sees a half-migrated config. Keep the migration step idempotent so
    an already-migrated config passes through untouched, and let it fail the container
    startup if migration fails, rather than starting on a broken layout.
-2. A hook guard in `prepare.ts` that leaves the legacy config alone until that entrypoint
-   step has run. Before writing or patching anything, the hook detects whether the mounted
-   configuration is still in the legacy layout (for example by probing for a marker the old
-   layout had and the new one lacks) and returns without changes when it is, instead of
-   writing keys at paths that no longer exist. Only when the new layout is detected does
-   the hook apply its changes, through the stdin patterns above.
+2. Config changes that depend on the new layout go in the `afterStart` hook, not in
+   `prepare`. `recipe install` runs `prepare` before it builds and starts the stack, so on an
+   upgrade `prepare` still sees the legacy layout; `afterStart` runs only after the stack is
+   up and ready, that is after the entrypoint has migrated. If `prepare` must touch the
+   config at all, it detects the legacy layout (for example by probing for a marker the old
+   layout had and the new one lacks) and leaves it alone instead of writing keys at paths
+   that no longer exist; it is not called again after the migration.
 
 This keeps every deployment — fresh installs and upgrades alike — going through the same
-reproducible path: the entrypoint migrates, the hook then safely consumes the new layout.
+reproducible path: the entrypoint migrates, then `afterStart` applies its changes to the
+new layout through the stdin patterns above.
 Never edit the migrated config from the host in place; the reproducible source is the
 recipe, and changing a bind-mounted file does not reload a running process — see
 [Durable repair and verification](recipes.md#durable-repair-and-verification).
@@ -224,9 +226,144 @@ With `adoptOverlaps: true`, overlap keys are adopted: their current values are k
 provenance is recorded, so a later reconcile can manage them. Without it they are reported
 and left alone — adoption never overwrites an operator's value.
 
+## Run a one-off action against a running recipe
+
+Declare the action in `recipe.json` under `actions`. The field names below are the
+manifest's: the full grammar is the [actions table](recipe-manifest.md#fields) —
+`recipe.json` validation refuses anything else before any hook code is imported.
+
+```json
+{
+  "actions": {
+    "prune-cache": {
+      "file": "actions/prune-cache.ts",
+      "effect": "change",
+      "description": "Drop cache entries older than the given days",
+      "arguments": [
+        { "name": "days", "kind": "integer", "description": "Maximum age in days" }
+      ]
+    }
+  }
+}
+```
+
+`recipe inspect` lists the declared actions with their effects; `recipe inspect --json`
+also carries each action's declared arguments. Run one:
+
+```bash
+./clawforge recipe run status-board prune-cache days=7
+./clawforge recipe run status-board prune-cache days=7 --dry-run
+```
+
+Arguments are passed as `key=value` tokens and checked in the prepare stage against the
+declaration — missing, unknown, duplicate or mis-kinded values refuse and name the
+argument, before the action's module is imported. The declared `effect` decides the
+confirmation and locking: `read` runs unlocked; `change` and `destroy` owe an MCP
+`confirm: true` and run entirely inside the instance lock, import included. `--dry-run`
+is treated as `read`, skips the lock and reaches the hook as `input.dryRun` (and
+`ctx.dryRun`, so recipe-kit helpers honor it); the hook must return its plan without
+writing — the framework cannot enforce that. A preview of the effect is exactly a
+`--dry-run` invocation; there is no separate plan step.
+
+The hook module must export `run(ctx, recipe, input)`. The result is serialized as one
+JSON document, deep-masked so a registered secret cannot ride it out, and bounded: a
+result over 64 KiB is refused. A hook returning `undefined` reports `{ "ok": true }`;
+`--json` (or any captured output) prints the bare JSON, human output prefixes it with the
+recipe and action.
+
+## Rehearse a recipe on a copy of its data
+
+`recipe trial` builds and runs a recipe against a copy of its declared `privatePaths`
+data, in a throwaway compose project of its own (`clawforge-recipe-trial-<hash>-<random>`
+with a fresh random suffix every run):
+
+```bash
+./clawforge recipe trial status-board --dry-run
+./clawforge recipe trial status-board
+```
+
+It copies only the declared `privatePaths` entries (nested declarations are covered by
+their parent and dropped from the copy; a declared path absent on the target is created
+empty) into a scratch home under the instance's locks directory, with `OC_DATA_DIR`
+pointed at the copy. The total copied size is bounded at 256 MiB and an unmeasurable
+entry refuses rather than copying; the same refusals run under `--dry-run`, which shows
+what would be copied, the project name and the ports-stripping override without writing
+anything.
+
+There is no port override flag to pass: every service's `ports` is replaced with an
+empty list through a generated `ports: !override []` override file, and the merged
+effective configuration is proven to publish nothing before anything is built. That
+merge tag needs Docker Compose v2.24.0 or newer; older versions refuse, including under
+`--dry-run`. The proven merged document is pinned to disk as a JSON compose file, and
+build, `up` and the teardown `down` all run against that exact file, so what was proven
+is what executes. A bind mount that shares the live recipe directory must be
+`read_only` or the trial refuses.
+
+Teardown is register-then-remove in LIFO order on every exit path, signals included:
+`down --volumes --remove-orphans --rmi local` against the pinned document, per-tag
+removal of the trial build images with absence proven, then the scratch home. When the
+first signal arrives while a remote step is still running, the trial waits for that step
+before cleaning up; a second signal during that wait skips the wait and the destructive
+cleanup, names the project and scratch home that may remain, and exits nonzero. Further
+signals during an ordinary teardown are ignored so the teardown finishes. What the trial
+will not do: it never touches the live stack (its own project name and build tags see to
+that), never runs hooks (it does not import the hook runtime), and the live recipe
+directory is only ever shared read-only.
+
+## Keep a journal that does not leak identifiers
+
+When a hook must record that an identifier was seen — an account synced, an order
+touched — store a keyed pseudonym, not the raw value. `privatePseudonym` HMACs the
+length-prefixed recipe, namespace and value with a deployment key created exactly once
+under a declared private path; the same input always yields the same `v1.` token, and
+the token is unlinkable to its raw value without the key. This is pseudonymisation, not
+anonymisation: an operator holding the key can match a candidate value back to its token
+with `privatePseudonymLookup`. Pair it with the intent/result journal so a crash between
+"started" and "finished" is recoverable — `readPendingPrivateIntents` reports intents
+without a matching result:
+
+The recipe declares the directory holding the journal and the key in `privatePaths`
+(here `"privatePaths": ["vault"]`); the helpers refuse an undeclared path. The action
+`import-account` takes an `accountId` argument, and `importAccount` stands for the recipe's
+own import step:
+
+```ts
+import { randomUUID } from "node:crypto";
+import {
+  privatePseudonym, appendPrivateIntent, appendPrivateResult,
+} from "@clawforge/framework/private-config";
+
+async function importAccount(accountId: string): Promise<void> {
+  // The recipe's own import step.
+}
+
+export async function run(ctx, recipe, input) {
+  if (input.dryRun) return { wouldImport: true };
+  const vault = `${ctx.settings.dataDir}/vault`;
+  const subject = await privatePseudonym(ctx, `${vault}/pseudonym-key.json`,
+    { recipe: recipe.name, namespace: "account-id", value: input.args.accountId });
+  const id = randomUUID();
+  await appendPrivateIntent(ctx, `${vault}/journal.jsonl`, { id, kind: "import", detail: { subject } });
+  await importAccount(input.args.accountId);
+  await appendPrivateResult(ctx, `${vault}/journal.jsonl`, { id, kind: "import", outcome: "done", detail: { subject } });
+}
+```
+
+Each operation gets its own random `id`: `readPendingPrivateIntents` treats an intent as
+resolved once any result with the same id exists, so reusing the deterministic token as
+the id would hide a crash in a later import of the same account. The token goes in
+`detail`, where it still links every operation on that account. The journal helpers
+have no dry-run mode of their own, so the hook returns before writing on `--dry-run`.
+
+Stored in each journal line: a UTC `timestamp`, the operation id, the kind, the outcome
+(results only) and the `detail` you supply. Not stored anywhere in the journal: the raw
+account id is hashed into the token, and the key itself lives in its own mode-600 file
+under the declared private path, registered for redaction so it cannot surface in output.
+Both helpers refuse records that contain a registered secret, and the crash gap is the
+pending set of `readPendingPrivateIntents`.
+
 ## Planned
 
-- Run a one-off administrative command against a running recipe service
 - Back up and restore recipe-private state safely
 - Share a recipe without leaking private files
 - Compose healthchecks that satisfy the readiness window

@@ -31,7 +31,7 @@ try {
   checkTrue("the product generated a cp -a copy script", script.includes("cp" + String.fromCharCode(32) + "-a"));
   check("the product copies exactly the top-level entries, nested dropped", copy.slice(5), ["state", "certs"]);
 
-  await requires("posix-sh", "the generated copy script executes against a real tree", async () => {
+  await requires("posix-host", "the generated copy script executes against a real tree", async () => {
     const base = await mkdtemp(join(tmpdir(), "clawforge-recipe-trial-copyexec-"));
     try {
       const dataDir = join(base, "data");

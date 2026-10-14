@@ -32,9 +32,9 @@ export const CONTROLS: readonly ControlDecl[] = [
     finding: "F5",
     note: "recipe check propagates subprocess failures to the command verdict",
     product: "tools/framework/commands/management/recipe/recovery/checks/check.ts",
-    search: "return failed === 0 ? 0 : 1;",
+    search: "return failed === 0 && !lintFailed ? 0 : 1;",
     replace: "return 0;",
-    check: "tools/checks/management/recipe/check-action.check.ts",
+    check: "tools/checks/management/recipe/actions/check-action.check.ts",
     fragment: "failing checks return nonzero",
   },
   {

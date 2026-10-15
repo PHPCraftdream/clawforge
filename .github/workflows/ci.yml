@@ -124,6 +124,12 @@ jobs:
         if: env.FULL_TIER == 'true'
         run: npm run pack:check
 
+      # Each control breaks guarded code in a copy and requires its check to fail, proving the
+      # checks still bite. One job is enough: the controls are host-independent edits.
+      - name: Negative controls
+        if: env.FULL_TIER == 'true'
+        run: npm run check:controls
+
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.

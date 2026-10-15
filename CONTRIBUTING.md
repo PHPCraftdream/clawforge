@@ -309,7 +309,8 @@ fail with the edit applied, and a stable fragment of the failing assertion's nam
 edit to the copy, and demands: the unedited copy passes the check, the edited copy fails
 naming the declared assertion, and the copy is restored (proven by hash). The gate fails if
 any control fails. A control whose edit no longer matches the product is itself a failure of
-`check:controls` — a stale control is a finding, never a skip. To add a control: append a
+`check:controls` — a stale control is a finding, never a skip. CI runs it in the full tier on
+the Linux job. To add a control: append a
 declaration to `CONTROLS`, run the command, and land it only once it holds against the
 unchanged product.
 

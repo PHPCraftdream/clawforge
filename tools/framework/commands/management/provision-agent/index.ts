@@ -50,7 +50,7 @@ export * from "./reconcile.ts";
 
 export const PROVISION_AGENT_ARGUMENTS = [
   { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true, value: kinds.recipeRef() },
-  { name: "break-lock", summary: "Take lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  { name: "break-lock", summary: "Take over the lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];

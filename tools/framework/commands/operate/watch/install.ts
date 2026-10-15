@@ -81,7 +81,7 @@ export const WATCH_INSTALL_ARGUMENTS = [
     kind: "flag",
     effect: "destroy",
   },
-  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
+  ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The slice `uninstall` uses — no --interval, since there is no schedule to set. */
@@ -93,7 +93,7 @@ export const WATCH_UNINSTALL_ARGUMENTS = [
     kind: "flag",
     effect: "destroy",
   },
-  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
+  ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
 export function watchMarker(name: string): string {

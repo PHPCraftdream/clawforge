@@ -143,8 +143,8 @@ over automatically, without the flag.
 | `version` | `[--json] [--verbose]` | Print clawforge's own version (also: --version, -v) |
 | `completion` | `<shell>` | Print a shell completion script (bash, zsh or pwsh) to stdout |
 | `init` | `[--local]` | Initialise this directory as an OpenClaw deployment (installed only) |
-| `control-mcp` | — | expose `<app>`'s commands as MCP tools, for agents |
-| `help` | `[<command>]` | same as: <command> --help |
+| `control-mcp` | — | Expose `<app>`'s commands as MCP tools, for agents |
+| `help` | `[<command>]` | Same as: <command> --help |
 
 <!-- commands:end -->
 

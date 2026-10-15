@@ -61,13 +61,13 @@ async function prepareConfig(call: PrepareCall<Values<typeof CONFIG>>, local: Lo
 }
 // A remote credential reference and local model approvals describe different providers.
 const CONFIG_RULES = [{ rule: "conflicts", name: "env", with: ["model-path", "model-checksum", "model-source", "model-version"] }] as const;
-const plan = defineAction({ summary: "Preview memory leaf declarations locally", effect: "read", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
+const plan = defineAction({ summary: "Preview the memory settings a mode implies (local)", effect: "read", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
   async run(_local, p) { emit(`${JSON.stringify({ ok: true, changed: false, mode: p.mode, owned: p.next.filter((op) => op.path.startsWith("agents.defaults.memorySearch.") || op.path === "memory.backend").map((op) => op.path), targetPreflightDeferred: p.provider === "local" })}\n`); } });
-const configureAction = defineAction({ summary: "Persist canonical memory leaf declarations", effect: "destroy", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
+const configureAction = defineAction({ summary: "Write the memory settings into desired-state.json", effect: "destroy", needs: "local", arguments: CONFIG, rules: CONFIG_RULES, prepare: prepareConfig,
   async run(_local, p) { const after = `${JSON.stringify(p.next, null, 2)}\n`, changed = after !== p.before; if (changed) await atomicDeclaration(p.path, p.before, after);
     emit(`${JSON.stringify({ ok: true, changed, mode: p.mode, applied: false, next: "Review desired leaf batch, explicitly apply-config, then restart; target local-model prerequisites are checked before indexing." })}\n`); } });
 const statusArgs = [JSON_ARGUMENT, { name: "deep", summary: "Provider probe", description: "Explicit provider readiness probe", kind: "flag", effect: "destroy" }, ...CONSENT] as const;
-const status = defineAction({ summary: "Project safe per-agent memory metadata", effect: "read", arguments: statusArgs,
+const status = defineAction({ summary: "Each agent's memory state; --deep probes the provider", effect: "read", arguments: statusArgs,
   rules: [{ rule: "requires", name: "deep", with: ["allow-spend", "allow-download"] }, { rule: "requires", name: "allow-spend", with: ["deep"] }, { rule: "requires", name: "allow-download", with: ["deep"] }],
   async prepare(_call, local) { const d = await localDeclaration(local); return { ..._call.values, disabled: declaredMemory(d.ops).enabled === false }; },
   async run(ctx, v) {
@@ -79,7 +79,7 @@ const status = defineAction({ summary: "Project safe per-agent memory metadata",
     if (v.deep) return guardedWith(ctx, "memory status deep", { breakLock: false }, run); return run();
   } });
 function consumerAction(verify: boolean) {
-  return defineAction({ summary: verify ? "Prove owned witness consumer search" : "Index selected declared memory agents", effect: "destroy", arguments: SELECT,
+  return defineAction({ summary: verify ? "Prove memory search finds a fresh test note" : "Rebuild the memory index of the selected agents", effect: "destroy", arguments: SELECT,
     rules: [{ rule: "requires", name: "allow-spend", with: ["allow-download"] }, { rule: "requires", name: "allow-download", with: ["allow-spend"] }, { rule: "oneOf", groups: [["agent"], ["all-agents"]], required: true }],
     async prepare(call, local) { const d = await localDeclaration(local), config = declaredMemory(d.ops); modeOf(config);
       if (!d.ops.some((op) => op.path === "memory.backend" && op.value === "builtin")) return call.refuse("agent", "requires explicit builtin declaration");

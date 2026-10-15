@@ -37,7 +37,7 @@ export const BACKUP_APPLY_ARGUMENT = {
 export const BACKUP_PRUNE_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
   { name: "keep", summary: "Number to keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", value: kinds.count("a non-negative integer") },
-  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
+  ...LOCK_TAKEOVER_ARGUMENTS,
   JSON_ARGUMENT,
 ] as const satisfies readonly ArgumentSpec[];
 

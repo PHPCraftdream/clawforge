@@ -23,7 +23,7 @@ export const FORCE_ARGUMENT = {
 
 export const BREAK_LOCK_ARGUMENT = {
   name: "break-lock",
-  summary: "Take lock",
+  summary: "Take over the lock",
   description: "Take over the instance lock held by another operation",
   kind: "flag",
 } as const;
@@ -34,7 +34,7 @@ export const BREAK_LOCK_ARGUMENT = {
  *  docs/architecture.md's instance-lock runbook. */
 export const BREAK_FOREIGN_LOCK_ARGUMENT = {
   name: "break-foreign-lock",
-  summary: "Orphan host",
+  summary: "Lock owner's host id",
   description: "Confirm <hostId> for a recorded remote lock owner",
   kind: "option",
   valueName: "hostId",

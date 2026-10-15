@@ -141,7 +141,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   // The R31-02 offenders, by their observable schema text.
   const schemaOf = (commandName: string, argumentName: string): string =>
     (inputSchema(openclawCommands[commandName]) as { properties: Record<string, { description?: string }> }).properties[argumentName].description ?? "";
-  check("break-lock's schema line is the declared summary", schemaOf("bootstrap", "break-lock"), "Take lock");
+  check("break-lock's schema line is the declared summary", schemaOf("bootstrap", "break-lock"), "Take over the lock");
   check("recover-env.adopt-runtime is a complete clause", schemaOf("recover-env", "adopt-runtime"), "Take the running container as authoritative");
   check("expose.apply's summary is the declared phrase, bounded to 60", schemaOf("expose", "apply"), "run tailscale serve on the target (tailscale)");
   check("incident.keep-exposure is a complete phrase", schemaOf("incident", "keep-exposure"), "Proceed with the gateway published on every interface");

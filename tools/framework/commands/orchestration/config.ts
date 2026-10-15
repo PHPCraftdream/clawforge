@@ -27,7 +27,7 @@ export const APPLY_CONFIG_ARGUMENTS = [
   { name: "dry-run", summary: "Validate without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag", effect: "read" },
   { name: "dump", summary: "Rebuild from the live config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
   { name: "force", summary: "Overwrite; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag", effect: "destroy" },
-  { name: "break-lock", summary: "Take the instance lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
+  { name: "break-lock", summary: "Take over the lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];

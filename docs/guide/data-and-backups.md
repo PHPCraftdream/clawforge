@@ -79,6 +79,17 @@ list beats a gateway crash-looping on `SecretRefResolutionError`.
 
 ### Declared memory
 
+`./clawforge memory` declares and runs OpenClaw's agent memory search. Pick one of three
+modes: `embeddings` (vector search through an embedding provider, plus keyword search),
+`keyword` (full-text search only, no provider) or `disabled`. The flow is always the same:
+`memory plan` previews the settings a mode implies, `memory configure` writes them into
+`config/desired-state.json`, `apply-config` and `restart` put them in force, and then
+`memory status`, `memory index` and `memory verify` (which proves search finds a fresh
+test note) work against the running instance through the CLI helper (`cli-start`). Local
+embeddings add one step, `memory setup`, which installs the approved plugin and downloads
+the approved model — only with `--allow-install --allow-download`. The rest of this section is
+the precise contract behind each step.
+
 One `memory` action group uses canonical native desired-state leaf declarations.
 Plan/configure are local-only; configure preserves unknown memory options and SecretRefs,
 splitting existing object operations without replacing live memorySearch. Review the

@@ -52,7 +52,10 @@ Before the first release:
    adapted Compose definition and review the optional recipe sources separately.
 5. Run `npm test`, `npm run build`, and `npm run pack:check` on a clean checkout. Install the
    resulting tarball in a fresh consumer and run `clawforge init` before tagging.
-6. Tag the release and publish from the tag. Do not publish a working tree containing
+6. Tag the release and publish from the tag. After the package is on the registry, put the npm
+   badge back into README.md
+   (`[![npm package](https://img.shields.io/npm/v/%40clawforge%2Fframework?logo=npm)](https://www.npmjs.com/package/@clawforge/framework)`)
+   in place of the pre-release status badge. Do not publish a working tree containing
    deployment data, `.env`, MCP client settings, archives, snapshots, or generated `dist/`
    output.
 

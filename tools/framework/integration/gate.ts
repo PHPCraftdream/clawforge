@@ -413,7 +413,7 @@ export { DISPATCHER_COMMANDS };
 /** The registry `help` entry's summary, exported so checks pin the rendered text to the
  *  declaration rather than a copy (the MCP `help` TOOL's own summary is HELP_TOOL_SUMMARY,
  *  integration/mcp/server.ts — a different surface, a different sentence). */
-export const HELP_ENTRY_SUMMARY = "same as: <command> --help";
+export const HELP_ENTRY_SUMMARY = "Same as: <command> --help";
 
 /** The description the `help` command's own positional takes. */
 // Short: the tool summary beside it already says the bare call lists every command, and the
@@ -482,7 +482,7 @@ export function commandRegistry(source: {
     })),
     {
       name: "control-mcp", origin: "dispatcher",
-      summary: `expose ${source.appName}'s commands as MCP tools, for agents`,
+      summary: `Expose ${source.appName}'s commands as MCP tools, for agents`,
       details: CONTROL_MCP_DETAILS, arguments: [], shape: { arguments: [] },
     },
     {

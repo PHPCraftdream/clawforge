@@ -96,8 +96,8 @@ check("no help line is longer than 100 characters", lines.filter((line) => line.
   const columns = new Set(Object.entries(openclawCommands).map(([name, command]) => commandLine(name).line?.indexOf(command.summary)));
   const controlMcp = lines.find((line) => /^\s*control-mcp\s/.test(line));
   const helpAlias = lines.find((line) => /^\s*help <command>\s/.test(line));
-  columns.add(controlMcp?.indexOf("expose "));
-  columns.add(helpAlias?.indexOf("same as"));
+  columns.add(controlMcp?.indexOf("Expose "));
+  columns.add(helpAlias?.indexOf("Same as"));
   check("every list line, framework block included, starts its summary in one column", columns.size, 1);
 }
 // Spot-check the two concrete cases the task calls out: an unconditionally destructive

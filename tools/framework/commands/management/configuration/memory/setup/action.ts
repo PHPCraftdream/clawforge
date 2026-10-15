@@ -25,7 +25,7 @@ const ARGUMENTS = [
 ] as const satisfies readonly ArgumentSpec[];
 
 export const SETUP = defineAction({
-  summary: "Set up explicitly approved local embedding resources",
+  summary: "Install the approved local embedding plugin and model",
   effect: "destroy",
   needs: "target",
   arguments: ARGUMENTS,

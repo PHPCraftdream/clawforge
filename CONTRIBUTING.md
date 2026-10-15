@@ -297,9 +297,10 @@ spelling outside the renderer fails `check architecture` (`dotClawforgeLiterals`
 `tools/framework/core/io/invocation/render.ts` is the only exemption that table names.
 
 The command table in `docs/guide/commands.md`, between its `<!-- commands:begin … -->` and
-`<!-- commands:end -->` markers, is generated from the command declarations —
-`npm run docs:commands` rewrites it, and `docs-commands.check.ts` fails on a hand-edited block.
-The page's narrative stays manual.
+`<!-- commands:end -->` markers, and the command list in `README.md`, between its
+`<!-- command-list:begin … -->` and `<!-- command-list:end -->` markers, are generated from the
+command declarations — `npm run docs:commands` rewrites both, and `docs-commands.check.ts` fails
+on a hand-edited block. The narrative around them stays manual.
 
 ## Negative controls
 

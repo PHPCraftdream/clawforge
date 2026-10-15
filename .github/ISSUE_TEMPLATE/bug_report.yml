@@ -1,0 +1,61 @@
+name: Bug report
+description: Something ClawForge did wrong or refused unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove every secret before pasting output: gateway tokens,
+        provider keys, `.env` contents, MCP client settings and agent transcripts.
+        A suspected vulnerability goes to the private channel in SECURITY.md, not here.
+  - type: input
+    id: version
+    attributes:
+      label: ClawForge version
+      description: Output of `./clawforge version --verbose` (or a commit hash for a checkout).
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      description: The deployment's OC_TARGET_LOCATION.
+      options:
+        - wsl
+        - local
+        - ssh
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host OS and shell
+      description: For example "Windows 11, Git Bash" or "Ubuntu 24.04, bash".
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The exact command line or MCP tool call that misbehaved.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Paste the output with secrets removed. `--json` output is welcome.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: OpenClaw image tag, Docker / Docker Desktop version, recipes involved, how to reproduce.

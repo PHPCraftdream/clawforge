@@ -65,7 +65,7 @@ export const BACKUP_INSTALL_ARGUMENTS = [
     }),
   },
   BACKUP_APPLY_ARGUMENT,
-  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
+  ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The slice `uninstall` uses — no --interval, since there is no schedule to set. A strict
@@ -73,7 +73,7 @@ export const BACKUP_INSTALL_ARGUMENTS = [
  *  declaration itself (same convention as watch's own WATCH_UNINSTALL_ARGUMENTS). */
 export const BACKUP_UNINSTALL_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
-  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
+  ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface InstallValues extends Values<typeof BACKUP_INSTALL_ARGUMENTS> {}

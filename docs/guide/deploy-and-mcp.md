@@ -93,21 +93,8 @@ The second way to get the framework: instead of cloning this repository, install
 holds only application configuration, while the framework itself lives in `node_modules/`
 and is never committed.
 
-**The package is not published to npm yet** (`npm view @phpcraftdream/clawwright` → 404; the first
-release is described in [RELEASE.md](../../RELEASE.md)). Until then, take it from a clone of this
-repository: pack it once and install the tarball in the app.
-
 ```bash
-# in a clone of this repository
-cd tools/framework && npm pack               # writes phpcraftdream-clawwright-<version>.tgz here
-# in your own project
-npm install <path-to-phpcraftdream-clawwright-tgz>
-```
-
-After the first release the tarball step is replaced by `npm install @phpcraftdream/clawwright`.
-Either way the rest is the same:
-
-```bash
+npm install @phpcraftdream/clawwright
 node_modules/.bin/clawwright init             # app.ts, config/, .env, .gitignore, ./clawwright — into this repo
 ./clawwright bootstrap --check                # read-only: docker, compose v2, this directory, the port, disk space
 ./clawwright bootstrap
@@ -115,8 +102,8 @@ node_modules/.bin/clawwright init             # app.ts, config/, .env, .gitignor
 
 Or with no dependency in the repository at all: a system-wide `clawwright` runs `clawwright
 init` and every later command there, and both `./clawwright` and the MCP launcher fall back to it.
-Until the first release, install it with `npm run install:system` from a Clawwright checkout; after
-it, `npm install -g @phpcraftdream/clawwright` works too. A local dependency, when present, always wins
+Install it with `npm install -g @phpcraftdream/clawwright` (or `npm run install:system` from a
+Clawwright checkout, for an unreleased build). A local dependency, when present, always wins
 over the system-wide command.
 
 With the system-wide install the app has no `node_modules/@phpcraftdream/clawwright`, so `app.ts` runs but

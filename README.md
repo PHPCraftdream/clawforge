@@ -5,7 +5,7 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE)
 [![MCP server](https://img.shields.io/badge/MCP-server-6E56CF)](docs/guide/deploy-and-mcp.md#mcp-clawwright-in-claude-code-and-codex)
 [![Targets: WSL2 | Linux | SSH](https://img.shields.io/badge/targets-WSL2%20%7C%20Linux%20%7C%20SSH-informational)](docs/guide/requirements.md)
-[![Status: 0.x, pre-release](https://img.shields.io/badge/status-0.x%20pre--release-orange)](CHANGELOG.md)
+[![npm package](https://img.shields.io/npm/v/%40phpcraftdream%2Fclawwright?logo=npm)](https://www.npmjs.com/package/@phpcraftdream/clawwright)
 
 A reproducible Clawwright environment for running [OpenClaw](https://github.com/openclaw/openclaw)
 yourself: identical locally (WSL2) and on a remote Linux server, with persistent data,
@@ -77,27 +77,23 @@ left alone by `bootstrap`, and `./clawwright upgrade` is the way to move it from
 
 ## Installing `clawwright` system-wide
 
-From this checkout, once `npm install` has run:
-
 ```bash
-npm run install:system        # packs tools/framework and installs it with npm install -g
+npm install -g @phpcraftdream/clawwright
 cd ~/my-openclaw              # any app folder
-clawwright init                # app.ts, config/, .env, ./clawwright — nothing installed into the folder
+clawwright init               # app.ts, config/, .env, ./clawwright — nothing installed into the folder
 clawwright bootstrap --check
 clawwright status
 ```
 
-The installed command is a copy, not a link to this working tree: run `npm run install:system`
+From a clone of this repository, `npm run install:system` (once `npm install` has run) packs
+`tools/framework` and installs that instead — a copy, not a link to the working tree: run it
 again to take later changes. It uses the deployment's own framework whenever there is one — a
 local `@phpcraftdream/clawwright` dependency (the app's version pin), or, inside this checkout,
 `apps/<name>` and the root go to the checkout's own gate — and runs on itself only in a folder
 with neither. The `./clawwright` script and the MCP launcher that `init` writes fall back to it
 the same way. Remove it with `npm uninstall -g @phpcraftdream/clawwright`.
-
-The package is not on the npm registry yet (first release: [RELEASE.md](RELEASE.md)), so
-`npm run install:system` from a clone is the only way to get the system-wide command for now; for
-a per-project dependency, run `npm pack` in `tools/framework` and `npm install <path-to-tgz>` in
-the app. After the first release `npm install -g @phpcraftdream/clawwright` does the same without a clone.
+For a per-project dependency (the app's own version pin), `npm install @phpcraftdream/clawwright` in
+the app.
 
 ## I want to…
 

@@ -49,11 +49,13 @@ if (manifest.publishConfig?.access !== "public") throw new Error("scoped publish
 if (!requiredFiles.every((file) => manifest.files?.includes(file))) throw new Error("the package files list omits release metadata");
 
 const workflow = await readFile(resolve(monorepoRoot, ".github", "workflows", "publish.yml"), "utf8");
-if (!workflow.includes("default: token") || !workflow.includes("secrets.NPM_TOKEN")) {
-  throw new Error("the first release must publish through the CI token job");
+// After 0.1.0 (the one token release) releases publish through npm Trusted Publishing; the
+// token job stays only as a fallback, and the OIDC job stays gated by the repository variable.
+if (!workflow.includes("default: trusted-publisher")) {
+  throw new Error("releases must default to the Trusted Publisher job");
 }
-if (!workflow.includes("CLAWWRIGHT_ENABLE_TRUSTED_PUBLISHER")) {
-  throw new Error("the Trusted Publisher job must remain explicitly disabled");
+if (!workflow.includes("id-token: write") || !workflow.includes("vars.CLAWWRIGHT_ENABLE_TRUSTED_PUBLISHER == 'true'")) {
+  throw new Error("the Trusted Publisher job must request an OIDC token and stay gated by its repository variable");
 }
 
 process.stderr.write("package release metadata and legal files passed\n");

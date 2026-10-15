@@ -66,6 +66,12 @@ await writeDeployment(
   'throw new Error("fixture: intentionally broken");\n',
 );
 await writeDeployment("no-env", undefined); // app.ts but no .env at all
+// A .env that exists but does not parse: the refusal must reach the caller as the
+// parse error (file + line), never as the missing-.env advice.
+await writeDeployment(
+  "bad-env",
+  "OC_DATA_DIR=/srv/badenv/data\nOPENCLAW_GATEWAY_PORT=18099\nBROKEN LINE WITHOUT EQUALS\n",
+);
 await mkdir(resolve(root, "empty-dir"), { recursive: true });
 await mkdir(resolve(root, ".hidden"), { recursive: true });
 await writeDeployment("Bad_Name", undefined);
@@ -106,6 +112,7 @@ const byName = new Map(summaries.map((entry) => [entry.name, entry]));
 check("every fixture directory gets a row", [...byName.keys()].sort(), [
   "auto-target",
   "bad-digest",
+  "bad-env",
   "broken-app",
   "conn-error",
   "healthy",
@@ -170,6 +177,12 @@ check("a missing .env is an error row, not a thrown exception", byName.get("no-e
   reason: "no .env — run ./clawforge --app no-env bootstrap",
 });
 
+const badEnv = byName.get("bad-env");
+check("a malformed .env is an error row, not a thrown exception", badEnv?.state, "error");
+check("its reason names the fixture's .env path", badEnv?.reason?.includes(resolve(root, "bad-env", ".env")), true);
+check("its reason is the parse refusal, not the missing-.env advice", badEnv?.reason?.includes("bootstrap"), false);
+check("the row carries the structured parse refusal", badEnv?.envError, { code: "ENV_LINE_WITHOUT_EQUALS", line: 3 });
+
 check(
   "the active-deployment global is restored to what it was before list ran",
   selectedDeployment(),
@@ -222,7 +235,7 @@ check(
 // --- only directories with app.ts and a valid name are deployments ------------------------
 
 check("an empty, a hidden and an invalid-name directory are not deployments", await deploymentNames(root), [
-  "auto-target", "bad-digest", "broken-app", "conn-error", "healthy", "no-env", "not-bootstrapped", "unpinned",
+  "auto-target", "bad-digest", "bad-env", "broken-app", "conn-error", "healthy", "no-env", "not-bootstrapped", "unpinned",
 ]);
 const withOthers = await listDeployments({ appsRoot: root, checkStatus: false, includeOthers: true });
 check(

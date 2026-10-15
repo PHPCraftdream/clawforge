@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { log, info, maskSecrets } from "../core/io/log.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
-import { appsRootFor, monorepoRoot, parseEnv, toSettings, type Settings } from "../core/env.ts";
+import { appsRootFor, monorepoRoot, EnvSyntaxError, parseEnv, toSettings, type Settings } from "../core/env.ts";
 import { createContext, type Context } from "../core/context.ts";
 import { useDeployment, selectedDeployment } from "../runtime/deployment.ts";
 import { NotBootstrapped } from "../runtime/runtime.ts";
@@ -27,6 +27,8 @@ export interface DeploymentSummary {
   readonly pinned?: boolean;
   readonly state: "running" | "stopped" | "not-bootstrapped" | "unchecked" | "error";
   readonly reason?: string;
+  /** Set when the row's `.env` has a line without `=`: the parse refusal's code and line. */
+  readonly envError?: { readonly code: string; readonly line: number };
 }
 
 export interface ListDeploymentsOptions {
@@ -80,8 +82,14 @@ async function summarizeDeployment(
 ): Promise<DeploymentSummary> {
   let env: Record<string, string>;
   try {
-    env = parseEnv(await readFile(resolve(directory, ".env"), "utf8"));
-  } catch {
+    env = parseEnv(await readFile(resolve(directory, ".env"), "utf8"), resolve(directory, ".env"));
+  } catch (error) {
+    if (error instanceof EnvSyntaxError) {
+      return { name, state: "error", reason: maskSecrets(error.message), envError: { code: error.code, line: error.line } };
+    }
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      return { name, state: "error", reason: maskSecrets((error as Error).message) };
+    }
     return { name, state: "error", reason: `no .env — run ${commandLine(["bootstrap"], { app: name })}` };
   }
 

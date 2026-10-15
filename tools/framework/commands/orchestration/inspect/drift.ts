@@ -135,7 +135,7 @@ export async function observeConnectionFacts(
     // No .env — fresh-clone shape, not a finding.
     return undefined;
   }
-  const current = parseEnv(raw);
+  const current = parseEnv(raw, envFile());
   // From facts.ts, so inspect and recover-env can't disagree about what counts as stale.
   const stale = new Set(staleConnectionFacts(facts, current).map((entry) => entry.name));
   const unrecovered = new Set(unrecoverableConnectionFacts(facts).map((entry) => entry.name));
@@ -165,7 +165,7 @@ export async function observeSecretStore(
   } catch {
     return undefined;
   }
-  const values = parseEnv(raw);
+  const values = parseEnv(raw, store);
   const missing = secrets.filter(
     (entry) => entry.required && entry.present && (values[entry.name] ?? "").trim() === "",
   );

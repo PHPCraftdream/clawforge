@@ -99,16 +99,22 @@ export interface SetLoadOptions {
 /** Secret NAMES, derived from the declaration the set carries — never from a live instance
  *  (secrets.ts's requirements(ctx) reads openclaw.json ON THE TARGET, which a set must not
  *  need). Two sources, both traveling with the set: SecretRefs in desired-state.json, and
- *  config/secrets.template.env (names only, from `secrets --template`). The app's own
+ *  config/secrets.template.env (names only, from `secrets --template`; a template with a
+ *  line that has no `=` refuses the load with a structured EnvSyntaxError). The app's own
  *  secrets hook is deliberately not consulted (usually depends on live target state); the
  *  gateway token is absent too, since each target generates its own. */
 async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
   const names = collectSecretRefs(desiredState).map((ref) => ref.name);
+  let template: string;
   try {
-    names.push(...Object.keys(parseEnv(await readFile(secretsTemplateFile(), "utf8"))));
-  } catch {
+    template = await readFile(secretsTemplateFile(), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     // No template yet — `secrets --template` writes one.
+    return names;
   }
+  // Outside the catch: a malformed template must refuse with file + line, not be swallowed.
+  names.push(...Object.keys(parseEnv(template, secretsTemplateFile())));
   return names;
 }
 

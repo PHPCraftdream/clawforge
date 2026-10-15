@@ -4,7 +4,7 @@
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
-import { frameworkRoot, parseEnv, projectPort, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
+import { frameworkRoot, parseEnvLenient, projectPort, deploymentEnvText, type DeploymentEnv } from "../../core/env.ts";
 
 /** Ports claimed by sibling deployments (each subdirectory's own .env) under `scanDir`. */
 export async function usedPorts(scanDir: string): Promise<Set<number>> {
@@ -20,7 +20,8 @@ export async function usedPorts(scanDir: string): Promise<Set<number>> {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     try {
-      const env = parseEnv(await readFile(resolve(scanDir, entry.name, ".env"), "utf8"));
+      // Deliberately lenient: one deployment's broken .env must not break port listing for all.
+      const env = parseEnvLenient(await readFile(resolve(scanDir, entry.name, ".env"), "utf8"));
       const port = Number.parseInt(env.OPENCLAW_GATEWAY_PORT ?? "", 10);
       if (Number.isFinite(port)) ports.add(port);
     } catch {

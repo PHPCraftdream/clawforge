@@ -9,11 +9,13 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   ENV_FILE_ONLY_VARS,
+  EnvSyntaxError,
   monorepoRoot,
   locksDir,
   parseDiskMinFreeMb,
   parseDurationThreshold,
   parseEnv,
+  parseEnvLenient,
   readEnvValue,
   serializeEnvLine,
   shellOnlyEnvNames,
@@ -60,7 +62,55 @@ check(
   { KEY: "a=b=c" },
 );
 
-check("a line with no = is ignored", parseEnv("NOTANASSIGNMENT\nKEY=value"), { KEY: "value" });
+check(
+  "parseEnvLenient still skips a line with no = (old tolerant behavior, for scanning)",
+  parseEnvLenient("NOTANASSIGNMENT\nKEY=value"),
+  { KEY: "value" },
+);
+
+// Returns the structured refusal so each case can assert fields, never message prose.
+function refusedParseEnv(text: string, file?: string): EnvSyntaxError {
+  try {
+    parseEnv(text, file);
+  } catch (error) {
+    if (error instanceof EnvSyntaxError) return error;
+    throw error;
+  }
+  throw new Error("parseEnv did not throw");
+}
+
+// The typo that motivated the refusal: a missing `=` must surface, not silently drop
+// OC_DATA_DIR and die later on a seemingly unrelated "not set".
+{
+  const error = refusedParseEnv("OC_DATA_DIR /srv/x\nKEY=value");
+  check("a line with no = is refused as an EnvSyntaxError", error instanceof EnvSyntaxError, true);
+  check("a line with no = carries the structured code", error.code, "ENV_LINE_WITHOUT_EQUALS");
+  check("a line with no = names the 1-based line as a number", error.line, 1);
+  check("a line with no = has no file when none was passed", error.file, undefined);
+}
+{
+  const error = refusedParseEnv("SECRETMARKER-VALUE\nKEY=value", "/srv/app/.env");
+  check("a refused line names the file as a structured field", error.file, "/srv/app/.env");
+  check("a refused line never echoes the line's content", error.message.includes("SECRETMARKER"), false);
+}
+{
+  const error = refusedParseEnv("KEY=value\nOC_DATA_DIR /srv/x", "/srv/app/.env");
+  check("a refused line names the 1-based line as a number", error.line, 2);
+  check("a refused line never echoes the line's content", error.message.includes("/srv/x"), false);
+}
+{
+  let thrown: unknown;
+  try {
+    readEnvValue("BROKEN\n", "K", "/p/.env");
+  } catch (error) {
+    thrown = error;
+  }
+  const error = thrown instanceof EnvSyntaxError ? thrown : undefined;
+  check("readEnvValue propagates the structured refusal", error instanceof EnvSyntaxError, true);
+  check("readEnvValue's refusal carries the structured code", error?.code, "ENV_LINE_WITHOUT_EQUALS");
+  check("readEnvValue's refusal names the file it was given", error?.file, "/p/.env");
+  check("readEnvValue's refusal names the 1-based line as a number", error?.line, 1);
+}
 
 check("KEY= with an empty value is kept as an empty string", parseEnv("KEY="), { KEY: "" });
 
@@ -85,7 +135,6 @@ check(
       "OC_DATA_DIR=/srv/openclaw/data",
       'OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:extended-stable"',
       "OC_SSH_HOST=",
-      "STRAY LINE WITH NO EQUALS",
       "QUERY=a=b&c=d",
     ].join("\n"),
   ),

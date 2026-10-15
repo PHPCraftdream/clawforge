@@ -324,7 +324,7 @@ async function readTargetSecrets(ctx: Context, path: string): Promise<string> {
 export async function statusForRequirements(ctx: Context, needed: SecretRequirement[]): Promise<SecretStatus[]> {
   const targetPath = `${ctx.settings.dataDir}/config/.env`;
   const targetEnv = (await ctx.transport.exists(targetPath))
-    ? parseEnv(await readTargetSecrets(ctx, targetPath))
+    ? parseEnv(await readTargetSecrets(ctx, targetPath), targetPath)
     : {};
 
   return needed.map((entry) => {

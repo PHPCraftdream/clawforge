@@ -440,7 +440,7 @@ async function stageSnapshotSidecars(ctx: Context, paths: PullPaths, profile: Pr
 
   const secrets = await dumpSecrets(ctx);
   const requiredTarget = needed.filter((entry) => entry.location === "target-env" && entry.required);
-  const values = secrets === undefined ? {} : parseEnv(secrets);
+  const values = secrets === undefined ? {} : parseEnv(secrets, secretsFileOnTarget(ctx));
   const absent = requiredTarget.filter((entry) => values[entry.name] === undefined || values[entry.name]?.trim() === "");
   if (absent.length > 0) {
     for (const entry of absent) warn(`${secretsFileOnTarget(ctx)} has no value for ${entry.name} (${entry.usedBy})`);

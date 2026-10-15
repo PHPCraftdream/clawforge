@@ -195,7 +195,7 @@ export async function rotateToken(ctx: Context, options: IncidentOptions): Promi
   const notes: string[] = [];
   const path = envFile();
   const content = await readEnvFileText();
-  const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN")?.trim();
+  const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN", path)?.trim();
 
   if (current === undefined || current === "") {
     actions.push(`no OPENCLAW_GATEWAY_TOKEN configured — ${NOTHING_TO_ROTATE}`);

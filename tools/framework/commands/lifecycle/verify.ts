@@ -220,7 +220,7 @@ async function collectSecrets(ctx: Context): Promise<{ critical: string[]; ident
   // turns the check into noise.
   const secretsPath = `${ctx.settings.dataDir}/config/.env`;
   if (await ctx.transport.exists(secretsPath)) {
-    for (const value of Object.values(parseEnv(await ctx.transport.readFile(secretsPath)))) {
+    for (const value of Object.values(parseEnv(await ctx.transport.readFile(secretsPath), secretsPath))) {
       if (value.length >= 12) critical.push(value);
     }
   }

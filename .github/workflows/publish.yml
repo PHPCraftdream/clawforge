@@ -10,9 +10,9 @@ on:
         required: true
         type: choice
         options:
-          - token
           - trusted-publisher
-        default: token
+          - token
+        default: trusted-publisher
 
 permissions:
   contents: read

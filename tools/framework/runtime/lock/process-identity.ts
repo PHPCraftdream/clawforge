@@ -1,4 +1,5 @@
 import { readlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -6,6 +7,14 @@ import { promisify } from "node:util";
 import type { Context } from "../../core/context.ts";
 
 const execFileAsync = promisify(execFile);
+
+/** Injectable for probe-level checks: the real defaults call the OS. */
+export const probeSeams = {
+  run: (cmd: string, args: string[], opts: { timeout?: number; windowsHide?: boolean }): Promise<{ stdout: string }> =>
+    execFileAsync(cmd, args, opts),
+  readText: (path: string) => readFile(path, "utf8"),
+  platform: () => process.platform,
+};
 
 // Whether a pid this framework recorded is still the process that recorded it — shared here
 // since every pid clawforge writes into a lock/guard file is this tool's own process.pid,
@@ -39,13 +48,13 @@ export function ownProcessStartedAt(): string {
   return new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString();
 }
 
-/** WMIC's DMTF wall clock has an explicit signed UTC offset in minutes. Only a single,
- *  complete CreationDate proves a birth time; wildcards or partial output prove nothing. */
-export function parseWindowsProcessStartedAt(stdout: string): string | undefined {
+/** WMIC's DMTF wall clock has an explicit signed UTC offset in minutes. Only a single, complete
+ *  `<key>=` value proves a birth time; wildcards or partial output prove nothing. */
+export function parseWindowsProcessStartedAt(stdout: string, key = "CreationDate"): string | undefined {
   const values = stdout.split(/\r?\n/).map((line) => line.trim())
-    .filter((line) => line.startsWith("CreationDate="));
+    .filter((line) => line.startsWith(`${key}=`));
   if (values.length !== 1) return undefined;
-  const match = /^CreationDate=(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.(\d{6})([+-])(\d{3})$/.exec(values[0]!);
+  const match = new RegExp(`^${key}=(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})\\.(\\d{6})([+-])(\\d{3})$`).exec(values[0]!);
   if (match === null) return undefined;
   const year = Number(match[1]);
   const month = Number(match[2]);
@@ -69,7 +78,8 @@ export function parseWindowsProcessStartedAt(stdout: string): string | undefined
 /** Best-effort: when the process currently holding `pid` on this machine actually started,
  *  used only to catch pid reuse. Undefined when the platform tool is unavailable or its
  *  output cannot be parsed — the caller must then fall back to treating the process as alive
- *  rather than risk calling a live one dead. */
+ *  rather than risk calling a live one dead. Left un-seamed: it predates probeSeams and has
+ *  no probe-level check of its own. */
 async function queryProcessStartedAt(pid: number): Promise<string | undefined> {
   try {
     if (process.platform === "win32") {
@@ -84,9 +94,159 @@ async function queryProcessStartedAt(pid: number): Promise<string | undefined> {
   }
 }
 
+/** Shared bound for the Windows probes below: a hung powershell/wmic must not stall a lock
+ *  decision, and the console window must not flash on desktop runs. */
+const BOUNDED = { timeout: 10_000, windowsHide: true } as const;
+
+/** Whole-second ISO in UTC — the canonical boot identity spelling. Rejects calendar
+ *  impossibilities (Feb 30) via the round trip, not just the shape. */
+const WHOLE_SECOND_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+function wholeSecondIso(iso: string): string | undefined {
+  if (!Number.isFinite(Date.parse(iso))) return undefined;
+  const v = new Date(iso).toISOString().slice(0, 19) + "Z";
+  // The input itself must already name that second: a normalized impossible date (Feb 30 ->
+  // Mar 2) is a different instant, never a trusted key.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(iso) && iso.slice(0, 19) + "Z" !== v) return undefined;
+  return WHOLE_SECOND_ISO.test(v) && new Date(v).toISOString().slice(0, 19) + "Z" === v ? v : undefined;
+}
+
+/** A native answer only when its key has the strict per-source form; otherwise no identity. */
+function nativeAnswer(startedAt: string | undefined, prefix: "tick" | "win" | "mac", value: string | undefined): ProcessStartIdentity | undefined {
+  if (value === undefined) return undefined;
+  if (prefix === "tick" ? !/^[1-9][0-9]{0,15}$/.test(value) : !WHOLE_SECOND_ISO.test(value)) return undefined;
+  return { startedAt, key: `${prefix}:${value}`, source: "native" };
+}
+
+/** The boot this process runs in, as one canonical `linux:<uuid>` / `win:<iso>` / `mac:<iso>`
+ *  id. Linux/WSL reads /proc/sys/kernel/random/boot_id; Windows prefers the OS boot time via
+ *  CIM (wmic as fallback); macOS uses kern.boottime. Undefined when the platform cannot answer
+ *  — a caller must never read undefined as "a different boot".
+ *
+ *  A recorded host equal to machineName() already proves same machine AND same pid namespace
+ *  (machineName() encodes `:linux-<ns>`); this adds only WHICH boot, the one thing a host
+ *  match cannot prove. */
+const BOOT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+// Invariant per process run: the boot never changes, and this process's own native start
+// identity never changes. Memoize successes only — a transient probe failure (e.g. powershell
+// busy) must stay retryable, and an "approximate" fallback must be re-probed.
+let cachedBootIdentity: string | undefined;
+let cachedSelfStartIdentity: ProcessStartIdentity | undefined;
+
+async function probeBootIdentity(): Promise<string | undefined> {
+  if (probeSeams.platform() === "linux") {
+    const bootId = (await probeSeams.readText("/proc/sys/kernel/random/boot_id")).trim().toLowerCase();
+    return BOOT_ID_PATTERN.test(bootId) ? `linux:${bootId}` : undefined;
+  }
+    if (probeSeams.platform() === "win32") {
+      try {
+        const { stdout } = await probeSeams.run("powershell", ["-NoProfile", "-Command",
+          "((Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')"], BOUNDED);
+        const v = stdout.trim();
+        if (WHOLE_SECOND_ISO.test(v) && Number.isFinite(Date.parse(v)) &&
+            new Date(v).toISOString().slice(0, 19) + "Z" === v) return `win:${v}`;
+      } catch { /* fall through to wmic */ }
+      const { stdout } = await probeSeams.run("wmic", ["os", "get", "LastBootUpTime", "/value"], BOUNDED);
+      const iso = parseWindowsProcessStartedAt(stdout, "LastBootUpTime");
+      if (iso === undefined) return undefined;
+      const v = wholeSecondIso(iso);
+      return v === undefined ? undefined : `win:${v}`;
+    }
+    if (probeSeams.platform() === "darwin") {
+      const { stdout } = await probeSeams.run("sysctl", ["-n", "kern.boottime"], BOUNDED);
+      const match = /\{\s*sec\s*=\s*(\d+)/.exec(stdout);
+      if (match === null) return undefined;
+      const v = wholeSecondIso(new Date(Number(match[1]) * 1000).toISOString());
+      return v === undefined ? undefined : `mac:${v}`;
+    }
+    return undefined;
+}
+
+/** Success-only memoization: undefined (transient failure) stays retryable. */
+async function queryBootIdentity(): Promise<string | undefined> {
+  if (cachedBootIdentity === undefined) {
+    try { cachedBootIdentity = await probeBootIdentity(); } catch { /* retry next call */ }
+  }
+  return cachedBootIdentity;
+}
+
+/** What the platform itself says about when the process now holding `pid` started. `key` is
+ *  the native identity when the platform gives one; `source: "approximate"` means only the
+ *  uptime fallback answered, so callers must apply the start-time tolerance. `startedAt` is
+ *  absent on a foreign-pid Linux answer (the tick key is native, no wall time is); on the
+ *  approximate source it is only ever this querying process's own start time, so it exists
+ *  ONLY for the current process's own pid. Never throws: a failed probe for ANOTHER pid
+ *  returns undefined — an approximate answer would be our own start time, which can never
+ *  prove that pid dead. Only the current process's own pid gets the approximate fallback,
+ *  at claim time. */
+export interface ProcessStartIdentity {
+  readonly startedAt?: string;
+  readonly key?: string;
+  readonly source: "native" | "approximate";
+}
+
+async function queryProcessStartIdentity(pid: number): Promise<ProcessStartIdentity | undefined> {
+  // This process's own native start identity cannot change while it runs — cache it. Only a
+  // "native" answer is cached: "approximate" (uptime-based) may still improve, so re-probe.
+  if (pid === process.pid && cachedSelfStartIdentity !== undefined) return cachedSelfStartIdentity;
+  const result = await queryProcessStartIdentityUncached(pid);
+  if (result !== undefined) {
+    if (pid === process.pid && result.source === "native") cachedSelfStartIdentity = result;
+    return result;
+  }
+  // A failed probe for ANOTHER pid is no identity at all — an approximate answer would be
+  // the querying process's own start time, which can never prove that pid dead.
+  if (pid !== process.pid) return undefined;
+  return { startedAt: ownProcessStartedAt(), source: "approximate" };
+}
+
+async function queryProcessStartIdentityUncached(pid: number): Promise<ProcessStartIdentity | undefined> {
+  try {
+    if (probeSeams.platform() === "linux") {
+      // lastIndexOf(")") guards a comm field containing spaces; starttime is field 22,
+      // i.e. index 19 after comm.
+      const raw = await probeSeams.readText(`/proc/${pid}/stat`);
+      const close = raw.lastIndexOf(")");
+      const fields = raw.slice(close + 2).split(" ");
+      const ticks = fields[19];
+      if (close > 0 && ticks !== undefined) {
+        // No wall time exists for a foreign pid from ticks alone; own pid knows its own.
+        const startedAt = pid === process.pid ? ownProcessStartedAt() : undefined;
+        return nativeAnswer(startedAt, "tick", ticks);
+      }
+    } else if (probeSeams.platform() === "win32") {
+      try {
+        const { stdout } = await probeSeams.run("powershell", ["-NoProfile", "-Command",
+          `((Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CreationDate).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')`],
+        BOUNDED);
+        const v = stdout.trim();
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v))) {
+          return nativeAnswer(v, "win", wholeSecondIso(v));
+        }
+      } catch { /* fall through to wmic */ }
+      const { stdout } = await probeSeams.run("wmic", ["process", "where", `ProcessId=${pid}`, "get", "CreationDate", "/value"], BOUNDED);
+      const iso = parseWindowsProcessStartedAt(stdout);
+      if (iso !== undefined) return nativeAnswer(iso, "win", wholeSecondIso(iso));
+    } else {
+      const { stdout } = await probeSeams.run("ps", ["-o", "lstart=", "-p", String(pid)], BOUNDED);
+      const parsed = Date.parse(stdout.trim());
+      if (!Number.isNaN(parsed)) {
+        const iso = new Date(parsed).toISOString();
+        return nativeAnswer(iso, "mac", wholeSecondIso(iso));
+      }
+    }
+  } catch { /* a failed probe proves nothing — undefined below */ }
+  return undefined;
+}
+
 /** Swappable for checks: spawning a real child process to answer "when did this start" is
  *  exactly what a unit check must not do to stay deterministic and fast. */
-export const platformProbes = { processStartedAt: queryProcessStartedAt };
+export const platformProbes = {
+  processStartedAt: queryProcessStartedAt,
+  bootIdentity: queryBootIdentity,
+  processStartIdentity: queryProcessStartIdentity,
+};
 
 export type Liveness = "alive" | "dead" | "unknown";
 

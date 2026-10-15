@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../../core/env.ts";
 import { log, die } from "../../core/io/log.ts";
-import { machineName, localLiveness, ownProcessStartedAt, removeEmptyDirectory } from "./process-identity.ts";
+import { machineName, localLiveness, ownProcessStartedAt, removeEmptyDirectory, platformProbes, START_TIME_TOLERANCE_MS, type ProcessStartIdentity } from "./process-identity.ts";
 import type { Context } from "../../core/context.ts";
 
 /** Legacy fallback: judges staleness for a holder with no `heartbeatAt` (pre-field record).
@@ -40,6 +40,16 @@ export interface LockHolder {
   readonly pid?: number;
   /** Approximate start time, recorded to catch pid reuse. */
   readonly startedAt?: string;
+  /** Native owner-start identity when the platform gives one ("tick:<n>" / "win:<iso>" /
+   *  "mac:<iso>"); absent on approximate records and legacy records. */
+  readonly startKey?: string;
+  /** Whether `startedAt` came from the platform's own process record ("native") or the
+   *  uptime approximation ("approximate"). */
+  readonly startSource?: "native" | "approximate";
+  /** This boot's identity (platformProbes.bootIdentity()), recorded at acquisition. Absent on
+   *  records written before this field existed; those never qualify for automatic takeover.
+   *  Optional so an old reader still parses a new record, and a new reader refuses an old one. */
+  readonly bootId?: string;
   /** Last time the holder proved it is alive, refreshed on interval, set at acquisition too.
    *  Absent on a legacy record; isStale() then falls back to `takenAt`. */
   readonly heartbeatAt?: string;
@@ -96,7 +106,10 @@ export function readLockOwnerIdentity(value: unknown): LockOwnerIdentity | undef
       !safeOwnerHost(holder.host) || !Number.isSafeInteger(holder.pid) || (holder.pid ?? 0) <= 0 ||
       (Object.hasOwn(holder, "startedAt") && !validTimestamp(holder.startedAt)) ||
       (Object.hasOwn(holder, "heartbeatAt") && !validTimestamp(holder.heartbeatAt)) ||
-      (Object.hasOwn(holder, "generation") && !validGeneration(holder.generation))) return undefined;
+      (Object.hasOwn(holder, "generation") && !validGeneration(holder.generation)) ||
+      (Object.hasOwn(holder, "startKey") && !validStartKey(holder.startKey)) ||
+      (Object.hasOwn(holder, "startSource") &&
+        holder.startSource !== "native" && holder.startSource !== "approximate")) return undefined;
   // Historical by cannot accompany a modern generation or contradict structured identity.
   // Modern :scope display strings do not match the historical grammar.
   const historical = historicalByIdentity(holder.by);
@@ -127,6 +140,84 @@ function isProvablyDeadHere(holder: LockHolder): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "ESRCH";
   }
+}
+
+/** One canonical boot-id form per source: `linux:<uuid>` (strict lowercase) or
+ *  `win:<iso>` / `mac:<iso>` (whole-second UTC). A record whose bootId fails this validation
+ *  is NOT proof of anything and refuses exactly as before. */
+const BOOT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const BOOT_TIME = /^(win|mac):(20\d{2}|[1-9]\d{3})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\dZ$/;
+
+function validBootId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (value.startsWith("linux:")) return BOOT_UUID.test(value.slice(6));
+  const time = BOOT_TIME.exec(value);
+  return time !== null && Number.isFinite(Date.parse(value.slice(4))) &&
+    new Date(value.slice(4)).toISOString().slice(0, 19) + "Z" === value.slice(4);
+}
+
+const START_TICK_KEY = /^tick:[1-9][0-9]{0,15}$/;
+
+function validStartKey(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (START_TICK_KEY.test(value)) return true;
+  const time = BOOT_TIME.exec(value);            // BOOT_TIME already pins win|mac + whole-second shape
+  return time !== null && Number.isFinite(Date.parse(value.slice(4))) &&
+    new Date(value.slice(4)).toISOString().slice(0, 19) + "Z" === value.slice(4);
+}
+
+const SOURCE_PREFIX = /^([a-z]+):/;
+
+function bootSource(id: string): string { return SOURCE_PREFIX.exec(id)?.[1] ?? id; }
+
+function keySource(id: string): string { return SOURCE_PREFIX.exec(id)?.[1] ?? id; }
+
+export interface DeathProof {
+  readonly proven: boolean;
+  readonly reason?: "rebooted" | "process-gone" | "pid-reused";
+}
+
+/** Proof requires the recorded boot to differ (the machine rebooted since the claim) or, on the
+ *  same boot, the pid to be gone or its start time to disagree (pid reuse); anything less keeps
+ *  today's refusal. Never kills or signals anything beyond the permission-check `kill(pid, 0)`
+ *  already used for liveness. */
+export async function proveOwnerDead(holder: LockHolder): Promise<DeathProof> {
+  // Host match proves same machine AND same pid namespace — machineName() already encodes
+  // `:linux-<ns>`; platforms without namespaces have none to mismatch.
+  const identity = readLockOwnerIdentity(holder);
+  if (identity === undefined || !isLocalLockOwner(identity)) return { proven: false };
+  // Legacy/partial record: exactly today's refusal.
+  if (!validTimestamp(holder.startedAt) || !validBootId(holder.bootId)) return { proven: false };
+  // Probe failure never proves death.
+  const currentBoot = await platformProbes.bootIdentity();
+  if (currentBoot === undefined) return { proven: false };
+  // Only same-source boot identities may be compared; never across linux/win/mac.
+  if (bootSource(currentBoot) !== bootSource(holder.bootId!)) return { proven: false };
+  if (currentBoot !== holder.bootId) return { proven: true, reason: "rebooted" };
+  try {
+    process.kill(identity.pid, 0);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH" ? { proven: true, reason: "process-gone" } : { proven: false };
+  }
+  // Pid exists: its start identity disagreeing with the record means a reused pid. Doubt —
+  // a failed probe, a malformed record, sources that cannot be compared — is never proof.
+  const actual = await platformProbes.processStartIdentity(identity.pid);
+  if (holder.startKey !== undefined) {
+    // A native record may only be settled by a native answer on BOTH sides; a malformed
+    // record key is doubt, never a fall back to the approximate comparison.
+    if (holder.startSource !== "native" || !validStartKey(holder.startKey)) return { proven: false };
+    if (actual === undefined || actual.source !== "native" || actual.key === undefined || !validStartKey(actual.key)) return { proven: false };
+    if (keySource(holder.startKey) !== keySource(actual.key)) return { proven: false };
+    return holder.startKey === actual.key ? { proven: false } : { proven: true, reason: "pid-reused" };
+  }
+  // No native key on record: a native answer about the pid alone cannot be compared with an
+  // approximate record — native on one side only is not proof. Without an owner start
+  // identity at all, proof is impossible → refuse.
+  if (holder.startSource !== "approximate") return { proven: false };
+  if (actual === undefined || actual.source !== "approximate" || actual.key !== undefined || actual.startedAt === undefined) return { proven: false };
+  // Both sides explicitly approximate: the 15 s tolerance stays.
+  const drift = Math.abs(Date.parse(actual.startedAt) - Date.parse(holder.startedAt!));
+  return Number.isNaN(drift) || drift <= START_TIME_TOLERANCE_MS ? { proven: false } : { proven: true, reason: "pid-reused" };
 }
 
 /** The lock itself is a DIRECTORY: `mkdir` on an existing path fails atomically on every
@@ -469,6 +560,21 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
   }
 
   if (options.breakLock !== true) {
+    // Metadata takeover has its own authorization; automatic takeover is not it.
+    if (options.expectedOwner === undefined && existing !== undefined) {
+      const proof = await proveOwnerDead(existing);
+      if (proof.proven) {
+        const takeover = await claimTakeover(ctx, existing);
+        if (!takeover.won) {
+          die(
+            `could not take over the instance lock at ${lockPath(ctx)}: ${takeover.detail === "" ? "the lock changed during takeover" : takeover.detail}\n` +
+              TAKEOVER_LOST_LINE,
+          );
+        }
+        log(`taking over the lock held by ${existing.what} (${existing.operationId}) — owner proven dead (${proof.reason}); no --break-lock required`);
+        return;
+      }
+    }
     // An existing directory with no readable holder is still someone's — most likely a run
     // that won it and died before writing its name. Refusing is the safe reading.
     die(
@@ -505,7 +611,7 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
 }
 
 /** Mints this acquisition's identity — a fresh random generation, before its first command. */
-export function mintHolder(what: string, operationId: string): { generation: string; holder: LockHolder } {
+export function mintHolder(what: string, operationId: string, bootId?: string, start?: ProcessStartIdentity): { generation: string; holder: LockHolder } {
   const generation = randomBytes(12).toString("hex");
   const takenAt = new Date().toISOString();
   const holder: LockHolder = {
@@ -516,7 +622,10 @@ export function mintHolder(what: string, operationId: string): { generation: str
     generation,
     host: machineName(),
     pid: process.pid,
-    startedAt: ownProcessStartedAt(),
+    startedAt: start?.startedAt ?? ownProcessStartedAt(),
+    ...(start?.key === undefined ? {} : { startKey: start.key }),
+    ...(start === undefined ? {} : { startSource: start.source }),
+    ...(bootId === undefined ? {} : { bootId }),
     // Set at acquisition, not left for the first tick, so the lock never looks pre-heartbeat.
     heartbeatAt: takenAt,
   };

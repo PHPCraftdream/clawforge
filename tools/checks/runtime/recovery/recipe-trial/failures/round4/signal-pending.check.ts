@@ -117,7 +117,9 @@ async function sshWait(secondSignal: boolean): Promise<void> {
     } else {
       await run;
       check("SSH signal exit", exitCode, 130);
-      check("SSH target wait respects the watchdog duration", Date.now() - signalAt >= 120, true);
+      // Node timers may fire up to ~1 ms early against Date.now() (libuv caches and truncates
+      // the loop time), so the bound allows the clock's granularity, not a shorter wait.
+      check("SSH target wait respects the watchdog duration", Date.now() - signalAt >= 120 - 2, true);
       checkTrue("late mutation happened before cleanup", events.indexOf("remote-late-create") < events.indexOf("cleanup"));
       checkTrue("late resource was created and removed", events.includes("remote-late-create") && events.includes("cleanup") && !resource);
     }

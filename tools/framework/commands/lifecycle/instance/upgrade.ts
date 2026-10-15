@@ -30,14 +30,14 @@ export function settingsImageRefusal(value: string): string {
 export const UPGRADE_ARGUMENTS = [
   {
     name: "image",
-    summary: "Upgrade to this image, not the deployment's OPENCLAW_IMAGE",
+    summary: "Image to upgrade to",
     description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE",
     kind: "option",
     valueName: "ref",
     value: kinds.image(),
   },
-  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag", effect: "read" },
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "dry-run", description: "Plan only", kind: "flag", effect: "read" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
   ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 

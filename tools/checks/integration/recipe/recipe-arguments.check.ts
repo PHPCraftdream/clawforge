@@ -10,7 +10,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string> {
   try {
@@ -48,6 +48,13 @@ function stubContext(): Context {
         if (command === "test" && args[0] === "-d") {
           return { code: dirs.has(args[1]) ? 0 : 1, stdout: "", stderr: "" };
         }
+        // `recipe trial --dry-run` evaluates the base compose config on the target (a
+        // read-only `docker compose config --format json`), directly or through the
+        // recipe-docker wrapper: answer with an empty effective document.
+        const docker = command === "docker" ? args : args[2] === "recipe-docker" ? args.slice(3) : undefined;
+        if (docker !== undefined && docker.includes("config")) return { code: 0, stdout: '{"services":{}}', stderr: "" };
+        // The trial's version requirement probe (Compose v2.24+): answer with a new-enough version.
+        if (docker !== undefined && docker.includes("version")) return { code: 0, stdout: "v2.27.1\n", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
       async readFile(): Promise<string> {
@@ -72,6 +79,14 @@ function stubContext(): Context {
         };
       },
     },
+    // The trial action resolves definitions through the PathBridge: a synthetic canonical
+    // target path per recipe, never a host path from this machine.
+    paths: {
+      async toTarget(toolPath: string): Promise<string> {
+        const { basename, dirname } = await import("node:path");
+        return `/srv/recipes/${basename(dirname(toolPath))}/compose.yml`;
+      },
+    },
   } as unknown as Context;
 }
 
@@ -80,6 +95,7 @@ const scratch = resolve(tmpdir(), `clawforge-recipe-arguments-check-${Date.now()
 try {
   await mkdir(resolve(scratch, "plain"), { recursive: true });
   await writeFile(resolve(scratch, "plain", "recipe.json"), JSON.stringify({ description: "A plain recipe" }), "utf8");
+  await writeFile(resolve(scratch, "plain", "compose.yml"), "services: {}\n", "utf8");
   useRecipesDir(scratch);
   useDeployment(resolve(scratch, "example-deployment"));
 
@@ -134,6 +150,30 @@ try {
     removeThrew = true;
   }
   check("recipe remove --volumes (a flag it actually reads) is accepted", removeThrew, false);
+
+  // --- trial: <name> plus --dry-run, nothing else ----------------------------------------------
+
+  const trialBogus = await messageOf("recipe trial refuses an undeclared flag", () =>
+    withOutputSink(() => {}, () => recipe(ctx, ["trial", "plain", "--bogus"])),
+  );
+  check("the refusal names the flag", trialBogus.includes("--bogus"), true);
+  check("the refusal is the parser's unknown-argument form", /unknown.argument/.test(trialBogus), true);
+
+  const trialNameless = await messageOf("recipe trial refuses to run without a name", () =>
+    withOutputSink(() => {}, () => recipe(ctx, ["trial"])),
+  );
+  checkTrue("the missing-name refusal is an argument error, not a run", trialNameless.length > 0);
+  checkTrue("the missing-name refusal is not an unknown action", !/unknown.action/.test(trialNameless));
+
+  let trialDryRan = false;
+  try {
+    const chunks: string[] = [];
+    await withOutputSink((chunk) => chunks.push(chunk), () => recipe(ctx, ["trial", "plain", "--dry-run"]));
+    trialDryRan = chunks.some((chunk) => chunk.includes('"dryRun":true') && chunk.includes('"recipe":"plain"'));
+  } catch {
+    trialDryRan = false;
+  }
+  check("recipe trial --dry-run is accepted and prints the plan", trialDryRan, true);
 
   // --- unknown action: a typo gets the same treatment an unknown flag already does ----------
 

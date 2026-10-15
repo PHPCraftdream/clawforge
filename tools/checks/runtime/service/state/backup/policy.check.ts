@@ -143,48 +143,76 @@ async function posixTransport(): Promise<Transport | undefined> {
   return undefined;
 }
 
-await requires("local-posix", "real GNU tar profiles over a real POSIX filesystem", async () => {
-const transport = await posixTransport();
-if (transport === undefined) {
-  // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
-  check("real GNU tar profiles: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
-} else {
+// The two profiles are independent (separate fixture roots; the shared transport and the
+// shared runtime stub are stateless), so they run concurrently — the per-invocation cost of
+// every shell spawn through the transport dominates this file's wall time.
+// The sink is a module global, so sink-wrapped work from the two concurrent profiles must
+// not interleave — serialized through a promise chain; setup/cleanup stay concurrent.
+let sinkQueue: Promise<unknown> = Promise.resolve();
+function serially<T>(job: () => Promise<T>): Promise<T> {
+  const run = sinkQueue.then(job);
+  sinkQueue = run.catch(() => {});
+  return run;
+}
+
+function assertExec(command: string, args: string[], result: { code: number; stderr: string }): void {
+  if (result.code !== 0) throw new Error(`fixture setup failed (${command} ${args.join(" ")}): exit ${result.code}${result.stderr.trim() === "" ? "" : `: ${result.stderr.trim()}`}`);
+}
+
+async function runRealTarProfile(profile: "migrate" | "share", transport: Transport): Promise<void> {
   const runtime = {
     async isRunning(): Promise<boolean> { return false; },
     async pause(): Promise<void> {},
     async start(): Promise<void> { throw new Error("backup fixture must not start a runtime"); },
     async waitForHealth(): Promise<void> {},
   };
-  for (const profile of ["migrate", "share"] as const) {
-    const root = `/tmp/clawforge-backup-glob-${randomBytes(4).toString("hex")}`;
-    const dataDir = `${root}/data[1]`;
-    const backupDir = `${root}/backups`;
-    try {
-      await transport.mkdirp(`${dataDir}/config/logs`);
-      await transport.mkdirp(`${dataDir}/workspace`);
-      await transport.writeFile(`${dataDir}/config/openclaw.json`, "{}\n");
-      await transport.writeFile(`${dataDir}/config/.env`, "PROVIDER_KEY=synthetic-backup-secret-value\n");
-      await transport.writeFile(`${dataDir}/config/logs/fixture.log`, "synthetic log\n");
-      await transport.writeFile(`${dataDir}/workspace/SOUL.md`, "fixture\n");
-      await transport.writeFile(`${dataDir}/config/openclaw.json.bak-old`, "synthetic backup\n");
-      const ctx = {
-        settings: { dataDir, backupDir, env: { OC_BACKUP_KEEP: "10" } },
-        transport,
-        runtime,
-      } as unknown as Context;
-      const archive = await withOutputSink(() => {}, () => createBackup(ctx, { profile }));
-      const entries = await listArchive(ctx, archive);
-      check(`real tar ${profile} backup passes policy before publication`, archive.endsWith(`-${profile}.tar.gz`), true);
-      check(`real tar ${profile} excludes provider env under data[1]`, entries.some((entry) => entry.includes(".env")), false);
-      check(`real tar ${profile} excludes logs under data[1]`, entries.some((entry) => entry.includes("/logs/")), false);
-      check(`real tar ${profile} excludes config backups under data[1]`, entries.some((entry) => entry.endsWith("openclaw.json.bak-old")), false);
-      check(`real tar ${profile} keeps allowed workspace content`, entries.some((entry) => entry.endsWith("workspace/SOUL.md")), true);
-    } catch (error) {
-      check(`real tar ${profile} policy-checked backup succeeds`, (error as Error).message, "");
-    } finally {
-      await transport.remove(root).catch(() => {});
-    }
+  const root = `/tmp/clawforge-backup-glob-${randomBytes(4).toString("hex")}`;
+  const dataDir = `${root}/data[1]`;
+  const backupDir = `${root}/backups`;
+  try {
+    // The fixture tree in ONE shell invocation: each spawn of the transport's shell is expensive.
+    // Paths are single-quoted, so `data[1]` stays literal.
+    const script = `set -e
+mkdir -p '${dataDir}/config/logs' '${dataDir}/workspace'
+printf '{}\\n' > '${dataDir}/config/openclaw.json'
+printf 'PROVIDER_KEY=synthetic-backup-secret-value\\n' > '${dataDir}/config/.env'
+printf 'synthetic log\\n' > '${dataDir}/config/logs/fixture.log'
+printf 'fixture\\n' > '${dataDir}/workspace/SOUL.md'
+printf 'synthetic backup\\n' > '${dataDir}/config/openclaw.json.bak-old'
+`;
+    assertExec("sh", ["-c", script], await transport.exec("sh", [
+      "-c",
+      script,
+    ]));
+    check(`real tar ${profile} fixture created the exclusion targets`, await transport.exists(`${dataDir}/config/.env`) && await transport.exists(`${dataDir}/config/openclaw.json.bak-old`) && await transport.exists(`${dataDir}/config/logs/fixture.log`), true);
+    const ctx = {
+      settings: { dataDir, backupDir, env: { OC_BACKUP_KEEP: "10" } },
+      transport,
+      runtime,
+    } as unknown as Context;
+    const { archive, entries } = await serially(async () => {
+      const created = await withOutputSink(() => {}, () => createBackup(ctx, { profile }));
+      return { archive: created, entries: await listArchive(ctx, created) };
+    });
+    check(`real tar ${profile} backup passes policy before publication`, archive.endsWith(`-${profile}.tar.gz`), true);
+    check(`real tar ${profile} excludes provider env under data[1]`, entries.some((entry) => entry.includes(".env")), false);
+    check(`real tar ${profile} excludes logs under data[1]`, entries.some((entry) => entry.includes("/logs/")), false);
+    check(`real tar ${profile} excludes config backups under data[1]`, entries.some((entry) => entry.endsWith("openclaw.json.bak-old")), false);
+    check(`real tar ${profile} keeps allowed workspace content`, entries.some((entry) => entry.endsWith("workspace/SOUL.md")), true);
+  } catch (error) {
+    check(`real tar ${profile} policy-checked backup succeeds`, (error as Error).message, "");
+  } finally {
+    await transport.remove(root).catch(() => {});
   }
+}
+
+await requires("local-posix", "real GNU tar profiles over a real POSIX filesystem", async () => {
+const transport = await posixTransport();
+if (transport === undefined) {
+  // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
+  check("real GNU tar profiles: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
+} else {
+  await Promise.all([runRealTarProfile("migrate", transport), runRealTarProfile("share", transport)]);
 }
 });
 

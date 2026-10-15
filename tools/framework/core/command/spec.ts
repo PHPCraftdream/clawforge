@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import type { AppCommand, CommandArgument, CommandGroup } from "#src/core/app.ts";
 import { argumentsView } from "#src/core/command/view.ts";
 import { parseCall, type CallShape } from "#src/core/command/parse/index.ts";
-import { shapeProfile, type EffectShape } from "#src/core/command/effect.ts";
+import { shapeProfile, type EffectOf, type EffectShape } from "#src/core/command/effect.ts";
 import { serviceOf, type Context } from "#src/core/context.ts";
 import { parseEnv, readEnvFileText, type Env } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, envFile } from "#src/runtime/deployment.ts";
@@ -204,6 +204,8 @@ export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Need
   readonly rules?: readonly ArgumentRule<A[number]["name"]>[];
   /** Local-tree facts refused at the prepare stage, before any target contact — see LocalFactSpec. */
   readonly localFacts?: readonly LocalFactSpec[];
+  /** Per-call effect resolver: consulted by the pipeline before the confirm stage. */
+  readonly effectOf?: EffectOf;
   readonly preparesEnvironment?: N extends "target" ? true : never;
 }
 
@@ -222,6 +224,8 @@ export interface ActionSpec<A extends readonly ArgumentSpec[], P, N extends Need
   readonly rules?: readonly ArgumentRule<A[number]["name"]>[];
   /** Local-tree facts refused at the prepare stage, before any target contact — see LocalFactSpec. */
   readonly localFacts?: readonly LocalFactSpec[];
+  /** Per-call effect resolver: consulted by the pipeline before the confirm stage. */
+  readonly effectOf?: EffectOf;
 }
 
 /** The stamp on an erased body: the only way to read one back is through this module. */
@@ -240,6 +244,7 @@ interface ActionData extends PhaseData {
   readonly refuse?: Readonly<Record<string, string>>;
   readonly rules?: readonly ArgumentRule[];
   readonly localFacts?: readonly LocalFactSpec[];
+  readonly effectOf?: EffectOf;
 }
 interface SingleData extends PhaseData {
   readonly kind: "single";
@@ -249,6 +254,7 @@ interface SingleData extends PhaseData {
   readonly refuse?: Readonly<Record<string, string>>;
   readonly rules?: readonly ArgumentRule[];
   readonly localFacts?: readonly LocalFactSpec[];
+  readonly effectOf?: EffectOf;
   readonly preparesEnvironment: boolean;
 }
 interface MultiData {
@@ -391,7 +397,7 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
   checkEffectConflicts("command body", body.arguments, body.rules ?? []);
   if (body.preparesEnvironment === true && needs !== "target") fail("prepares-environment-needs-target", "command body", "preparesEnvironment needs `needs: \"target\"`");
   const data: SingleData = {
-    kind: "single", effect: body.effect, needs, arguments: body.arguments, refuse: body.refuse, rules: body.rules, localFacts: body.localFacts,
+    kind: "single", effect: body.effect, needs, arguments: body.arguments, refuse: body.refuse, rules: body.rules, localFacts: body.localFacts, effectOf: body.effectOf,
     preparesEnvironment: body.preparesEnvironment === true, ...phasesOf(body),
   };
   return { [COMMAND_SPEC]: data };
@@ -404,7 +410,7 @@ export function defineAction<const A extends readonly ArgumentSpec[], P = Values
   if (action.localFacts !== undefined) checkLocalFacts(`action ${action.summary}`, action.arguments ?? [], action.localFacts);
   checkEffectConflicts(`action ${action.summary}`, action.arguments ?? [], action.rules ?? []);
   const data: ActionData = {
-    kind: "action", summary: action.summary, effect: action.effect, needs: action.needs ?? "target", arguments: action.arguments ?? [], refuse: action.refuse, rules: action.rules, localFacts: action.localFacts, ...phasesOf(action),
+    kind: "action", summary: action.summary, effect: action.effect, needs: action.needs ?? "target", arguments: action.arguments ?? [], refuse: action.refuse, rules: action.rules, localFacts: action.localFacts, effectOf: action.effectOf, ...phasesOf(action),
   };
   return { [COMMAND_SPEC]: data };
 }
@@ -438,7 +444,7 @@ export function specData(body: CommandBody): SingleData | MultiData {
 /** The parse and effect shape of a body: arguments, or per-action arguments and effects. */
 export function specShape(body: CommandBody): CallShape & EffectShape {
   const data = specData(body);
-  if (data.kind === "single") return { effect: data.effect, arguments: data.arguments, refuse: data.refuse, rules: data.rules };
+  if (data.kind === "single") return { effect: data.effect, effectOf: data.effectOf, arguments: data.arguments, refuse: data.refuse, rules: data.rules };
   return { effect: data.effect, actions: data.actions, defaultAction: data.defaultAction };
 }
 

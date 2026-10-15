@@ -4,7 +4,80 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ## Unreleased
 
+### Added
+* `recipe pin <name> --version <v> [--artifact <file>] [--apply]` refreshes a recipe's pinned release artifact: it reads the
+  published `.sha256` (or `SHA256SUMS`) of the release asset over bounded HTTPS from GitHub hosts only, previews the two build-arg
+  changes with the checksum's source, and with `--apply` rewrites exactly those two `ARG` lines under the instance lock. It
+  refuses anything it cannot attribute to one artifact, including artifacts that share a version or checksum `ARG`.
+* `recipe trial <name> [--dry-run]` builds and starts a recipe against a throwaway copy of its declared `privatePaths` data in a
+  separate compose project: every published port is removed, build images get trial-only tags, the merged configuration is
+  proven to publish nothing and to reference no live volume, network, bind mount or image before anything starts, and the
+  scratch home and trial resources are removed in reverse order afterwards. Anything it cannot prove is refused; after a
+  signal or a failed call over SSH it waits for the remote command to expire before cleaning up, and lists leftovers by name.
+* `@clawforge/framework/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
+  single-batch apply that re-reads and verifies, redacted plan views (keyed pseudonyms, no raw values), intent/result journalling
+  with two-phase provenance so a crash never loses ownership, operator entries are never removed, removals above a fixed bound need
+  a dedicated consent token, and protected path segments (`owners`, `approvers`, `credentials`) are refused at any depth.
+* Recipes can publish operator-facing actions: `recipe.json` `actions` declares each action's hook file, effect
+  (`read`, `change` or `destroy`) and typed arguments; `recipe run <recipe> <action> key=value [--dry-run] [--json]` runs
+  it through one entry on the CLI and the MCP `recipe` tool. The declared effect drives confirmation and locking
+  per call, results are size-bounded and secret-masked, and `recipe inspect` lists the declared actions.
+* `@clawforge/framework/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
+  length-prefixed recipe, namespace and value, with a per-deployment key created once, exclusively, under a declared
+  `privatePaths` directory and registered for redaction) and intent/result journal records with crash-gap detection
+  (`appendPrivateIntent`, `appendPrivateResult`, `readPendingPrivateIntents`).
+* `check --related [--base <rev>]` runs only the checks affected by the changed files (an inverted static import graph of
+  the check tree plus a table of rules for dependencies the graph cannot see); `npm run check:fast` runs type check,
+  lint, the always-run structural checks and the related set. `tools/dev/related-audit.ts` reports the selection per commit.
+* The check runner records each file's run time in a local `.check-timings.json`, prints the wall time, serial sum,
+  parallel efficiency and the ten slowest files after every run, and `check --timings` shows the stored ranking.
+  `OC_CHECK_TIMINGS_OUT=<path>` also writes the run's durations for CI artifacts; `OC_CHECK_TIMINGS=off` disables the file.
+* Recipe hooks get schema-versioned private state (`readPrivateState` / `writePrivateState`) and a bounded,
+  secret-refusing private journal (`appendPrivateJournal` / `readPrivateJournal`) in
+  `@clawforge/framework/private-config`. New ancestor directories are created owner-only from the start.
+* Recipes can own application-config paths: `recipe.json` accepts an optional `owns` array (`value` or
+  `list-member` mode, optional segment-wise prefixes). Owned paths are refused in `desired-state.json`, skipped
+  by `apply-config` and never reported as drift, and `inspect` / `recipe inspect` show the owner; overlapping
+  owners are refused.
+* `recipe check` also lints a recipe's Dockerfiles and Compose build contexts for unpinned remote artifacts
+  (`ADD` without a checksum, `curl | sh`, unverified downloads, floating base tags, unpinned git clones). Findings
+  carry a code, severity and file:line; errors make the command exit non-zero, and a single rule can be waived
+  with a `# recipe-check: allow <code> <reason>` comment above the line.
+* `recipe.json` may declare `ephemeralPaths`: absolute container paths whose writable-layer contents are
+  disposable. `recipe migrate` ignores changes at or under them, reports the ignored counts, and names the
+  unsupported writable-layer paths (and this field) when it still refuses.
+* A public `@clawforge/framework/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
+  application CLI with stdin-only input and guarded JSON results (`redacted` reports whether a registered
+  secret was masked in the parsed output); `consumerFetch` makes one bounded HTTP
+  request from the gateway container (its DNS and proxy), with the request on stdin and secrets redacted.
+* `recipe check <name>` runs a recipe's own `*.check.ts` files, each in its own Node process, with a
+  per-file timeout, bounded output and a non-zero exit on failure. It needs no instance, Docker or lock;
+  `--dry-run` lists the files without executing code.
+
+### Fixed
+* `recipe trial` refuses a writable bind mount of the live recipe directory (it must be `read_only`), and recipe action hooks run
+  with a context that carries `dryRun` on `recipe run --dry-run`, so `appConfigPatch` and `reconcileApply` preview instead of writing.
+* The discovery self-check no longer creates the checkout's `apps/`, and the deployment-fixture self-check compares the
+  repository root and the contents of the checkout's `apps/`, so concurrent checks no longer make it fail intermittently.
+* A release racing a concurrent claim of the instance-lock mutation guard no longer leaves its own stale lock behind:
+  the vanished-guard race is retried with the same atomic claim, the guarded cleanup is retried a bounded number of
+  times when a live competitor holds the guard, and a cleanup that still fails is reported as blocking instead of
+  being swallowed.
+
 ### Changed
+* `ci.yml` runs two tiers: pushes to non-main branches run the type check, lint and `check --related` against the
+  merge-base with `origin/main`; the full suite gates pushes to `main`, pull requests, the nightly schedule and
+  `workflow_dispatch` with `full: true`. Concurrent runs on a branch cancel the older one.
+* MCP `tools/list` wording is shorter (command and argument summaries, the help pointer, the confirmation marker,
+  repeated dry-run clauses): 35190 to 31556 bytes against the 35840 budget. Safety-relevant phrases and the full
+  CLI help text are unchanged.
+* A checkout deployment warns on stderr when the framework sources are newer than `dist` (run `npm run build`
+  from the checkout root); stdout and `--json` are untouched, `OC_NO_STALE_DIST_WARNING=1` silences it.
+* The bash completion install line is `eval "$(clawforge completion bash)"`: macOS ships bash 3.2,
+  whose `source <(...)` does not run. zsh and PowerShell lines are unchanged.
+* Memory setup validates the model source, revision, SHA256 and plugin version when the arguments
+  are parsed, and plan/configure refuse `--env` together with local model options before any read;
+  the declared package types no longer require `@types/node` in a consuming project.
 * Held-value prose analysis preserves callable scopes, conditional returns and property/getter
   flows, while treating array length as metadata rather than prose.
 * Own-product assertions follow lexical bindings, transitive writes and closure captures;

@@ -31,8 +31,8 @@ export { reach, expect, describeError, evaluate, toResult } from "./verdict.ts";
 export type { Check, SmokeResult } from "./verdict.ts";
 
 export const SMOKE_ARGUMENTS = [
-  { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "quick", description: "Skip the slow check", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 // Hard ceiling on smoke's agent round-trip, enforced inside the container.

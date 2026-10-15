@@ -29,7 +29,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { TRANSPORT_SENTINEL } from "#checks/kit/deployment-fixture.ts";
 import { withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import type { spawnLocal } from "#framework/runtime/transport/transport.ts";
-import { app, controlArtifact, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, gateUnits, invalidSamplesOf, runCase, runNamed, stages, sweepOn, sweepUnits, units } from "./property-sweep.ts";
+import { app, controlArtifact, controlFlags, controlManifest, controlValueOf, controlValues, exampleOf, factsOf, fixture, gateUnits, invalidSamplesOf, runCase, runNamed, stages, sweepOn, sweepUnits, units } from "./property-sweep.ts";
 let cases = 0;
 {
   const unpacked = await unpackArtifactVerified(controlArtifact);
@@ -144,7 +144,7 @@ for (const unit of sweepUnits) {
         return argument.kind === "variadic" ? Array.from({ length: Array.isArray(value) ? value.length : 1 }, () => real) : argument.kind === "positional" ? [real] : [`--${argument.name}`, real];
       }
       return argument.kind === "positional" || argument.kind === "variadic" ? (Array.isArray(value) ? value : [value]) : [`--${argument.name}`, value as string];
-    })];
+    }), ...controlFlags(unit).map((flag) => `--${flag}`)];
     const terminal = await runCase(unit.command, argv, "terminal", sweepOn(unit));
     cases += 1;
     stages.control(name, terminal.execution.stage);
@@ -309,7 +309,16 @@ for (const unit of sweepUnits) {
     const terminal = await runCase(unit.command, argv, "terminal", sweepOn(unit));
     cases += 1;
     stages.case(name, terminal.execution.stage, terminal.execution.error);
-    check(`${name}: console stops at the parse stage`, terminal.execution.stage, "parse");
+    // The variadic slides into the emptied argv slot — an argv shape the named form cannot
+    // express. Strictly the slid call refuses at parse, except when the action declares a
+    // variadic AND has more than one positional: the only shape where the freed slot lets
+    // the variadic slide in as a positional and a complete call can reach run.
+    if (variadic !== undefined && positionals.length > 1) {
+      checkTrue(`${name}: the slid console call stops at parse, prepare or run`,
+        terminal.execution.stage === "parse" || terminal.execution.stage === "prepare" || terminal.execution.stage === "run");
+    } else {
+      check(`${name}: the slid console call stops at parse`, terminal.execution.stage, "parse");
+    }
     check(`${name}: console never contacts the target`, terminal.contacts, []);
   }
 }
@@ -665,7 +674,7 @@ stages.print("pipeline: property");
 // rule. Replacing a gate argument's declared kind with kinds.text therefore fails here
 // (negative control C190: remove-app's <name> kind -> text), unless the argument is
 // declared text AND listed as plain.
-const PLAIN_TEXT_GATE_ARGUMENTS = new Set(["check --require", "check <filter…>"]);
+const PLAIN_TEXT_GATE_ARGUMENTS = new Set(["check --require", "check --base", "check <filter…>"]);
 // oxlint-disable-next-line no-control-regex -- Raw C0/DEL samples are refused by plain text too.
 const RAW_CONTROL = /[\u0000-\u001f\u007f]/;
 for (const unit of gateUnits) {

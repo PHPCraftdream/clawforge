@@ -190,10 +190,13 @@ check(
   renderAdvice(command(["status", "--reason", NEEDS_QUOTING]), PATH_SPELLING),
   `${SHIM_PROGRAM} status --reason 'two words'`,
 );
+// The bare program's paste shells follow the host: cmd/pwsh (double quotes) on Windows, sh (single) on POSIX.
+let HOST_QUOTE = '"';
+await requires("posix-host", "a posix host's bare program pastes into sh, which quotes with single quotes", () => { HOST_QUOTE = "'"; });
 check(
-  "a bare program quotes with double quotes",
+  "a bare program quotes by the host's paste shell",
   renderAdvice(command(["status", "--reason", NEEDS_QUOTING]), BARE_PROGRAM),
-  `clawforge status --reason "two words"`,
+  `clawforge status --reason ${HOST_QUOTE}two words${HOST_QUOTE}`,
 );
 
 /** The `--app` name is a word the user pastes like any other, so it quotes by the same rule
@@ -206,7 +209,7 @@ check(
 check(
   "an app name that needs quoting is quoted under the bare program",
   renderAdvice(command(["status"], { app: NEEDS_QUOTING }), BARE_PROGRAM),
-  `clawforge --app "two words" status`,
+  `clawforge --app ${HOST_QUOTE}two words${HOST_QUOTE} status`,
 );
 check(
   "an inherited app name that needs quoting is quoted",
@@ -256,7 +259,7 @@ check(
   "a%b",
 );
 check("renderArgument still POSIX-quotes under a path spelling", renderArgument("a$b", SHIM_PROGRAM), "'a$b'");
-check("renderArgument still double-quotes an inert word under the bare program", renderArgument("two words", "clawforge"), '"two words"');
+check("renderArgument quotes an inert word by the host's paste shell under the bare program", renderArgument("two words", "clawforge"), `${HOST_QUOTE}two words${HOST_QUOTE}`);
 check("renderAdvice single-quotes a shell-active word under the bare program", renderAdvice(command(["status", "--reason", "a$b`c"]), BARE_PROGRAM), "clawforge status --reason 'a$b`c'");
 
 /** The program itself quotes by the same rule (review R9-A R9-4): a hand-set

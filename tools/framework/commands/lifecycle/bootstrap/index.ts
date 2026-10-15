@@ -32,11 +32,11 @@ import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/gro
 import { bootstrapCheck } from "./check.ts";
 
 export const BOOTSTRAP_ARGUMENTS = [
-  { name: "no-pull", description: "Use the image already present locally", kind: "flag" },
+  { name: "no-pull", description: "Use the local image", kind: "flag" },
   // A read flag: --check runs none of the mutation, so the call itself is a read.
-  { name: "check", description: "Read-only prerequisite report — no lock, no mutation", kind: "flag", effect: "read" },
+  { name: "check", description: "Prerequisite report; read-only", kind: "flag", effect: "read" },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** After a fresh pull, repoints this deployment's OWN OPENCLAW_IMAGE from the moving tag to

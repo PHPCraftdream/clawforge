@@ -124,11 +124,21 @@ export async function createDeploymentFixture(options: DeploymentFixtureOptions 
     await mkdir(join(root, "config"), { recursive: true });
     await mkdir(join(root, "secrets"), { recursive: true });
     await mkdir(join(root, "data"), { recursive: true });
-    await mkdir(join(recipe, "agent"), { recursive: true });
+    // The recipe's agent dir and the manifest action's actions/ dir (one site per shape).
+    for (const dir of ["agent", "actions"]) await mkdir(join(recipe, dir), { recursive: true });
     await writeFile(join(root, ".env"), fixtureEnv(root), "utf8");
     await writeFile(join(root, "app.ts"), declarationFor(), "utf8");
     await writeFile(join(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
-    await writeFile(join(recipe, "recipe.json"), JSON.stringify({ description: "fixture recipe" }), "utf8");
+    // A `recipe run` control names a manifest action, so the fixture recipe declares one
+    // no-op read action — the control reaches the guarded run phase like every other unit.
+    const recipeFiles: Array<[string, string]> = [
+      [join(recipe, "recipe.json"), JSON.stringify({
+        description: "fixture recipe",
+        actions: { x: { file: "actions/x.ts", effect: "read", description: "no-op control action", arguments: [] } },
+      })],
+      [join(recipe, "actions", "x.ts"), "export async function run(): Promise<void> {}\n"],
+    ];
+    for (const [file, text] of recipeFiles) await writeFile(file, text, "utf8");
     await writeFile(join(recipe, "acceptance.json"), JSON.stringify({ checks: [] }), "utf8");
     await writeFile(
       join(recipe, "agent", "config.json"),

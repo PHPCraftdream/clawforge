@@ -581,6 +581,12 @@ export function checkoutWriteHits(source: string, context?: SourceContext): Hit[
       // maskLiterals preserves offsets 1:1, so the same range in the original source is the
       // unmasked text of the target — needed to confirm "./" vs "../" in new URL(...).
       const origin = source.slice(range[0], range[1]);
+      // The check runner's telemetry store (kit/timings, .check-timings.json) is the runner's
+      // own gitignored state, not a check fixture: the runtime guard of record (the checkout
+      // snapshot in kit/run.ts) excludes the file by name, and every write sits behind
+      // recordRunTimings, which swallows all errors. Named by the shared constant and the
+      // atomic writer's locals so the blessing stays one identifier narrow.
+      if (reHits(/\bTIMINGS_FILENAME\b|\btimingsTemp\b|\btimingsPath\b|\btimingsRoot\b/, origin)) continue;
       const classification = classify(target, origin, at);
       const floored = anchoredFloor(classification, target);
       if (floored !== "CLEAN") hits.push({ call: callee.op, target: origin.trim(), classification: floored === "UNBOUND" ? "UNKNOWN" : floored, approximation: floored === "UNKNOWN" });

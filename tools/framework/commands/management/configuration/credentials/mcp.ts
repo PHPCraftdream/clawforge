@@ -20,14 +20,14 @@ import type { ArgumentSpec } from "#src/core/command/index.ts";
 import * as kinds from "#src/core/values/kinds.ts";
 
 export const MCP_SETUP_ARGUMENTS = [
-  { name: "client", kind: "option", valueName: "client", value: kinds.choice(["claude", "codex", "both"]), summary: "Client configuration to update", description: "Client configuration to update (default both)" },
-  { name: "json", kind: "flag", description: "Report changed files as JSON" },
-  { name: "rewrite-launcher", kind: "flag", summary: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME}`, description: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
+  { name: "client", kind: "option", valueName: "client", value: kinds.choice(["claude", "codex", "both"]), summary: "Which client to update", description: "Client configuration to update (default both)" },
+  { name: "json", kind: "flag", description: "Changed files as JSON" },
+  { name: "rewrite-launcher", kind: "flag", summary: `Overwrite edited ${MCP_LAUNCHER_FILENAME}`, description: `Overwrite edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const MCP_CREDS_ARGUMENTS = [
-  { name: "json", description: "Print the client config only", kind: "flag" },
-  { name: "token", description: "Print the gateway token only", kind: "flag" },
+  { name: "json", description: "Client config only", kind: "flag" },
+  { name: "token", description: "Gateway token only", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** Client configuration belongs to the selected application in either distribution mode. */

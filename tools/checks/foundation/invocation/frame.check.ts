@@ -33,7 +33,7 @@ import {
 import { renderAdvice, renderFrameAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { mcpLauncherContent } from "#framework/integration/mcp/project.ts";
 import { FRAME_PRODUCERS, producer } from "#checks/golden/frames.ts";
-import { tokenizeLine } from "#checks/kit/shells.ts";
+import { tokenizeLine } from "#checks/surfaces/advice/shells.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
 const ROOT = "/clawforge-checkout";

@@ -33,8 +33,8 @@ const SECRETS_SUFFIX = ".secrets.env";
 
 export const PULL_ARGUMENTS = [
   PROFILE_ARGUMENT,
-  { name: "share", description: "Shareable profile with verification", kind: "flag" },
-  { name: "with-secrets", description: "Full profile: includes provider keys", kind: "flag" },
+  { name: "share", description: "Share profile, verified", kind: "flag" },
+  { name: "with-secrets", description: "Full profile, with keys", kind: "flag" },
   { name: "migrate", summary: "Migrate profile", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
   {
     name: "hot",
@@ -43,11 +43,11 @@ export const PULL_ARGUMENTS = [
     kind: "flag",
   },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const PUSH_ARGUMENTS = [
-  { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional", value: kinds.text("a snapshot path on the target") },
+  { name: "archive", description: "Snapshot; newest if omitted", kind: "positional", value: kinds.text("a snapshot path on the target") },
   { ...FORCE_ARGUMENT, setByConfirm: true },
   ...LOCK_TAKEOVER_ARGUMENTS,
   {
@@ -56,8 +56,8 @@ export const PUSH_ARGUMENTS = [
     description: "Drop identity and paired devices (cloning, not moving)",
     kind: "flag",
   },
-  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "dry-run", description: "What would happen", kind: "flag", effect: "read" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 async function ensureSnapshotDir(ctx: Context): Promise<string> {

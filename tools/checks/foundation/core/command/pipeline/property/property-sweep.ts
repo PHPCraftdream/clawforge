@@ -16,7 +16,8 @@ import { makeVersionGateCommand } from "#framework/integration/version.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion/index.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { CommandBody } from "#framework/core/command/spec.ts";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
@@ -24,7 +25,34 @@ import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 
 useLinuxHost();
-export const fixture = await createDeploymentFixture();
+// The root is made here, so the declaration writes below are provably under the temp dir.
+const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-sweep-"));
+export const fixture = await createDeploymentFixture({ root: sweepRoot });
+await writeFile(join(sweepRoot, "recipes", "local", "control.check.ts"), "process.exit(0);\n");
+
+// memory index/verify/setup refuse an undeclared or non-local memory before target contact, so
+// the sweep deployment declares the local embeddings those controls are valid against.
+const MEMORY_PATH = "agents.defaults.memorySearch";
+const MODEL = "/home/node/.openclaw/models/control.gguf";
+const DECLARATION_FILE = join(sweepRoot, "config", "desired-state.json");
+const DECLARATION = `${JSON.stringify([
+  { path: "gateway.mode", value: "local" },
+  { path: "gateway.bind", value: "lan" },
+  { path: "memory.backend", value: "builtin" },
+  { path: `${MEMORY_PATH}.enabled`, value: true },
+  { path: `${MEMORY_PATH}.provider`, value: "local" },
+  { path: `${MEMORY_PATH}.model`, value: MODEL },
+  { path: `${MEMORY_PATH}.local.modelPath`, value: MODEL },
+  { path: `${MEMORY_PATH}.fallback`, value: "none" },
+  { path: `${MEMORY_PATH}.query.hybrid.enabled`, value: true },
+  { path: `${MEMORY_PATH}.store.vector.enabled`, value: true },
+], null, 2)}
+`;
+await writeFile(DECLARATION_FILE, DECLARATION, "utf8");
+// A control that persists the declaration (memory configure) must not change the next case.
+async function restoreDeclaration(): Promise<void> {
+  if (await readFile(DECLARATION_FILE, "utf8") !== DECLARATION) await writeFile(DECLARATION_FILE, DECLARATION, "utf8");
+}
 
 // A control artifact packed by the kit's own assembler: genuinely valid, so the control
 // stays valid if the artifact gate ever moves its full check into prepare.
@@ -234,6 +262,7 @@ export async function runCase(command: string, argv: string[], surface: "termina
   const execution = await withOutputSink((chunk) => {
     output += chunk;
   }, () => executeCommand(on, command, { kind: "argv", argv }, { surface, transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
+  await restoreDeclaration();
   return { execution, output, contacts: fixture.contacts() };
 }
 
@@ -241,6 +270,7 @@ export async function runNamed(command: string, args: Record<string, unknown>, o
   const transport = fixture.transport();
   let output = "";
   const execution = await withOutputSink((chunk) => { output += chunk; }, () => executeCommand(on, command, { kind: "named", args }, { surface: "mcp", transport, ...(options.confirmed === true ? { confirmed: true } : {}) }));
+  await restoreDeclaration();
   return { execution, output, contacts: fixture.contacts() };
 }
 
@@ -250,6 +280,15 @@ export function factsOf(unit: Unit): readonly { readonly argument: string; reado
   const data = specData(specOf(declaration)!);
   const slice = data.kind === "single" ? data : (unit.action === undefined ? undefined : data.actions[unit.action]);
   return ((slice as { localFacts?: readonly { argument: string; fact: LocalFact; unless?: string }[] } | undefined)?.localFacts ?? []);
+}
+
+// Explicit consent a unit refuses without at prepare (before any context or target contact):
+// its valid control carries the flags, since flags are never chosen from the declaration.
+const CONTROL_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  "memory setup": ["allow-install", "allow-download"],
+};
+export function controlFlags(unit: Unit): readonly string[] {
+  return CONTROL_FLAGS[unit.label] ?? [];
 }
 
 export function controlValues(unit: Unit): readonly { readonly argument: ArgumentSpec; readonly value: string | readonly string[] }[] {

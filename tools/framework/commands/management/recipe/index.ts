@@ -34,6 +34,7 @@ import {
 } from "#src/service/recipe.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import { prepareRecipeCheck, runCheckAction } from "./recovery/checks/check.ts";
 import {
   runDiagnoseAction,
   runImportAction,
@@ -48,9 +49,15 @@ import {
   runVerifyAction,
 } from "./actions.ts";
 import { runInspectAction } from "./recovery/inspect.ts";
+import { runTrialAction, runTrialDryRun } from "./recovery/trial/index.ts";
 import { runRecoverAction } from "./recovery/recover.ts";
 import { runMigrateAction } from "./recovery/migrate.ts";
-import { INVALID_MANIFEST } from "./lifecycle.ts";
+import { INVALID_MANIFEST } from "./run/lifecycle.ts";
+import { prepareRecipeRun } from "./run/arguments.ts";
+import { runRecipeActionCommand } from "./run/invocation.ts";
+import { resolveRecipeActionEffectOf } from "./run/effect.ts";
+import { resolveRecipePinEffectOf } from "./run/pin/effect.ts";
+import { runRecipePin } from "./run/pin/invocation.ts";
 import { readName } from "#src/core/values/names.ts";
 import { importNameOf } from "./actions.ts";
 
@@ -151,18 +158,18 @@ const RECIPE_LOCK_ARGUMENTS = LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...ar
 /** import copies a source directory, not a recipe name: any path is the source, and only the
  * name it lands under (new-name, else the last segment of the source) is held to the grammar. */
 const SOURCE_ARGUMENT = {
-  summary: "directory to copy the recipe from",
+  summary: "Source directory",
   name: "name",
   description: "Directory to copy the recipe from",
   kind: "positional",
   required: true,
-  value: kinds.localDirectory("directory to copy the recipe from", "recipes/local"),
+  value: kinds.localDirectory("Source directory", "recipes/local"),
 } as const satisfies ArgumentSpec;
 
 
 const TAIL_ARGUMENT = {
   name: "tail",
-  summary: "lines to return per service",
+  summary: "Lines per service",
   description: "With logs/diagnose/inspect: lines to return per service",
   kind: "option",
   valueName: "n",
@@ -171,7 +178,7 @@ const TAIL_ARGUMENT = {
 
 const DRY_RUN_ARGUMENT = {
   name: "dry-run",
-  summary: "show what would happen",
+  summary: "what would happen",
   description: "With install/remove/recover/migrate: show what would happen",
   kind: "flag",
   effect: "read",
@@ -180,7 +187,7 @@ const DRY_RUN_ARGUMENT = {
 /** The command body; recipe(ctx, args) stays for callers that already hold a Context. */
 export const RECIPE = multiActionBody({
   effect: "destroy",
-  action: { description: "What to do with the recipe" },
+  action: { description: "Recipe action" },
   defaultAction: RECIPE_DEFAULT_ACTION,
   actions: {
     list: defineAction({
@@ -189,7 +196,7 @@ export const RECIPE = multiActionBody({
       arguments: [
         {
           name: "json",
-          summary: "emit the catalog as JSON",
+          summary: "Catalog as JSON",
           description: "With list: emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON",
           kind: "flag",
         },
@@ -204,7 +211,7 @@ export const RECIPE = multiActionBody({
       needs: "local",
       arguments: [SOURCE_ARGUMENT, {
         name: "new-name",
-        summary: "Use this name instead of the source name",
+        summary: "Name to import under",
         description: "With import: import under this name instead of the source directory's own name",
         kind: "positional",
         value: kinds.name("recipe", "create"),
@@ -233,7 +240,7 @@ export const RECIPE = multiActionBody({
       needs: "local",
       arguments: [NEW_NAME_ARGUMENT, {
         name: "with-hooks",
-        summary: "add commented prepare.ts/verify.ts stubs",
+        summary: "Add hook stubs",
         description: "With new: add commented prepare.ts/verify.ts stubs",
         kind: "flag",
       }],
@@ -248,6 +255,21 @@ export const RECIPE = multiActionBody({
         return { name, withHooks: call.values["with-hooks"] === true };
       },
       run: (_ctx, plan) => runNewAction(plan.name, plan.withHooks),
+    }),
+    check: defineAction({
+      summary: "Run untrusted local checks; no instance/Docker/lock",
+      effect: "destroy",
+      needs: "local",
+      arguments: [{
+        ...NAME_ARGUMENT,
+        summary: "recipe whose checks you trust",
+        description: "Untrusted code: operator rights, not sandboxed",
+      }, {
+        ...DRY_RUN_ARGUMENT,
+        description: "With check: list files without executing recipe code",
+      }],
+      prepare: (call) => prepareRecipeCheck(call.values.name, call.values["dry-run"] === true),
+      run: (_local, plan) => runCheckAction(plan),
     }),
     verify: defineAction({
       summary: "Run the recipe's verify.ts hook",
@@ -268,7 +290,7 @@ export const RECIPE = multiActionBody({
       summary: "Build a recipe from source and start it",
       arguments: [NAME_ARGUMENT, {
         name: "force-disabled",
-        summary: "build a recipe marked disabled",
+        summary: "Build a disabled recipe",
         description: "With install: build a recipe marked disabled",
         kind: "flag",
       }, DRY_RUN_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS,],
@@ -279,11 +301,19 @@ export const RECIPE = multiActionBody({
           : runInstallAction(ctx, name, values["force-disabled"] === true);
       }, values["dry-run"] !== true),
     }),
+    trial: defineAction({
+      summary: "Build and run a recipe against a copy of its data (no hooks run)",
+      arguments: [NAME_ARGUMENT, {
+        ...DRY_RUN_ARGUMENT,
+        description: "With trial: show what would be copied, the project name and the override",
+      }, ...RECIPE_LOCK_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "trial", values, () => values["dry-run"] === true ? runTrialDryRun(ctx, values.name) : runTrialAction(ctx, values.name), values["dry-run"] !== true),
+    }),
     remove: defineAction({
       summary: "Stop and remove a recipe's stack",
       arguments: [NAME_ARGUMENT, {
         name: "volumes",
-        summary: "delete its volumes too",
+        summary: "Delete volumes too",
         description: "With remove: delete its volumes too",
         kind: "flag",
       }, DRY_RUN_ARGUMENT, ...RECIPE_LOCK_ARGUMENTS,],
@@ -299,7 +329,7 @@ export const RECIPE = multiActionBody({
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, {
         name: "json",
-        summary: "emit structured inspection evidence",
+        summary: "Inspect as JSON",
         description: "With inspect: emit inspection evidence as JSON",
         kind: "flag",
       }],
@@ -310,24 +340,24 @@ export const RECIPE = multiActionBody({
       effect: "destroy",
       arguments: [NAME_ARGUMENT, {
         name: "service",
-        summary: "exact service to recover",
+        summary: "Service to recover",
         description: "With recover: exact declared service (dependencies are not started)",
         kind: "option",
         valueName: "service",
         required: true,
         value: kinds.text("a service name"),
       }, {
-        name: "build", summary: "build the selected service", description: "With recover: build the selected service", kind: "flag",
+        name: "build", summary: "Build the service", description: "With recover: build the selected service", kind: "flag",
       }, {
-        name: "pull", summary: "pull the selected service image", description: "With recover: pull the selected service image", kind: "flag",
+        name: "pull", summary: "Pull the image", description: "With recover: pull the selected service image", kind: "flag",
       }, {
         ...DRY_RUN_ARGUMENT, description: "With recover: preview without locks or hooks",
       }, {
         name: "reconcile-consumer",
-        summary: "run named afterStart after dependency readiness",
+        summary: "Run afterStart hooks",
         description: "May mutate consumer configuration and the gateway through afterStart",
         kind: "flag",
-      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take instance lock" : "Confirm remote lock host" }))],
+      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Instance lock" : "Remote lock host" }))],
       prepare: async (call) => ({
         name: call.values.name,
         options: {
@@ -347,12 +377,12 @@ export const RECIPE = multiActionBody({
       arguments: [NAME_ARGUMENT, {
         ...DRY_RUN_ARGUMENT, description: "With migrate: preview without locks, hooks or target writes",
       }, {
-        name: "helper-image", summary: "existing local immutable helper image ID", description: "Trusted local sha256 image ID for storage tools; never built or pulled",
+        name: "helper-image", summary: "Local helper image ID", description: "Trusted local sha256 image ID for storage tools; never built or pulled",
         kind: "option", valueName: "sha256", value: kinds.text("an immutable local image ID"),
       }, {
-        name: "shutdown-timeout", summary: "gentle shutdown grace in seconds", description: "Finite 1..3600 seconds, default 180; never escalates to forced kill",
+        name: "shutdown-timeout", summary: "Shutdown grace (seconds)", description: "Finite 1..3600 seconds, default 180; never escalates to forced kill",
         kind: "option", valueName: "seconds", value: kinds.text("finite shutdown seconds"),
-      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take instance lock" : "Confirm remote lock host" }))],
+      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Instance lock" : "Remote lock host" }))],
       prepare: async (call) => ({
         name: call.values.name,
         dryRun: call.values["dry-run"] === true,
@@ -373,6 +403,52 @@ export const RECIPE = multiActionBody({
       effect: "read",
       arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
       run: (ctx, values) => runLogsAction(ctx, values.name, values.tail),
+    }),
+    pin: defineAction({
+      summary: "Update a recipe Dockerfile artifact version and checksum",
+      effect: "change",
+      effectOf: resolveRecipePinEffectOf,
+      arguments: [NAME_ARGUMENT, {
+        name: "version", summary: "Artifact version", description: "With pin: new plain-token release version", kind: "option", valueName: "version", required: true, value: kinds.text("a plain version token"),
+      }, {
+        name: "artifact", summary: "Artifact basename", description: "With pin: select a declaration by its expanded asset basename (version placeholders use the current version)", kind: "option", valueName: "basename", value: kinds.text("an artifact basename"),
+      }, {
+        name: "apply", summary: "Write the pin", description: "With pin: confirm and atomically update the Dockerfile", kind: "flag",
+      }, ...RECIPE_LOCK_ARGUMENTS],
+      run: (ctx, values) => runRecipePin(ctx, { name: values.name, version: values.version!, artifact: values.artifact, apply: values.apply === true, takeover: takeoverOf(values) }),
+    }),
+    run: defineAction({
+      summary: "Run a recipe-declared action from its manifest",
+      // Static strongest; resolveRecipeActionEffectOf lowers per call (the declared action's
+      // effect, read under --dry-run) and change/destroy owe an MCP confirmation.
+      effect: "destroy",
+      effectOf: resolveRecipeActionEffectOf,
+      arguments: [NAME_ARGUMENT, {
+        name: "recipe-action",
+        summary: "Recipe action",
+        description: "With run: the action declared in the recipe's manifest (recipe inspect lists them)",
+        kind: "positional",
+        required: true,
+        value: kinds.text("a recipe action name"),
+      }, {
+        ...DRY_RUN_ARGUMENT,
+        description: "With run: pass dryRun to the action; treated as read-only",
+      }, ...RECIPE_LOCK_ARGUMENTS, {
+        name: "json",
+        summary: "Run result as JSON",
+        description: "With run: emit the action's result as JSON",
+        kind: "flag",
+      }, {
+        // Variadic must be declared last (checkArguments), though its tokens may appear
+        // anywhere in the argv after the positionals.
+        name: "arg",
+        summary: "Action argument",
+        description: "With run: action argument as key=value",
+        kind: "variadic",
+        value: kinds.text("a key=value argument"),
+      }],
+      prepare: prepareRecipeRun,
+      run: (ctx, plan) => runRecipeActionCommand(ctx, plan),
     }),
   },
 });

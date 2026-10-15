@@ -24,9 +24,21 @@ export interface ControlDecl {
   readonly fragment: string;
   /** The check's baseline needs git metadata in the temp copy (e.g. deploy's tracked-files vetting). */
   readonly needsGit?: boolean;
+  /** Host capabilities (capabilities.ts) whose absence means this control cannot bite on this host — it is reported as `skipped (needs <cap>)`, never as a failure. */
+  readonly requires?: readonly string[];
 }
 
 export const CONTROLS: readonly ControlDecl[] = [
+  {
+    id: "F5-recipe-check-failure",
+    finding: "F5",
+    note: "recipe check propagates subprocess failures to the command verdict",
+    product: "tools/framework/commands/management/recipe/recovery/checks/check.ts",
+    search: "return failed === 0 && !lintFailed ? 0 : 1;",
+    replace: "return 0;",
+    check: "tools/checks/management/recipe/actions/check-action.check.ts",
+    fragment: "failing checks return nonzero",
+  },
   {
     id: "C1",
     finding: "R19-06",
@@ -194,6 +206,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     replace: `const first = await localTarRunner("tar", [...forceLocal, ...args], { allowFailure: true, timeoutMs });`,
     check: "tools/checks/sets/tar/local-tar-owner.check.ts",
     fragment: "backslash:",
+    requires: ["windows-host", "gnu-userland"], // the -C assertions run only with GNU tar and bite only where join() spells backslashes
   },
   {
     id: "C17",

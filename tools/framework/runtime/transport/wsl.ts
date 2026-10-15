@@ -20,6 +20,7 @@ export function stripWslNuls(text: string): string {
 
 export class WslTransport implements Transport {
   readonly description: string;
+  readonly cancellation = "unsupported" as const;
   // Native private field, not a TypeScript `private` parameter property: Node executes
   // TypeScript by erasing types only, so anything that would need code generation
   // (parameter properties, enum, namespace, decorators) is unavailable project-wide.

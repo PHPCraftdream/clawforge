@@ -277,7 +277,7 @@
       "tools/checks/runtime/convergence/inspect/folder.check.ts": 4,
       "tools/checks/runtime/convergence/inspect/lock.check.ts": 1,
       "tools/checks/runtime/convergence/inspect/recipes.check.ts": 6,
-      "tools/checks/runtime/convergence/instance-lock/claims.check.ts": 3,
+      "tools/checks/runtime/convergence/instance-lock/claims/claims.check.ts": 3,
       "tools/checks/runtime/convergence/instance-lock/heartbeat/heartbeat-lifecycle.check.ts": 1,
       "tools/checks/runtime/convergence/lock-home.check.ts": 4,
       "tools/checks/runtime/lifecycle/bootstrap/bootstrap-check.check.ts": 3,
@@ -745,7 +745,7 @@
       "tools/checks/runtime/convergence/backup/retention.check.ts": 3,
       "tools/checks/runtime/convergence/backup/rotation.check.ts": 7,
       "tools/checks/runtime/convergence/inspect/checksums.check.ts": 1,
-      "tools/checks/runtime/convergence/inspect/connectivity/egress-credentials.check.ts": 2,
+      "tools/checks/runtime/convergence/inspect/connectivity/egress-credentials.check.ts": 1,
       "tools/checks/runtime/convergence/inspect/connectivity/egress.check.ts": 0,
       "tools/checks/runtime/convergence/inspect/folder.check.ts": 6,
       "tools/checks/runtime/convergence/inspect/lock.check.ts": 0,
@@ -785,7 +785,7 @@
       "tools/checks/sets/parity.check.ts": 3,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 305
+    "total": 304
   },
   "frameReads": {
     "comment": "stage 7 S1.3 (design docs/internal/refactor-stage7-frame-design.md §8): occurrences of invocation()/currentFrame() in product code outside the exempt modules core/io/invocation/**, core/io/help-render.ts, core/io/log.ts. Scan scope: tools/framework/**/*.ts plus tools/clawforge.ts. Measured at the S1.3 resolver refactor: 0 — the reads the design lists as pre-S1.3 (entry/resolve.ts, entry/delegate.ts, entry/bin.ts, integration/deployment/scaffold.ts, tools/clawforge.ts) are gone; the only remaining raw reads are the exempt ones (help-render.ts: 2 invocation() default arguments; invocation/{index,render,prose}.ts). Shrink-only at target 0: any occurrence fails.",
@@ -1043,8 +1043,8 @@
     "total": 2
   },
   "proseHeldFlow": {
-    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1190. No skips, exclusions or re-encoding; future growth requires explicit review.",
-    "total": 1190,
+    "comment": "Held-flow scanner unchanged, including whole records, arrays and opaque inputs. Executed effect/readiness wording-oracle removals lower the approved recipe/lock/native/memory inventory to 1188. No skips, exclusions or re-encoding; future growth requires explicit review.",
+    "total": 1188,
     "files": {
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
       "tools/checks/foundation/cli/cli-helper.check.ts": 14,
@@ -1081,7 +1081,7 @@
       "tools/checks/integration/agent/recipe.check.ts": 17,
       "tools/checks/integration/apps/app-hooks.check.ts": 5,
       "tools/checks/integration/apps/init-messages.check.ts": 9,
-      "tools/checks/integration/apps/invocation-hints.check.ts": 44,
+      "tools/checks/integration/apps/invocation-hints.check.ts": 43,
       "tools/checks/integration/apps/new-app-acl-warning.check.ts": 3,
       "tools/checks/integration/apps/remove-app.check.ts": 1,
       "tools/checks/integration/init.check.ts": 8,
@@ -1140,7 +1140,7 @@
       "tools/checks/runtime/convergence/inspect/recipes.check.ts": 10,
       "tools/checks/runtime/convergence/inspection.check.ts": 5,
       "tools/checks/runtime/convergence/instance-lock/advice.check.ts": 3,
-      "tools/checks/runtime/convergence/instance-lock/claims.check.ts": 9,
+      "tools/checks/runtime/convergence/instance-lock/claims/claims.check.ts": 9,
       "tools/checks/runtime/convergence/instance-lock/heartbeat/heartbeat-lifecycle.check.ts": 1,
       "tools/checks/runtime/convergence/instance-lock/nesting.check.ts": 1,
       "tools/checks/runtime/convergence/instance-lock/misc.check.ts": 8,
@@ -1185,7 +1185,7 @@
       "tools/checks/runtime/service/deploy/remote-path.check.ts": 5,
       "tools/checks/runtime/service/deploy/root-boundary.check.ts": 8,
       "tools/checks/runtime/service/image-identity/compose-env.check.ts": 2,
-      "tools/checks/runtime/service/image-identity/runtime-image-identity.check.ts": 2,
+      "tools/checks/runtime/service/image-identity/runtime-image-identity.check.ts": 1,
       "tools/checks/runtime/service/logs-bounded.check.ts": 5,
       "tools/checks/runtime/service/restart.check.ts": 3,
       "tools/checks/runtime/service/restore/restore.check.ts": 14,

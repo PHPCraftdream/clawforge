@@ -436,3 +436,21 @@ export function text(reason: string, options: { leadingDash: "refuse" | "allow";
     },
   }, invalid, { controls: refused });
 }
+
+/** A single-line value with its own grammar: `matches` decides; the caller supplies the voice
+ *  (`expected`), a valid `example` and the parse-stage samples the sweep must see refused. */
+export function grammar(options: { expected: string; example: string; invalid: readonly string[]; matches(raw: string): boolean }): ValueKind<string> {
+  return kindOf("text", {
+    expected: options.expected,
+    example: options.example,
+    invalidExample: options.invalid[0] ?? "",
+    parse(raw) {
+      if (!options.matches(raw)) throw new ValueError(takesNot(options.expected)(shown(raw)));
+      return raw;
+    },
+  }, [
+    ...options.invalid.map((raw): InvalidSample => ({ raw, stage: "parse", why: "outside the grammar" })),
+    { raw: "", stage: "parse", why: "empty" },
+    { raw: "a\u0000b", stage: "parse", why: "a control character" },
+  ]);
+}

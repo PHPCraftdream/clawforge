@@ -7,7 +7,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { buildSet, withTarRunner } from "#framework/commands/sets/set.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 import { ctx, DIGEST, STORE_KEY, TOKEN, createBuildDeployment, removeBuildDeployment, tarList } from "#checks/sets/artifact/set-build/fixture.ts";
 
 const deployment = await createBuildDeployment();
@@ -264,8 +264,14 @@ try {
     } catch (error) {
       retryRefusal = error instanceof Error ? error.message : String(error);
     }
-    check("a flag rejection retries without the flag", [flagged, retryRefusal], [2, ""]);
-    check("the retry publishes its archive", (await readdir(setsDir)).some((entry) => entry.startsWith("demo-set-")), true);
+    // Only a Windows host passes --force-local, so only it has a flag to drop on the retry.
+    await requires("windows-host", "only a windows host passes --force-local to tar", async () => {
+      check("a flag rejection retries without the flag", [flagged, retryRefusal], [2, ""]);
+      check("the retry publishes its archive", (await readdir(setsDir)).some((entry) => entry.startsWith("demo-set-")), true);
+    });
+    await requires("posix-host", "a posix host passes no flag, so a rejected option is the cause and is not retried", () => {
+      check("a rejected option on a posix host makes one attempt and is reported", [flagged, retryRefusal.includes("--force-local")], [1, true]);
+    });
     check(
       "neither tar attempt writes the final artifact name",
       targets.every((target) => target !== existing.artifact),

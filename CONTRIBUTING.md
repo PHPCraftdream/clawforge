@@ -26,6 +26,30 @@ path under `tools/checks/` contains at least one substring — e.g. `./clawforge
 without running them; a filter that matches nothing is refused rather than silently falling
 back to the whole suite.
 
+`./clawforge check --related` selects only the checks affected by the changes between `--base`
+(default: the merge-base with the upstream branch, else `HEAD~1`) and the working tree — both
+committed and uncommitted files count. Selection uses the static import graph plus a data rule
+table for dependencies the graph cannot see: checks that spawn CLIs or servers, docs, goldens,
+packaging, and whole-surface families. Substring filters still work and narrow (intersect) the
+related set. An always-run fast tier (layout, architecture, static hygiene, needs) is included.
+
+`npm run check:fast` is a shortcut for typecheck + lint + the fast tier + `--related`; use it
+while iterating instead of the whole suite.
+
+The related mode is a convenience, not a guarantee: invisible dependencies are only covered by
+the rule table, so a change can still escape it. The full suite (`npm test`) stays the gate
+before a release.
+
+### CI tiers
+
+CI runs two tiers. The fast tier — typecheck, lint, and `check --related` against
+`origin/main`, which includes the always-run fast tier of checks — runs on pushes to non-main
+branches. The full suite gates everything else: pull requests, pushes to `main`, the nightly
+`schedule`, and `workflow_dispatch` runs with the `full` input; a dispatch without it runs the
+fast tier. Because `--related` needs the merge-base, CI checks out with full depth, computes
+the merge-base with `origin/main` explicitly, and passes it as `--base`. Each job prints the check timing summary (`check --timings`)
+at the end of its log, also on failure.
+
 ## Writing a check
 
 A check is any `tools/checks/**/*.check.ts` file. `tools/checks/kit/run.ts` finds every one of
@@ -159,11 +183,52 @@ Adding a check that genuinely cannot run without one of these: add the header, n
 `if (process.platform === "win32") return` — the runner's skip line and summary count already
 say exactly what a check file printing its own "skip" line to stderr would otherwise have to
 repeat by hand, and a moved or renamed file keeps working everywhere without anyone updating a
-CI path list.
+### Which run, when
+
+Pick the run by the moment, not by habit:
+
+| Moment | Run | Why |
+| --- | --- | --- |
+| Editing, a few minutes in | the one check file you changed: `node --experimental-strip-types tools/checks/<path>.check.ts` | seconds |
+| A task is done, before committing | `npm run check:fast` | type check, lint, the always-run structural checks (layout, architecture ratchets, static hygiene, needs) and the checks related to the diff |
+| A change touches a command declaration, the MCP surface, goldens, docs or packaging | add the family explicitly: `./clawforge check mcp golden completion flags property binder help docs packaging` | whole-surface checks are reached by rules, not by imports |
+| A stage or sprint ends, before a push to `main` or a release | the full suite: `npm test` | the gate; invisible dependencies are only covered here |
+| A push to a feature branch | nothing extra: CI runs the fast tier; the full tier runs on pull requests, `main` and nightly | see "CI tiers" |
+
+Read the exit code of the run itself, not the tail of its output: a pipeline reports the last
+command's status, and the summary line of a long log hides a failed file above it.
+
+A ratchet or layout failure after a "narrow" run is the usual sign that a family was skipped:
+`check:fast` includes them for exactly that reason. If a flaky file fails once under the full
+suite's own parallelism, treat it as a bug to fix, not noise to rerun.
+
+#### For task prompts given to agents
+
+Copy this into a task description so the agent verifies at the right level:
+
+```text
+Verification: run your own check files directly while you work. Before you report, run
+`npm run check:fast` and, if you touched commands, the MCP surface, goldens, docs or packaging,
+the matching families from CONTRIBUTING.md ("Which run, when"). Do not run the full suite; the
+orchestrator runs it at the end of the stage. Report each command with its real exit code.
+```
+
+### Run timings
+
+Every run records each check file's wall-clock duration — skipped and failed files at 0 — in
+`.check-timings.json` at the repository root (gitignored, per-host, the last 5 samples per
+file). A filtered run merges into the existing data instead of replacing it; the file is
+rewritten atomically (temp file + rename), and a corrupt or unknown-version file is ignored
+with one warning, then rewritten. At the end of a run the runner prints where the time went:
+wall time, the serial sum of per-file times, the parallel efficiency (serial sum ÷ wall ×
+jobs) and the ten slowest files with their share. `./clawforge check --timings` prints the
+stored ranking (median per file; `--top <n>` for more or fewer) without running anything.
+CI can set `OC_CHECK_TIMINGS_OUT=<path>` to additionally write the run's per-file durations
+as JSON for upload as an artifact; `OC_CHECK_TIMINGS=off` disables the repository-root file.
 
 ## CI jobs and the host × target matrix
 
-`.github/workflows/ci.yml` runs four jobs on every push/PR, one per named cell of the
+`.github/workflows/ci.yml` runs four jobs on every push/PR (fast tier on non-main pushes — see "CI tiers" above), one per named cell of the
 host × target matrix in `docs/guide/requirements.md` ("Windows, `local`" is refused by the
 framework itself, so it has no job); `.github/workflows/windows-full.yml` is a fifth,
 manual (`workflow_dispatch`) job on a self-hosted runner with a real WSL2 distro and Docker.
@@ -244,7 +309,11 @@ fail with the edit applied, and a stable fragment of the failing assertion's nam
 edit to the copy, and demands: the unedited copy passes the check, the edited copy fails
 naming the declared assertion, and the copy is restored (proven by hash). The gate fails if
 any control fails. A control whose edit no longer matches the product is itself a failure of
-`check:controls` — a stale control is a finding, never a skip. To add a control: append a
+`check:controls` — a stale control is a finding, never a skip. CI runs it in the full tier on
+the Windows (WSL2) job: several controls guard Windows-only behaviour. A control whose target
+check declares a `check:requires` header — or that names host-specific capabilities itself in
+`requires` — is reported as `skipped (needs <cap>)` and counted separately in the summary,
+never held and never a failure. To add a control: append a
 declaration to `CONTROLS`, run the command, and land it only once it holds against the
 unchanged product.
 

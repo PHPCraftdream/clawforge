@@ -56,17 +56,17 @@ export function auditFindingsSummary(findings: number, blocking: number): string
 }
 
 export const INCIDENT_ARGUMENTS = [
-  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag", effect: "read" },
+  { name: "dry-run", description: "Plan only", kind: "flag", effect: "read" },
   { name: "keep-exposure", description: "Proceed with the gateway published on every interface", kind: "flag" },
   {
     name: "tail",
-    summary: "Lines of log to collect",
-    description: "Lines of log to collect (default 500)",
+    summary: "Log lines to collect",
+    description: "Log lines to collect (default 500)",
     kind: "option",
     valueName: "n",
     value: kinds.count("a number of lines", () => "needs a number of lines"),
   },
-  { name: "json", description: "Emit the report as JSON", kind: "flag" },
+  { name: "json", description: "Report as JSON", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ] as const satisfies readonly ArgumentSpec[];

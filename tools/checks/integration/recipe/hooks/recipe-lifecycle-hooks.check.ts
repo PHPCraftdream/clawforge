@@ -13,7 +13,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createBackup, BACKUP_REFUSED, SIDECARS_RUNNING, GATEWAY_LEFT_STOPPED } from "#framework/commands/lifecycle/backup/index.ts";
-import { WITHOUT_RESUME, QUIESCE_HOOK_FAILED, QUIESCED_FOR_SNAPSHOT, STILL_QUIESCED, INVALID_MANIFEST, timeoutMessage } from "#framework/commands/management/recipe/lifecycle.ts";
+import { WITHOUT_RESUME, QUIESCE_HOOK_FAILED, QUIESCED_FOR_SNAPSHOT, STILL_QUIESCED, INVALID_MANIFEST, timeoutMessage } from "#framework/commands/management/recipe/run/lifecycle.ts";
 import type { BackupOptions } from "#framework/commands/lifecycle/backup/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

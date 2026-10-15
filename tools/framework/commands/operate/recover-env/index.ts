@@ -27,14 +27,14 @@ import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 
 export const RECOVER_ENV_ARGUMENTS = [
-  { name: "dry-run", description: "Print what would change without writing", kind: "flag", effect: "read" },
+  { name: "dry-run", description: "Changes only", kind: "flag", effect: "read" },
   {
     name: "adopt-runtime",
     summary: "Take the running container as authoritative",
     description: "Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing",
     kind: "flag",
   },
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const;
 
 /** Reports the facts Docker's own answer did not carry — left as they are, never guessed.

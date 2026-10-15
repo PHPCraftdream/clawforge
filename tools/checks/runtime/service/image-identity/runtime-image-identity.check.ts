@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
+import { RecipeReadError } from "#framework/runtime/docker/side-stack/io.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
@@ -26,6 +27,8 @@ try {
         return {code:composePsCode,stdout:composePsStdout,stderr:"synthetic compose failure"};
       }
       if(command === "docker" && args[0] === "ps") return {code:dockerPsCode,stdout:"",stderr:"synthetic daemon failure"};
+      // The side stack runs Docker through the environment-clearing launcher: sh -c <script> recipe-docker <docker args>.
+      if(command === "sh" && args[0] === "-c" && args[2] === "recipe-docker" && args[3] === "ps") return {code:dockerPsCode,stdout:"",stderr:"synthetic daemon failure"};
       if(args[0] === "compose") return {code:composePsCode,stdout:composePsStdout,stderr:"synthetic compose failure"};
       const stdout=args[0]==="inspect"
         ?JSON.stringify({Image:"sha256:running-image",State:{Running:running}})
@@ -51,7 +54,8 @@ try {
   const probeStack = runtime.stack("recipe-probe", "/fixture/recipe/compose.yml");
   assert.equal(await probeStack.isRunning(), false, "a successful empty Docker ps means no sidecar is running");
   dockerPsCode = 125;
-  await assert.rejects(probeStack.isRunning(), /synthetic daemon failure/);
+  // Daemon output can hold observed secrets: a failed read is a typed unknown, never the daemon's text.
+  await assert.rejects(probeStack.isRunning(), (error: Error) => error instanceof RecipeReadError && error.causeKind === "transport" && !/synthetic/.test(error.message));
   process.stderr.write("all running image identity checks passed\n");
 
   // --- health() distinguishes missing / stopped / starting / healthy / unhealthy ----------

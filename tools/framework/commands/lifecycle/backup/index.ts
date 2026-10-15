@@ -33,7 +33,7 @@ import {
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
-import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";
+import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/run/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { BackupPurpose } from "#src/core/app.ts";
@@ -67,10 +67,10 @@ export const BACKUP_ARGUMENTS = [
     description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot",
     kind: "flag",
   },
-  { name: "share", summary: "Share profile with verification", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
+  { name: "share", summary: "Share profile, verified", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
   { name: "migrate", summary: "Migrate profile, no keys", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
   { name: "with-secrets", summary: "Full profile with keys", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag", effect: "read" },
+  { name: "dry-run", description: "What would happen", kind: "flag", effect: "read" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface BackupCreateValues extends Values<typeof BACKUP_ARGUMENTS> {}
@@ -116,8 +116,8 @@ export const BACKUP = multiActionBody({
   action: { description: "Omit to create a backup; an action word lists or manages backups instead", summary: "Omit to create a backup" },
   defaultAction: "create",
   actions: {
-    list: defineAction({ summary: "List archives and replaced copies", effect: "read", arguments: BACKUP_LIST_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Emit JSON" } : argument), run: backupList }),
-    "prune-replaced": defineAction({ summary: "Delete copies restore left aside", effect: "read", arguments: BACKUP_PRUNE_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Emit JSON" } : argument), run: backupPruneReplaced }),
+    list: defineAction({ summary: "List archives and replaced copies", effect: "read", arguments: BACKUP_LIST_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Diff JSON" } : argument), run: backupList }),
+    "prune-replaced": defineAction({ summary: "Delete copies restore left aside", effect: "read", arguments: BACKUP_PRUNE_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Diff JSON" } : argument), run: backupPruneReplaced }),
     install: defineAction({ summary: "Schedule a plain backup", effect: "read", arguments: BACKUP_INSTALL_ARGUMENTS, run: backupInstall }),
     uninstall: defineAction({ summary: "Remove the backup schedule", effect: "read", arguments: BACKUP_UNINSTALL_ARGUMENTS, run: backupUninstall }),
     create: defineAction({

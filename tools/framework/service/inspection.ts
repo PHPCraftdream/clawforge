@@ -462,6 +462,9 @@ export interface DeclaredState {
   readonly image: string;
   /** Recipes with an agent bundle, by name — what provision-agent would set up. */
   readonly recipes: readonly string[];
+  /** Every recipe-owned config path (additive, structured output only), or undefined when
+   *  the ownership catalog itself could not be read — that is reported as a problem. */
+  readonly ownedConfigPaths?: readonly import("../set/ownership/recipe-paths.ts").RecipePathOwner[];
 }
 
 /** One outbound endpoint the live configuration names, probed from inside the container.

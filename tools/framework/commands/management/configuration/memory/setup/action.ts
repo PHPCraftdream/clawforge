@@ -5,22 +5,23 @@ import * as kinds from "#src/core/values/kinds.ts";
 import { emit } from "#src/core/io/output.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
-import { declaration, declaredMemory, modeOf, MemoryError } from "../declaration.ts";
+import { declaration, declaredMemory, modeOf, MemoryError } from "#src/commands/management/configuration/memory/declaration.ts";
 import { approveModel } from "./approval.ts";
 import { setupLocalMemory, type SetupRequest, type SetupPorts } from "./operation.ts";
 import { readSetupMounts } from "./mounts.ts";
+import { sha256, modelSource, modelRevision, pluginVersion } from "#src/commands/management/configuration/memory/values.ts";
 
 const ARGUMENTS = [
-  { name: "model-source", summary: "GGUF source", description: "Approved immutable HTTPS GGUF source", kind: "option", valueName: "url", required: true, value: kinds.text("an approved model source") },
-  { name: "model-version", summary: "GGUF revision", description: "Approved immutable model revision", kind: "option", valueName: "revision", required: true, value: kinds.text("an approved model revision") },
-  { name: "model-checksum", description: "Approved GGUF SHA256", kind: "option", valueName: "sha256", required: true, value: kinds.text("a SHA256 checksum") },
-  { name: "plugin-version", description: "Approved exact native plugin version", kind: "option", valueName: "version", required: true, value: kinds.text("an exact plugin version") },
-  { name: "model-max-bytes", description: "Approved maximum GGUF download bytes", kind: "option", valueName: "bytes", required: true, value: kinds.positive("a positive byte limit") },
+  { name: "model-source", summary: "GGUF source", description: "Approved immutable HTTPS GGUF source", kind: "option", valueName: "url", required: true, value: modelSource() },
+  { name: "model-version", summary: "GGUF revision", description: "Approved immutable model revision", kind: "option", valueName: "revision", required: true, value: modelRevision() },
+  { name: "model-checksum", description: "Approved GGUF SHA256", kind: "option", valueName: "sha256", required: true, value: sha256() },
+  { name: "plugin-version", summary: "Plugin version", description: "Approved exact native plugin version", kind: "option", valueName: "version", required: true, value: pluginVersion() },
+  { name: "model-max-bytes", summary: "Max GGUF bytes", description: "Approved maximum GGUF download bytes", kind: "option", valueName: "bytes", required: true, value: kinds.positive("a positive byte limit") },
   { name: "agent", description: "Existing agent id", kind: "option", valueName: "id", value: kinds.providerId() },
-  { name: "all-agents", description: "Select every existing agent", kind: "flag" },
-  { name: "allow-install", description: "Consent to approved native plugin installation", kind: "flag" },
+  { name: "all-agents", summary: "Every agent", description: "Select every existing agent", kind: "flag" },
+  { name: "allow-install", summary: "Plugin install consent", description: "Consent to approved native plugin installation", kind: "flag" },
   { name: "allow-download", summary: "GGUF download", description: "Consent to approved GGUF download", kind: "flag" },
-  { name: "json", description: "Emit structured outcome", kind: "flag" },
+  { name: "json", description: "Structured outcome", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export const SETUP = defineAction({

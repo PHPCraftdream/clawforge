@@ -1,12 +1,10 @@
 // Checks that a malformed JSON-RPC line does not take down the whole MCP server.
-//
 // `null`, a number, a string and an array are all valid JSON but not a JSON-RPC request —
 // JSON.parse accepts them, and reading `.method` off `null` used to throw uncaught,
 // crashing the process before a later, well-formed request ever got a reply. This spawns
 // the real server over real stdio, the same way tools/checks/deploy.check.ts stands in for
 // a server that isn't reachable: process survival is not observable through a direct
 // function call.
-//
 // A scratch deployment is created and removed for the duration: control-mcp only needs
 // apps/<name>/app.ts to exist (initialize and the malformed lines never reach a command
 // that would need a bootstrapped instance), and the check must not depend on whichever
@@ -22,8 +20,7 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { callFactsFor, CONFIRM_REQUIRED, specOf, specShape, bindNamed } from "#framework/core/command/index.ts";
-import { DESTRUCTIVE_SOME } from "#framework/core/io/help-render.ts";
-import { FULL_TEXT_POINTER } from "#framework/integration/mcp/schema.ts";
+import { FULL_TEXT_POINTER, MCP_PARTIAL_MARKER } from "#framework/integration/mcp/schema.ts";
 
 const IMPORT_NOTE = "imported recipe", NOTES_TEXT = "plain notes", progressMasked = "progress mentions ***", gateMasked = "gate says ***";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
@@ -68,8 +65,9 @@ const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;
 // top-level try, so it lives at module scope and is disposed just before finish()).
 const apps = await isolatedAppsRoot("mcp-server");
 
-try {
-  await createApp(createName("deployment", deploymentName));
+const mainSection = async (): Promise<void> => {
+  try {
+    await createApp(createName("deployment", deploymentName));
 
   // A real `recipe import` round trip: one of the plain-text actions, driven end to end.
   const importSource = resolve(apps.root, deploymentName, "fixture-source");
@@ -141,13 +139,14 @@ try {
   check("the recipe tool declares one envelope schema for every action", byName.get("recipe")?.outputSchema !== undefined, true);
   check("and it is the envelope schema itself", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
-} finally {
-  await rm(resolve(apps.root, deploymentName), { recursive: true, force: true });
-}
+  } finally {
+    await rm(resolve(apps.root, deploymentName), { recursive: true, force: true });
+  }
+};
 
 // Mixed command groups gate only mutating actions. This keeps the MCP contract safe when a
 // caller selects `recipe remove --volumes`, while list remains callable without a confirmation.
-{
+const recipeSection = async (): Promise<void> => {
   const recipeDeployment = `mcp-check-recipe-${randomBytes(4).toString("hex")}`;
   const recipeLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true } } },
@@ -192,8 +191,8 @@ try {
       .find((tool) => tool.name === "recipe"));
     check("recipe MCP schema leaves conditional confirmation optional", (recipeTool?.inputSchema?.required ?? []).includes("confirm"), false);
     check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
-    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes(DESTRUCTIVE_SOME), true);
-    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes(DESTRUCTIVE_SOME), true);
+    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes(MCP_PARTIAL_MARKER), true);
+    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes(MCP_PARTIAL_MARKER) && toolDescription("recipe", openclawCommands.recipe!) === recipeTool?.description, true);
     const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
     check("declaration and generated schema agree", required.includes("confirm"), false);
     check("bare recipe arguments are read-only for MCP gating", callFactsFor(openclawCommands.recipe!, []).effect, "read");
@@ -209,7 +208,7 @@ try {
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"],
+    ["list", "import", "new", "check", "verify", "onboard", "diagnose", "install", "trial", "remove", "inspect", "recover", "migrate", "status", "logs", "pin", "run"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes(recipePointer), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
@@ -218,7 +217,7 @@ try {
 
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
-    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes(DESTRUCTIVE_SOME), true);
+    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes(MCP_PARTIAL_MARKER), true);
     check("set build is mutable without confirmation", callFactsFor(openclawCommands.set!, ["build"]).effect, "change");
     check("set try remains destructive for MCP gating", callFactsFor(openclawCommands.set!, ["try", "--set", "x.tar.gz"]).effect, "destroy");
     check("lock check is read-only for MCP gating", callFactsFor(openclawCommands.lock!, ["--check"]).effect, "read");
@@ -226,9 +225,8 @@ try {
   } finally {
     await rm(resolve(apps.root, recipeDeployment), { recursive: true, force: true });
   }
-}
+};
 
-// --- import is expressible over MCP: both CLI forms round-trip the real schema ------------
 //
 // The declaration used to carry only action and name, so the dispatcher's third positional —
 // the rename — could not be expressed at all (the natural arguments shape was answered with
@@ -250,7 +248,7 @@ try {
 
 // A structured read-only command reports changed:false, while the corresponding write remains
 // gated and reports changed:true after an explicit confirmation.
-{
+const lockSection = async (): Promise<void> => {
   const lockDeployment = `mcp-check-lock-${randomBytes(4).toString("hex")}`;
   const lockLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lock", arguments: { check: true, json: true } } },
@@ -294,16 +292,14 @@ try {
   } finally {
     await rm(resolve(apps.root, lockDeployment), { recursive: true, force: true });
   }
-}
+};
 
-// --- app-owned verify runs recipe code, so it is gated like onboard -----------------------
-//
 // verify.ts is an app-owned hook invoked with the full Context — the same access prepare.ts
 // gets, and prepare may mutate the target. Being named "verify" is not evidence it is
 // read-only, so until something the framework itself verified says otherwise, the call
 // demands confirm: true like onboard does, and the envelope may not report changed:false on
 // the strength of the action's name alone.
-await requires("gnu-userland", "recipe verify and onboard over MCP", async () => {
+const verifySection = (): Promise<void> => requires("gnu-userland", "recipe verify and onboard over MCP", async () => {
   const verifyDeployment = `mcp-check-verify-${randomBytes(4).toString("hex")}`;
   const recipeDir = resolve(apps.root, verifyDeployment, "recipes", "probe");
   const verifyLines = [
@@ -368,12 +364,15 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
   }
 });
 
-// --- a malformed tools/call params.name must not crash the process ------------------------
-//
 // String(params.name ?? "") used to throw when params.name was an object whose toString is
 // not callable — confirmed directly: String({toString: null}) throws "Cannot convert object
 // to primitive value". Uncaught inside the dispatch loop, that took the whole process down
 // before any request queued after it (including a later initialize) got answered.
+
+// Each server-spawning section owns its own scratch deployment with unique random names, so the
+// children (whose cost is dominated by the framework import) run concurrently: a Promise.all of
+// at most four tasks. Sections that never spawn a server stay sequential.
+await Promise.all([mainSection(), recipeSection(), lockSection(), verifySection()]);
 
 {
   const badCallDeployment = `mcp-check-badcall-${randomBytes(4).toString("hex")}`;
@@ -408,8 +407,6 @@ await requires("gnu-userland", "recipe verify and onboard over MCP", async () =>
   }
 }
 
-// --- the envelope itself -----------------------------------------------------------------
-//
 // What an agent reads instead of the log. Built from the command's output alone, so the one
 // case that matters most is a command that reports findings and then fails on them: the
 // document it emitted is still valid and is still what the caller needs.
@@ -486,8 +483,6 @@ function conforms(
   check("nor does JSON that is not a document", structuredResult({ summary: "s", structured: true }, "42", "op-5"), undefined);
 }
 
-// --- the declared schema is checked against EVERY action's actual response ---------------
-//
 // tools/list used to declare the outputSchema by asking structuredWhen for the one action
 // name it happened to return true for, while the dispatcher attached structuredContent to
 // a different hardcoded set — nothing ever compared the declaration with what the actions
@@ -495,20 +490,20 @@ function conforms(
 // declaration's own input schema, every action is driven through the real server loop,
 // and each response is validated against the schema tools/list itself declared. The
 // command runs are stood in for — status/logs/install/remove need an engine to succeed —
-// each emitting exactly the shape its real implementation emits when captured (one JSON
-// document for the hook/report actions, plain progress text for the rest), while the
-// metadata under test — structured, readOnlyWhen, destructive, arguments — is the real
-// declaration. list and import are additionally driven for real against the actual
-// command above.
+// each emitting exactly its real implementation's captured shape; the run action alone
+// reaches its REAL pipeline against the fixture manifest written below. The metadata
+// under test — structured, readOnlyWhen, destructive, arguments — is the real list and
+// import above also exercise real command implementations.
 {
   const recipeCommand = openclawCommands.recipe!;
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
-  check("the declaration enumerates the actions to sweep", actionChoices.length, 10);
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 17);
 
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
   await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
-  const script = `
+  await mkdir(join(sweepRoot, "recipes", "sidecar", "actions"), { recursive: true });
+  await writeFile(join(sweepRoot, "recipes", "sidecar", "recipe.json"), JSON.stringify({ description: "sweep fixture recipe", actions: { announce: { file: "actions/announce.ts", effect: "read", arguments: [] } } }), "utf8");  await writeFile(join(sweepRoot, "recipes", "sidecar", "actions", "announce.ts"), "export function run() { return { ok: true }; }\n", "utf8");  const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
@@ -518,20 +513,18 @@ function conforms(
     const outputs = {
       list: () => { log("available recipes"); info("sidecar          a probe service"); },
       import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
-      new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
+      check: () => { info("1 recipe check file(s) passed, 0 failed"); }, new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
       install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
-      remove: () => { log("sidecar removed"); },
-      status: () => { info("running"); },
-      logs: () => { emit("sidecar-gateway  | ready\\n"); },
-      verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); },
-      onboard: () => { emit(JSON.stringify({ ok: true, steps: ["dashboard ready"] }) + "\\n"); },
+      remove: () => { log("sidecar removed"); }, inspect: () => { info("sidecar: owned namespace"); }, recover: () => { log("service recreated"); }, migrate: () => { log("migration preview"); },
+      status: () => { info("running"); }, logs: () => { emit("sidecar-gateway  | ready\\n"); },
+      verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); }, onboard: () => { emit(JSON.stringify({ ok: true, steps: ["dashboard ready"] }) + "\\n"); }, run: () => { emit(JSON.stringify({ ok: true }) + "\\n"); },
       diagnose: () => { emit(JSON.stringify({ recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" }) + "\\n"); },
     };
     await useDeployment(${JSON.stringify(sweepRoot)});
     await serveMcp({
       name: "sweep",
       commands: {
-        recipe: { ...managementCommands.recipe, run: async (_ctx, args) => { (outputs[args[0] ?? "list"] ?? outputs.list)(); } },
+        recipe: { ...managementCommands.recipe, run: async (ctx, args) => { if ((args[0] ?? "list") === "run") return managementCommands.recipe.run(ctx, args); (outputs[args[0] ?? "list"] ?? outputs.list)(); } },
         notes: { summary: "a text-only tool that declares no envelope", run: async () => { log(NOTES_TEXT); } },
       },
     });
@@ -542,7 +535,7 @@ function conforms(
       jsonrpc: "2.0",
       id: index + 1,
       method: "tools/call",
-      params: { name: "recipe", arguments: { action, ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
+      params: { name: "recipe", arguments: { action, ...(action === "recover" ? { service: "sidecar" } : {}), ...(action === "run" ? { name: "sidecar", "recipe-action": "announce" } : {}), ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
     })),
     { jsonrpc: "2.0", id: actionChoices.length + 1, method: "tools/call", params: { name: "notes", arguments: {} } },
   ];
@@ -578,8 +571,9 @@ function conforms(
       (byId.get(actionChoices.indexOf(action) + 1)?.result as { structuredContent?: { result?: unknown } } | undefined)?.structuredContent?.result;
     check("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
     check("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
+    check("run: the fixture action's JSON rides in the envelope whole", envelopeResult("run"), { ok: true });
     check("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
-    for (const action of ["list", "import", "new", "install", "remove", "status", "logs"]) {
+    for (const action of ["list", "import", "new", "install", "remove", "inspect", "recover", "migrate", "status", "logs"]) {
       check(`${action}: a text action carries its text as the result`, typeof envelopeResult(action) === "string" && String(envelopeResult(action)).length > 0, true);
     }
 

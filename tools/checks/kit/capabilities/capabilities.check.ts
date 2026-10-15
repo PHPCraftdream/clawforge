@@ -129,9 +129,14 @@ async function directSymlinkRoundTrip(): Promise<boolean> {
 
 // --- the shell probes: the verdict is the shells' own behaviour, not a constant -------------
 
+// A cold PowerShell start on a busy runner can take longer than a warm one; a failed answer
+// writes its evidence (error, status, signal, stderr) to stderr beside the assertion.
 function answersDirectly(command: string, args: readonly string[]): boolean {
-  const reply = spawnSync(command, [...args], { timeout: 15_000 });
-  return reply.error === undefined && reply.status === 0;
+  const reply = spawnSync(command, [...args], { timeout: 60_000 });
+  const answered = reply.error === undefined && reply.status === 0;
+  if (!answered) process.stderr.write(`probe ${command}: error=${String(reply.error?.message)} status=${String(reply.status)} signal=${String(reply.signal)} stderr=${String(reply.stderr).slice(0, 400)}
+`);
+  return answered;
 }
 
 const PWSH_ARGS = ["-NoProfile", "-NonInteractive", "-Command", "exit 0"];

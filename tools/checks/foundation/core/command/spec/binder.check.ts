@@ -23,7 +23,7 @@ import { specOf, specData } from "#framework/core/command/spec.ts";
 import { toolArguments } from "#framework/integration/mcp/call.ts";
 import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import {
-  app, captureApp, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidSamplesOf, runCase, runNamed, stages, units,
+  app, captureApp, controlFlags, controlValueOf, controlValues, exampleOf, factsOf, fixture, invalidSamplesOf, runCase, runNamed, stages, units,
 } from "../pipeline/property/property-sweep.ts";
 import type { ArgumentSpec } from "#framework/core/command/index.ts";
 import type { CapturedCall, Unit } from "../pipeline/property/property-sweep.ts";
@@ -44,6 +44,7 @@ function namedControlArgs(unit: Unit): Record<string, unknown> {
       || unit.args.some((entry) => entry.name === argument && entry.kind === "positional");
     if (given) args[argument] = controlValueOf(fact);
   }
+  for (const flag of controlFlags(unit)) args[flag] = true;
   return args;
 }
 
@@ -66,6 +67,7 @@ function controlArgvWithout(unit: Unit, omit: ReadonlySet<string>): string[] {
       return argument.kind === "option" ? [`--${argument.name}`, value as string]
         : Array.isArray(value) ? value : [value];
     }),
+    ...controlFlags(unit).filter((flag) => !omit.has(flag)).map((flag) => `--${flag}`),
   ];
 }
 
@@ -235,20 +237,24 @@ for (const unit of units) {
     .map(({ argument }) => argument.name)
     .filter((name) => !swapped.has(name)
       && (sharesRule(name, a.name) || sharesRule(name, b.name))));
+  // Swapped arguments that share a rule with an earlier one stay out of the call (it would refuse at parse).
+  const included = eligible.reduce<typeof eligible>((kept, entry) =>
+    kept.some((other) => sharesRule(entry.argument.name, other.argument.name)) ? kept : [...kept, entry], []);
   const bindArgv = [
-    ...controlArgvWithout(unit, new Set([...swapped, ...conflicting])),
-    ...eligible.flatMap(({ argument }): string[] => argument.kind === "option"
+    // The capture app passes prepare through, so the consent flags a real prepare asks for stay out.
+    ...controlArgvWithout(unit, new Set([...swapped, ...conflicting, ...controlFlags(unit)])),
+    ...included.flatMap(({ argument }): string[] => argument.kind === "option"
       ? [`--${argument.name}`, exampleOf(argument)]
       : [exampleOf(argument)]),
     ...triggers.map((trigger) => `--${trigger.name}`),
   ];
   const bindArgs = namedControlArgs(unit);
-  for (const name of [...swapped, ...conflicting]) delete bindArgs[name];
+  for (const name of [...swapped, ...conflicting, ...controlFlags(unit)]) delete bindArgs[name];
   const bindNamedArgs = {
     ...bindArgs,
     [b.name]: exampleOf(b),
     [a.name]: exampleOf(a),
-    ...Object.fromEntries(eligible.slice(2).map(({ argument }) => [argument.name, exampleOf(argument)])),
+    ...Object.fromEntries(included.slice(2).map(({ argument }) => [argument.name, exampleOf(argument)])),
     ...Object.fromEntries(triggers.map((trigger) => [trigger.name, true])),
   };
   await runCase(unit.command, bindArgv, "terminal", captureApp(argvCaptured));

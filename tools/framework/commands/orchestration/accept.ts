@@ -46,8 +46,8 @@ export const ACCEPT_ARGUMENTS = [
     value: kinds.recipeRef(),
   },
   { name: "set", description: "Check the verified artifact and save an acceptance receipt", kind: "option", valueName: "artifact", value: kinds.localFile("a set artifact path") },
-  { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
-  { name: "json", description: "Emit the report as JSON", kind: "flag" },
+  { name: "with-model", description: "Include model checks", kind: "flag" },
+  { name: "json", description: "Report as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** One declared check. `kind` selects what the framework does; everything else is that

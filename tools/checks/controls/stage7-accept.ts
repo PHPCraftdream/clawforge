@@ -27,7 +27,7 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     id: "C201", finding: "R1-C",
     note: "Restore clean-only alias propagation; the literal reviewer B anchored alias must fail.", product: "tools/checks/foundation/hygiene/static/write-isolation-syntax/write-isolation-rules.ts",
     search: "  const classify = scopedClassifier(source, masked);",
-    replace: "  const clean = cleanIdents(masked);\n  const classify = (expr: string, origin: string) => { const result = classifyTarget(expr, clean, origin); return result === \"UNKNOWN\" ? \"CLEAN\" : result; };",
+    replace: "  const clean = cleanIdents(masked);\n  const classify = Object.assign((expr: string, origin: string, at: number) => { const result = classifyTarget(expr, clean, origin); return result === \"UNKNOWN\" ? \"CLEAN\" : result; }, { resolveValue: scopedClassifier(source, masked).resolveValue });",
     check: "tools/checks/foundation/hygiene/static/write-isolation.check.ts", fragment: "write-isolation literal: reviewer B resolve alias",
   },
   {
@@ -96,8 +96,8 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
   {
     id: "C206", finding: "rf7-tails-V",
     note: "Restore the dist exclusion; the dist self-check must fail.", product: "tools/checks/kit/run.ts",
-    search: "const IGNORED_STATUS_EXCLUDES = [\"node_modules\", \"apps\", \"worktrees\", \".rush\"];",
-    replace: "const IGNORED_STATUS_EXCLUDES = [\"node_modules\", \"apps\", \"worktrees\", \"tools/framework/dist\", \".rush\"];",
+    search: "const IGNORED_STATUS_EXCLUDES = [\"node_modules\", \"apps\", \"worktrees\", \".rush\", \".check-timings.json\"];",
+    replace: "const IGNORED_STATUS_EXCLUDES = [\"node_modules\", \"apps\", \"worktrees\", \"tools/framework/dist\", \".rush\", \".check-timings.json\"];",
     check: "tools/checks/kit/capabilities/run-guard.check.ts", fragment: "a new file under tools/framework/dist is reported",
   },
   {
@@ -196,8 +196,8 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
   {
     id: "C215", finding: "R2-C",
     note: "Disable measureProseHeldFlow constant carrying; its new const-held check fixture must fail independently of the legacy scanner.", product: "tools/checks/architecture/prose-held.ts",
-    search: "  const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = []): boolean => {",
-    replace: "  const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = []): boolean => { return false;",
+    search: "  const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = [], descriptor = 0): boolean => {",
+    replace: "  const carrying = (name: string, call: boolean, at: number, from: Scope, seen = new Set<Binding>(), path: string[] = [], descriptor = 0): boolean => { return false;",
     check: "tools/checks/architecture/self/prose-held.check.ts", fragment: "flow: reviewer const-held check",
   },
   {
@@ -368,7 +368,7 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     product: "tools/checks/kit/capabilities/native-tools.ts",
     search: 'tool === "bash" ? validateBash(binary, on) : validateTar(binary, on)',
     replace: 'tool === "bash" ? Promise.resolve(false) : validateTar(binary, on)',
-    check: "tools/checks/kit/capabilities/native-tools.check.ts", fragment: "independently working native Bash must be selected",
+    check: "tools/checks/kit/capabilities/native-tools.check.ts", fragment: "independently working native Bash must be selected", requires: ["windows-host"], // on Linux CI the edit fails the default POSIX Bash assertions instead, never this fragment
   },
   {
     id: "C274", finding: "real packing payload", note: "Corrupt inventoried payload bytes before real archive creation.",

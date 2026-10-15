@@ -75,3 +75,12 @@ export function safeName(kind: string, value: string): string {
 export function newName(kind: string, value: string): string {
   return createName(kind as NameKind, value);
 }
+
+/** True when the text holds a C0/C1 control character or DEL (checked by code unit, not by regex). */
+export function hasControlCharacter(text: string): boolean {
+  for (let index = 0; index < text.length; index++) {
+    const unit = text.charCodeAt(index);
+    if (unit <= 0x1f || (unit >= 0x7f && unit <= 0x9f)) return true;
+  }
+  return false;
+}

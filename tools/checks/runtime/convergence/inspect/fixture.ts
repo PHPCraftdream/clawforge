@@ -137,6 +137,10 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           if (path === envFile) return spec.targetEnv !== undefined;
           return false;
         },
+        // Entry presence (lock observation); the fixture has no symlinks, so it is exists().
+        async existsEntry(path: string): Promise<boolean> {
+          return this.exists(path);
+        },
         async readFile(path: string): Promise<string> {
           if (path === configFile) return JSON.stringify(liveConfig);
           if (path === envFile) return spec.targetEnv ?? "";

@@ -1,3 +1,4 @@
+import { ignoredEphemeralPaths, type SideStackMigrateOptions } from "#src/runtime/docker/side-stack/migration-plan.ts";
 import { migrationVerifier } from "./migration-verifier.ts";
 import { randomUUID } from "node:crypto";
 import { posix } from "node:path";
@@ -36,8 +37,10 @@ export async function runMigrateAction(
     throw new Error("runtime does not support recipe migration");
   }
   // Read-only planning precedes the executor's caller-supplied lock scope.
-  const plan = await stack.planMigrate({ backupRoot: backupRoot(ctx.settings.dataDir), migrationBackup: recipe.migrationBackup,
-    ...options, verifyMigrationBackup: migrationVerifier(ctx, recipe) });
+  const migrateOptions: SideStackMigrateOptions = { backupRoot: backupRoot(ctx.settings.dataDir), migrationBackup: recipe.migrationBackup,
+    ephemeralPaths: recipe.ephemeralPaths, ...options, verifyMigrationBackup: migrationVerifier(ctx, recipe) };
+  const plan = await stack.planMigrate(migrateOptions);
+  const ignored = ignoredEphemeralPaths(plan);
   emit(`${maskSecrets(JSON.stringify({
     recipe: recipe.name, dryRun, operation: "migrate-owned-legacy-stack",
     sourceProject: plan.sourceProject, targetProject: plan.targetProject,
@@ -52,6 +55,8 @@ export async function runMigrateAction(
         writable: mount.writable, name: mount.name,
       })),
     })),
+    ignoredEphemeralPaths: ignored,
+    ephemeralSummary: ignored.map(({ path, count }) => `ignored as ephemeral by the recipe: ${path} (${count} entries)`),
     migrationBackup: plan.migrationBackup,
     backupRoot: plan.backupRoot,
     retainedArtifacts: { privateBackups: true, sourceVolumes: plan.volumes.map((volume) => volume.source),
@@ -64,6 +69,7 @@ export async function runMigrateAction(
   const result = await stack.migrate(plan, (action) =>
     guardedWith(ctx, `recipe migrate ${name}`, takeover, action));
   emit(`${maskSecrets(JSON.stringify({ recipe: recipe.name, backupRoot: result.backupRoot,
+    ignoredEphemeralPaths: ignoredEphemeralPaths(result),
     migrationBackup: result.migrationBackup, evidence: result.evidence,
     journalPath: result.journalPath, retainedSourceVolumes: result.retainedSource }, null, 2))}\n`);
 }

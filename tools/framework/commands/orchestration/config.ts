@@ -14,17 +14,22 @@ import type { Context } from "#src/core/context.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
+import {
+  conflictingDeclaredPath, declaredOwnershipConflictDetail, filterOwnedDeclarations,
+  refuseDeclaredOwnedPaths, recipePathOwners,
+} from "#src/set/ownership/recipe-paths.ts";
+import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
 import type { ArgumentSpec, ParsedCall } from "#src/core/command/spec.ts";
 import { commandBody, parseCall, specShape } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 export const APPLY_CONFIG_ARGUMENTS = [
-  { name: "dry-run", summary: "Validate the apply without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag", effect: "read" },
-  { name: "dump", summary: "Reconstruct desired-state.json from the live config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
-  { name: "force", summary: "Overwrite an existing desired-state.json; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag", effect: "destroy" },
-  { name: "break-lock", summary: "Take over a held instance lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
+  { name: "dry-run", summary: "Validate without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag", effect: "read" },
+  { name: "dump", summary: "Rebuild from the live config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
+  { name: "force", summary: "Overwrite; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag", effect: "destroy" },
+  { name: "break-lock", summary: "Take the instance lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 
@@ -164,11 +169,36 @@ async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = 
   }
 
   // Fail here rather than inside the container with a less helpful message.
+  let entries: { path: string; value: unknown }[];
   try {
-    JSON.parse(payload);
+    const parsed: unknown = JSON.parse(payload);
+    if (!Array.isArray(parsed)) throw new Error("expected a JSON array of { path, value }");
+    entries = parsed as { path: string; value: unknown }[];
   } catch (error) {
     die(`${desiredStateFile()} is not valid JSON: ${(error as Error).message}`);
   }
+
+  // Recipe-owned config paths never come from the declaration. An ambiguous or broken
+  // ownership catalog must surface here too, not read as "nothing is owned".
+  let owners: readonly RecipePathOwner[];
+  try {
+    owners = await recipePathOwners();
+  } catch (error) {
+    die(`recipe config ownership could not be read: ${(error as Error).message}`);
+  }
+  for (const entry of entries) {
+    const owner = conflictingDeclaredPath(owners, entry.path);
+    if (owner !== undefined) die(declaredOwnershipConflictDetail(entry.path, owner));
+  }
+
+  // Drop owned entries before staging; the declaration file on disk is left as written.
+  const filtered = filterOwnedDeclarations(entries, owners);
+  if (filtered.dropped > 0) {
+    // Entries existed but none survive: an empty batch would silently apply nothing.
+    if (filtered.kept.length === 0) die("every declared config path is owned by a recipe — nothing to apply");
+    log(`skipping ${filtered.dropped} path(s) owned by recipes`);
+  }
+  payload = JSON.stringify(filtered.kept);
 
   const fileName = stagedFileName(dryRun);
   const stagedOnTarget = `${ctx.settings.dataDir}/config/${fileName}`;
@@ -250,6 +280,15 @@ async function dumpDesiredState(ctx: Context, force: boolean, jsonOnly = false):
     const value = valueAt(live, declaredPath);
     if (value === undefined) omitted.push(declaredPath);
     else recovered.push({ path: declaredPath, value });
+  }
+
+  // RECOVERABLE_PATHS are ordinary config paths, so a recipe's owns COULD name one — the
+  // "none of which a recipe can own" assumption is not structural. Refuse rather than write
+  // a declaration the next apply would refuse back.
+  try {
+    await refuseDeclaredOwnedPaths(recovered);
+  } catch (error) {
+    die(`recovered declaration conflicts with recipe ownership: ${(error as Error).message}`);
   }
 
   await writeFile(path, `${JSON.stringify(recovered, null, 2)}\n`, "utf8");

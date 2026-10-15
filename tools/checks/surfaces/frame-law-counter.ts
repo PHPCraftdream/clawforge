@@ -24,7 +24,7 @@ import {
 } from "#framework/entry/resolve.ts";
 import { FRAME_PRODUCERS, SELECTION_CASES } from "#checks/golden/frames.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES } from "#checks/golden/advice.ts";
-import { parsePaste, programArgv, msvcrtArgv, type Shell } from "#checks/kit/shells.ts";
+import { parsePaste, programArgv, msvcrtArgv, type Shell } from "#checks/surfaces/advice/shells.ts";
 
 // npm's .ps1 and .cmd wrappers pass PowerShell values through legacy native
 // command-line parsing. Observed with PowerShell 5.1 and real npm cmd-shim:

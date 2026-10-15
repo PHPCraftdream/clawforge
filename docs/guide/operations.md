@@ -38,7 +38,7 @@ and which end-to-end check remains unperformed. A missing operation is a framewo
 improve, not a reason to silently establish a second script-based workflow.
 
 From a native Windows shell, use the installed Windows ClawForge launcher or invoke Git Bash
-explicitly. `C:\Windows\System32\bash.exe` is the legacy WSL launcher, not Git Bash: it can
+explicitly. The `bash.exe` in the Windows `System32` directory is the legacy WSL launcher, not Git Bash: it can
 reinterpret quoted foreign arguments and expand `$` or command substitutions before ClawForge
 receives them. For WSL operation, enter the WSL shell first rather than forwarding scripts
 through that legacy launcher.

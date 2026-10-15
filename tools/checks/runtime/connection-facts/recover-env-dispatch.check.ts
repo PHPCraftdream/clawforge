@@ -1,3 +1,4 @@
+// check:requires docker
 // Two reachability holes, driven through the REAL surfaces rather than by calling
 // the underlying functions — that is the whole point of the regression:
 //
@@ -205,6 +206,8 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { error } = await capture(() => runApp(recoverApp, ["recover-env"]));
+    // The seen text goes to stderr beside the assertion, not into it: a host-dependent refusal is shown on failure.
+    if (!error.includes(NOT_RUNNING_CAUSE)) process.stderr.write(`recover-env refused with: ${error}\n`);
     check(
       "the dispatcher reached recovery: the refusal is recovery's own, not the settings parser's",
       error.includes(NOT_RUNNING_CAUSE),
@@ -425,6 +428,7 @@ try {
     const adopted = responses.find((response) => response.id === 2);
     const adoptedText = adopted?.result?.content?.[0]?.text ?? "";
     check("tools/call with adopt-runtime is not rejected as an unknown argument", adoptedText.includes(unknownArgumentMessage("adopt-runtime")), false);
+    if (!adoptedText.includes(RECOVERABLE_ONLY_FROM_RUNNING)) process.stderr.write(`MCP recover-env answered with: ${adoptedText}\n`);
     check("MCP recovery reaches its own missing-container refusal with OC_DATA_DIR absent", adoptedText.includes(RECOVERABLE_ONLY_FROM_RUNNING), true);
     check("MCP recovery never reaches the settings parser's refusal", adoptedText.includes(DATA_DIR_UNSET), false);
 

@@ -42,18 +42,18 @@ export const ROLLBACK_ARGUMENTS = [
     valueName: "id",
     value: OPERATION_ID,
   },
-  { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
+  { name: "no-restart", description: "Restore without restarting", kind: "flag" },
   // A flag, not `--set <artifact>`: rollback names no artifact of its own, it reinstalls
   // whichever one `apply --set` installed before the current one.
   {
     name: "previous-set",
-    summary: "Reinstall the previously installed set, not one config file",
+    summary: "Reinstall the previous set",
     description: "Reinstall the previously installed set instead of restoring one config file",
     kind: "flag",
   },
   ...LOCK_TAKEOVER_ARGUMENTS,
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag", effect: "read" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
+  { name: "dry-run", description: "What would happen", kind: "flag", effect: "read" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The operation to undo, and why that one. Exported for the checks: choosing the wrong

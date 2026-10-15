@@ -298,7 +298,7 @@ const zshLines = (): readonly string[] => renderCompletion("zsh", data).split("\
 
 for (const [label, frame] of [["checkout root", atRoot], ["checkout subdirectory", fromSub]] as const) {
   await under(frame, async () => {
-    expectBytes(`${label}: the bash Install header`, bashInstall(), "# Install: source <(./clawforge completion bash)");
+    expectBytes(`${label}: the bash Install header`, bashInstall(), "# Install: eval \"$(./clawforge completion bash)\"");
     expectBytes(`${label}: the zsh Install header`, zshLines()[3]!, "# grammar. Install: ./clawforge completion zsh > \"${fpath[1]}/_clawforge\" (new shell), or");
     expectBytes(`${label}: the zsh source line`, zshLines()[4]!, "# source <(./clawforge completion zsh) in the current one.");
     expectBytes(`${label}: the pwsh Install header keeps the S1.4 sentence form`, pwshInstall(), "# Install: run ./clawforge completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell");
@@ -306,7 +306,7 @@ for (const [label, frame] of [["checkout root", atRoot], ["checkout subdirectory
 }
 
 await under(systemWide, async () => {
-  expectBytes("installed: the bash Install header", bashInstall(), "# Install: source <(clawforge completion bash)");
+  expectBytes("installed: the bash Install header", bashInstall(), "# Install: eval \"$(clawforge completion bash)\"");
   expectBytes("installed: the pwsh Install header is the pipeline form", pwshInstall(), "# Install: clawforge completion pwsh | Out-String | Invoke-Expression");
 });
 
@@ -314,7 +314,7 @@ await under(win32BinFromSub, async () => {
   // R18-06: the stored bash line spells npm's wrapper the way BASH reads it — forward
   // slashes, relative to the deployment root, never the operator's subdirectory or the
   // Windows wrapper this run was typed under.
-  expectBytes("the bash Install header never spells the operator's Windows wrapper (R18-06): forward slashes from the target root, never the operator's cwd", bashInstall(), "# Install: source <(node_modules/.bin/clawforge completion bash)");
+  expectBytes("the bash Install header never spells the operator's Windows wrapper (R18-06): forward slashes from the target root, never the operator's cwd", bashInstall(), "# Install: eval \"$(node_modules/.bin/clawforge completion bash)\"");
   expectBytes("the zsh Install header under the Windows wrapper spells the POSIX program", zshLines()[3]!, "# grammar. Install: node_modules/.bin/clawforge completion zsh > \"${fpath[1]}/_clawforge\" (new shell), or");
   // The pwsh header names the wrapper the way POWERSHELL resolves it: the target shell's
   // own spelling (the .cmd wrapper), never a bash-only spelling.

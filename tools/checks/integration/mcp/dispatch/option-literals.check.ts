@@ -22,12 +22,15 @@ if (process.argv[2] === "--dispatch") {
   };
   await main({ name: "literal-options", description: "Controlled argument consumer", commands: openclawCommands, service: { name: "gateway" } }, argv);
 } else {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-option-literals-"));
-  const shim = join(root, "docker-fixture.mjs");
-  await mkdir(join(root, "data"));
-  await writeFile(join(root, ".env"), `OC_TARGET_LOCATION=local\nOC_DATA_DIR=${join(root, "data")}\nOC_COMPOSE_PROJECT=literal-options\nOPENCLAW_GATEWAY_TOKEN=controlled-fixture-only\n`);
-  await writeFile(join(root, "logs.txt"), "diagnostic --tail=5\nunrelated line\n");
-  await writeFile(shim, `
+  // Every dispatch gets its own throwaway deployment root with identical fixture content: the
+  // runs go concurrent (at most four children at once), so no two children may share a writable
+  // root — each root carries the same .env/logs.txt/shim and a pre-created data directory.
+  async function fillFixture(root: string): Promise<void> {
+    const shim = join(root, "docker-fixture.mjs");
+    await mkdir(join(root, "data"));
+    await writeFile(join(root, ".env"), `OC_TARGET_LOCATION=local\nOC_DATA_DIR=${join(root, "data")}\nOC_COMPOSE_PROJECT=literal-options\nOPENCLAW_GATEWAY_TOKEN=controlled-fixture-only\n`);
+    await writeFile(join(root, "logs.txt"), "diagnostic --tail=5\nunrelated line\n");
+    await writeFile(shim, `
 import { mkdirSync, readFileSync } from 'node:fs';
 const [root, command, ...args] = process.argv.slice(2);
 if (command === 'mkdir') mkdirSync(args.at(-1), { mode: 0o700 });
@@ -48,49 +51,74 @@ else if (args[0] === 'compose' && args.includes('logs')) {
   process.stdout.write('child help: two words=--tail\\n');
 } else process.exit(93);
 `);
+  }
   async function run(argv: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
+    const root = await mkdtemp(join(tmpdir(), "clawforge-option-literals-"));
+    await fillFixture(root);
+    const shim = join(root, "docker-fixture.mjs");
+    try {
     const result = await runProcess(process.execPath, ["--experimental-strip-types", self, "--dispatch", root, shim, ...argv], {
       cwd: root, env: { ...process.env, OC_DEBUG: "0" }, input, timeoutMs: 60000,
     });
     if (result.error !== undefined) throw result.error;
     return result;
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
-  try {
-    for (const pattern of ["--tail", "--tail=5"]) {
-      const result = await run(["logs", `--grep=${pattern}`]);
-      check(`CLI literal ${pattern} succeeds`, result.code, 0);
-      check(`CLI literal ${pattern} filters only the matching log line`, result.stdout, "diagnostic --tail=5\n");
-    }
-    const missing = await run(["logs", "--grep", "--tail", "5"]);
-    check("a genuinely missing grep value refuses", missing.code, 1);
-    check("missing grep never returns bounded log data", missing.stdout.includes("diagnostic"), false);
-    const bounded = await run(["logs", "--tail=1", "--since=1h"]);
-    check("ordinary inline tail and since still read the requested bound", bounded.stdout, "unrelated line\n");
-    const receipts = await run(["set", "receipts", `--set-id=${"a".repeat(64)}`, "--json"]);
-    check("another command reads its inline option", receipts.code, 0);
-    check("receipts returns the controlled deployment's empty catalog", JSON.parse(receipts.stdout), []);
-    for (const name of ["cli", "exec"]) {
-      const result = await run([name, "--", ...(name === "exec" ? ["option-consumer"] : []), "--help", "--message=two words=--tail"]);
-      check(`${name} executes the child after the bare boundary`, result.code, 0);
-      check(`${name} preserves the child option's meaning`, result.stdout, "child help: two words=--tail\n");
-    }
-    const calls: Array<{ jsonrpc: string; id: number; method: string; params: { name: string; arguments: Record<string, unknown> } }> =
-      ["--tail", "--tail=5"].map((grep, index) => ({ jsonrpc: "2.0", id: index + 2, method: "tools/call", params: { name: "logs", arguments: { grep } } }));
-    calls.push(...["cli", "exec"].map((name, index) => ({ jsonrpc: "2.0", id: index + 4, method: "tools/call", params: { name, arguments: { confirm: true, args: [...(name === "exec" ? ["option-consumer"] : []), "--help", "--message=two words=--tail"] } } })));
-    const server = await run(["control-mcp"], [{ jsonrpc: "2.0", id: 1, method: "initialize" }, ...calls,
-      { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "help", arguments: { command: "zz-no-such-command" } } }].map(value => JSON.stringify(value)).join("\n") + "\n");
-    check("control-mcp completes the real JSON-RPC exchange", server.code, 0);
-    const replies = server.stdout.trim().split("\n").map(line => JSON.parse(line));
-    for (const call of calls) {
-      const result = replies.find(reply => reply.id === call.id)?.result;
-      check(`MCP ${call.id} is not a tool error`, result?.isError === true, false);
-      check(`MCP ${call.id} returns consumer output`, result?.content?.[0]?.text, call.params.name === "logs" ? "diagnostic --tail=5" : "child help: two words=--tail");
-    }
-    // The console's `help <unknown>` exits 1; the tool answers the same refusal as an error result.
-    const helpReply = replies.find(reply => reply.id === 8)?.result;
-    check("an unknown help target answers as an error, like the console's exit 1", helpReply?.isError, true);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  // Each task below owns a disjoint set of checks and spawns its own child(ren) against its own
+  // root, so the dispatches run concurrently with at most four children alive at a time. Only
+  // the printed order of the checks can differ; names and expected values are unchanged.
+  const dispatchTasks: Array<() => Promise<void>> = [
+    async () => {
+      for (const pattern of ["--tail", "--tail=5"]) {
+        const result = await run(["logs", `--grep=${pattern}`]);
+        check(`CLI literal ${pattern} succeeds`, result.code, 0);
+        check(`CLI literal ${pattern} filters only the matching log line`, result.stdout, "diagnostic --tail=5\n");
+      }
+    },
+    async () => {
+      const missing = await run(["logs", "--grep", "--tail", "5"]);
+      check("a genuinely missing grep value refuses", missing.code, 1);
+      check("missing grep never returns bounded log data", missing.stdout.includes("diagnostic"), false);
+    },
+    async () => {
+      const bounded = await run(["logs", "--tail=1", "--since=1h"]);
+      check("ordinary inline tail and since still read the requested bound", bounded.stdout, "unrelated line\n");
+    },
+    async () => {
+      const receipts = await run(["set", "receipts", `--set-id=${"a".repeat(64)}`, "--json"]);
+      check("another command reads its inline option", receipts.code, 0);
+      check("receipts returns the controlled deployment's empty catalog", JSON.parse(receipts.stdout), []);
+    },
+    async () => {
+      for (const name of ["cli", "exec"]) {
+        const result = await run([name, "--", ...(name === "exec" ? ["option-consumer"] : []), "--help", "--message=two words=--tail"]);
+        check(`${name} executes the child after the bare boundary`, result.code, 0);
+        check(`${name} preserves the child option's meaning`, result.stdout, "child help: two words=--tail\n");
+      }
+    },
+    async () => {
+      const calls: Array<{ jsonrpc: string; id: number; method: string; params: { name: string; arguments: Record<string, unknown> } }> =
+        ["--tail", "--tail=5"].map((grep, index) => ({ jsonrpc: "2.0", id: index + 2, method: "tools/call", params: { name: "logs", arguments: { grep } } }));
+      calls.push(...["cli", "exec"].map((name, index) => ({ jsonrpc: "2.0", id: index + 4, method: "tools/call", params: { name, arguments: { confirm: true, args: [...(name === "exec" ? ["option-consumer"] : []), "--help", "--message=two words=--tail"] } } })));
+      const server = await run(["control-mcp"], [{ jsonrpc: "2.0", id: 1, method: "initialize" }, ...calls,
+        { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "help", arguments: { command: "zz-no-such-command" } } }].map(value => JSON.stringify(value)).join("\n") + "\n");
+      check("control-mcp completes the real JSON-RPC exchange", server.code, 0);
+      const replies = server.stdout.trim().split("\n").map(line => JSON.parse(line));
+      for (const call of calls) {
+        const result = replies.find(reply => reply.id === call.id)?.result;
+        check(`MCP ${call.id} is not a tool error`, result?.isError === true, false);
+        check(`MCP ${call.id} returns consumer output`, result?.content?.[0]?.text, call.params.name === "logs" ? "diagnostic --tail=5" : "child help: two words=--tail");
+      }
+      // The console's `help <unknown>` exits 1; the tool answers the same refusal as an error result.
+      const helpReply = replies.find(reply => reply.id === 8)?.result;
+      check("an unknown help target answers as an error, like the console's exit 1", helpReply?.isError, true);
+    },
+  ];
+  const queue = [...dispatchTasks];
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+    for (let task = queue.shift(); task !== undefined; task = queue.shift()) await task();
+  }));
   finish("literal options");
 }

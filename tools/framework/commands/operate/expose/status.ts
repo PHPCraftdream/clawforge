@@ -17,7 +17,7 @@ import { probeTailscale } from "./tailscale.ts";
 
 /** The slice of `expose`'s declaration this action's own argv actually uses. */
 export const EXPOSE_STATUS_ARGUMENTS = [
-  { name: "json", description: "Emit the exposure and tailscale report as JSON", kind: "flag" },
+  { name: "json", description: "Exposure report as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** Fixed phrases of the exposure report, exported so checks assert the same text the

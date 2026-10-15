@@ -17,24 +17,24 @@ import * as kinds from "#src/core/values/kinds.ts";
 export const DESTROY_ARGUMENTS = [
   {
     name: "data",
-    summary: "Remove the data directory",
-    description: "Remove the data directory (OC_DATA_DIR)",
+    summary: "Remove data directory",
+    description: "Remove data directory (OC_DATA_DIR)",
     kind: "flag",
   },
   {
     name: "backups",
-    summary: "Remove the backup directory",
-    description: "Remove the backup directory (OC_BACKUP_DIR)",
+    summary: "Remove backup directory",
+    description: "Remove backup directory (OC_BACKUP_DIR)",
     kind: "flag",
   },
   {
     name: "snapshots",
-    summary: "Remove the snapshot directory",
-    description: "Remove the snapshot directory (OC_SNAPSHOT_DIR)",
+    summary: "Remove snapshot directory",
+    description: "Remove snapshot directory (OC_SNAPSHOT_DIR)",
     kind: "flag",
   },
-  { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy" },
-  { name: "confirm-name", description: "Confirms the deployment's own name", kind: "option", valueName: "name", value: kinds.name("deployment", "read") },
+  { name: "yes", summary: "Perform the removal", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy" },
+  { name: "confirm-name", summary: "Deployment name", description: "Confirms the deployment's own name", kind: "option", valueName: "name", value: kinds.name("deployment", "read") },
   ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 

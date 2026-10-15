@@ -47,7 +47,8 @@ import { renderAdviceMatrix } from "./advice.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { installFrame, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { frameFromInvocation } from "#framework/core/io/invocation/frame.ts";
 import { useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { checkoutGate } from "#framework/entry/registry.ts";
 import { UnknownArgumentError } from "#framework/core/command/index.ts";
@@ -157,7 +158,9 @@ async function refusals(): Promise<string> {
   const underEveryInvocation = async (title: string, body: () => void | Promise<void>): Promise<string> => {
     const rendered: string[] = [];
     for (const [label, invocation] of INVOCATIONS) {
+      // The snapshot is host-independent: the frame is built for a pinned POSIX host (as frames.ts does).
       setInvocation(invocation);
+      installFrame(frameFromInvocation(invocation, { host: "posix", msys: false, cwd: process.cwd() }));
       rendered.push(section(`${title} — ${label}`, await captured(body)));
     }
     return rendered.join("");

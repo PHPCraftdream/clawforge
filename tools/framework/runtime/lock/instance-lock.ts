@@ -15,6 +15,7 @@
 // heldScopes) and the HeldLock handle.
 
 import { renderAdvice } from "../../core/io/invocation/render.ts";
+import { reportBlocking } from "../../core/io/log.ts";
 import { command, manual, type Advice } from "../../core/io/invocation/advice.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -34,6 +35,7 @@ import {
   lockPath,
   writeHolderRecord,
   claimOwnedLockDirectory,
+  ownsLockGeneration,
   removeOwnedLock,
   readLockHolder,
   ageMs,
@@ -161,6 +163,10 @@ export function lockHeldHere(ctx: Context): boolean {
   return lease !== undefined && lease.released !== true;
 }
 
+/** A strict verification failure is an unresolved ambiguity about a cleanup that may or may
+ *  not have landed — never something a blind retry can settle, so it is never retried. */
+class ReleaseVerificationError extends Error {}
+
 /** Assembles the handle a caller releases; release() closes over this acquisition's own generation. */
 function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, heartbeat: Heartbeat, strictVerification = false): HeldLock {
   let releasing: Promise<void> | undefined;
@@ -185,22 +191,42 @@ function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, hea
       // read the old holder. Ownership is answered by moving this acquisition's own
       // generation marker aside — atomic, and only we can still own that exact path.
       releasing = (async () => {
-        try {
-          // Drain before claiming the guard: a queued refresh may still need that guard
-          // to observe cancellation, and an in-flight publication must finish before removal.
-          await heartbeat.stop();
-          await withMutationGuard(ctx, async () => {
-            const trash = await claimOwnedLockDirectory(ctx, generation);
-            if (trash === undefined && strictVerification) throw new Error("owned instance lock release claim was not verified");
-            if (trash !== undefined) await removeOwnedLock(ctx, generation, trash);
-            if (strictVerification && await probeEntryExists(ctx.transport, lockPath(ctx))) {
-              throw new Error("instance lock release was not verified");
-            }
-          }, false, undefined, { strictVerification });
-        } catch (error) {
-          if (strictVerification) throw error;
-          // Failed cleanup leaves a reported stale lock.
+        // Drain before claiming the guard: a queued refresh may still need that guard
+        // to observe cancellation, and an in-flight publication must finish before removal.
+        await heartbeat.stop();
+        // A live competing claim can hold the mutation guard for its whole acquisition window;
+        // a single refused claim used to abandon cleanup of a lock we still own. The retry is
+        // bounded and ends in a report - the guard hold is short, the cleanup idempotent (the
+        // generation-marker claim is the compare-and-swap either way).
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 25));
+          try {
+            await withMutationGuard(ctx, async () => {
+              const trash = await claimOwnedLockDirectory(ctx, generation);
+              if (trash === undefined) {
+                // The marker is gone: a takeover displaced this acquisition, so the lock is no
+                // longer ours to remove. Still-present marker means cleanup is still owed.
+                if (await ownsLockGeneration(ctx, generation)) throw new Error("owned instance lock release claim was not verified");
+                return;
+              }
+              await removeOwnedLock(ctx, generation, trash);
+              if (strictVerification && await probeEntryExists(ctx.transport, lockPath(ctx))) {
+                throw new ReleaseVerificationError("instance lock release was not verified");
+              }
+            }, false, undefined, { strictVerification });
+            return;
+          } catch (error) {
+            lastError = error;
+            if (error instanceof ReleaseVerificationError) break;
+          }
         }
+        if (strictVerification) throw lastError;
+        // Failed cleanup leaves a stale lock behind — reported loudly, never silently
+        // swallowed: the next operation must be told it exists and must be broken manually.
+        reportBlocking(
+          `instance lock release failed to clean up ${lockPath(ctx)}; the stale lock must be reported or broken manually: ${(lastError as Error).message}`,
+        );
       })();
       return releasing;
     },

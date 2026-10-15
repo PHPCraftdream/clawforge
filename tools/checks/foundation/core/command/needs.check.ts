@@ -70,7 +70,7 @@ const needsOf = (unit: Unit): string => {
 const localUnits = units.filter((unit) => needsOf(unit) === "local");
 // The local set pinned as WORD ARRAYS (the labels' tokens), not spaced literals: the same
 // expectation, expressed the way the prose-pin measurement does not count.
-const LOCAL_UNIT_TOKENS: ReadonlyArray<readonly string[]> = [["memory", "plan"], ["memory", "configure"], ["recipe", "import"], ["recipe", "new"], ["mcp-setup"]];
+const LOCAL_UNIT_TOKENS: ReadonlyArray<readonly string[]> = [["memory", "plan"], ["memory", "configure"], ["recipe", "import"], ["recipe", "new"], ["recipe", "check"], ["mcp-setup"]];
 check("the units declaring needs local are exactly the repository-side ones",
   localUnits.map((unit) => unit.label.split(" ")), LOCAL_UNIT_TOKENS);
 
@@ -83,6 +83,7 @@ const localInputs: Readonly<Record<string, (root: string) => readonly string[]>>
   "memory configure": () => ["configure", "--mode", "keyword", "--backend", "builtin"],
   "recipe import": (root) => ["import", join(root, "import-source")],
   "recipe new": () => ["new", "needs-local-recipe"],
+  "recipe check": () => ["check", "local", "--dry-run"],
   "mcp-setup": () => [],
 };
 
@@ -149,6 +150,8 @@ try {
   // The import source the local `recipe import` row copies from.
   await mkdir(join(fixtureRoot, "import-source"), { recursive: true });
   await writeFile(join(fixtureRoot, "import-source", "recipe.json"), JSON.stringify({ description: "import source" }), "utf8");
+  // The recipe the local `recipe check` row lists: one check file, never executed under --dry-run.
+  await writeFile(join(fixtureRoot, "recipes", "local", "needs.check.ts"), "process.exit(0);\n", "utf8");
 
   const memoryDeclarationPath = join(fixtureRoot, "config", "desired-state.json");
   const memoryDeclaration = `${JSON.stringify([

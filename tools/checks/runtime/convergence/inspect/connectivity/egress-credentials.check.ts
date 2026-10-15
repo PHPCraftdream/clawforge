@@ -59,14 +59,28 @@ async function terminalOutput(body: () => Promise<void>): Promise<string> {
 }
 
 const { deployment, stubContext, goodChecksums } = await setupFixtureDeployment();
+// terminalOutput swaps process.stdout/stderr, so terminal captures must never overlap;
+// gatherInspection/computePlan write nothing to the terminal and stay outside the lock.
+let terminalLock: Promise<unknown> = Promise.resolve();
+function serialized<T>(body: () => Promise<T>): Promise<T> {
+  const run = terminalLock.then(body, body);
+  terminalLock = run.catch(() => undefined);
+  return run;
+}
+// check() writes to process.stderr, so it must not run while another state's capture
+// holds the swapped writers; queue it on the same lock.
+function queueCheck(name: string, actual: unknown, expected: unknown): void {
+  terminalLock = terminalLock.then(() => check(name, actual, expected));
+}
+const entries = [{ label: "prior-query-policy", url: providerUrl, username: "inline-user", password: "inline-password" }, ...credentialCases].map((entry) => {
+  let normalizedPassword = entry.password;
+  try { normalizedPassword = new URL(entry.url).password; } catch { /* Malformed authority still needs masking. */ }
+  return { ...entry, publicUrl: redactEndpoint(entry.url), forbidden: [...secrets, entry.username, encodeURIComponent(entry.username), entry.password, normalizedPassword, entry.password.split(/\s|%20/).at(-1)!] };
+});
 try {
-  for (const state of ["ok", "dns", "unreachable", "invalid", "timeout"] as const) {
-    for (const entry of [{ label: "prior-query-policy", url: providerUrl, username: "inline-user", password: "inline-password" }, ...credentialCases]) {
-    const providerUrl = entry.url;
-    const publicProvider = redactEndpoint(providerUrl);
-    let normalizedPassword = entry.password;
-    try { normalizedPassword = new URL(providerUrl).password; } catch { /* Malformed authority still needs masking. */ }
-    const forbidden = [...secrets, entry.username, encodeURIComponent(entry.username), entry.password, normalizedPassword, entry.password.split(/\s|%20/).at(-1)!];
+  // State iterations are independent; only the terminal captures above need serialization.
+  await Promise.all((["ok", "dns", "unreachable", "invalid", "timeout"] as const).map(async (state) => {
+  for (const { label, url: providerUrl, publicUrl: publicProvider, forbidden } of entries) {
     const base = stubContext({
       targetEnv: "ZAI_API_KEY=k\n",
       mirrorChecksums: goodChecksums,
@@ -92,46 +106,51 @@ try {
         },
       },
     };
-    const inspection = await gatherInspection(ctx);
-    check(`${state}: live-only endpoints are probed with original credentials`, inputs[0], [providerUrl, proxyUrl]);
-    check(`${state}: observations retain host/path and redact credentials`, inspection.observed.egress?.map((entry) => entry.endpoint), [publicProvider, publicProxy]);
-    check(`${state}: endpoint status remains diagnostic`, inspection.observed.egress?.map((entry) => entry.state), [state, state]);
-    check(`${state}: probe detail preserves diagnostic host/path`, inspection.observed.egress?.every((entry) => entry.detail?.includes("diagnostic.example/detail")), true);
+    const inspectionPromise = gatherInspection(ctx);
+    const captures = await serialized(async () => ({
+      terminalText: await terminalOutput(() => orchestrationCommands.inspect.run(ctx, [])),
+      terminalJson: await terminalOutput(() => orchestrationCommands.inspect.run(ctx, ["--json"])),
+      doctorText: await terminalOutput(async () => {
+        try { await orchestrationCommands.doctor.run(ctx, []); }
+        catch { /* Fixture-only blocking findings are still printed. */ }
+      }),
+      doctorJson: await terminalOutput(async () => {
+        try { await orchestrationCommands.doctor.run(ctx, ["--json"]); }
+        catch { /* Fixture-only blocking findings are still printed. */ }
+      }),
+      planText: await terminalOutput(() => orchestrationCommands.plan.run(ctx, [])),
+      planJson: await terminalOutput(() => orchestrationCommands.plan.run(ctx, ["--json"])),
+    }));
+    const inspection = await inspectionPromise;
+    queueCheck(`${state}: live-only endpoints are probed with original credentials`, inputs[0], [providerUrl, proxyUrl]);
+    queueCheck(`${state}: observations retain host/path and redact credentials`, inspection.observed.egress?.map((entry) => entry.endpoint), [publicProvider, publicProxy]);
+    queueCheck(`${state}: endpoint status remains diagnostic`, inspection.observed.egress?.map((entry) => entry.state), [state, state]);
+    queueCheck(`${state}: probe detail preserves diagnostic host/path`, inspection.observed.egress?.every((entry) => entry.detail?.includes("diagnostic.example/detail")), true);
     const findings = inspection.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE");
-    check(`${state}: failures retain their findings`, findings.length, state === "ok" ? 0 : 2);
+    queueCheck(`${state}: failures retain their findings`, findings.length, state === "ok" ? 0 : 2);
 
-    const terminalText = await terminalOutput(() => orchestrationCommands.inspect.run(ctx, []));
-    const terminalJson = await terminalOutput(() => orchestrationCommands.inspect.run(ctx, ["--json"]));
-    const doctorText = await terminalOutput(async () => {
-      try { await orchestrationCommands.doctor.run(ctx, []); }
-      catch { /* Fixture-only blocking findings are still printed. */ }
-    });
-    const doctorJson = await terminalOutput(async () => {
-      try { await orchestrationCommands.doctor.run(ctx, ["--json"]); }
-      catch { /* Fixture-only blocking findings are still printed. */ }
-    });
-    const planText = await terminalOutput(() => orchestrationCommands.plan.run(ctx, []));
-    const planJson = await terminalOutput(() => orchestrationCommands.plan.run(ctx, ["--json"]));
+    const { terminalText, terminalJson, doctorText, doctorJson, planText, planJson } = captures;
     const computed = await computePlan(ctx);
     const doctorPayload = JSON.parse(doctorJson) as { problems: { code: string }[] };
-    check(`${state}: doctor JSON retains failed endpoint diagnostics`, doctorPayload.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
-    check(`${state}: plan retains failed endpoint diagnostics`, computed.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
+    queueCheck(`${state}: doctor JSON retains failed endpoint diagnostics`, doctorPayload.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
+    queueCheck(`${state}: plan retains failed endpoint diagnostics`, computed.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
     const inspectPayload = JSON.parse(terminalJson) as { observed: { egress: { endpoint: string; state: string }[] } };
-    check(`${state}: inspect JSON preserves useful endpoints and status`, inspectPayload.observed.egress.map(({ endpoint, state }) => ({ endpoint, state })), [{ endpoint: publicProvider, state }, { endpoint: publicProxy, state }]);
+    queueCheck(`${state}: inspect JSON preserves useful endpoints and status`, inspectPayload.observed.egress.map(({ endpoint, state }) => ({ endpoint, state })), [{ endpoint: publicProvider, state }, { endpoint: publicProxy, state }]);
     const planPayload = JSON.parse(planJson) as { problems: { code: string }[] };
-    check(`${state}: plan JSON retains failed endpoint diagnostics`, planPayload.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
+    queueCheck(`${state}: plan JSON retains failed endpoint diagnostics`, planPayload.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
     if (state !== "ok") {
-      check(`${state}: doctor text retains diagnostic host/path`, doctorText.includes("/v1") && doctorText.includes("proxy.example:9050/connect"), true);
-      check(`${state}: plan text retains diagnostic host/path`, planText.includes("/v1") && planText.includes("proxy.example:9050/connect"), true);
+      queueCheck(`${state}: doctor text retains diagnostic host/path`, doctorText.includes("/v1") && doctorText.includes("proxy.example:9050/connect"), true);
+      queueCheck(`${state}: plan text retains diagnostic host/path`, planText.includes("/v1") && planText.includes("proxy.example:9050/connect"), true);
     }
-    check(`${state}: terminal text contains sanitized egress`, terminalText.includes(publicProvider) && terminalText.includes(publicProxy), true);
+    queueCheck(`${state}: terminal text contains sanitized egress`, terminalText.includes(publicProvider) && terminalText.includes(publicProxy), true);
     const outputs = { inspection: JSON.stringify(inspection), terminalText, terminalJson, doctorText, doctorJson, planText, planJson, plan: JSON.stringify(computed) };
     for (const [name, text] of Object.entries(outputs)) {
-      check(`${entry.label}/${state}: ${name} excludes every unregistered inline credential`, [...forbidden, "unknown-fictional-user", "UNKNOWN SUFFIX", "SUFFIX", "FAKE_DETAIL_TOKEN", "FAKE_DETAIL_FRAGMENT"].filter((secret) => text.includes(secret)), []);
+      queueCheck(`${label}/${state}: ${name} excludes every unregistered inline credential`, [...forbidden, "unknown-fictional-user", "UNKNOWN SUFFIX", "SUFFIX", "FAKE_DETAIL_TOKEN", "FAKE_DETAIL_FRAGMENT"].filter((secret) => text.includes(secret)), []);
     }
-    check(`${state}: all diagnostic calls retain original probe input`, inputs.every((urls) => urls[0] === providerUrl && urls[1] === proxyUrl), true);
+    queueCheck(`${state}: all diagnostic calls retain original probe input`, inputs.every((urls) => urls[0] === providerUrl && urls[1] === proxyUrl), true);
     }
-  }
+  }));
+  await terminalLock;
 } finally {
   await teardownFixtureDeployment(deployment);
 }

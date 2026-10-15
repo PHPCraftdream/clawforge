@@ -108,22 +108,31 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
       if (actual.includes("…")) offenders.push(`${name}.${argument.name} is cut with an ellipsis: ${actual}`);
       const valueTail = actual.includes("(value:") && actual.includes("<");
       if (valueTail) offenders.push(`${name}.${argument.name} carries a value tail: ${actual}`);
-      // One clause per text the actions declare differently, each naming its own actions
-      // (R31-03, R32-04) — the parts `argumentsView` composes, read back rather than parsed
-      // out of the joined string again.
+      // One clause per distinct text the actions declare, each naming the union of the
+      // actions that declare it (R31-03, R32-04; identical texts merge into one clause) —
+      // the parts `argumentsView`/`schemaArgumentDescription` compose, recomputed from the
+      // scopes in first-appearance order rather than parsed out of the joined string.
       const clauses = actual.split("; ");
       if (scopes === undefined) {
         const base = argument.summary ?? argument.description;
         const actions = argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`;
         if (actual !== `${base}${actions}`) offenders.push(`${name}.${argument.name}: "${actual}" is not its declared text`);
-      } else if (clauses.length !== scopes.length) {
-        offenders.push(`${name}.${argument.name}: ${clauses.length} clauses for ${scopes.length} texts`);
       } else {
-        clauses.forEach((clause, index) => {
-          const scope = scopes[index]!;
-          const base = scope.summary ?? scope.description;
-          if (clause !== `${base} (${scope.actions.join(", ")})`) offenders.push(`${name}.${argument.name}: clause "${clause}" is not ${base}`);
-        });
+        const groups: { text: string; actions: string[] }[] = [];
+        for (const scope of scopes) {
+          const text = scope.summary ?? scope.description;
+          const found = groups.find((group) => group.text === text);
+          if (found === undefined) groups.push({ text, actions: [...scope.actions] });
+          else for (const action of scope.actions) if (!found.actions.includes(action)) found.actions.push(action);
+        }
+        if (clauses.length !== groups.length) {
+          offenders.push(`${name}.${argument.name}: ${clauses.length} clauses for ${groups.length} texts`);
+        } else {
+          clauses.forEach((clause, index) => {
+            const group = groups[index]!;
+            if (clause !== `${group.text} (${group.actions.join(", ")})`) offenders.push(`${name}.${argument.name}: clause "${clause}" is not ${group.text}`);
+          });
+        }
       }
     }
   }
@@ -154,7 +163,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
   check("backup.break-foreign-lock scopes its action", scopedActions("backup", "break-foreign-lock"), ["prune-replaced", "install", "uninstall"]);
   check("expose.break-lock scopes its action", scopedActions("expose", "break-lock"), ["tailscale"]);
   check("watch.break-lock scopes its actions", scopedActions("watch", "break-lock"), ["install", "uninstall"]);
-  check("recipe.break-lock scopes its actions", scopedActions("recipe", "break-lock"), ["verify", "onboard", "diagnose", "install", "remove", "recover", "migrate"]);
+  check("recipe.break-lock scopes its actions", scopedActions("recipe", "break-lock"), ["verify", "onboard", "diagnose", "install", "trial", "remove", "recover", "migrate", "pin", "run"]);
   check("set.break-lock scopes its action", scopedActions("set", "break-lock"), ["forget"]);
   // A gate command's argument carries no `summary`: the declared description reaches the
   // schema whole — the cut used to trim both of these, and the option used to gain a

@@ -19,6 +19,8 @@ import {
 import type { ConnectionFacts } from "#src/commands/operate/recover-env/facts.ts";
 import { DEFAULT_SECRET_STORE } from "#src/commands/management/configuration/secrets.ts";
 import { readName } from "#src/core/values/names.ts";
+import { ownerOfConfigPath, recipePathOwners } from "#src/set/ownership/recipe-paths.ts";
+import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
 import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt } from "./helpers.ts";
 import type { Context } from "#src/core/context.ts";
 
@@ -62,6 +64,16 @@ export async function observeConfig(
   const configFile = `${ctx.settings.dataDir}/config/openclaw.json`;
   let mtimeMs: number | undefined;
 
+  // Recipe-owned paths are never the declaration's business, so their drift is skipped.
+  // A broken catalog (bad recipe.json) must not take down the whole comparison: fail
+  // visible as its own problem, then compare everything like before ownership existed.
+  let owners: readonly RecipePathOwner[] | undefined;
+  try {
+    owners = await recipePathOwners();
+  } catch (error) {
+    problems.push(problem("SET_RECIPE_INVALID", `recipe config ownership could not be read: ${(error as Error).message}`));
+  }
+
   try {
     // JSON5, not JSON: the live config is OpenClaw's JSON5 gateway format, where a comment
     // or trailing comma is legitimate.
@@ -69,6 +81,7 @@ export async function observeConfig(
     for (const entry of declared.config) config[entry.path] = valueAt(parsed, entry.path);
     const target = prospectiveConfig(parsed, declared.config);
     for (const entry of effectiveDeclarationPaths(declared.config)) {
+      if (owners !== undefined && ownerOfConfigPath(owners, entry.path) !== undefined) continue;
       const actual = valueAt(parsed, entry.path);
       const desired = valueAt(target, entry.path);
       if (!configValuesEqual(actual, desired)) {

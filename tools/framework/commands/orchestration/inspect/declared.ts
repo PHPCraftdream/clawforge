@@ -11,6 +11,10 @@ import { loadRecipeAgentBundle } from "#src/commands/management/provision-agent/
 import type { RecipeAgentBundle } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState } from "#src/service/inspection.ts";
+import {
+  conflictingDeclaredPath, declaredOwnershipConflictDetail, recipePathOwners,
+} from "#src/set/ownership/recipe-paths.ts";
+import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
 import type { Context } from "#src/core/context.ts";
 import { suspiciousEnvLines, readEnvFileText } from "#src/core/env.ts";
 
@@ -49,6 +53,9 @@ export async function recipeExpectations(): Promise<RecipeExpectation[]> {
 
 export async function declaredState(ctx: Context, problems: Problem[]): Promise<DeclaredState> {
   let config: { path: string; value: unknown }[] = [];
+  // The recipe ownership catalog: built at most once, undefined when the recipes themselves
+  // refuse to load (reported as its own problem above).
+  let owners: readonly RecipePathOwner[] | undefined;
   let raw: string | undefined;
   try {
     raw = await readFile(desiredStateFile(), "utf8");
@@ -61,13 +68,32 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
     // ENOENT: no desired state declares nothing — an empty declaration, not a failure.
   }
   if (raw !== undefined) {
+    let parsedOk = false;
     try {
       const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
       config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
+      parsedOk = true;
     } catch {
       // Exists but unparseable must be reported, not treated like "no file". Same code
       // observeConfig() (drift.ts) uses for the equivalent LIVE-config failure.
       problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON`));
+    }
+    if (parsedOk) {
+      // Declared paths a recipe owns are a declaration bug, reported like the other
+      // recipe-declaration findings; an unreadable catalog (broken recipe.json) degrades
+      // the same way instead of taking the whole inspection down.
+      try {
+        owners = await recipePathOwners();
+        for (const entry of config) {
+          const owner = conflictingDeclaredPath(owners, entry.path);
+          if (owner !== undefined) {
+            problems.push(problem("SET_RECIPE_INVALID", declaredOwnershipConflictDetail(entry.path, owner)));
+          }
+        }
+      } catch (error) {
+        owners = undefined;
+        problems.push(problem("SET_RECIPE_INVALID", `recipe config ownership could not be read: ${(error as Error).message}`));
+      }
     }
   }
 
@@ -83,6 +109,8 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
   return {
     deployment: deploymentName(),
     config,
+    // Structured only: human output stays short and omits the ownership listing.
+    ...(owners === undefined ? {} : { ownedConfigPaths: owners }),
     image: ctx.settings.image,
     recipes: (await recipeExpectations()).map((entry) => entry.recipe),
   };

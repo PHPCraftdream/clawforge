@@ -52,9 +52,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
+
+// One wsl.exe round trip instead of one per fixture file: build a whole group of scratch
+// files with a single `sh -c`. q() keeps bracketed paths literal.
+const q = shellQuote;
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
+}
+
+// A failed command in a batched setup script must fail the check, not pass silently.
+async function execScript(script: string): Promise<void> {
+  const result = await transport!.exec("sh", ["-c", `set -e\n${script}`]);
+  if (result.code !== 0) throw new Error(`fixture script failed: exit ${result.code}${result.stderr.trim() === "" ? "" : `: ${result.stderr.trim()}`}`);
 }
 
 /** The message a rejected promise failed with, or undefined when it did not reject. */
@@ -211,26 +222,24 @@ try {
     const ARCHIVES = `${PARENT}/archives`;
     parent = PARENT;
 
-    await transport.mkdirp(`${DATA}/config`);
-    await transport.mkdirp(`${DATA}/workspace`);
-    await transport.mkdirp(ARCHIVES);
-    // Ordinary instance content the share profile is allowed to carry. No config/.env: the
-    // content scan then has nothing to search for and stays out of the assertions' way.
-    await transport.writeFile(`${DATA}/config/openclaw.json`, JSON.stringify({ models: { providers: {} } }));
-    await transport.writeFile(`${DATA}/workspace/SOUL.md`, "# fixture\n");
-
-    const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
-
     // A newly selected deployment may have no local ledger while the target retains the only
     // privacy history. Direct verification reads that target copy in memory and refuses a
     // pre-existing archive that includes the recorded path.
     const targetOnlyPath = "workspace/target-only.env";
     const targetOnlyArchive = `${ARCHIVES}/target-only-history.tar.gz`;
-    await transport.writeFile(`${DATA}/${targetOnlyPath}`, "target-only-private-content\n");
-    await transport.writeFile(
-      `${DATA}/config/clawforge-private-paths.json`,
-      `${JSON.stringify({ privatePaths: [targetOnlyPath] }, null, 2)}\n`,
-    );
+    const setup = [
+      `mkdir -p ${q(`${DATA}/config`)} ${q(`${DATA}/workspace`)} ${q(ARCHIVES)}`,
+      // Ordinary instance content the share profile is allowed to carry. No config/.env: the
+      // content scan then has nothing to search for and stays out of the assertions' way.
+      `printf '%s' '${JSON.stringify({ models: { providers: {} } })}' > ${q(`${DATA}/config/openclaw.json`)}`,
+      `printf '%s\\n' '# fixture' > ${q(`${DATA}/workspace/SOUL.md`)}`,
+      `printf 'target-only-private-content\\n' > ${q(`${DATA}/${targetOnlyPath}`)}`,
+      `printf '%s\\n' '${JSON.stringify({ privatePaths: [targetOnlyPath] }, null, 2)}' > ${q(`${DATA}/config/clawforge-private-paths.json`)}`,
+    ].join("\n");
+    await execScript(setup);
+
+    const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
+
     await transport.exec("tar", [
       "--exclude=data/config/clawforge-private-paths.json",
       "-czf", targetOnlyArchive, "-C", PARENT, DATA_NAME,
@@ -242,8 +251,7 @@ try {
     );
     check("direct verify applies target-only privacy history", targetHistoryPassed, false);
     checkTrue("target-only privacy refusal names the private path", targetHistoryOutput.includes(targetOnlyPath));
-    await transport.remove(`${DATA}/config/clawforge-private-paths.json`);
-    await transport.remove(`${DATA}/${targetOnlyPath}`);
+    await transport.exec("sh", ["-c", `rm -f ${q(`${DATA}/config/clawforge-private-paths.json`)} ${q(`${DATA}/${targetOnlyPath}`)}`]);
 
     // --- both fixture hooks drive the real private-write helpers on the POSIX target --------------
 
@@ -263,8 +271,7 @@ try {
     // Control sibling: the name tar's old glob reading of `vault1` caught instead of the real
     // one — declared by nobody, so every profile may carry it. Written raw (not through the
     // private helpers): an undeclared path is exactly what they must refuse.
-    await transport.mkdirp(`${DATA}/vault1`);
-    await transport.writeFile(`${DATA}/vault1/credentials.env`, "FIXTURE_CREDENTIAL=review-p1-02-control-sibling recipe=none\n");
+    await execScript(`mkdir -p ${q(`${DATA}/vault1`)}\nprintf 'FIXTURE_CREDENTIAL=review-p1-02-control-sibling recipe=none\\n' > ${q(`${DATA}/vault1/credentials.env`)}`);
 
     // --- a successful write, then the crash it must survive ----------------------------------------
     //
@@ -286,19 +293,26 @@ try {
     // A transport without writePrivateFile stages the staging file itself through writeFile's
     // publish sibling, so the fallback chain can nest a second family under the first.
     const nestedLeftover = `${privateLeftover}.clawforge-publish-${tag}`;
-    await transport.writeFile(nestedLeftover, "FIXTURE_CREDENTIAL=review-p1-03-interrupted-fallback-write recipe=fixture-file\n");
     // A publish leftover of a public file: not credential material, but transient junk that is
     // never instance state either — the same family, excluded for the same reason.
     const publicLeftover = `${DATA}/workspace/public-note.md.clawforge-publish-${tag}`;
-    await transport.writeFile(publicLeftover, "TRANSIENT=review-p1-03-interrupted-public-publish\n");
-    // The unrelated neighbor the policy must NOT start excluding.
-    await transport.writeFile(`${DATA}/workspace/neighbor.env`, "PUBLIC=plain-instance-content\n");
+    // The unrelated neighbor the policy must NOT start excluding, and the wildcard base
+    // exclusion probe (see below) — one round trip for all four.
+    await execScript([
+      `printf 'FIXTURE_CREDENTIAL=review-p1-03-interrupted-private-write recipe=fixture-file\\n' > ${q(privateLeftover)}`,
+      `printf 'FIXTURE_CREDENTIAL=review-p1-03-interrupted-fallback-write recipe=fixture-file\\n' > ${q(nestedLeftover)}`,
+      `printf 'TRANSIENT=review-p1-03-interrupted-public-publish\\n' > ${q(publicLeftover)}`,
+      `printf 'PUBLIC=plain-instance-content\\n' > ${q(`${DATA}/workspace/neighbor.env`)}`,
+      `printf 'PROVIDER_KEY=fixture-marker-not-a-key\\n' > ${q(`${DATA}/config/.env.clawforge-staging-${tag}`)}`,
+    ].join("\n"));
+    // The negative archive assertions below mean nothing if the files were never created.
+    checkTrue("the staging leftovers and the provider-key staging file exist before archiving", await transport.exists(privateLeftover) && await transport.exists(nestedLeftover) && await transport.exists(publicLeftover) && await transport.exists(`${DATA}/config/.env.clawforge-staging-${tag}`));
 
     // The base exclusions keep their wildcards — only the declaration's rules are escaped.
     // config/.env.clawforge-* is provider-key staging: credential material a process that
     // died between staging and rename leaves behind, catchable only by the glob. Escaping
     // every pattern would quietly disable exactly this rule, so it is pinned like the rest.
-    await transport.writeFile(`${DATA}/config/.env.clawforge-staging-${tag}`, "PROVIDER_KEY=fixture-marker-not-a-key\n");
+    // (The staging file itself is written in the batch above.)
 
     // --- what each profile's archive really contains (real GNU tar) ------------------------------
 
@@ -325,7 +339,7 @@ try {
 
     // The control has served: gone before any share verdict, so the allow-list below judges a
     // clean tree.
-    await transport.remove(`${DATA}/vault1`);
+    await execScript(`rm -rf ${q(`${DATA}/vault1`)}`);
 
     const share = `${ARCHIVES}/share.tar.gz`;
     await createArchive(ctx, { archive: share, profile: "share" });
@@ -367,9 +381,7 @@ try {
     //
     // A tree whose only difference is the absence of staging leftovers must sail through: the
     // fix may not start refusing or excluding a normal working tree.
-    for (const leftover of [privateLeftover, nestedLeftover, publicLeftover]) {
-      await transport.remove(leftover);
-    }
+    await execScript(`rm -f ${q(privateLeftover)} ${q(nestedLeftover)} ${q(publicLeftover)}`);
     const shareClean = `${ARCHIVES}/share-clean.tar.gz`;
     await createArchive(ctx, { archive: shareClean, profile: "share" });
     const cleanListing = await listArchive(ctx, shareClean);
@@ -404,8 +416,7 @@ try {
     const healed = `${ARCHIVES}/migrate-after-restore.tar.gz`;
     // The control sibling was removed before the share verdicts so the allow-list judged a
     // clean tree; it returns here, or "sibling in" below would assert a deleted file.
-    await transport.mkdirp(`${DATA}/vault1`);
-    await transport.writeFile(`${DATA}/vault1/credentials.env`, "FIXTURE_CREDENTIAL=review-p1-02-control-sibling recipe=none\n");
+    await execScript(`mkdir -p ${q(`${DATA}/vault1`)}\nprintf 'FIXTURE_CREDENTIAL=review-p1-02-control-sibling recipe=none\\n' > ${q(`${DATA}/vault1/credentials.env`)}`);
     await createArchive(ctx, { archive: healed, profile: "migrate" });
     const healedListing = await listArchive(ctx, healed);
     checkTrue(

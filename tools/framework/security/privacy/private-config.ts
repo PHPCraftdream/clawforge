@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import { checksumOf } from "../../service/checksums.ts";
-import { installedRecipePrivatePaths } from "../../service/recipe.ts";
+import { assertDeclaredPrivatePath } from "./structured/path-policy.ts";
 import { recordPrivateWrite } from "./private-paths-ledger.ts";
 import { locksDir, upsertEnvLine } from "../../core/env.ts";
 import type { Context } from "../../core/context.ts";
@@ -10,6 +10,13 @@ import { registerSecret } from "../../core/io/log.ts";
 import { shellQuote } from "../../core/io/shell.ts";
 import { PRIVATE_STAGING_MARKER, type ExecResult } from "../../runtime/transport/transport.ts";
 
+import { rememberPrivateSecret } from "./structured/internal.ts";
+
+export { readPrivateState, writePrivateState, type PrivateStateOptions } from "./structured/state.ts";
+export { appendPrivateJournal, readPrivateJournal, type PrivateJournalReadOptions, type PrivateJournalOptions, type PrivateJournalResult } from "./structured/journal.ts";
+export { PrivateDataError, type PrivateRefusalCode, type JsonValue } from "./structured/internal.ts";
+export { privatePseudonym, privatePseudonymKey, privatePseudonymLookup, type PrivatePseudonymOptions } from "./structured/pseudonym.ts";
+export { appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents, type PrivateIntentRecord, type PrivateResultRecord } from "./structured/intents.ts";
 export { protectPrivateDirectory, createPrivateBinaryFile } from "./private-file.ts";
 
 export interface PrivateFileResult {
@@ -26,103 +33,24 @@ export function generatePrivateSecret(bytes = 32): string {
 
 /** Adds an app-owned credential to the framework's process-local redaction registry. */
 export function registerPrivateSecret(value: string): void {
+  rememberPrivateSecret(value);
   registerSecret(value);
 }
 
-function parentPath(path: string): string {
+/** Returns the path's parent directory; a root-level path maps to "/". */
+export function parentPath(path: string): string {
   const slash = path.lastIndexOf("/");
   return slash <= 0 ? "/" : path.slice(0, slash);
 }
 
-/** Normalizes a data-relative POSIX path by segments: collapses "//" and ".", resolves ".."
- *  textually. Returns null when the path climbs above its root. */
-function normalizeRelativeSegments(path: string): string[] | null {
-  const segments: string[] = [];
-  for (const segment of path.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") {
-      if (segments.length === 0) return null;
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-  return segments;
-}
-
-// Fed to `sh -s` on stdin with the candidate ancestors as argv, since a multi-line argument
-// doesn't survive wsl.exe's re-parsing. Explicit `exit 0` keeps the verdict on stdout alone —
-// a for loop's exit status is its body's last command, so an all-clear scan would exit 1.
-const SYMLINK_SCAN = `for p in "$@"; do
-  [ -h "$p" ] && echo "$p"
-done
-exit 0
-`;
-
-/** A recipe may write private files only where its recipe.json declares them. privatePaths
- *  is the single source the snapshot rules read (archive.ts excludes, verify refuses), so a
- *  file written anywhere else is refused up front. Target is normalized and compared by
- *  segments, so `<data>/vault/../workspace/x` can't pass as covered by `vault`. Symlink
- *  contract: a link between the data directory and the declared root is refused; a link at
- *  the final component is replaced (file: `mv -T`) or refused (directory). Armor against
- *  path-assembly mistakes, not isolation from hostile code. The symlink scan runs over the
- *  RAW path's prefixes, not normalized, since a link before a `..` would otherwise vanish
- *  from textual normalization while still crossed on disk. */
-async function assertDeclaredPrivatePath(
-  ctx: Context,
-  path: string,
-  mode: "file" | "directory",
-): Promise<{ ledger: string; boundary: string; target: string }> {
-  const dataDir = ctx.settings?.dataDir ?? "";
-  if (dataDir === "" || !path.startsWith(`${dataDir}/`)) {
-    throw new Error(`private target path must be inside the data directory (${dataDir === "" ? "context has no dataDir" : dataDir}): ${path}`);
-  }
-  const rawRelative = path.slice(dataDir.length + 1);
-  const relative = normalizeRelativeSegments(rawRelative);
-  if (relative === null || relative.length === 0) {
-    throw new Error(`private target path must stay inside the data directory: ${path}`);
-  }
-  const declared = await installedRecipePrivatePaths();
-  const boundary = declared.find((candidate) => {
-    const declaredSegments = candidate.split("/");
-    return declaredSegments.length > 0 && relative.length >= declaredSegments.length
-      && declaredSegments.every((segment, index) => relative[index] === segment);
-  });
-  if (boundary === undefined) {
-    throw new Error(
-      `private target path is not covered by any recipe's privatePaths — declare it (or a parent directory of it) in recipes/<name>/recipe.json: ${path}`,
-    );
-  }
-  // Every proper prefix of the raw path is a directory the kernel crosses before the final
-  // component. Directory mode adds the final component itself.
-  const rawSegments = rawRelative.split("/");
-  const checked = Array.from(
-    { length: rawSegments.length - 1 },
-    (_, depth) => `${dataDir}/${rawSegments.slice(0, depth + 1).join("/")}`,
-  );
-  if (mode === "directory") checked.push(`${dataDir}/${relative.join("/")}`);
-  if (checked.length > 0) {
-    let result: ExecResult;
-    try {
-      result = await ctx.transport.exec("sh", ["-s", "--", ...checked], { input: SYMLINK_SCAN, allowFailure: true });
-    } catch (error) {
-      throw new Error(`could not check the private target path for symlinks: ${(error as Error).message}`);
-    }
-    if (result.code !== 0) {
-      throw new Error(`could not check the private target path for symlinks (exit ${result.code}): ${result.stderr.trim()}`);
-    }
-    const lines = result.stdout.split("\n").filter((line) => line !== "");
-    if (lines.length > 0) {
-      throw new Error(`private target path crosses a symlinked directory (${lines[0]}): ${path}`);
-    }
-  }
-  return { ledger: relative.join("/"), boundary, target: `${dataDir}/${relative.join("/")}` };
-}
-
 /** Creates a target directory and narrows it to owner-only access. */
-async function createPrivateDirectory(ctx: Context, path: string): Promise<void> {
-  await ctx.transport.mkdirp(path);
-  await ctx.transport.exec("chmod", ["700", path]);
+export async function createPrivateDirectory(ctx: Context, path: string, boundary: string): Promise<void> {
+  const root = `${ctx.settings.dataDir}/${boundary}`;
+  const parents: string[] = [];
+  for (let current = path; current === root || current.startsWith(`${root}/`); current = parentPath(current)) parents.unshift(current);
+  // umask protects every new ancestor from creation, not just after chmod.
+  await ctx.transport.exec("sh", ["-c", "umask 077; mkdir -p -- \"$1\"", "sh", path]);
+  for (const parent of parents.length > 0 ? parents : [path]) await ctx.transport.exec("chmod", ["700", parent]);
 }
 
 /** Creates one of the recipe's declared private directories, owner-only. */
@@ -132,7 +60,7 @@ export async function ensurePrivateTargetDirectory(ctx: Context, path: string): 
   // Recorded before anything is created: a write that cannot be remembered is refused
   // rather than made and left unprotected once its declaration disappears.
   await recordPrivateWrite(ledger, boundary);
-  await createPrivateDirectory(ctx, target);
+  await createPrivateDirectory(ctx, target, boundary);
 }
 
 /** Atomically replaces a target file with mode 600, preserving the old file on a failed write.
@@ -146,7 +74,7 @@ export async function replacePrivateTargetFile(ctx: Context, path: string, conte
   await recordPrivateWrite(ledger, boundary);
   // Created via the file's own declaration rather than ensurePrivateTargetDirectory: an
   // entry naming the exact file also covers its parent, without declaring it separately.
-  await createPrivateDirectory(ctx, parentPath(target));
+  await createPrivateDirectory(ctx, parentPath(target), boundary);
   const temporary = `${target}${PRIVATE_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
   try {
     if (ctx.transport.writePrivateFile !== undefined) await ctx.transport.writePrivateFile(temporary, content);

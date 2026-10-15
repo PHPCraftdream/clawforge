@@ -21,7 +21,7 @@ import { resolve } from "node:path";
 import { info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { Recipe } from "#src/service/recipe.ts";
-import { importHookModule } from "./index.ts";
+import { importHookModule } from "#src/commands/management/recipe/index.ts";
 
 /** The two hook phases, named for their files. */
 type RecipeLifecyclePhase = "quiesce" | "resume";

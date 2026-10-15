@@ -2,17 +2,17 @@
   "tools": [
     {
       "name": "bootstrap",
-      "description": "Bring the instance up from nothing (idempotent)\n\nFull text: call help with command=bootstrap.",
+      "description": "Bring the instance up (idempotent)\nFull text: help command=bootstrap",
       "inputSchema": {
         "type": "object",
         "properties": {
           "no-pull": {
             "type": "boolean",
-            "description": "Use the image already present locally"
+            "description": "Use the local image"
           },
           "check": {
             "type": "boolean",
-            "description": "Read-only prerequisite report — no lock, no mutation"
+            "description": "Prerequisite report; read-only"
           },
           "break-lock": {
             "type": "boolean",
@@ -24,14 +24,14 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           }
         }
       }
     },
     {
       "name": "up",
-      "description": "Start the service and wait until it serves\n\nFull text: call help with command=up.",
+      "description": "Start the service; wait until it serves\nFull text: help command=up",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -48,7 +48,7 @@
     },
     {
       "name": "restart",
-      "description": "Restart the instance so it re-reads its configuration\n\nFull text: call help with command=restart.",
+      "description": "Restart so the instance re-reads its config\nFull text: help command=restart",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -65,7 +65,7 @@
     },
     {
       "name": "down",
-      "description": "Stop and remove the containers (data is kept)\n\nFull text: call help with command=down.",
+      "description": "Stop and remove the containers (data is kept)\nFull text: help command=down",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -82,29 +82,29 @@
     },
     {
       "name": "destroy",
-      "description": "Remove what bootstrap created (destructive for some actions)\n\nFull text: call help with command=destroy.",
+      "description": "Remove what bootstrap created (may require confirm)\nFull text: help command=destroy",
       "inputSchema": {
         "type": "object",
         "properties": {
           "data": {
             "type": "boolean",
-            "description": "Remove the data directory"
+            "description": "Remove data directory"
           },
           "backups": {
             "type": "boolean",
-            "description": "Remove the backup directory"
+            "description": "Remove backup directory"
           },
           "snapshots": {
             "type": "boolean",
-            "description": "Remove the snapshot directory"
+            "description": "Remove snapshot directory"
           },
           "yes": {
             "type": "boolean",
-            "description": "Perform the removal instead of a dry run"
+            "description": "Perform the removal"
           },
           "confirm-name": {
             "type": "string",
-            "description": "Confirms the deployment's own name"
+            "description": "Deployment name"
           },
           "break-lock": {
             "type": "boolean",
@@ -116,35 +116,35 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "logs",
-      "description": "Follow the service log, or read a bounded tail of it\n\nFull text: call help with command=logs.",
+      "description": "Follow the service log, or read a tail\nFull text: help command=logs",
       "inputSchema": {
         "type": "object",
         "properties": {
           "tail": {
             "type": "string",
-            "description": "Lines to return when reading rather than following"
+            "description": "Lines to return"
           },
           "since": {
             "type": "string",
-            "description": "Only lines at or after this duration/timestamp"
+            "description": "Lines at or after this time"
           },
           "grep": {
             "type": "string",
-            "description": "Only lines matching this regular expression"
+            "description": "Only matching lines"
           }
         }
       }
     },
     {
       "name": "backup",
-      "description": "Snapshot the data directory; list, prune, schedule (destructive for some actions)\n\nFull text: call help with command=backup.",
+      "description": "Snapshot data; list, prune, schedule (may require confirm)\nFull text: help command=backup",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -178,7 +178,7 @@
           },
           "share": {
             "type": "boolean",
-            "description": "Share profile with verification (create)"
+            "description": "Share profile, verified (create)"
           },
           "migrate": {
             "type": "boolean",
@@ -190,11 +190,11 @@
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Show what would happen without touching anything (create)"
+            "description": "What would happen (create)"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit JSON (list, prune-replaced)"
+            "description": "Diff JSON (list, prune-replaced)"
           },
           "apply": {
             "type": "boolean",
@@ -218,24 +218,24 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "restore",
-      "description": "Restore an archive over the current state (destructive for some actions)\n\nFull text: call help with command=restore.",
+      "description": "Restore an archive over current state (may require confirm)\nFull text: help command=restore",
       "inputSchema": {
         "type": "object",
         "properties": {
           "archive": {
             "type": "string",
-            "description": "Path to the archive; newest if omitted"
+            "description": "Archive; newest if omitted"
           },
           "force": {
             "type": "boolean",
-            "description": "Skip the confirmation prompt"
+            "description": "Skip the confirmation"
           },
           "break-lock": {
             "type": "boolean",
@@ -251,11 +251,11 @@
           },
           "no-start": {
             "type": "boolean",
-            "description": "Leave the service stopped afterwards"
+            "description": "Leave it stopped"
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Show what would happen without touching the target"
+            "description": "What would happen"
           },
           "json": {
             "type": "boolean",
@@ -263,14 +263,14 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "pull",
-      "description": "Snapshot the instance state into the snapshot directory\n\nFull text: call help with command=pull.",
+      "description": "Snapshot the instance to the snapshot directory\nFull text: help command=pull",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -285,11 +285,11 @@
           },
           "share": {
             "type": "boolean",
-            "description": "Shareable profile with verification"
+            "description": "Share profile, verified"
           },
           "with-secrets": {
             "type": "boolean",
-            "description": "Full profile: includes provider keys"
+            "description": "Full profile, with keys"
           },
           "migrate": {
             "type": "boolean",
@@ -309,24 +309,24 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           }
         }
       }
     },
     {
       "name": "push",
-      "description": "Push a snapshot back onto the instance (destructive for some actions)\n\nFull text: call help with command=push.",
+      "description": "Push a snapshot onto the instance (may require confirm)\nFull text: help command=push",
       "inputSchema": {
         "type": "object",
         "properties": {
           "archive": {
             "type": "string",
-            "description": "Snapshot to push; newest if omitted"
+            "description": "Snapshot; newest if omitted"
           },
           "force": {
             "type": "boolean",
-            "description": "Skip the confirmation prompt"
+            "description": "Skip the confirmation"
           },
           "break-lock": {
             "type": "boolean",
@@ -342,22 +342,22 @@
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Show what would happen without touching the target"
+            "description": "What would happen"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "verify",
-      "description": "Check a snapshot for credentials before sharing it\n\nFull text: call help with command=verify.",
+      "description": "Check a snapshot for credentials\nFull text: help command=verify",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -376,7 +376,7 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the verdict and findings as JSON"
+            "description": "Verdict as JSON"
           }
         },
         "required": [
@@ -386,21 +386,21 @@
     },
     {
       "name": "upgrade",
-      "description": "Update the image by digest, with automatic rollback on failure (destructive for some actions)\n\nFull text: call help with command=upgrade.",
+      "description": "Update the image by digest; rollback on failure (may require confirm)\nFull text: help command=upgrade",
       "inputSchema": {
         "type": "object",
         "properties": {
           "image": {
             "type": "string",
-            "description": "Upgrade to this image, not the deployment's OPENCLAW_IMAGE"
+            "description": "Image to upgrade to"
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Print the plan without changing anything"
+            "description": "Plan only"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           },
           "break-lock": {
             "type": "boolean",
@@ -412,37 +412,37 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "smoke",
-      "description": "Acceptance run: health, agent, config, snapshots, MCP\n\nFull text: call help with command=smoke.",
+      "description": "Acceptance run: health, agent, config, snapshots, MCP\nFull text: help command=smoke",
       "inputSchema": {
         "type": "object",
         "properties": {
           "quick": {
             "type": "boolean",
-            "description": "Skip the slow round-trip check"
+            "description": "Skip the slow check"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           }
         }
       }
     },
     {
       "name": "inspect",
-      "description": "What is declared, what is actually running, and where they disagree\n\nFull text: call help with command=inspect.",
+      "description": "Declared versus running, with differences\nFull text: help command=inspect",
       "inputSchema": {
         "type": "object",
         "properties": {
           "json": {
             "type": "boolean",
-            "description": "Emit the whole inspection as JSON"
+            "description": "Whole inspection as JSON"
           }
         }
       },
@@ -488,13 +488,13 @@
     },
     {
       "name": "doctor",
-      "description": "Say whether anything is wrong and what to run about it\n\nFull text: call help with command=doctor.",
+      "description": "Report what is wrong and what to run\nFull text: help command=doctor",
       "inputSchema": {
         "type": "object",
         "properties": {
           "json": {
             "type": "boolean",
-            "description": "Emit the verdict, problems and next actions as JSON"
+            "description": "Verdict and next actions as JSON"
           }
         }
       },
@@ -540,17 +540,17 @@
     },
     {
       "name": "plan",
-      "description": "The ordered actions the declaration implies, without performing them\n\nFull text: call help with command=plan.",
+      "description": "Actions the declaration implies, without running\nFull text: help command=plan",
       "inputSchema": {
         "type": "object",
         "properties": {
           "set": {
             "type": "string",
-            "description": "Plan from a built set artifact instead of the working tree"
+            "description": "Plan from a built set"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the plan as JSON"
+            "description": "Plan as JSON"
           }
         }
       },
@@ -596,21 +596,21 @@
     },
     {
       "name": "apply",
-      "description": "Run the plan, then confirm what the instance actually is (destructive for some actions)\n\nFull text: call help with command=apply.",
+      "description": "Apply the plan, then confirm the instance (may require confirm)\nFull text: help command=apply",
       "inputSchema": {
         "type": "object",
         "properties": {
           "set": {
             "type": "string",
-            "description": "Install this built set artifact instead of the working tree"
+            "description": "Install a built set"
           },
           "expect": {
             "type": "string",
-            "description": "Declaration checksum the plan was computed against"
+            "description": "Plan checksum"
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Show the steps without running any of them"
+            "description": "Show the steps only"
           },
           "break-lock": {
             "type": "boolean",
@@ -622,11 +622,11 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       },
@@ -672,7 +672,7 @@
     },
     {
       "name": "accept",
-      "description": "Run the acceptance checks this deployment's recipes declare\n\nFull text: call help with command=accept.",
+      "description": "Run this deployment's acceptance checks\nFull text: help command=accept",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -686,11 +686,11 @@
           },
           "with-model": {
             "type": "boolean",
-            "description": "Include the checks that call the model, and pay for them"
+            "description": "Include model checks"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the report as JSON"
+            "description": "Report as JSON"
           }
         }
       },
@@ -736,7 +736,7 @@
     },
     {
       "name": "rollback",
-      "description": "Put back the configuration an operation replaced (destructive for some actions)\n\nFull text: call help with command=rollback.",
+      "description": "Restore the configuration an operation replaced (may require confirm)\nFull text: help command=rollback",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -746,11 +746,11 @@
           },
           "no-restart": {
             "type": "boolean",
-            "description": "Restore the file without restarting the instance"
+            "description": "Restore without restarting"
           },
           "previous-set": {
             "type": "boolean",
-            "description": "Reinstall the previously installed set, not one config file"
+            "description": "Reinstall the previous set"
           },
           "break-lock": {
             "type": "boolean",
@@ -762,15 +762,15 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Show what would happen without touching anything"
+            "description": "What would happen"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       },
@@ -816,21 +816,41 @@
     },
     {
       "name": "operations",
-      "description": "What mutating runs did to this instance, and what they left behind\n\nFull text: call help with command=operations.",
+      "description": "What mutating runs did and left behind (may require confirm)\nFull text: help command=operations",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "Operation id to show in full"
+            "description": "Operation id to show"
           },
           "limit": {
             "type": "string",
-            "description": "How many recent operations to list"
+            "description": "Operations to list"
+          },
+          "takeover-lock": {
+            "type": "boolean",
+            "description": "Release lock metadata only"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Orphan host"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "MCP confirmation consent"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the record, or the list, as JSON"
+            "description": "Record or list as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm destructive action"
           }
         }
       },
@@ -876,25 +896,25 @@
     },
     {
       "name": "apply-config",
-      "description": "Apply the deployment's desired-state.json (destructive for some actions)\n\nFull text: call help with command=apply-config.",
+      "description": "Apply the deployment's desired-state.json (may require confirm)\nFull text: help command=apply-config",
       "inputSchema": {
         "type": "object",
         "properties": {
           "dry-run": {
             "type": "boolean",
-            "description": "Validate the apply without writing"
+            "description": "Validate without writing"
           },
           "dump": {
             "type": "boolean",
-            "description": "Reconstruct desired-state.json from the live config"
+            "description": "Rebuild from the live config"
           },
           "force": {
             "type": "boolean",
-            "description": "Overwrite an existing desired-state.json; refused without it"
+            "description": "Overwrite; refused without it"
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over a held instance lock"
+            "description": "Take the instance lock"
           },
           "break-foreign-lock": {
             "type": "string",
@@ -902,18 +922,18 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "expose",
-      "description": "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale (destructive for some actions)\n\nFull text: call help with command=expose.",
+      "description": "Expose the gateway: SSH tunnel or tailscale (may require confirm)\nFull text: help command=expose",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -932,7 +952,7 @@
           },
           "run": {
             "type": "boolean",
-            "description": "open the tunnel in the foreground until Ctrl+C (ssh)"
+            "description": "Run the tunnel in the foreground (ssh)"
           },
           "apply": {
             "type": "boolean",
@@ -948,11 +968,11 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the exposure and tailscale report as JSON (status)"
+            "description": "Exposure report as JSON (status)"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         },
         "required": [
@@ -962,7 +982,7 @@
     },
     {
       "name": "watch",
-      "description": "Health monitoring with a webhook alert on state change (destructive for some actions)\n\nFull text: call help with command=watch.",
+      "description": "Health monitoring with webhook alerts (may require confirm)\nFull text: help command=watch",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -983,11 +1003,11 @@
           },
           "interval": {
             "type": "string",
-            "description": "time between checks — a bare number is minutes (install)"
+            "description": "Time between checks (install)"
           },
           "apply": {
             "type": "boolean",
-            "description": "Change target crontab, not just print (install, uninstall)"
+            "description": "Change the crontab (install, uninstall)"
           },
           "break-lock": {
             "type": "boolean",
@@ -999,7 +1019,7 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         },
         "required": [
@@ -1009,13 +1029,13 @@
     },
     {
       "name": "incident",
-      "description": "Incident response: contain, preserve evidence, rotate the token, audit (destructive for some actions)\n\nFull text: call help with command=incident.",
+      "description": "Contain, collect evidence, rotate tokens, audit (may require confirm)\nFull text: help command=incident",
       "inputSchema": {
         "type": "object",
         "properties": {
           "dry-run": {
             "type": "boolean",
-            "description": "Print the plan without changing anything"
+            "description": "Plan only"
           },
           "keep-exposure": {
             "type": "boolean",
@@ -1023,11 +1043,11 @@
           },
           "tail": {
             "type": "string",
-            "description": "Lines of log to collect"
+            "description": "Log lines to collect"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the report as JSON"
+            "description": "Report as JSON"
           },
           "break-lock": {
             "type": "boolean",
@@ -1039,7 +1059,7 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       },
@@ -1085,13 +1105,13 @@
     },
     {
       "name": "recover-env",
-      "description": "Repair .env's connection facts from the running instance\n\nFull text: call help with command=recover-env.",
+      "description": "Repair .env from the running instance\nFull text: help command=recover-env",
       "inputSchema": {
         "type": "object",
         "properties": {
           "dry-run": {
             "type": "boolean",
-            "description": "Print what would change without writing"
+            "description": "Changes only"
           },
           "adopt-runtime": {
             "type": "boolean",
@@ -1099,37 +1119,184 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           }
         }
       }
     },
     {
+      "name": "memory",
+      "description": "Declare, set up, inspect, index, verify memory (may require confirm)\nFull text: help command=memory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Memory action",
+            "enum": [
+              "plan",
+              "configure",
+              "setup",
+              "status",
+              "index",
+              "verify"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "description": "Memory mode (plan, configure)",
+            "enum": [
+              "embeddings",
+              "keyword",
+              "disabled"
+            ]
+          },
+          "backend": {
+            "type": "string",
+            "description": "Explicit backend (plan, configure)",
+            "enum": [
+              "builtin"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "description": "Embedding provider (plan, configure)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding model (plan, configure)"
+          },
+          "env": {
+            "type": "string",
+            "description": "Target SecretRef (plan, configure)"
+          },
+          "model-path": {
+            "type": "string",
+            "description": "Managed GGUF path (plan, configure)"
+          },
+          "model-checksum": {
+            "type": "string",
+            "description": "Approved GGUF SHA256 (plan, configure, setup, index, verify)"
+          },
+          "model-source": {
+            "type": "string",
+            "description": "Approved source (plan, configure, index, verify); GGUF source (setup)"
+          },
+          "model-version": {
+            "type": "string",
+            "description": "Approved revision (plan, configure, index, verify); GGUF revision (setup)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Structured outcome"
+          },
+          "plugin-version": {
+            "type": "string",
+            "description": "Plugin version (setup)"
+          },
+          "model-max-bytes": {
+            "type": "string",
+            "description": "Max GGUF bytes (setup)"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Existing agent id (setup, index, verify)"
+          },
+          "all-agents": {
+            "type": "boolean",
+            "description": "Every agent (setup, index, verify)"
+          },
+          "allow-install": {
+            "type": "boolean",
+            "description": "Plugin install consent (setup)"
+          },
+          "allow-download": {
+            "type": "boolean",
+            "description": "GGUF download (setup); Probe downloads (status, index, verify)"
+          },
+          "deep": {
+            "type": "boolean",
+            "description": "Provider probe (status)"
+          },
+          "allow-spend": {
+            "type": "boolean",
+            "description": "Probe spend (status, index, verify)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm destructive action"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextSteps": {
+            "type": "array"
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "nextSteps",
+          "result"
+        ]
+      }
+    },
+    {
       "name": "status",
-      "description": "Show containers, image, health probes and data usage\n\nFull text: call help with command=status.",
+      "description": "Show containers, image, health, data usage\nFull text: help command=status",
       "inputSchema": {
         "type": "object",
         "properties": {
           "json": {
             "type": "boolean",
-            "description": "Emit status as JSON instead of text"
+            "description": "Status as JSON"
           }
         }
       }
     },
     {
       "name": "lock",
-      "description": "Pin what this instance is made of, or check it still matches\n\nFull text: call help with command=lock.",
+      "description": "Pin the instance's composition, or verify it\nFull text: help command=lock",
       "inputSchema": {
         "type": "object",
         "properties": {
           "check": {
             "type": "boolean",
-            "description": "Compare against the existing lock instead of writing one"
+            "description": "Compare instead of writing"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the lock, or the differences, as JSON"
+            "description": "Lock or differences as JSON"
           }
         }
       },
@@ -1175,7 +1342,7 @@
     },
     {
       "name": "cli",
-      "description": "Run the OpenClaw CLI in a throwaway container (destructive)\n\nFull text: call help with command=cli.",
+      "description": "Run the OpenClaw CLI in a throwaway container (destructive)\nFull text: help command=cli",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1188,7 +1355,7 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Must be true: destroys state"
+            "description": "Required: destroys state"
           }
         },
         "required": [
@@ -1199,7 +1366,7 @@
     },
     {
       "name": "exec",
-      "description": "Run an arbitrary command in the same sidecar as `cli` (destructive)\n\nFull text: call help with command=exec.",
+      "description": "Run a command in the same sidecar as `cli` (destructive)\nFull text: help command=exec",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1212,7 +1379,7 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Must be true: destroys state"
+            "description": "Required: destroys state"
           }
         },
         "required": [
@@ -1223,7 +1390,7 @@
     },
     {
       "name": "host",
-      "description": "Run one command on the operator's own machine, not in a container (destructive)\n\nFull text: call help with command=host.",
+      "description": "Run a command on the host, not in a container (destructive)\nFull text: help command=host",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1242,7 +1409,7 @@
           },
           "confirm-root": {
             "type": "boolean",
-            "description": "Second consent; both flags together are required"
+            "description": "Confirm elevation"
           },
           "args": {
             "type": "array",
@@ -1253,7 +1420,7 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Must be true: destroys state"
+            "description": "Required: destroys state"
           }
         },
         "required": [
@@ -1265,7 +1432,7 @@
     },
     {
       "name": "cli-start",
-      "description": "Start the persistent CLI helper (no per-call container overhead)\n\nFull text: call help with command=cli-start.",
+      "description": "Start the persistent CLI helper\nFull text: help command=cli-start",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -1273,7 +1440,7 @@
     },
     {
       "name": "cli-stop",
-      "description": "Stop the persistent CLI helper\n\nFull text: call help with command=cli-stop.",
+      "description": "Stop the persistent CLI helper\nFull text: help command=cli-stop",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -1281,21 +1448,21 @@
     },
     {
       "name": "configure-provider",
-      "description": "Configure model providers from target-side environment variables\n\nFull text: call help with command=configure-provider.",
+      "description": "Configure model providers from target env vars\nFull text: help command=configure-provider",
       "inputSchema": {
         "type": "object",
         "properties": {
           "provider": {
             "type": "string",
-            "description": "Provider id, for example openai"
+            "description": "Provider id, e.g. openai"
           },
           "env": {
             "type": "string",
-            "description": "Secret variable, for example OPENAI_API_KEY"
+            "description": "Secret variable, e.g. OPENAI_API_KEY"
           },
           "force": {
             "type": "boolean",
-            "description": "Replace an existing provider SecretRef"
+            "description": "Replace an existing SecretRef"
           },
           "break-lock": {
             "type": "boolean",
@@ -1307,36 +1474,36 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           }
         }
       }
     },
     {
       "name": "secrets",
-      "description": "Show required secrets and whether they are in place (destructive for some actions)\n\nFull text: call help with command=secrets.",
+      "description": "Show required secrets and their state (may require confirm)\nFull text: help command=secrets",
       "inputSchema": {
         "type": "object",
         "properties": {
           "template": {
             "type": "boolean",
-            "description": "Write the secrets template into config/"
+            "description": "Write template into config/"
           },
           "print-template": {
             "type": "boolean",
-            "description": "Print the template instead of writing it"
+            "description": "Template only"
           },
           "init-store": {
             "type": "boolean",
-            "description": "Create an empty store to fill in"
+            "description": "Create an empty store"
           },
           "apply": {
             "type": "boolean",
-            "description": "Fill the target from a local store"
+            "description": "Fill the target from a store"
           },
           "dump": {
             "type": "boolean",
-            "description": "Recover a local store from the running instance"
+            "description": "Save target values to a store"
           },
           "store": {
             "type": "string",
@@ -1356,76 +1523,130 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       }
     },
     {
       "name": "recipe",
-      "description": "Deploy services next to the instance: install, verify, list, and more (destructive for some actions)\n\nFull text: call help with command=recipe.",
+      "description": "Deploy service recipes beside the instance (may require confirm)\nFull text: help command=recipe",
       "inputSchema": {
         "type": "object",
         "properties": {
           "action": {
             "type": "string",
-            "description": "What to do with the recipe",
+            "description": "Recipe action",
             "enum": [
               "list",
               "import",
               "new",
+              "check",
               "verify",
               "onboard",
               "diagnose",
               "install",
+              "trial",
               "remove",
+              "inspect",
+              "recover",
+              "migrate",
               "status",
-              "logs"
+              "logs",
+              "pin",
+              "run"
             ]
           },
           "name": {
             "type": "string",
-            "description": "directory to copy the recipe from (import); recipe (new, verify, onboard, diagnose, install, remove, status, logs)"
+            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, status, logs, pin, run); recipe whose checks you trust (check)"
           },
           "new-name": {
             "type": "string",
-            "description": "Use this name instead of the source name (import)"
+            "description": "Name to import under (import)"
+          },
+          "recipe-action": {
+            "type": "string",
+            "description": "Recipe action (run)"
+          },
+          "arg": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Action argument (run)"
           },
           "json": {
             "type": "boolean",
-            "description": "emit the catalog as JSON (list)"
+            "description": "Catalog as JSON (list); Inspect as JSON (inspect); Run result as JSON (run)"
           },
           "with-hooks": {
             "type": "boolean",
-            "description": "add commented prepare.ts/verify.ts stubs (new)"
-          },
-          "break-lock": {
-            "type": "boolean",
-            "description": "Take lock (verify, onboard, diagnose, install, remove)"
-          },
-          "break-foreign-lock": {
-            "type": "string",
-            "description": "Orphan host (verify, onboard, diagnose, install, remove)"
-          },
-          "tail": {
-            "type": "string",
-            "description": "lines to return per service (diagnose, logs)"
-          },
-          "force-disabled": {
-            "type": "boolean",
-            "description": "build a recipe marked disabled (install)"
+            "description": "Add hook stubs (new)"
           },
           "dry-run": {
             "type": "boolean",
-            "description": "show what would happen (install, remove)"
+            "description": "what would happen (check, install, remove, trial, recover, migrate, run)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take lock (verify, onboard, diagnose, install, trial, remove, pin, run); Instance lock (recover, migrate)"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Orphan host (verify, onboard, diagnose, install, trial, remove, pin, run); Remote lock host (recover, migrate)"
+          },
+          "tail": {
+            "type": "string",
+            "description": "Lines per service (diagnose, inspect, logs)"
+          },
+          "force-disabled": {
+            "type": "boolean",
+            "description": "Build a disabled recipe (install)"
           },
           "volumes": {
             "type": "boolean",
-            "description": "delete its volumes too (remove)"
+            "description": "Delete volumes too (remove)"
+          },
+          "service": {
+            "type": "string",
+            "description": "Service to recover (recover)"
+          },
+          "build": {
+            "type": "boolean",
+            "description": "Build the service (recover)"
+          },
+          "pull": {
+            "type": "boolean",
+            "description": "Pull the image (recover)"
+          },
+          "reconcile-consumer": {
+            "type": "boolean",
+            "description": "Run afterStart hooks (recover)"
+          },
+          "helper-image": {
+            "type": "string",
+            "description": "Local helper image ID (migrate)"
+          },
+          "shutdown-timeout": {
+            "type": "string",
+            "description": "Shutdown grace (seconds) (migrate)"
+          },
+          "version": {
+            "type": "string",
+            "description": "Artifact version (pin)"
+          },
+          "artifact": {
+            "type": "string",
+            "description": "Artifact basename (pin)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "Write the pin (pin)"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         }
       },
@@ -1471,7 +1692,7 @@
     },
     {
       "name": "provision-agent",
-      "description": "Wire a recipe's MCP server to its own OpenClaw agent, with optional cron\n\nFull text: call help with command=provision-agent.",
+      "description": "Wire a recipe's MCP server to an OpenClaw agent\nFull text: help command=provision-agent",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1481,7 +1702,7 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take over the instance lock held by another operation"
+            "description": "Take lock"
           },
           "break-foreign-lock": {
             "type": "string",
@@ -1489,7 +1710,7 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           }
         },
         "required": [
@@ -1499,7 +1720,7 @@
     },
     {
       "name": "deploy",
-      "description": "Deploy to a server over SSH and bootstrap it there (destructive for some actions)\n\nFull text: call help with command=deploy.",
+      "description": "Deploy over SSH and bootstrap the server (may require confirm)\nFull text: help command=deploy",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1513,23 +1734,23 @@
           },
           "no-bootstrap": {
             "type": "boolean",
-            "description": "Copy the files without starting anything"
+            "description": "Copy files without starting"
           },
           "adopt": {
             "type": "boolean",
-            "description": "Take over an existing, unmarked, non-empty remote root"
+            "description": "Adopt an unmarked remote root"
           },
           "dry-run": {
             "type": "boolean",
-            "description": "Show what would happen without touching the target"
+            "description": "What would happen"
           },
           "json": {
             "type": "boolean",
-            "description": "Emit the outcome as JSON"
+            "description": "Outcome as JSON"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         },
         "required": [
@@ -1539,13 +1760,13 @@
     },
     {
       "name": "mcp-setup",
-      "description": "Configure project MCP servers for Claude Code and Codex\n\nFull text: call help with command=mcp-setup.",
+      "description": "Configure project MCP servers (Claude Code, Codex)\nFull text: help command=mcp-setup",
       "inputSchema": {
         "type": "object",
         "properties": {
           "client": {
             "type": "string",
-            "description": "Client configuration to update",
+            "description": "Which client to update",
             "enum": [
               "claude",
               "codex",
@@ -1554,11 +1775,11 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Report changed files as JSON"
+            "description": "Changed files as JSON"
           },
           "rewrite-launcher": {
             "type": "boolean",
-            "description": "Overwrite a locally edited mcp-launch.mjs"
+            "description": "Overwrite edited mcp-launch.mjs"
           }
         }
       },
@@ -1604,30 +1825,30 @@
     },
     {
       "name": "mcp-creds",
-      "description": "Print service URL, token and MCP client config for both servers\n\nFull text: call help with command=mcp-creds.",
+      "description": "Print service URL, token and MCP client config\nFull text: help command=mcp-creds",
       "inputSchema": {
         "type": "object",
         "properties": {
           "json": {
             "type": "boolean",
-            "description": "Print the client config only"
+            "description": "Client config only"
           },
           "token": {
             "type": "boolean",
-            "description": "Print the gateway token only"
+            "description": "Gateway token only"
           }
         }
       }
     },
     {
       "name": "set",
-      "description": "Build or validate the set: what a deployment installs, as one artifact (destructive for some actions)\n\nFull text: call help with command=set.",
+      "description": "Build or validate the set artifact (may require confirm)\nFull text: help command=set",
       "inputSchema": {
         "type": "object",
         "properties": {
           "action": {
             "type": "string",
-            "description": "What to do with sets",
+            "description": "Sets action",
             "enum": [
               "build",
               "validate",
@@ -1654,7 +1875,7 @@
           },
           "set": {
             "type": "string",
-            "description": "Artifact instead of the working tree (validate, try)"
+            "description": "Built set artifact (validate, try)"
           },
           "from": {
             "type": "string",
@@ -1666,15 +1887,15 @@
           },
           "set-id": {
             "type": "string",
-            "description": "filter by immutable set id (receipts)"
+            "description": "Filter by set id (receipts)"
           },
           "receipt": {
             "type": "string",
-            "description": "show this receipt; requires --set-id (receipts)"
+            "description": "Show one receipt (receipts)"
           },
           "with-model": {
             "type": "boolean",
-            "description": "include acceptance checks that call the model (try)"
+            "description": "Include model checks (try)"
           },
           "keep": {
             "type": "boolean",
@@ -1699,7 +1920,7 @@
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         },
         "required": [
@@ -1748,13 +1969,13 @@
     },
     {
       "name": "check",
-      "description": "Run the framework's own checks (no instance needed)\n\nFull text: call help with command=check.",
+      "description": "Framework preflight checks (no instance needed)\nFull text: help command=check",
       "inputSchema": {
         "type": "object",
         "properties": {
           "list": {
             "type": "boolean",
-            "description": "Print the matching check paths instead of running them"
+            "description": "Print matching check paths only"
           },
           "jobs": {
             "type": "string",
@@ -1762,21 +1983,37 @@
           },
           "require": {
             "type": "string",
-            "description": "Capabilities that must fail a check instead of skipping it"
+            "description": "Capabilities that must fail, not skip"
+          },
+          "timings": {
+            "type": "boolean",
+            "description": "Print stored check timings, run nothing"
+          },
+          "top": {
+            "type": "string",
+            "description": "How many timings to list"
+          },
+          "related": {
+            "type": "boolean",
+            "description": "Run only checks touched by changes"
+          },
+          "base": {
+            "type": "string",
+            "description": "Change base for --related"
           },
           "filter": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Only run checks whose relative path contains this text"
+            "description": "Run checks whose path contains this text"
           }
         }
       }
     },
     {
       "name": "new-app",
-      "description": "Create a deployment under apps/\n\nFull text: call help with command=new-app.",
+      "description": "Create a deployment under apps/\nFull text: help command=new-app",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1792,7 +2029,7 @@
     },
     {
       "name": "remove-app",
-      "description": "Delete apps/<name> (destructive for some actions)\n\nFull text: call help with command=remove-app.",
+      "description": "Delete apps/<name> (may require confirm)\nFull text: help command=remove-app",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1802,11 +2039,11 @@
           },
           "yes": {
             "type": "boolean",
-            "description": "Perform the removal instead of a dry run"
+            "description": "Perform the removal, not a dry run"
           },
           "confirm": {
             "type": "boolean",
-            "description": "Confirm a destructive action"
+            "description": "Confirm destructive action"
           }
         },
         "required": [
@@ -1816,30 +2053,30 @@
     },
     {
       "name": "list",
-      "description": "Overview of every deployment under apps/\n\nFull text: call help with command=list.",
+      "description": "List deployments under apps/\nFull text: help command=list",
       "inputSchema": {
         "type": "object",
         "properties": {
           "json": {
             "type": "boolean",
-            "description": "Emit as a JSON array instead of text"
+            "description": "JSON array, not text"
           },
           "no-status": {
             "type": "boolean",
-            "description": "Configuration only — do not query any target"
+            "description": "Config only; do not query targets"
           }
         }
       }
     },
     {
       "name": "help",
-      "description": "Full description, usage and argument list for one command, or the command list when none is given",
+      "description": "Full help for one command, or the command list",
       "inputSchema": {
         "type": "object",
         "properties": {
           "command": {
             "type": "string",
-            "description": "Command name; omit to list every command"
+            "description": "Command name; omit lists all"
           }
         }
       }

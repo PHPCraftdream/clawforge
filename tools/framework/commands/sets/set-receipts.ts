@@ -10,7 +10,7 @@ import * as kinds from "#src/core/values/kinds.ts";
 export const SET_RECEIPTS_ARGUMENTS = [
   {
     name: "set-id",
-    summary: "filter by immutable set id",
+    summary: "Filter by set id",
     description: "With receipts: filter by immutable set id",
     kind: "option",
     valueName: "id",
@@ -18,7 +18,7 @@ export const SET_RECEIPTS_ARGUMENTS = [
   },
   {
     name: "receipt",
-    summary: "show this receipt; requires --set-id",
+    summary: "Show one receipt",
     description: "With receipts: show this receipt; requires --set-id",
     kind: "option",
     valueName: "id",

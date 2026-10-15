@@ -1,5 +1,5 @@
 // The frame law over REAL shells (stage 7 S1.6, design §7.2): the tokenization model in
-// kit/shells.ts is proven by pasting the renderer's actual lines into the shell itself.
+// surfaces/advice/shells.ts is proven by pasting the renderer's actual lines into the shell itself.
 // A temp directory OUTSIDE the checkout — its path carries a space, the O2 case — holds
 // stub programs (the committed-shim spellings plus node_modules/.bin wrappers) that print
 // JSON {stub, cwd, argv}. One line per spelling form: the model's tokenization decides the
@@ -19,7 +19,7 @@ import { createRequire } from "node:module";
 import { installLineParts, renderAdviceParts } from "#framework/core/io/invocation/render.ts";
 import { command, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { pasteShells, SHIM_PROGRAM, type Frame, type Host, type HostPlatform, type Launch, type Places } from "#framework/core/io/invocation/frame.ts";
-import { parsePaste, programArgv, type Shell } from "#checks/kit/shells.ts";
+import { parsePaste, programArgv, type Shell } from "#checks/surfaces/advice/shells.ts";
 import { check, checkTrue, finish, requires, setCaseProbe } from "#checks/kit/harness.ts";
 import { installFrame, setInvocation } from "#framework/core/io/invocation/index.ts";
 import { handoverOf } from "#framework/core/io/invocation/frame.ts";

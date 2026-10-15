@@ -56,7 +56,7 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
  *  Deliberately not the registry `help` entry's summary (integration/gate.ts's
  *  HELP_ENTRY_SUMMARY, "same as: <command> --help"): that sentence refers to the console
  *  form; this one describes the tool. */
-export const HELP_TOOL_SUMMARY = "Full description, usage and argument list for one command, or the command list when none is given";
+export const HELP_TOOL_SUMMARY = "Full help for one command, or the command list";
 
 /** The `help` tool: not a command, answered through renderHelp like the console's help. Its
  *  argument is the registry's own `help` entry, not a second declaration here — minus the

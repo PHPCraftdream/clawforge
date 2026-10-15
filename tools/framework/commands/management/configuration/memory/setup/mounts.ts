@@ -3,11 +3,14 @@ import { serviceOf, type Context } from "#src/core/context.ts";
 import { composeProjectName } from "#src/runtime/deployment.ts";
 import { DockerRuntime } from "#src/runtime/docker/runtime-docker.ts";
 import { CLI_HELPER_SERVICE } from "#src/commands/interface/cli-helper.ts";
-import { MemoryError, object } from "../declaration.ts";
+import { MemoryError, object } from "#src/commands/management/configuration/memory/declaration.ts";
 import type { SetupMount, SetupMountInventory } from "./operation.ts";
 
+function refusal(): MemoryError {
+  return new MemoryError("MOUNT", "Bounded gateway/helper mount inspection failed or was ambiguous; inspect the selected persistent mounts before setup.");
+}
 function refuse(): never {
-  throw new MemoryError("MOUNT", "Bounded gateway/helper mount inspection failed or was ambiguous; inspect the selected persistent mounts before setup.");
+  throw refusal();
 }
 function canonical(value: unknown): string {
   if (typeof value !== "string" || !posix.isAbsolute(value) || posix.normalize(value) !== value || value.includes("\\") || [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return refuse();
@@ -70,6 +73,6 @@ export async function readSetupMounts(ctx: Context, timeoutMs: number): Promise<
     return { gateway: mounts(gateway.Mounts), helper: mounts(helper.Mounts) };
   } catch {
     // Never expose inspect output, transport diagnostics, paths or credentials.
-    return refuse();
+    throw refusal();
   }
 }

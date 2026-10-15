@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { posix } from "node:path";
 import { locksDir, type Settings } from "../../../core/env.ts";
 import type { PathBridge } from "../../../core/paths.ts";
-import type { ExecResult, Transport } from "../../transport/transport.ts";
+import type { ExecOptions, ExecResult, Transport } from "../../transport/transport.ts";
+import { privateWriteCommand } from "../../transport/quoting.ts";
 const CONNECTION_ENV = new Set(["PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "SSH_AUTH_SOCK"]);
 
 export class RecipeReadError extends Error {
@@ -171,7 +172,9 @@ export interface StackIO {
   legacy: readonly string[];
   getSettings: () => Settings;
   file: () => Promise<string>;
-  run: (args: string[], environment?: Readonly<Record<string, string>>, timeoutMs?: number) => Promise<ExecResult>;
+  run: (args: string[], environment?: Readonly<Record<string, string>>, timeoutMs?: number, abort?: AbortSignal) => Promise<ExecResult>;
+  writePrivateFile: (path: string, content: string | Uint8Array, options?: ExecOptions) => Promise<void>;
+  mkdirPrivate: (path: string, options?: ExecOptions) => Promise<void>;
   config: (namespace?: string) => Promise<Record<string, unknown>>;
   sanitize: (value: string) => string;
 }
@@ -188,7 +191,7 @@ export function createIO(transport: Transport, paths: PathBridge, getSettings: (
       throw new RecipeReadError("malformed", "definition path");
     return target;
   };
-  const run = async (args: string[], environment?: Readonly<Record<string, string>>, timeoutMs = 120_000): Promise<ExecResult> => {
+  const run = async (args: string[], environment?: Readonly<Record<string, string>>, timeoutMs = 120_000, abort?: AbortSignal): Promise<ExecResult> => {
     const deadline = Date.now() + remainingTimeout(undefined, timeoutMs);
     const input = environment === undefined ? undefined : Object.entries(environment).map(([key, value]) => {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || Array.from(value).some((char) => [0, 10, 13].includes(char.charCodeAt(0))))
@@ -201,7 +204,7 @@ export function createIO(transport: Transport, paths: PathBridge, getSettings: (
       // not described by the operator's process.env). Preserve Docker connection only.
       const launch = 'exec env -i PATH="$PATH" HOME="$HOME" DOCKER_HOST="${DOCKER_HOST-}" DOCKER_CONTEXT="${DOCKER_CONTEXT-}" DOCKER_CONFIG="${DOCKER_CONFIG-}" DOCKER_TLS_VERIFY="${DOCKER_TLS_VERIFY-}" DOCKER_CERT_PATH="${DOCKER_CERT_PATH-}" SSH_AUTH_SOCK="${SSH_AUTH_SOCK-}" ' + (input === undefined ? 'docker "$@"' : 'sh -s -- "$@"');
       result = await transport.exec("sh", ["-c", launch, "recipe-docker", ...args], {
-        allowFailure: true, stream: false, timeoutMs: remainingTimeout(deadline, timeoutMs),
+        allowFailure: true, stream: false, timeoutMs: remainingTimeout(deadline, timeoutMs), signal: abort,
         ...(input === undefined ? {} : { input }), unsetEnv: [...new Set([...Object.keys(process.env), ...Object.keys(getSettings().env)])]
           .filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !CONNECTION_ENV.has(key) && key !== "TMPDIR"),
       });
@@ -228,7 +231,20 @@ export function createIO(transport: Transport, paths: PathBridge, getSettings: (
       return code === 9 || code === 10 || (code >= 32 && (code < 127 || code > 159));
     }).join("").slice(0, 16_384);
   };
-  return { transport, project, legacy: [...new Set(legacy)].filter((p) => p !== project), getSettings, file, run, config, sanitize };
+  // Staging changes only the transport operation, not the ownership contract: use the
+  // same POSIX exclusive owner-only writer as WSL/SSH, so the trial's mkdir/write can be
+  // bounded and cancelled just like every other target mutation (local too).
+  const mkdirPrivate = async (path: string, options: ExecOptions = {}): Promise<void> => {
+    const result = await transport.exec("mkdir", ["-m", "700", path], { ...options, allowFailure: true });
+    if (result.code !== 0) throw new Error(`private directory creation failed (exit ${result.code})`);
+  };
+  const writePrivateFile = async (path: string, content: string | Uint8Array, options: ExecOptions = {}): Promise<void> => {
+    const [command, args] = privateWriteCommand(path);
+    const result = await transport.exec(command, args, { ...options, input: content, allowFailure: true });
+    if (result.code !== 0) throw new Error(`private file write failed (exit ${result.code})`);
+  };
+  return { transport, project, legacy: [...new Set(legacy)].filter((p) => p !== project), getSettings, file, run, config, sanitize,
+    mkdirPrivate, writePrivateFile };
 }
 export interface PreparedComposeDocument {
   readonly layout: ComposeStaging;
@@ -246,6 +262,12 @@ export function decodeComposeDocument(content: string): Record<string, unknown> 
     : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)])) : value;
   return object(decode(json(content)));
 }
+/** A resolved document must not undergo interpolation a second time: every `$` becomes
+ *  `$$`, recursively, so compose's single un-escape on load leaves the original strings.
+ *  Exported for the recipe trial, which pins a proven merged document the same way. */
+export const escapeComposeDocument = (value: unknown): unknown => typeof value === "string" ? value.replaceAll("$", () => "$$")
+  : Array.isArray(value) ? value.map(escapeComposeDocument)
+  : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, escapeComposeDocument(v)])) : value;
 export async function prepareComposeDocument(io: StackIO, document: Record<string, unknown>, extra: readonly string[] = []): Promise<PreparedComposeDocument> {
   const file = await io.file();
   const directory = posix.dirname(file);
@@ -268,10 +290,7 @@ export async function prepareComposeDocument(io: StackIO, document: Record<strin
   const digest = documentDigest(prepared);
   for (const service of Object.values(labeled)) service.labels[digestLabel] = digest;
   // A resolved document must not undergo interpolation a second time.
-  const escape = (value: unknown): unknown => typeof value === "string" ? value.replaceAll("$", () => "$$")
-    : Array.isArray(value) ? value.map(escape)
-    : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, escape(v)])) : value;
-  const content = JSON.stringify(escape(prepared));
+  const content = JSON.stringify(escapeComposeDocument(prepared));
   if (Buffer.byteLength(content) > 4194304) throw new RecipeReadError("malformed", "staging document too large");
   try {
     await verifyStaging(io, layout);

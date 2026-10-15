@@ -34,7 +34,7 @@ export const EXPOSE_SSH_ARGUMENTS = [
   },
   {
     name: "run",
-    summary: "open the tunnel in the foreground until Ctrl+C",
+    summary: "Run the tunnel in the foreground",
     description: "With ssh: open the tunnel in the foreground until Ctrl+C; needs a real terminal",
     kind: "flag",
   },

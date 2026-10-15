@@ -26,7 +26,7 @@ import { SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { completionScenarios, type CompletionScenario } from "./scenarios.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
-import { tokenizeLine } from "#checks/kit/shells.ts";
+import { tokenizeLine } from "#checks/surfaces/advice/shells.ts";
 import { bashCommand, bashEnvironment } from "#checks/kit/capabilities/native-tools.ts";
 import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
@@ -37,6 +37,8 @@ import type { GateCommand } from "#framework/integration/gate.ts";
 // the gate over the finished array), which is what makes its own shell choices completable.
 const gateCommands: GateCommand[] = [];
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+/** The bash driver forks per sweep case; on a loaded Windows host the run measured 140 s alone, so the ceiling leaves room. */
+const BASH_DRIVER_TIMEOUT_MS = 900_000;
 const registry = surfaceRegistry();
 const data = completionData(registry, true);
 const installed = completionData(registry, false);
@@ -433,14 +435,14 @@ const NOTE_MARK = String.fromCharCode(32, 32, 40);
   // Item 5 (S1.4): these checks run over the CURRENT composer output — never the committed
   // snapshot. Under a checkout frame the pwsh Install line is the sentence form (the bash
   // shim has no pwsh pipeline); every rendered command tokenizes in its own shell
-  // (kit/shells.ts) and opens with the frame's program spelling.
+  // (surfaces/advice/shells.ts) and opens with the frame's program spelling.
   const previous = invocation();
   setInvocation({ program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
   try {
     // executable part plus where it ends in the raw line: the note check below runs on the
     // UNTRUNCATED text, so a note before the executable part cannot survive the last "  (" cut
     const commandOf = (line: string): { executable: string; end: number } => {
-      const inner = /source <\(([^)]+)\)/.exec(line);
+      const inner = /(?:source <|eval "\$)\(([^)]+)\)/.exec(line);
       if (inner !== null) return { executable: inner[1]!, end: inner.index + inner[0].length };
       const sentence = /run (\S+ completion \S+) in Git Bash/.exec(line);
       if (sentence !== null) return { executable: sentence[1]!, end: sentence.index + sentence[1].length };
@@ -499,7 +501,7 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
   try {
     const rendered = renderCompletion("bash", data);
     const install = rendered.split("\n")[1]!.slice("# Install: ".length);
-    const installProgram = install.slice("source <(".length, -1).split(" ")[0];
+    const installProgram = install.slice('eval "$('.length, -2).split(" ")[0];
     check("bash: the Install: line's program is the forward-slash wrapper", installProgram, "node_modules/.bin/clawforge");
     const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
     try {
@@ -518,6 +520,11 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
         "",
       ].join("\n"), "utf8");
       const proc = spawnSync(bash, [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir, env: bashEnvironment(bash) });
+      if (proc.status !== 0) {
+        // Which bash answered (macOS ships 3.2; the install line avoids `source <(...)`, which 3.2 cannot run) and what it printed.
+        const version = spawnSync(bash, ["--version"], { encoding: "utf8", env: bashEnvironment(bash) });
+        process.stderr.write(`pasted with ${bash}: ${(version.stdout ?? "").split("\n")[0]}\ninstall line: ${install}\n`);
+      }
       check("bash: the pasted Install: line exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
       const registered = (proc.stdout ?? "").split("\n").map((row) => row.trim()).filter((row) => row !== "").map((row) => row.split(" ").slice(-2)).sort();
       check("bash: the paste registered both completer names", registered, [["_clawforge_complete", "./clawforge"], ["_clawforge_complete", "clawforge"]]);
@@ -530,6 +537,9 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
 });
 
 await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", async () => {
+  // npm's Windows wrapper and its PowerShell paste line are Windows-host facts: a POSIX host
+  // renders the pwsh completion as prose for Git Bash instead.
+  await requires("windows-host", "the pwsh Install: line spells npm's Windows wrapper", async () => {
   const pwsh = await pwshCommand();
   if (pwsh === undefined) return;
   const previous = invocation();
@@ -567,6 +577,7 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
   } finally {
     setInvocation(previous);
   }
+  });
 });
 
 // Whether a usable bash exists is a host fact, not a string to sniff: the `bash` capability
@@ -586,10 +597,11 @@ await requires("bash", "the generated bash script, sourced by a real bash", asyn
     const driverPath = join(dir, "driver.sh");
     await writeFile(driverPath, bashDriver(scriptPath), "utf8");
     const proc = spawnSync(bash, [driverPath], {
-      timeout: 360_000, encoding: "utf8",
+      timeout: BASH_DRIVER_TIMEOUT_MS, encoding: "utf8",
       env: bashEnvironment(bash, [dir]),
     });
-    check("bash: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
+    // status null with ETIMEDOUT is machine load (the sweep forks per case), not a wrong answer.
+    check("bash: the driver exited 0", [proc.status, (proc.error as NodeJS.ErrnoException | undefined)?.code ?? null, (proc.stderr ?? "").trim()], [0, null, ""]);
     const answers = replies(proc.stdout, " ");
     assertShellAnswers("bash", answers, bashDivergent);
     check("bash: the generated script parses (bash -n)", spawnSync(bash, ["-n", scriptPath], { timeout: 15_000, env: bashEnvironment(bash) }).status, 0);

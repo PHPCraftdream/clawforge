@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "node --experimental-strip-types tools/clawforge.ts check",
+    "check:fast": "npm run typecheck && npm run lint && node --experimental-strip-types tools/clawforge.ts check --related",
     "check:controls": "node --experimental-strip-types tools/checks/controls/run-controls.ts",
     "golden:update": "node --experimental-strip-types tools/dev/golden-update.ts",
     "docs:commands": "node --experimental-strip-types tools/dev/docs-commands.ts",

@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import { tokenizeLine } from "#checks/kit/shells.ts";
+import { tokenizeLine } from "#checks/surfaces/advice/shells.ts";
 import { gatherInspection, inspect } from "#framework/commands/orchestration/inspect/gather.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "../fixture.ts";
 import { parseMemoryStatus } from "#framework/commands/orchestration/inspect/helpers.ts";

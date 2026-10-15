@@ -1,6 +1,7 @@
+import { migrationPathSanitizer, type SideStackMigrateOptions, type SideStackMigratePlan, type SideStackMigrationResult } from "./migration-plan.ts";
 import { sleep } from "../../runtime.ts";
 import type { MigrationBackupEvidence, MigrationBackupVerification } from "../../runtime.ts";
-import type { StackLock, StackMigrateOptions, StackMigratePlan, StackMigrationResult, StackMigrationEvidence, MigrationObservedState } from "../../runtime.ts";
+import type { StackLock, StackMigratePlan, StackMigrationEvidence, MigrationObservedState } from "../../runtime.ts";
 import { prepareComposeDocument, executePreparedDocument, execResult, object, text, definitionLabel, digestLabel, documentDigest, remainingTimeout, checkDeadline, type StackIO } from "./io.ts";
 import { records, type ContainerRecord } from "./inspection.ts";
 import { prepareMigration, createBackupRoot, verifyWriters, verifyReadonlyBind, assertMigrationConfig, assertRestartPolicy, assertWritableLayerMetadata, rawMounts, gentleSignal, shutdownSeconds, type MigrationPrepared, type ReadonlyBindProof } from "./migration-plan.ts";
@@ -41,10 +42,10 @@ export function verifyMigrationReceipt(value: unknown): MigrationBackupVerificat
 }
 
 export function migrationAPI(io: StackIO): {
-  planMigrate: (options: StackMigrateOptions) => Promise<StackMigratePlan>;
-  migrate: (plan: StackMigratePlan, lock: StackLock) => Promise<StackMigrationResult>;
+  planMigrate: (options: SideStackMigrateOptions) => Promise<SideStackMigratePlan>;
+  migrate: (plan: StackMigratePlan, lock: StackLock) => Promise<SideStackMigrationResult>;
 } {
-  const plans = new Map<string, { prepared: MigrationPrepared; options: StackMigrateOptions }>();
+  const plans = new Map<string, { prepared: MigrationPrepared; options: SideStackMigrateOptions }>();
   const captureReadonlyProofs = async (originals: readonly ReadonlyBindProof[]): Promise<ReadonlyBindProof[]> => {
     const captured: ReadonlyBindProof[] = [];
     for (const original of originals) {
@@ -69,7 +70,7 @@ export function migrationAPI(io: StackIO): {
       const service = object(object(p.sourceDocument["services"])[c.evidence.service!]);
       assertRestartPolicy(object(c.raw["HostConfig"]), service, service);
       assertMigrationConfig(service, p.imageConfigs[c.evidence.service!]!, [c.raw], p.sourceDocument);
-      assertWritableLayerMetadata((await io.run(["diff", c.evidence.id])).stdout, rawMounts(c.raw));
+      assertWritableLayerMetadata((await io.run(["diff", c.evidence.id])).stdout, rawMounts(c.raw), p.ephemeralPaths, migrationPathSanitizer(io, c.raw));
     }
     await verifyWriters(io, p.storage, permitted);
     for (const storage of p.storage) await verifyTopology(io, storage);
@@ -164,7 +165,7 @@ export function migrationAPI(io: StackIO): {
     planMigrate: async (options) => {
       try {
         const prepared = await prepareMigration(io, options);
-        plans.set(prepared.plan.token, { prepared, options: { ...options, migrationBackup: prepared.plan.migrationBackup } });
+        plans.set(prepared.plan.token, { prepared, options: { ...options, ephemeralPaths: prepared.ephemeralPaths, migrationBackup: prepared.plan.migrationBackup } });
         return prepared.plan;
       } catch (error) { throw migrationFailure(io, error); }
     },
@@ -208,7 +209,7 @@ export function migrationAPI(io: StackIO): {
             } catch { evidence[side] = "unknown"; }
           }
         };
-        const snapshot = () => ({ token: plan.token, migrationBackup: plan.migrationBackup, evidence: { ...evidence }, events, storage: p.storage });
+        const snapshot = () => ({ token: plan.token, ignoredEphemeralPaths: p.plan.ignoredEphemeralPaths, migrationBackup: plan.migrationBackup, evidence: { ...evidence }, events, storage: p.storage });
         let sequence = 0;
         const journal = async (phase: string, detail?: string): Promise<void> => {
           events.push({ phase, evidence: { ...evidence }, ...(detail ? { detail: io.sanitize(detail) } : {}) });
@@ -310,7 +311,7 @@ export function migrationAPI(io: StackIO): {
           evidence.source = "absent";
           await journal("committed-source-volumes-backups-retained");
           await t.writePrivateFile!(journalPath, JSON.stringify(snapshot()));
-          return { backupRoot: plan.backupRoot, journalPath, retainedSource: true, migrationBackup: plan.migrationBackup, evidence: Object.freeze({ ...evidence }) };
+          return { ignoredEphemeralPaths: p.plan.ignoredEphemeralPaths, backupRoot: plan.backupRoot, journalPath, retainedSource: true, migrationBackup: plan.migrationBackup, evidence: Object.freeze({ ...evidence }) };
         } catch (primary) {
           if (evidence.applicationVerification === "pending") evidence.applicationVerification = "unknown";
           const failures: Error[] = [migrationFailure(io, primary)];

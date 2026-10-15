@@ -53,6 +53,7 @@ function withRemoteDeadline(remote: string, timeoutMs: number | undefined): stri
 
 export class SshTransport implements Transport {
   readonly description: string;
+  readonly cancellation = "local-only" as const;
   #host: string;
 
   constructor(host: string) {

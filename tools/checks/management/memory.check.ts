@@ -80,7 +80,7 @@ try {
     check(`unconfirmed ${argv[0]} exact stage`, result.stage, "confirm"); checkTrue(`unconfirmed ${argv[0]} typed error`, result.error instanceof ConfirmationRequiredError);
     check(`unconfirmed ${argv[0]} no contacts`, deployment.contacts(), []); check(`unconfirmed ${argv[0]} no writes`, await readFile(path, "utf8"), before);
   }
-  for (const argv of [["index", "--agent", "main", "--allow-spend", "--allow-download"], ["verify", "--agent", "main", "--model-checksum", "bad"]]) {
+  for (const argv of [["index", "--agent", "main", "--allow-spend", "--allow-download"], ["verify", "--agent", "main", "--model-checksum", "a".repeat(64)]]) {
     const refused = await executeCommand(app, "memory", { kind: "argv", argv }, { surface: "mcp", confirmed: true, transport: deployment.transport() });
     check("keyword contradictory approvals refused in prepare", refused.stage, "prepare"); check("contradiction zero contacts", deployment.contacts(), []);
   }

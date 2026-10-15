@@ -23,17 +23,17 @@ export const DEPLOY_ARGUMENTS = [
     valueName: "path",
     value: kinds.absolutePath(),
   },
-  { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
+  { name: "no-bootstrap", description: "Copy files without starting", kind: "flag" },
   {
     name: "adopt",
-    summary: "Take over an existing, unmarked, non-empty remote root",
+    summary: "Adopt an unmarked remote root",
     description:
       "Take over an existing, unmarked, non-empty remote root: lists what --delete would " +
       "replace there before marking it as this deployment's",
     kind: "flag",
   },
-  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "dry-run", description: "What would happen", kind: "flag", effect: "read" },
+  { name: "json", description: "Outcome as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The tree this command mirrors, refusing rather than guessing when there is none.

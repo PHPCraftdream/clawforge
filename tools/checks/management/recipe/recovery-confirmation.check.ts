@@ -10,7 +10,7 @@ import { ConfirmationRequiredError } from "#framework/core/command/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
-import type { RecipeMigrationBackup } from "#framework/service/recipe.ts";
+import type { RecipeMigrationBackup } from "#framework/runtime/runtime.ts";
 import type { Stack, StackMigratePlan, StackRecoverPlan } from "#framework/runtime/runtime.ts";
 import { createDeploymentFixture, TRANSPORT_SENTINEL } from "#checks/kit/deployment-fixture.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -55,6 +55,9 @@ try {
     check("migration missing contract makes no transport call", fixture.contacts(), []);
   }
   await writeFile(recipeFile, JSON.stringify({ description: "fixture recipe", migrationBackup }));
+
+  const inspected = await executeCommand(app, "recipe", { kind: "argv", argv: ["inspect", "local"] }, { surface: "mcp", transport: fixture.transport() });
+  check("inspect is a read effect that needs no confirmation", inspected.facts?.effect, "read");
 
   const actions = [
     { action: "recover", argv: ["recover", "local", "--service", "api"] },

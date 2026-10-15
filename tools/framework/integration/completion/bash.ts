@@ -144,7 +144,7 @@ export function renderBash(data: CompletionData): string {
   const install = installLineParts(["completion", "bash"], "posix");
   return (
     "# clawforge bash completion — generated from the command declarations.\n" +
-    `# Install: source <(${install.line})${install.note === undefined ? "" : `  (${install.note})`}\n` +
+    `# Install: eval "$(${install.line})"${install.note === undefined ? "" : `  (${install.note})`}\n` +
     BASH_COMPLETER.replaceAll("__CLAWFORGE_CASE_ARMS__", caseArms(data))
       .replaceAll("__CLAWFORGE_APP_SKIP__", data.appFlag ? APP_SKIP_PAIR : "")
       .replaceAll("__CLAWFORGE_APP_VALUES__", data.appFlag ? APP_VALUES_BLOCK : "") +

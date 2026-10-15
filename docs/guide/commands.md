@@ -57,87 +57,87 @@ is unchanged.
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `bootstrap` | `[--no-pull] [--check] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Bring the instance up from nothing (idempotent) |
-| `up` | `[--break-lock] [--break-foreign-lock <hostId>]` | Start the service and wait until it serves |
-| `restart` | `[--break-lock] [--break-foreign-lock <hostId>]` | Restart the instance so it re-reads its configuration |
+| `bootstrap` | `[--no-pull] [--check] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Bring the instance up (idempotent) |
+| `up` | `[--break-lock] [--break-foreign-lock <hostId>]` | Start the service; wait until it serves |
+| `restart` | `[--break-lock] [--break-foreign-lock <hostId>]` | Restart so the instance re-reads its config |
 | `down` | `[--break-lock] [--break-foreign-lock <hostId>]` | Stop and remove the containers (data is kept) |
 | `destroy` | `[--data] [--backups] [--snapshots] [--yes] [--confirm-name <name>] [--break-lock] [--break-foreign-lock <hostId>]` | Remove what bootstrap created (destructive for some actions) |
-| `logs` | `[--tail <n>] [--since <duration\|timestamp>] [--grep <pattern>]` | Follow the service log, or read a bounded tail of it |
-| `status` | `[--json]` | Show containers, image, health probes and data usage |
+| `logs` | `[--tail <n>] [--since <duration\|timestamp>] [--grep <pattern>]` | Follow the service log, or read a tail |
+| `status` | `[--json]` | Show containers, image, health, data usage |
 
 ### Check
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
 | `smoke` | `[--quick] [--json]` | Acceptance run: health, agent, config, snapshots, MCP |
-| `inspect` | `[--json]` | What is declared, what is actually running, and where they disagree |
-| `doctor` | `[--json]` | Say whether anything is wrong and what to run about it |
-| `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run the acceptance checks this deployment's recipes declare |
-| `operations` | `[<id>] [--limit <n>] [--takeover-lock] [--break-lock] [--break-foreign-lock <hostId>] [--confirmed] [--json]` | What mutating runs did to this instance, and what they left behind (destructive for some actions) |
-| `watch` | `<action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change (destructive for some actions) |
+| `inspect` | `[--json]` | Declared versus running, with differences |
+| `doctor` | `[--json]` | Report what is wrong and what to run |
+| `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run this deployment's acceptance checks |
+| `operations` | `[<id>] [--limit <n>] [--takeover-lock] [--break-lock] [--break-foreign-lock <hostId>] [--confirmed] [--json]` | What mutating runs did and left behind (destructive for some actions) |
+| `watch` | `<action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with webhook alerts (destructive for some actions) |
 
 ### Change
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `upgrade` | `[--image <ref>] [--dry-run] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | Update the image by digest, with automatic rollback on failure (destructive for some actions) |
-| `plan` | `[--set <artifact>] [--json]` | The ordered actions the declaration implies, without performing them |
-| `apply` | `[--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Run the plan, then confirm what the instance actually is (destructive for some actions) |
-| `rollback` | `[--operation <id>] [--no-restart] [--previous-set] [--break-lock] [--break-foreign-lock <hostId>] [--json] [--dry-run]` | Put back the configuration an operation replaced (destructive for some actions) |
+| `upgrade` | `[--image <ref>] [--dry-run] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | Update the image by digest; rollback on failure (destructive for some actions) |
+| `plan` | `[--set <artifact>] [--json]` | Actions the declaration implies, without running |
+| `apply` | `[--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Apply the plan, then confirm the instance (destructive for some actions) |
+| `rollback` | `[--operation <id>] [--no-restart] [--previous-set] [--break-lock] [--break-foreign-lock <hostId>] [--json] [--dry-run]` | Restore the configuration an operation replaced (destructive for some actions) |
 | `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Apply the deployment's desired-state.json (destructive for some actions) |
-| `memory` | `<action> [--mode <mode>] [--backend <backend>] [--provider <id>] [--model <model>] [--env <var>] [--model-path <path>] [--model-checksum <sha256>] [--model-source <source>] [--model-version <version>] [--json] [--plugin-version <version>] [--model-max-bytes <bytes>] [--agent <id>] [--all-agents] [--allow-install] [--allow-download] [--deep] [--allow-spend]` | Declare, set up, inspect, index and verify memory (destructive for some actions) |
-| `configure-provider` | `[--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Configure model providers from target-side environment variables |
-| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]` | Show required secrets and whether they are in place (destructive for some actions) |
-| `recipe` | `[<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>]` | Deploy services next to the instance: install, verify, list, and more (destructive for some actions) |
-| `provision-agent` | `<recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Wire a recipe's MCP server to its own OpenClaw agent, with optional cron |
-| `set` | `<action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]` | Build or validate the set: what a deployment installs, as one artifact (destructive for some actions) |
+| `memory` | `<action> [--mode <mode>] [--backend <backend>] [--provider <id>] [--model <model>] [--env <var>] [--model-path <path>] [--model-checksum <sha256>] [--model-source <source>] [--model-version <version>] [--json] [--plugin-version <version>] [--model-max-bytes <bytes>] [--agent <id>] [--all-agents] [--allow-install] [--allow-download] [--deep] [--allow-spend]` | Declare, set up, inspect, index, verify memory (destructive for some actions) |
+| `configure-provider` | `[--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Configure model providers from target env vars |
+| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]` | Show required secrets and their state (destructive for some actions) |
+| `recipe` | `[<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--version <version>] [--artifact <basename>] [--apply]` | Deploy service recipes beside the instance (destructive for some actions) |
+| `provision-agent` | `<recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Wire a recipe's MCP server to an OpenClaw agent |
+| `set` | `<action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]` | Build or validate the set artifact (destructive for some actions) |
 
 ### Save & move
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `backup` | `[<action>] [--profile <profile>] [--hot] [--native] [--share] [--migrate] [--with-secrets] [--dry-run] [--json] [--apply] [--keep <n>] [--break-lock] [--break-foreign-lock <hostId>] [--interval <interval>]` | Snapshot the data directory; list, prune, schedule (destructive for some actions) |
-| `restore` | `[<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--no-start] [--dry-run] [--json]` | Restore an archive over the current state (destructive for some actions) |
-| `pull` | `[--profile <profile>] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Snapshot the instance state into the snapshot directory |
-| `push` | `[<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--dry-run] [--json]` | Push a snapshot back onto the instance (destructive for some actions) |
-| `verify` | `<archive> [--profile <profile>] [--json]` | Check a snapshot for credentials before sharing it |
-| `lock` | `[--check] [--json]` | Pin what this instance is made of, or check it still matches |
-| `deploy` | `<target> [--path <path>] [--no-bootstrap] [--adopt] [--dry-run] [--json]` | Deploy to a server over SSH and bootstrap it there (destructive for some actions) |
+| `backup` | `[<action>] [--profile <profile>] [--hot] [--native] [--share] [--migrate] [--with-secrets] [--dry-run] [--json] [--apply] [--keep <n>] [--break-lock] [--break-foreign-lock <hostId>] [--interval <interval>]` | Snapshot data; list, prune, schedule (destructive for some actions) |
+| `restore` | `[<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--no-start] [--dry-run] [--json]` | Restore an archive over current state (destructive for some actions) |
+| `pull` | `[--profile <profile>] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Snapshot the instance to the snapshot directory |
+| `push` | `[<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--dry-run] [--json]` | Push a snapshot onto the instance (destructive for some actions) |
+| `verify` | `<archive> [--profile <profile>] [--json]` | Check a snapshot for credentials |
+| `lock` | `[--check] [--json]` | Pin the instance's composition, or verify it |
+| `deploy` | `<target> [--path <path>] [--no-bootstrap] [--adopt] [--dry-run] [--json]` | Deploy over SSH and bootstrap the server (destructive for some actions) |
 
 ### Security & access
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `expose` | `<action> [--local-port <port>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Reach a loopback-bound gateway from outside: SSH tunnel or tailscale (destructive for some actions) |
-| `incident` | `[--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | Incident response: contain, preserve evidence, rotate the token, audit (destructive for some actions) |
+| `expose` | `<action> [--local-port <port>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Expose the gateway: SSH tunnel or tailscale (destructive for some actions) |
+| `incident` | `[--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | Contain, collect evidence, rotate tokens, audit (destructive for some actions) |
 
 ### Integrations & recovery
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `recover-env` | `[--dry-run] [--adopt-runtime] [--json]` | Repair .env's connection facts from the running instance |
+| `recover-env` | `[--dry-run] [--adopt-runtime] [--json]` | Repair .env from the running instance |
 | `mcp-serve` | — | stdio MCP bridge to the service's own channels |
-| `mcp-setup` | `[--client <client>] [--json] [--rewrite-launcher]` | Configure project MCP servers for Claude Code and Codex |
-| `mcp-creds` | `[--json] [--token]` | Print service URL, token and MCP client config for both servers |
+| `mcp-setup` | `[--client <client>] [--json] [--rewrite-launcher]` | Configure project MCP servers (Claude Code, Codex) |
+| `mcp-creds` | `[--json] [--token]` | Print service URL, token and MCP client config |
 
 ### Low-level
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
 | `cli` | `<args…>` | Run the OpenClaw CLI in a throwaway container (destructive) |
-| `exec` | `<args…>` | Run an arbitrary command in the same sidecar as `cli` (destructive) |
-| `host` | `<context> [--root] [--confirm-root] <args…>` | Run one command on the operator's own machine, not in a container (destructive) |
-| `cli-start` | — | Start the persistent CLI helper (no per-call container overhead) |
+| `exec` | `<args…>` | Run a command in the same sidecar as `cli` (destructive) |
+| `host` | `<context> [--root] [--confirm-root] <args…>` | Run a command on the host, not in a container (destructive) |
+| `cli-start` | — | Start the persistent CLI helper |
 | `cli-stop` | — | Stop the persistent CLI helper |
 
 ### Framework
 
 | Command | Arguments | Summary |
 | --- | --- | --- |
-| `check` | `[--list] [--jobs <n>] [--require <cap,...>] [<filter…>]` | Run the framework's own checks (no instance needed) (checkout only) |
+| `check` | `[--list] [--jobs <n>] [--require <cap,...>] [--timings] [--top <n>] [--related] [--base <rev>] [<filter…>]` | Framework preflight checks (no instance needed) (checkout only) |
 | `new-app` | `<name>` | Create a deployment under apps/ (checkout only) |
 | `remove-app` | `<name> [--yes]` | Delete apps/<name> (destructive for some actions) (checkout only) |
-| `list` | `[--json] [--no-status]` | Overview of every deployment under apps/ (checkout only) |
+| `list` | `[--json] [--no-status]` | List deployments under apps/ (checkout only) |
 | `version` | `[--json] [--verbose]` | Print clawforge's own version (also: --version, -v) |
 | `completion` | `<shell>` | Print a shell completion script (bash, zsh or pwsh) to stdout |
 | `init` | `[--local]` | Initialise this directory as an OpenClaw deployment (installed only) |
@@ -154,6 +154,8 @@ its arguments and its one-line summary; the full text of any of them is
 
 * `backup` — the schedules `install`/`uninstall` write, archive rotation and the native
   snapshot path: [data-and-backups.md](data-and-backups.md)
+* `recipe check <name>` — recursive local `*.check.ts` checks, trust boundary and limits;
+  no instance, Docker or lock: [Local recipe checks](recipes.md#local-recipe-checks)
 * `watch` — findings, alert and heartbeat wiring, staleness, notification formats:
   [Health monitoring: `watch`](monitoring-and-access.md#health-monitoring-watch)
 * `incident` — the runbook phase by phase:
@@ -171,7 +173,7 @@ per-command code lives in the script, so bash, zsh (which loads that same body t
 invoked name, `clawforge` or `./clawforge`, both registered so either spelling completes.
 
 ```bash
-source <(./clawforge completion bash)                       # current shell
+eval "$(./clawforge completion bash)"                         # current shell (bash 3.2 included)
 ./clawforge completion zsh > "${fpath[1]}/_clawforge"       # new zsh shell (or: source <(...) now)
 ./clawforge completion pwsh | Out-String | Invoke-Expression # current PowerShell session
 ```

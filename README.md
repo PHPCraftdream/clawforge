@@ -113,7 +113,7 @@ the app. After the first release `npm install -g @clawforge/framework` does the 
 | Move a deployment onto a server | `./clawforge deploy user@host` | mirrors the framework and this deployment's config over SSH; credentials never leave this machine |
 | See every deployment in this checkout | `./clawforge list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |
 | Read the service log | `./clawforge logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
-| Get shell tab-completion | `source <(./clawforge completion bash)` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
+| Get shell tab-completion | `eval "$(./clawforge completion bash)"` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
 | Undo a deployment | `./clawforge destroy` then `./clawforge remove-app <name>` | dry run by default; `destroy` removes the instance (containers always, data/backups/snapshots each behind its own flag), `remove-app` deletes `apps/<name>/` itself — see [Removing a deployment](docs/guide/operations.md#removing-a-deployment) |
 
 ## Commands
@@ -212,6 +212,13 @@ Framework:
   `watch`, `incident`, the security gate and suppressions
 * [docs/guide/recipes.md](docs/guide/recipes.md) — recipes, `provision-agent`, the
   `privatePaths`/`privateFiles` contract
+* [docs/internal/recipe-migration-executor.md](docs/internal/recipe-migration-executor.md) —
+  implementation notes behind `recipe migrate`/`recover`: journal phases, storage and
+  helper-image verification, compensation and recovery-directory rules
+* [docs/guide/recipe-manifest.md](docs/guide/recipe-manifest.md) — complete recipe.json fields,
+  validation rules, readers and hook contracts
+* [docs/guide/recipes-cookbook.md](docs/guide/recipes-cookbook.md) — worked recipe patterns:
+  pinned release downloads, secret-free config changes, upstream config migrations
 * [docs/guide/sets.md](docs/guide/sets.md) — installing, trying and rolling back sets;
   semantic diff and acceptance evidence
 * [docs/guide/deploy-and-mcp.md](docs/guide/deploy-and-mcp.md) — several deployments side by

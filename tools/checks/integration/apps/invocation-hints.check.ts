@@ -40,7 +40,7 @@ import { doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
-import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
+import { check, finish, isolatedAppsRoot, requires } from "#checks/kit/harness.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 
 const HINT = "./clawforge";
@@ -365,7 +365,9 @@ try {
   check("a spaced word under a path spelling", renderAdvice(command(["logs", "a b"])), SPACED_LOGS);
   check("a placeholder stays bare under a path spelling", renderAdvice(command(["new-app", "<name>"])), NEW_APP_LINE);
   setInvocation(GLOBAL);
-  check("a spaced word under the bare program", renderAdvice(command(["logs", "a b"])), `clawforge logs "a b"`);
+  let hostQuote = '"';
+  await requires("posix-host", "a posix host's bare program pastes into sh, which quotes with single quotes", () => { hostQuote = "'"; });
+  check("a spaced word under the bare program", renderAdvice(command(["logs", "a b"])).split(" "), ["clawforge", "logs", `${hostQuote}a`, `b${hostQuote}`]);
   check("a placeholder stays bare under the bare program", renderAdvice(command(["new-app", "<name>"])), "clawforge new-app <name>");
 
   // 5. A note trails the line, after two spaces.

@@ -17,7 +17,7 @@ export const PROFILE_ARGUMENT = {
 
 export const FORCE_ARGUMENT = {
   name: "force",
-  description: "Skip the confirmation prompt",
+  description: "Skip the confirmation",
   kind: "flag",
 } as const;
 

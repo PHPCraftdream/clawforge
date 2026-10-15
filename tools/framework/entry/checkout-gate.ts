@@ -37,7 +37,7 @@ const removeAppBody = commandBody({
   effect: "read",
   arguments: [
     { name: "name", description: "Deployment name", kind: "positional", required: true, value: kinds.name("deployment", "read") },
-    { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy", setByConfirm: true },
+    { name: "yes", description: "Perform the removal, not a dry run", kind: "flag", effect: "destroy", setByConfirm: true },
   ],
   run: async (_on, plan) => removeApp(plan.name, plan.yes),
 });
@@ -46,8 +46,8 @@ const listBody = commandBody({
   needs: "nothing",
   effect: "read",
   arguments: [
-    { name: "json", description: "Emit as a JSON array instead of text", kind: "flag" },
-    { name: "no-status", description: "Configuration only — do not query any target", kind: "flag" },
+    { name: "json", description: "JSON array, not text", kind: "flag" },
+    { name: "no-status", description: "Config only; do not query targets", kind: "flag" },
   ],
   run: async (_on, plan) => {
     const checkStatus = plan["no-status"] !== true;
@@ -65,7 +65,7 @@ const checkBody = commandBody({
   // A variadic is declared last (the body model's structural rule), so the flags come first
   // on the usage line.
   arguments: [
-    { name: "list", description: "Print the matching check paths instead of running them", kind: "flag" },
+    { name: "list", description: "Print matching check paths only", kind: "flag" },
     {
       name: "jobs",
       summary: "Concurrent check-file processes",
@@ -76,7 +76,7 @@ const checkBody = commandBody({
     },
     {
       name: "require",
-      summary: "Capabilities that must fail a check instead of skipping it",
+      summary: "Capabilities that must fail, not skip",
       description:
         "Comma-separated capabilities (docker, wsl, posix-sh, rsync, linux-host) whose absence must fail a " +
         "check that needs them, instead of skipping it — merged with OC_CHECK_REQUIRE",
@@ -84,9 +84,27 @@ const checkBody = commandBody({
       valueName: "cap,...",
       value: kinds.text("capabilities that must fail a check instead of skipping it"),
     },
+    { name: "timings", description: "Print stored check timings, run nothing", kind: "flag" },
+    {
+      name: "top",
+      summary: "How many timings to list",
+      description: "With --timings: list the top N slowest check files by median (default 20)",
+      kind: "option",
+      valueName: "n",
+      value: kinds.count(),
+    },
+    { name: "related", summary: "Run only checks touched by changes", description: "Select checks affected by changes between --base and the working tree", kind: "flag" },
+    {
+      name: "base",
+      summary: "Change base for --related",
+      description: "Revision --related diffs against (default: merge-base with the upstream branch, else HEAD~1)",
+      kind: "option",
+      valueName: "rev",
+      value: kinds.text("git revision --related diffs against"),
+    },
     {
       name: "filter",
-      summary: "Only run checks whose relative path contains this text",
+      summary: "Run checks whose path contains this text",
       description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any",
       kind: "variadic",
       value: kinds.text("check path filter", { leadingDash: "allow" }),
@@ -95,7 +113,7 @@ const checkBody = commandBody({
   run: async (_on, plan) => {
     const require = plan.require === undefined ? undefined : plan.require.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
     const { runChecks } = await import(CHECK_RUNNER_PATH);
-    return runChecks({ filters: [...plan.filter], list: plan.list, jobs: plan.jobs !== undefined && plan.jobs > 0 ? plan.jobs : undefined, require });
+    return runChecks({ filters: [...plan.filter], list: plan.list, jobs: plan.jobs !== undefined && plan.jobs > 0 ? plan.jobs : undefined, require, timingsOnly: plan.timings === true ? (plan.top !== undefined && plan.top > 0 ? plan.top : 20) : undefined, related: plan.related, base: plan.base });
   },
 });
 
@@ -106,7 +124,7 @@ const checkBody = commandBody({
 export const checkoutGateCommands: readonly GateCommand[] = [
   materializeGate({
     name: "check",
-    summary: "Run the framework's own checks (no instance needed)",
+    summary: "Framework preflight checks (no instance needed)",
     details:
       "Paths, archives, the argument contract, what a server delivery contains, secret " +
       "masking — the parts where a mistake is silent. `{clawforge smoke}` covers a live instance " +
@@ -119,7 +137,10 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "A file naming a capability it cannot run without (docker, wsl, posix-sh, rsync, " +
       "linux-host) is skipped, not failed, when this host lacks it. `{--require}` (or " +
       "OC_CHECK_REQUIRE) names capabilities this host is expected to have, turning a skip " +
-      "into a failure for those.",
+      "into a failure for those. `{--timings}` prints the stored per-file timing ranking (median of the recent samples in `.check-timings.json`) without running anything.\n" +
+      "{--related} selects instead the checks the changes between {--base} (default: merge-base " +
+      "with the upstream branch, else HEAD~1) and the working tree touch; substring filters " +
+      "then narrow the related set down further.",
     body: checkBody,
   }),
   materializeGate({
@@ -156,7 +177,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
   }),
   materializeGate({
     name: "list",
-    summary: "Overview of every deployment under apps/",
+    summary: "List deployments under apps/",
     details:
       "One line per apps/<name>: target (OC_TARGET_LOCATION, plus OC_SSH_HOST for ssh), " +
       "gateway port, image (pinned when it carries @sha256:), and whether the gateway is " +

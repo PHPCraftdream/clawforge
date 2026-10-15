@@ -31,8 +31,8 @@ import * as kinds from "#src/core/values/kinds.ts";
 const SET_ARTIFACT = kinds.localFile("a set artifact path");
 
 export const PLAN_ARGUMENTS = [
-  { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
-  { name: "json", description: "Emit the plan as JSON", kind: "flag" },
+  { name: "set", description: "Plan from a built set", kind: "option", valueName: "artifact", value: SET_ARTIFACT },
+  { name: "json", description: "Plan as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
 export interface PlanAction {

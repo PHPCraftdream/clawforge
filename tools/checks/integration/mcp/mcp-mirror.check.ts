@@ -104,7 +104,11 @@ try {
   // would mean a client can no longer tell a command's arguments apart without calling `help`
   // first, which is the information `tools/list` exists to carry. The budget below sits just
   // above what is reached, not at 30 KB.
-  const TOOLS_LIST_BUDGET = 32 * 1024;
+  //
+  // Raised to 35 KB (owner decision): the memory command (6 actions), recipe inspect/recover/migrate
+  // and operations --takeover-lock added ~4 KB of argument schema, 35111 bytes at the time;
+  // the lossless trims left on the table were about 1.5 KB.
+  const TOOLS_LIST_BUDGET = 35 * 1024;
   const toolsListBytes = Buffer.byteLength(JSON.stringify(response?.result ?? {}), "utf8");
   process.stderr.write(`  tools/list is ${toolsListBytes} bytes (budget ${TOOLS_LIST_BUDGET})\n`);
   check("tools/list stays under its byte budget", toolsListBytes <= TOOLS_LIST_BUDGET, true);

@@ -17,7 +17,7 @@ import { summarizeExposure, exposureOneLiner, type ExposureSummary } from "#src/
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
 export const STATUS_ARGUMENTS = [
-  { name: "json", description: "Emit status as JSON instead of text", kind: "flag" },
+  { name: "json", description: "Status as JSON", kind: "flag" },
 ] as const;
 
 /** The command body; status(ctx, args) stays for callers that already hold a Context. */

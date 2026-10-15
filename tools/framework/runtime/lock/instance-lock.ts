@@ -6,8 +6,12 @@
 // state neither run planned, and both report success.
 //
 // The lock is a file on the target naming who has it and what they're doing — advisory
-// (stops only commands that ask, but every mutating one does). A stale lock is REPORTED,
-// never silently taken. Taking one over is `--break-lock`, deliberately not `--force` (which
+// (stops only commands that ask, but every mutating one does). A stale lock — or one of
+// unknown death — is REPORTED, never silently taken. The one automatic exception: when the
+// holder's own record proves it dead (boot identity, start time, PID namespace — see
+// proveOwnerDead in lock-claim.ts), the next operation takes the lock over through the same
+// audited path as --break-lock, printing one notice naming the replaced operation id. Taking
+// one over is `--break-lock`, deliberately not `--force` (which
 // MCP sets automatically from the caller's confirm argument) — reusing that name would let
 // every confirmed tool call take over any lock another operation was holding.
 //
@@ -48,7 +52,7 @@ import {
   claimGenerationMarker,
   writeHolderOrRollback,
 } from "./lock-claim.ts";
-import { localLiveness } from "./process-identity.ts";
+import { localLiveness, platformProbes } from "./process-identity.ts";
 import { probeEntryExists } from "../transport/transport.ts";
 import type { Context } from "../../core/context.ts";
 
@@ -245,7 +249,12 @@ async function takeLockClaim(
 ): Promise<HeldLock> {
   await acquireOrTakeOver(ctx, options);
 
-  const { generation, holder } = mintHolder(what, operationId);
+  // Recorded beside the holder so a later reader can prove this acquisition dead if it dies.
+  const [bootId, start] = await Promise.all([
+    platformProbes.bootIdentity(),
+    platformProbes.processStartIdentity(process.pid),
+  ]);
+  const { generation, holder } = mintHolder(what, operationId, bootId, start);
   await claimGenerationMarker(ctx, generation);
   await writeHolderOrRollback(ctx, generation, holder);
 

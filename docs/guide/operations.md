@@ -103,7 +103,8 @@ managed by the `lock` command. Observation reads only; it never acquires, refres
 releases or kills an owner. Missing and unreadable locks are different states. Local owner
 liveness reuses host/PID/start identity checks; foreign owners remain remote. Age and an old
 heartbeat are not death evidence. Live/unknown local owners refuse takeover even with
-`--break-lock`; a proven dead owner requires explicit takeover. Foreign takeover additionally
+`--break-lock`; an owner whose own record proves death is taken over automatically, and
+explicit `--break-lock` is for everything the record cannot prove. Foreign takeover additionally
 requires exact host confirmation. Observation advice is not authorization to repair.
 Normal text inspect/doctor also show bounded channel/account, memory-agent and instance-lock
 inventories. Unknown polling emits `CHANNEL_UNKNOWN` while retaining valid configuration and
@@ -313,8 +314,19 @@ Use `status --json` for host/PID/birth evidence and `operations <id>` for the op
 `confirm`, so sharing the name would have made every confirmed tool call seize whatever lock
 someone else was holding. Every pid a lock records is this tool's own — wherever `clawforge`
 itself runs, never anything on a WSL or SSH transport's target — so when the holder was
-recorded on this same machine and its pid is provably gone, the refusal says so plainly;
-Explicit takeover is still required. Not every lock-taking command accepts `--break-lock`
+recorded on this same machine and its pid is provably gone, the refusal says so plainly. A
+record that also carries a boot identity and a native process start time proves death by
+itself, and the next operation takes the lock over automatically — the exception described
+next. It proves death by itself: a different boot id (the machine rebooted since the claim;
+boot identities are compared only within the same source — Linux, Windows or macOS — never
+across sources, and a record whose boot id or start fields are malformed is not proof), or on
+the same boot a pid that is gone or whose native start time has
+changed. In that case the next operation takes the lock over automatically, through the same
+audited takeover as `--break-lock`, printing one notice naming the replaced operation id.
+Anything less — records from before these fields existed, a foreign host, an unknown PID
+namespace, a failed probe — still refuses exactly as before and still asks for explicit
+`--break-lock`. The framework never kills anything; `kill(pid, 0)` is a liveness question,
+not a signal. Not every lock-taking command accepts `--break-lock`
 (`backup` and `secrets` do not); their refusals require choosing an intended operation that
 supports takeover, never an arbitrary mutation just to remove the lock.
 

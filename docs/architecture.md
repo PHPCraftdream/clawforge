@@ -436,9 +436,12 @@ Every pid a lock or guard records is the CLI process's own — wherever `clawfor
 never anything living on a WSL or SSH transport's target — so liveness is always checked
 locally, with the tool's own `process.kill(pid, 0)`, regardless of which transport reaches the
 deployment. When the outer instance lock's holder was recorded on this same machine and its
-pid is provably gone, the refusal says so plainly instead of only reporting age; `--break-lock`
-is still required either way — a provable fact added to the report is not the same thing as
-taking the lock automatically, which this design refuses to do under any condition.
+pid is provably gone, the refusal says so plainly instead of only reporting age; and since
+holder records carry a boot identity and a native process start time, that same record can
+prove death on its own — a different boot id, or on the same boot a gone pid or a replaced
+one — and the next operation then takes the lock over automatically through the audited
+takeover, the design's single automatic exception; everything the record cannot prove still
+requires `--break-lock`.
 
 The short-lived `operation.mutation` guard records its owning process the same way: a dead
 owner on the same machine is recovered automatically, and an ownerless guard can be recovered

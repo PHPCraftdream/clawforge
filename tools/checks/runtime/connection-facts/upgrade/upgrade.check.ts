@@ -1,4 +1,4 @@
-// `./clawforge upgrade` — resolve the target image to a digest (never moving a shared local
+// `./clawwright upgrade` — resolve the target image to a digest (never moving a shared local
 // tag), take a pre-upgrade backup, recreate the gateway, and roll back to the digest it was
 // running before on any failure — restoring that backup too when the failure was a migration
 // (upstream: exit 78) that may already have changed the data.
@@ -29,9 +29,9 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 // pinImageReference (instance/upgrade.ts) writes the deployment's OWN .env on success — a real
 // repo-side file, not one ctx.transport can stand in for — so a real temporary deployment
 // directory backs this file's checks, cleaned up at the end.
-const deploymentDir = await mkdtemp(join(tmpdir(), "clawforge-upgrade-check-"));
+const deploymentDir = await mkdtemp(join(tmpdir(), "clawwright-upgrade-check-"));
 useDeployment(deploymentDir);
-await writeFile(envFile(), "OC_DATA_DIR=/srv/clawforge/data\nOPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n", "utf8");
+await writeFile(envFile(), "OC_DATA_DIR=/srv/clawwright/data\nOPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n", "utf8");
 
 // Every scenario rewrites the real deployment .env through pinImageReference, whose private-file
 // plumbing on Windows spawns whoami/icacls (and wsl boundary probes) per write — seconds each,
@@ -381,7 +381,7 @@ await withToolRunner(stubToolRunner, async () => {
     const d0 = `ghcr.io/openclaw/openclaw@sha256:${"0".repeat(64)}`;
     const d1 = `ghcr.io/openclaw/openclaw@sha256:${"1".repeat(64)}`;
     const d2 = `ghcr.io/openclaw/openclaw@sha256:${"2".repeat(64)}`;
-    const initialEnv = `OC_DATA_DIR=${DATA_DIR}\nOC_BACKUP_DIR=/srv/clawforge/backups\nOC_TARGET_LOCATION=wsl\nOC_COMPOSE_PROJECT=upgrade-witness\nOPENCLAW_IMAGE=${d0}\n`;
+    const initialEnv = `OC_DATA_DIR=${DATA_DIR}\nOC_BACKUP_DIR=/srv/clawwright/backups\nOC_TARGET_LOCATION=wsl\nOC_COMPOSE_PROJECT=upgrade-witness\nOPENCLAW_IMAGE=${d0}\n`;
     await writeFile(envFile(), initialEnv);
     let running = d0;
     let data = d0;
@@ -503,12 +503,12 @@ await withToolRunner(stubToolRunner, async () => {
         }
         if (command === "tar") {
           const archive = args[args.findIndex((arg) => ["-tzf", "-tvzf", "-xzf", "-czf"].includes(arg)) + 1];
-          if (args.includes("-tzf")) return ok(archive.includes(".clawforge-native-")
+          if (args.includes("-tzf")) return ok(archive.includes(".clawwright-native-")
             ? "native/\nnative/payload/posix/home/node/.openclaw/openclaw.json\n"
             : "data/\ndata/config/openclaw.json\n");
           if (args.includes("-xzf")) {
             const destination = args[args.indexOf("-C") + 1];
-            if (archive.includes(".clawforge-native-")) {
+            if (archive.includes(".clawwright-native-")) {
               stagedData = archives.get(archive)!;
               files.set(`${destination}/native/payload/posix/home/node/.openclaw`, "");
             } else {

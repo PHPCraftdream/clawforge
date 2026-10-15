@@ -28,8 +28,8 @@ export function samePath(a: string, b: string, windows: boolean = process.platfo
   return normalize(a) === normalize(b);
 }
 
-/** The warning for a `clawforge` on PATH that is not the freshly installed `shim`; undefined when it is. */
+/** The warning for a `clawwright` on PATH that is not the freshly installed `shim`; undefined when it is. */
 export function shadowMessage(shim: string, resolved: string | undefined, windows: boolean = process.platform === "win32"): string | undefined {
   if (resolved === undefined || samePath(resolved, shim, windows)) return undefined;
-  return `    warning: \`clawforge\` on PATH resolves to ${resolved}, not the installed ${shim} — it shadows the new install; remove it or put ${shim} first on PATH`;
+  return `    warning: \`clawwright\` on PATH resolves to ${resolved}, not the installed ${shim} — it shadows the new install; remove it or put ${shim} first on PATH`;
 }

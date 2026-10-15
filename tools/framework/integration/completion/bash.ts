@@ -1,7 +1,7 @@
 // The bash half of the generated completion (zsh sources the same text through bashcompinit —
 // see index.ts), split the way pwsh.ts is: the interpreter below is fixed text and carries not
 // one substitution from the command declarations. Every candidate list lives in
-// `_clawforge_lookup`'s generated case arms, built from the same table completionCandidates()
+// `_clawwright_lookup`'s generated case arms, built from the same table completionCandidates()
 // answers and the pwsh script renders, so a script and the table it was rendered from cannot
 // quietly diverge.
 
@@ -30,23 +30,23 @@ export const APP_VALUES_BLOCK: string =
   "    return\n" +
   "  fi\n";
 
-/** The fixed half of the bash/zsh script. `_clawforge_lookup` holds the declarations — one case
- *  arm per table row — and `_clawforge_complete` is the decision completionCandidates() makes,
- *  branch for branch, with not one substitution from them: `__CLAWFORGE_CASE_ARMS__` is the one
- *  data placeholder renderBash() fills with the generated arms, and the two `__CLAWFORGE_APP_`
+/** The fixed half of the bash/zsh script. `_clawwright_lookup` holds the declarations — one case
+ *  arm per table row — and `_clawwright_complete` is the decision completionCandidates() makes,
+ *  branch for branch, with not one substitution from them: `__CLAWWRIGHT_CASE_ARMS__` is the one
+ *  data placeholder renderBash() fills with the generated arms, and the two `__CLAWWRIGHT_APP_`
  *  slots carry the `--app` handling a gate without an `--app` selector leaves empty.
  *  Plain double-quoted literals concatenated with `+`, never a template literal: one would eat
  *  `${COMP_WORDS[0]}`, `$cur` and `$prev` (design section 9, pitfall 9).
  *  bash 3.2 (`/bin/bash` on macOS) stays supported: no `declare -A`, no `mapfile`, no `${x,,}`. */
 export const BASH_COMPLETER: string =
-  "_clawforge_lookup() {\n" +
+  "_clawwright_lookup() {\n" +
   "  case \"$1\" in\n" +
-  "    __CLAWFORGE_CASE_ARMS__" +
+  "    __CLAWWRIGHT_CASE_ARMS__" +
   "    *) return 1 ;;\n" +
   "  esac\n" +
   "}\n" +
   "\n" +
-  "_clawforge_complete() {\n" +
+  "_clawwright_complete() {\n" +
   "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n" +
   "  local prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n" +
   "  local words=(\"${COMP_WORDS[@]}\")\n" +
@@ -55,18 +55,18 @@ export const BASH_COMPLETER: string =
   "  local between=() scope=\"\" reply=\"\"\n" +
   "  for ((i = 1; i < cword; i++)); do\n" +
   "    local w=\"${words[i]}\"\n" +
-  "    __CLAWFORGE_APP_SKIP__" +
+  "    __CLAWWRIGHT_APP_SKIP__" +
   "    cmd=\"$w\"; idx=$i; break\n" +
   "  done\n" +
   "  if [[ -z \"$cmd\" ]]; then\n" +
-  "    __CLAWFORGE_APP_VALUES__" +
-  "    if _clawforge_lookup \"top\"; then COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
+  "    __CLAWWRIGHT_APP_VALUES__" +
+  "    if _clawwright_lookup \"top\"; then COMPREPLY=( $(compgen -W \"$_clawwright_reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
   "    return\n" +
   "  fi\n" +
   "  if (( cword - idx - 1 > 0 )); then between=(\"${words[@]:$((idx + 1)):$((cword - idx - 1))}\"); fi\n" +
   "  # The command's own first candidates; a command the table does not carry completes to\n" +
   "  # nothing at all.\n" +
-  "  if _clawforge_lookup \"first $cmd\"; then COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") ); else COMPREPLY=(); return; fi\n" +
+  "  if _clawwright_lookup \"first $cmd\"; then COMPREPLY=( $(compgen -W \"$_clawwright_reply\" -- \"$cur\") ); else COMPREPLY=(); return; fi\n" +
   "  # Nothing after the command: the word being completed IS its own first position, which\n" +
   "  # the lookup above already answered.\n" +
   "  if (( ${#between[@]} == 0 )); then return; fi\n" +
@@ -75,9 +75,9 @@ export const BASH_COMPLETER: string =
   "  # pass-through command's literal tail starts at its first undeclared dash word or its first\n" +
   "  # word past the declared positionals. Missing arms answer empty.\n" +
   "  local opts=\"\" flags=\"\" verb=\"\" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline\n" +
-  "  if _clawforge_lookup \"valueOptions $cmd\"; then opts=\"$_clawforge_reply\"; fi\n" +
-  "  if _clawforge_lookup \"verbatim $cmd\"; then isverb=1; verb=\"$_clawforge_reply\"; fi\n" +
-  "  if _clawforge_lookup \"verbatimFlags $cmd\"; then flags=\"$_clawforge_reply\"; fi\n" +
+  "  if _clawwright_lookup \"valueOptions $cmd\"; then opts=\"$_clawwright_reply\"; fi\n" +
+  "  if _clawwright_lookup \"verbatim $cmd\"; then isverb=1; verb=\"$_clawwright_reply\"; fi\n" +
+  "  if _clawwright_lookup \"verbatimFlags $cmd\"; then flags=\"$_clawwright_reply\"; fi\n" +
   "  for token in \"${between[@]}\"; do\n" +
   "    if (( swallow )); then swallow=0; continue; fi\n" +
   "    if [[ \"$token\" == \"--\" ]]; then ended=1; break; fi\n" +
@@ -94,16 +94,16 @@ export const BASH_COMPLETER: string =
   "  if (( ended || tail )); then COMPREPLY=(); return; fi\n" +
   "  # The first word names the action; an option still waiting for its value completes that\n" +
   "  # value (keyed command + action + option), or nothing when it has no choices.\n" +
-  "  if [[ \"${between[0]}\" != -* ]] && _clawforge_lookup \"after $cmd ${between[0]}\"; then scope=\"${between[0]}\"; fi\n" +
+  "  if [[ \"${between[0]}\" != -* ]] && _clawwright_lookup \"after $cmd ${between[0]}\"; then scope=\"${between[0]}\"; fi\n" +
   "  if (( swallow )); then\n" +
-  "    if _clawforge_lookup \"values ${cmd}${scope}${prev}\"; then COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
+  "    if _clawwright_lookup \"values ${cmd}${scope}${prev}\"; then COMPREPLY=( $(compgen -W \"$_clawwright_reply\" -- \"$cur\") ); else COMPREPLY=(); fi\n" +
   "    return\n" +
   "  fi\n" +
   "  # Past a word after the command: that word's own list, else the command's fallback.\n" +
-  "  if _clawforge_lookup \"after $cmd ${between[0]}\"; then\n" +
-  "    COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") )\n" +
-  "  elif _clawforge_lookup \"after $cmd *\"; then\n" +
-  "    COMPREPLY=( $(compgen -W \"$_clawforge_reply\" -- \"$cur\") )\n" +
+  "  if _clawwright_lookup \"after $cmd ${between[0]}\"; then\n" +
+  "    COMPREPLY=( $(compgen -W \"$_clawwright_reply\" -- \"$cur\") )\n" +
+  "  elif _clawwright_lookup \"after $cmd *\"; then\n" +
+  "    COMPREPLY=( $(compgen -W \"$_clawwright_reply\" -- \"$cur\") )\n" +
   "  else\n" +
   "    COMPREPLY=()\n" +
   "  fi\n" +
@@ -112,7 +112,7 @@ export const BASH_COMPLETER: string =
 /** One arm: the key the interpreter looks up, and the space-joined candidates it answers with.
  *  `top` sits at the `case`'s own indent, the rows keyed under a command inside it. */
 function caseArm(indent: string, key: string, words: readonly string[]): string {
-  return `${indent}"${key}") _clawforge_reply="${words.join(" ")}" ;;\n`;
+  return `${indent}"${key}") _clawwright_reply="${words.join(" ")}" ;;\n`;
 }
 
 /** The declarations as case arms, in the table's own order: what to offer before a command
@@ -133,21 +133,21 @@ function caseArms(data: CompletionData): string {
 /** The two registrations: the same completer under the system-wide command and the checkout
  *  shim. Shared with zsh (index.ts), which loads this body through bashcompinit. */
 export const bashCompletionLines: string =
-  "complete -F _clawforge_complete clawforge\n" +
-  "complete -F _clawforge_complete ./clawforge\n";
+  "complete -F _clawwright_complete clawwright\n" +
+  "complete -F _clawwright_complete ./clawwright\n";
 
 /** The bash script: the two header lines, the interpreter with the generated arms in place of
- *  `__CLAWFORGE_CASE_ARMS__` (and the `--app` slots filled only where the gate has one), then
+ *  `__CLAWWRIGHT_CASE_ARMS__` (and the `--app` slots filled only where the gate has one), then
  *  the registrations. Nothing else — no command name is written anywhere in this file. */
 export function renderBash(data: CompletionData): string {
   // The note rides AFTER the whole composed line (installLineParts), never inside it.
   const install = installLineParts(["completion", "bash"], "posix");
   return (
-    "# clawforge bash completion — generated from the command declarations.\n" +
+    "# clawwright bash completion — generated from the command declarations.\n" +
     `# Install: eval "$(${install.line})"${install.note === undefined ? "" : `  (${install.note})`}\n` +
-    BASH_COMPLETER.replaceAll("__CLAWFORGE_CASE_ARMS__", caseArms(data))
-      .replaceAll("__CLAWFORGE_APP_SKIP__", data.appFlag ? APP_SKIP_PAIR : "")
-      .replaceAll("__CLAWFORGE_APP_VALUES__", data.appFlag ? APP_VALUES_BLOCK : "") +
+    BASH_COMPLETER.replaceAll("__CLAWWRIGHT_CASE_ARMS__", caseArms(data))
+      .replaceAll("__CLAWWRIGHT_APP_SKIP__", data.appFlag ? APP_SKIP_PAIR : "")
+      .replaceAll("__CLAWWRIGHT_APP_VALUES__", data.appFlag ? APP_VALUES_BLOCK : "") +
     bashCompletionLines
   );
 }

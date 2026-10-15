@@ -17,7 +17,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 
 useLinuxHost();
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-confirmation-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-confirmation-"));
 const fixture = await createDeploymentFixture({ root }).catch(async (error) => {
   await rm(root, { recursive: true, force: true }); throw error;
 });
@@ -94,7 +94,7 @@ try {
   await writeFile(join(root, "recipes", "local", "prepare.ts"), 'throw new Error("hooks must not be imported");\n');
   const migratePlan: StackMigratePlan = {
     migrationBackup, helperImage: `sha256:${"b".repeat(64)}`, shutdownTimeoutSeconds: 240, token: "opaque-private-token", sourceProject: "old", targetProject: "new", services: ["api"],
-    backupRoot: "/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc", volumes: [{ source: "old_data", target: "new_data" }],
+    backupRoot: "/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc", volumes: [{ source: "old_data", target: "new_data" }],
     inventory: [{ id: "container", project: "old", provenance: "legacy", service: "api", imageId: "exact-image",
       mounts: [{ type: "bind", source: "/srv/data", destination: "/data", writable: true }] }],
     images: [{ service: "api", imageId: "exact-image" }], impacts: ["stop writers"],

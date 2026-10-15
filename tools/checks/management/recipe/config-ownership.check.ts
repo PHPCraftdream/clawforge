@@ -19,7 +19,7 @@ async function refusal(body: () => unknown | Promise<unknown>): Promise<unknown>
   }
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-ownership-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-ownership-"));
 useRecipesDir(root);
 try {
   const alphaDirectory = join(root, "alpha");

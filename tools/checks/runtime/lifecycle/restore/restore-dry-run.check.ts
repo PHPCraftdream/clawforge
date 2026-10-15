@@ -1,4 +1,4 @@
-// `./clawforge restore --dry-run`: the same selection/validation a real restore runs
+// `./clawwright restore --dry-run`: the same selection/validation a real restore runs
 // (prepareRestore), reported instead of acted on. A recording transport proves the split —
 // restoreDryRun() must never issue a mutating command (mv/tar -x/mkdir/rm/chmod) and must
 // never touch runtime.stop/start, whether the archive validates or not.

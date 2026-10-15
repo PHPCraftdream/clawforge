@@ -180,7 +180,7 @@ export function recipeProjectName(recipe: string): string {
     throw new Error(`invalid gateway Compose namespace "${namespace}"`);
   }
   const pair = JSON.stringify([namespace, safeName("recipe", recipe)]);
-  return `clawforge-recipe-${createHash("sha256").update(pair).digest("hex")}`;
+  return `clawwright-recipe-${createHash("sha256").update(pair).digest("hex")}`;
 }
 
 /** One builder for lifecycle and backup probes, including malformed manifests.

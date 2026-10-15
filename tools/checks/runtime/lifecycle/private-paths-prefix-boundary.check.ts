@@ -65,9 +65,9 @@ const previousDeployment = (() => {
 // applies. The recipes root declares both shapes the bug confounded: a private DIRECTORY
 // with a public sibling, and a private FILE with a public `.example` neighbor.
 const tag = randomBytes(4).toString("hex");
-const tempDeployment = await mkdtemp(join(tmpdir(), `clawforge-pp-prefix-deployment-${tag}-`));
+const tempDeployment = await mkdtemp(join(tmpdir(), `clawwright-pp-prefix-deployment-${tag}-`));
 await mkdir(resolve(tempDeployment, "config"), { recursive: true });
-const tempRecipes = await mkdtemp(join(tmpdir(), `clawforge-pp-prefix-recipes-${tag}-`));
+const tempRecipes = await mkdtemp(join(tmpdir(), `clawwright-pp-prefix-recipes-${tag}-`));
 await mkdir(join(tempRecipes, "prefix-boundary"), { recursive: true });
 await writeFile(
   join(tempRecipes, "prefix-boundary", "recipe.json"),
@@ -91,7 +91,7 @@ try {
   check(
     "migrate keeps the staging family a prefix rule",
     JSON.stringify(forbiddenRules("migrate", ["x"]).prefixes),
-    JSON.stringify(["config/.env.clawforge-", "config/clawforge-desired.dry-"]),
+    JSON.stringify(["config/.env.clawwright-", "config/clawwright-desired.dry-"]),
   );
   check(
     "the share rule table adds its identity/state directories as literals",
@@ -101,7 +101,7 @@ try {
   check(
     "share keeps the staging family a prefix rule too",
     JSON.stringify(forbiddenRules("share", []).prefixes),
-    JSON.stringify(["config/.env.clawforge-", "config/clawforge-desired.dry-"]),
+    JSON.stringify(["config/.env.clawwright-", "config/clawwright-desired.dry-"]),
   );
   check(
     "full forbids nothing structurally",
@@ -147,13 +147,13 @@ try {
   );
   check(
     "the staging family is caught by its explicit prefix rule",
-    JSON.stringify(forbiddenViolations("migrate", [], ["config/.env.clawforge-deadbeef"])),
-    JSON.stringify(["config/.env.clawforge-"]),
+    JSON.stringify(forbiddenViolations("migrate", [], ["config/.env.clawwright-deadbeef"])),
+    JSON.stringify(["config/.env.clawwright-"]),
   );
   check(
     "the declaration config/.env no longer swallows the staging name by prefix",
-    JSON.stringify(forbiddenViolations("migrate", ["config/.env"], ["config/.env.clawforge-deadbeef"])),
-    JSON.stringify(["config/.env.clawforge-"]),
+    JSON.stringify(forbiddenViolations("migrate", ["config/.env"], ["config/.env.clawwright-deadbeef"])),
+    JSON.stringify(["config/.env.clawwright-"]),
   );
   check(
     "a trailing-slash share rule covers its contents",
@@ -173,7 +173,7 @@ try {
     if (transport === undefined) {
       skip("archive/verify prefix-boundary checks (no local POSIX filesystem and no WSL distribution with a shell)");
     } else {
-    const PARENT = `/tmp/clawforge-pp-prefix-${tag}`;
+    const PARENT = `/tmp/clawwright-pp-prefix-${tag}`;
     const DATA = `${PARENT}/data`;
     const ARCHIVES = `${PARENT}/archives`;
     await transport.mkdirp(`${DATA}/config`);
@@ -188,7 +188,7 @@ try {
     await transport.writeFile(`${DATA}/config/private.env.example`, "EXAMPLE=not-a-secret\n");
     await transport.writeFile(`${DATA}/workspace/SOUL.md`, "# fixture\n");
     // ensureDataDirs' own provenance marker, exactly as it leaves it on a real tree.
-    await transport.writeFile(`${DATA}/${DATA_DIR_MARKER}`, "clawforge data directory\n");
+    await transport.writeFile(`${DATA}/${DATA_DIR_MARKER}`, "clawwright data directory\n");
     const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
 
     check(
@@ -280,7 +280,7 @@ try {
     await transport.mkdirp(`${CLEAN}/workspace`);
     await transport.writeFile(`${CLEAN}/config/openclaw.json`, JSON.stringify({ models: { providers: {} } }));
     await transport.writeFile(`${CLEAN}/workspace/SOUL.md`, "# fixture\n");
-    await transport.writeFile(`${CLEAN}/${DATA_DIR_MARKER}`, "clawforge data directory\n");
+    await transport.writeFile(`${CLEAN}/${DATA_DIR_MARKER}`, "clawwright data directory\n");
     const cleanCtx = { settings: { dataDir: CLEAN, env: {} }, transport } as unknown as Context;
 
     const cleanShare = `${ARCHIVES}/clean-share.tar.gz`;

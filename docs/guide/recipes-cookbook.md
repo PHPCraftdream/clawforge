@@ -16,7 +16,7 @@ ARG RELEASE_SHA256=0000000000000000000000000000000000000000000000000000000000000
 ADD --checksum=sha256:${RELEASE_SHA256} https://example.invalid/downloads/app-1.2.3.tar.gz /tmp/app.tar.gz
 ```
 
-`recipe check` enforces this statically. The `./clawforge recipe check <name>` linter
+`recipe check` enforces this statically. The `./clawwright recipe check <name>` linter
 rejects any HTTP(S) `ADD` whose checksum is not `sha256:` followed by 64 lowercase hex
 digits (`remote-add-unpinned`, an error that fails the command). A checksum supplied
 through an `ARG` must be declared; statically visible `ARG` defaults and Compose `build.args`
@@ -39,14 +39,14 @@ build is pinned to bytes you recorded, not that those bytes are what the upstrea
 Use `recipe pin` to refresh a recipe's pinned version and checksum defaults from the upstream project's GitHub release metadata. Preview first, review the selected asset and proposed edits, then apply:
 
 ```bash
-./clawforge recipe pin status-board --version 2.0.0
-./clawforge recipe pin status-board --version 2.0.0 --apply
+./clawwright recipe pin status-board --version 2.0.0
+./clawwright recipe pin status-board --version 2.0.0 --apply
 ```
 
 If the recipe has multiple recognized declarations, pass `--artifact` with the current expanded asset basename to select one:
 
 ```bash
-./clawforge recipe pin status-board --version 2.0.0 --artifact status-board-linux-amd64.tar.gz
+./clawwright recipe pin status-board --version 2.0.0 --artifact status-board-linux-amd64.tar.gz
 ```
 
 For example, a Dockerfile may declare its version and checksum as build arguments and use the checksum with `ADD`:
@@ -66,7 +66,7 @@ Updating pins does not restart an already-running service. After applying, rebui
 A secret is never a command-line argument: argv is readable by any process on the target.
 Two supported stdin paths exist for recipe hooks.
 
-The `@clawforge/framework/recipe-kit` helpers are stdin-only by construction:
+The `clawwright/recipe-kit` helpers are stdin-only by construction:
 
 - `appConfigPatch(ctx, patch)` sends a config-shaped JSON object to the application's own
   CLI as `config patch --stdin` on stdin (adding `--dry-run` in dry-run mode). The patch
@@ -80,7 +80,7 @@ The `@clawforge/framework/recipe-kit` helpers are stdin-only by construction:
   responses are capped, sanitized and optionally header-filtered.
 
 For converging an owned config path onto a desired set, the `reconcile` module of
-`@clawforge/framework/recipe-kit` provides four more helpers, covered in
+`clawwright/recipe-kit` provides four more helpers, covered in
 [Reconcile an owned set](#reconcile-an-owned-set):
 
 - `reconcilePlanView(plan, options?)` is a read-only redacted view of a plan: entry keys
@@ -101,7 +101,7 @@ For converging an owned config path onto a desired set, the `reconcile` module o
   hook can surface it before deciding to apply.
 
 For arbitrary commands, `execWithSecrets(ctx, command, args, { env })` from
-`@clawforge/framework/private-config` runs a target command with secret environment values
+`clawwright/private-config` runs a target command with secret environment values
 that never appear in any process's argv: the values are written once to an owner-only
 temporary file (mode 700 directory, mode 600 file; a sealed ACL on local Windows targets),
 a shell sources it and `exec`s the command, and the directory is removed afterwards. Values
@@ -148,7 +148,7 @@ whatever the domain â€” use the reconcile primitive instead of a hand-rolled rea
 The generic shape:
 
 ```ts
-import { reconcileApply } from "@clawforge/framework/recipe-kit";
+import { reconcileApply } from "clawwright/recipe-kit";
 
 const OWNED_PATH = "plugins.widget.entries";
 
@@ -251,8 +251,8 @@ manifest's: the full grammar is the [actions table](recipe-manifest.md#fields) â
 also carries each action's declared arguments. Run one:
 
 ```bash
-./clawforge recipe run status-board prune-cache days=7
-./clawforge recipe run status-board prune-cache days=7 --dry-run
+./clawwright recipe run status-board prune-cache days=7
+./clawwright recipe run status-board prune-cache days=7 --dry-run
 ```
 
 Arguments are passed as `key=value` tokens and checked in the prepare stage against the
@@ -274,12 +274,12 @@ recipe and action.
 ## Rehearse a recipe on a copy of its data
 
 `recipe trial` builds and runs a recipe against a copy of its declared `privatePaths`
-data, in a throwaway compose project of its own (`clawforge-recipe-trial-<hash>-<random>`
+data, in a throwaway compose project of its own (`clawwright-recipe-trial-<hash>-<random>`
 with a fresh random suffix every run):
 
 ```bash
-./clawforge recipe trial status-board --dry-run
-./clawforge recipe trial status-board
+./clawwright recipe trial status-board --dry-run
+./clawwright recipe trial status-board
 ```
 
 It copies only the declared `privatePaths` entries (nested declarations are covered by
@@ -350,7 +350,7 @@ own import step:
 import { randomUUID } from "node:crypto";
 import {
   privatePseudonym, appendPrivateIntent, appendPrivateResult,
-} from "@clawforge/framework/private-config";
+} from "clawwright/private-config";
 
 async function importAccount(accountId: string): Promise<void> {
   // The recipe's own import step.

@@ -20,7 +20,7 @@ import { build } from "#tools/build-framework-package.ts";
 
 // A fresh build, exactly what `npm run build` produces, into a temp root removed in finally —
 // never whatever a previous build left in the checkout's dist/.
-const distDir = await mkdtemp(join(tmpdir(), "clawforge-build-output-"));
+const distDir = await mkdtemp(join(tmpdir(), "clawwright-build-output-"));
 
 try {
   await build(distDir);

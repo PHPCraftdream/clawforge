@@ -22,18 +22,18 @@ import { envFile } from "../runtime/deployment.ts";
 //                  own shipped files (docker-compose.yml). Installed as a package this
 //                  sits at node_modules/<pkg>/, so climbing a fixed number of parents to
 //                  guess at anything above would be a hidden assumption (see paths.ts).
-//   monorepoRoot   two levels up — the clawforge checkout, valid only when the framework
+//   monorepoRoot   two levels up — the clawwright checkout, valid only when the framework
 //                  runs colocated with apps/ the way it does today; every other call site
 //                  (apps/<name>, deploy's rsync source, scaffold templates) means this.
 // This module lives in core/ so the package root is one level above it in source and dist.
 export const frameworkRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const monorepoRoot = resolve(frameworkRoot, "..", "..");
 
-// Check-only seam (stage 7 S0.4): a check process sets CLAWFORGE_CHECKS_APPS_DIR so
+// Check-only seam (stage 7 S0.4): a check process sets CLAWWRIGHT_CHECKS_APPS_DIR so
 // deployments resolve under a temp root; nothing user-facing sets it, so unset means
 // the checkout's own apps/.
 export function appsRootFor(root: string): string {
-  const override = process.env["CLAWFORGE_CHECKS_APPS_DIR"];
+  const override = process.env["CLAWWRIGHT_CHECKS_APPS_DIR"];
   return override === undefined || override === "" ? resolve(root, "apps") : resolve(override);
 }
 
@@ -47,7 +47,7 @@ export async function frameworkPackage(): Promise<{ version: string | undefined;
   for (const dir of [frameworkRoot, resolve(frameworkRoot, "..")]) {
     try {
       const parsed = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")) as { name?: string; version?: string };
-      if (parsed.name === "@clawforge/framework") return { version: parsed.version, dir };
+      if (parsed.name === "clawwright") return { version: parsed.version, dir };
     } catch {
       // Try the next candidate.
     }
@@ -55,14 +55,14 @@ export async function frameworkPackage(): Promise<{ version: string | undefined;
   return undefined;
 }
 
-/** Whether `root` is a ClawForge checkout — proven by the gate script every checkout is
- *  built around (tools/clawforge.ts), not assumed from this file's location. monorepoRoot
+/** Whether `root` is a Clawwright checkout — proven by the gate script every checkout is
+ *  built around (tools/clawwright.ts), not assumed from this file's location. monorepoRoot
  *  is only a good guess in colocated mode: installed as a package, the same two climbed
  *  levels land inside node_modules, nothing to do with this deployment. Any command
  *  deriving a path from monorepoRoot must ask this first — acting on the guess is how a
  *  wrong tree gets mirrored somewhere with --delete. */
 export async function isMonorepoCheckout(root: string = monorepoRoot): Promise<boolean> {
-  return access(resolve(root, "tools", "clawforge.ts")).then(
+  return access(resolve(root, "tools", "clawwright.ts")).then(
     () => true,
     () => false,
   );
@@ -73,11 +73,11 @@ export async function isMonorepoCheckout(root: string = monorepoRoot): Promise<b
 export const composeFile = resolve(frameworkRoot, "docker-compose.yml");
 
 /** The package's public exports, mapped onto this checkout's sources: a hook (or a
- *  deployment's app.ts) importing `@clawforge/framework/<export>` in a checkout has no
+ *  deployment's app.ts) importing `clawwright/<export>` in a checkout has no
  *  dist build and no install to resolve against, so the loaders fall back to this table —
  *  keyed off the package's own root (frameworkRoot), which in an installed package points
  *  inside it and matches no source file, leaving normal resolution in charge. */
-const FRAMEWORK_PACKAGE = "@clawforge/framework";
+const FRAMEWORK_PACKAGE = "clawwright";
 /** Exported for checks only: the table must mirror package.json's exports in both
  *  directions, and an extra entry here is exactly what a one-way check cannot see. */
 export const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
@@ -88,7 +88,7 @@ export const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
   "./recipe-kit": "recipe-kit/index.ts",
 };
 
-/** The checkout source file a `@clawforge/framework` specifier maps to, or undefined when
+/** The checkout source file a `clawwright` specifier maps to, or undefined when
  *  this code does not run from the checkout sources or the specifier is not a public export. */
 export function checkoutFrameworkSource(specifier: string): string | undefined {
   if (specifier !== FRAMEWORK_PACKAGE && !specifier.startsWith(`${FRAMEWORK_PACKAGE}/`)) return undefined;

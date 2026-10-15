@@ -10,9 +10,9 @@ export type McpClient = "claude" | "codex" | "both";
 export type DeploymentMode = "installed" | "monorepo";
 export interface ProjectMcpEntry { command: string; args: string[] }
 
-/** Stable project-local names for ClawForge's two MCP surfaces. */
-export const CLAWFORGE_MCP_NAME = "clawforge";
-export const CLAWFORGE_CONTROL_MCP_NAME = "clawforge-control";
+/** Stable project-local names for Clawwright's two MCP surfaces. */
+export const CLAWWRIGHT_MCP_NAME = "clawwright";
+export const CLAWWRIGHT_CONTROL_MCP_NAME = "clawwright-control";
 
 /** Filename of the committed launcher, written next to app.ts by new-app, init and
  *  mcp-setup. No secrets, no machine paths — safe to commit (unlike .mcp.json/.codex/). */
@@ -21,61 +21,61 @@ export const MCP_LAUNCHER_FILENAME = "mcp-launch.mjs";
 // The monorepo launcher's launch, shape only (design §4.1): the checkout gate two levels
 // above the apps/<name> directory the launcher is committed into. The program spelling is
 // the frame's, not this file's — one source, so the emitted text stays byte-identical.
-const LAUNCHER_ROOT = "/clawforge-mcp-launcher";
+const LAUNCHER_ROOT = "/clawwright-mcp-launcher";
 const LAUNCHER_LAUNCH: Launch = { kind: "checkout-shim", root: LAUNCHER_ROOT };
 const MONOREPO_LAUNCHER_PROGRAM = spell(LAUNCHER_LAUNCH, "posix", "posix", `${LAUNCHER_ROOT}/apps/demo`) ?? SHIM_PROGRAM;
 
 /** Runs this monorepo checkout's own source gate, two levels above the deployment. */
-const MONOREPO_LAUNCHER = `// ClawForge MCP launcher: committed next to app.ts. Runs this monorepo checkout's own
+const MONOREPO_LAUNCHER = `// Clawwright MCP launcher: committed next to app.ts. Runs this monorepo checkout's own
 // source gate (invariant: this file sits two levels under monorepoRoot, next to tools/)
 // against this deployment. Written by new-app / mcp-setup; the bootstrap in the client
-// config finds this file and sets CLAWFORGE_DEPLOYMENT_ROOT before importing it.
+// config finds this file and sets CLAWWRIGHT_DEPLOYMENT_ROOT before importing it.
 import { basename, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const root = process.env.CLAWFORGE_DEPLOYMENT_ROOT;
+const root = process.env.CLAWWRIGHT_DEPLOYMENT_ROOT;
 const action = process.argv.at(-1);
-if (root === undefined) throw new Error("CLAWFORGE_DEPLOYMENT_ROOT not set");
+if (root === undefined) throw new Error("CLAWWRIGHT_DEPLOYMENT_ROOT not set");
 if (!["mcp-serve", "control-mcp"].includes(action)) throw new Error("invalid MCP action");
 
-const entry = resolve(root, "../../tools/clawforge.ts");
+const entry = resolve(root, "../../tools/clawwright.ts");
 process.chdir(root);
 // Hints must resolve from this directory: the shim is two levels up. Both variables: new
-// frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
-process.env.CLAWFORGE_INVOCATION = JSON.stringify({ version: ${INVOCATION_VERSION}, program: "${MONOREPO_LAUNCHER_PROGRAM}", mode: "checkout", app: { name: basename(root), selectedBy: "flag" }, audience: "mcp" });
-process.env.CLAWFORGE_INVOKED_AS = "${MONOREPO_LAUNCHER_PROGRAM} --app " + basename(root);
+// frameworks read the JSON one, older ones only CLAWWRIGHT_INVOKED_AS.
+process.env.CLAWWRIGHT_INVOCATION = JSON.stringify({ version: ${INVOCATION_VERSION}, program: "${MONOREPO_LAUNCHER_PROGRAM}", mode: "checkout", app: { name: basename(root), selectedBy: "flag" }, audience: "mcp" });
+process.env.CLAWWRIGHT_INVOKED_AS = "${MONOREPO_LAUNCHER_PROGRAM} --app " + basename(root);
 process.argv = [process.argv[0], entry, "--app", basename(root), action];
 await import(pathToFileURL(entry).href);
 `;
 
-/** Runs the deployment's own @clawforge/framework package, else the system-wide command. */
-const INSTALLED_LAUNCHER = `// ClawForge MCP launcher: committed next to app.ts. Runs this deployment's own
-// @clawforge/framework package (invariant: resolved through node's own package resolution,
-// never a hardcoded path), or the system-wide clawforge command when it has none. Written by
+/** Runs the deployment's own clawwright package, else the system-wide command. */
+const INSTALLED_LAUNCHER = `// Clawwright MCP launcher: committed next to app.ts. Runs this deployment's own
+// clawwright package (invariant: resolved through node's own package resolution,
+// never a hardcoded path), or the system-wide clawwright command when it has none. Written by
 // init / mcp-setup; the bootstrap in the client config finds this file and sets
-// CLAWFORGE_DEPLOYMENT_ROOT before importing it.
+// CLAWWRIGHT_DEPLOYMENT_ROOT before importing it.
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const root = process.env.CLAWFORGE_DEPLOYMENT_ROOT;
+const root = process.env.CLAWWRIGHT_DEPLOYMENT_ROOT;
 const action = process.argv.at(-1);
-if (root === undefined) throw new Error("CLAWFORGE_DEPLOYMENT_ROOT not set");
+if (root === undefined) throw new Error("CLAWWRIGHT_DEPLOYMENT_ROOT not set");
 if (!["mcp-serve", "control-mcp"].includes(action)) throw new Error("invalid MCP action");
 
 let entry;
 try {
-  entry = resolve(dirname(createRequire(resolve(root, "package.json")).resolve("@clawforge/framework/app")), "..", "entry", "bin.js");
+  entry = resolve(dirname(createRequire(resolve(root, "package.json")).resolve("clawwright/app")), "..", "entry", "bin.js");
 } catch {
   entry = undefined;
 }
 process.chdir(root);
 if (entry === undefined) {
   // Same stdio, so the MCP session runs straight through the system-wide command.
-  const child = spawn("clawforge", [action], { stdio: "inherit", shell: process.platform === "win32" });
+  const child = spawn("clawwright", [action], { stdio: "inherit", shell: process.platform === "win32" });
   child.on("error", (error) => {
-    process.stderr.write("clawforge: " + error.message + " — install it system-wide or add @clawforge/framework to this deployment\\n");
+    process.stderr.write("clawwright: " + error.message + " — install it system-wide or add clawwright to this deployment\\n");
     process.exit(1);
   });
   child.on("exit", (code) => process.exit(code ?? 1));
@@ -106,7 +106,7 @@ const BOOTSTRAP = 'import {existsSync} from "node:fs"; import {dirname,resolve} 
   'let root=resolve(process.env.CLAUDE_PROJECT_DIR||process.cwd()); ' +
   'while(!existsSync(resolve(root,"app.ts"))){const parent=dirname(root); ' +
   'if(parent===root)throw new Error("OpenClaw app.ts not found above the client working directory"); root=parent;} ' +
-  'process.env.CLAWFORGE_DEPLOYMENT_ROOT=root; ' +
+  'process.env.CLAWWRIGHT_DEPLOYMENT_ROOT=root; ' +
   `await import(pathToFileURL(resolve(root,${JSON.stringify(MCP_LAUNCHER_FILENAME)})).href);`;
 
 /** Both project-local MCP entries. Identical regardless of client or deployment mode — the
@@ -115,8 +115,8 @@ const BOOTSTRAP = 'import {existsSync} from "node:fs"; import {dirname,resolve} 
 export function projectMcpEntries(): Record<string, ProjectMcpEntry> {
   const forAction = (action: string): ProjectMcpEntry => ({ command: "node", args: ["--experimental-strip-types", "--input-type=module", "-e", BOOTSTRAP, "--", action] });
   return {
-    [CLAWFORGE_MCP_NAME]: forAction("mcp-serve"),
-    [CLAWFORGE_CONTROL_MCP_NAME]: forAction("control-mcp"),
+    [CLAWWRIGHT_MCP_NAME]: forAction("mcp-serve"),
+    [CLAWWRIGHT_CONTROL_MCP_NAME]: forAction("control-mcp"),
   };
 }
 
@@ -272,7 +272,7 @@ async function existingFile(path: string): Promise<string | undefined> {
 
 async function replaceFile(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.clawforge-${randomBytes(6).toString("hex")}.tmp`;
+  const temporary = `${path}.clawwright-${randomBytes(6).toString("hex")}.tmp`;
   try { await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await renameOverPrivateFile(temporary, path); }
   finally { await rm(temporary, { force: true }); }
 }

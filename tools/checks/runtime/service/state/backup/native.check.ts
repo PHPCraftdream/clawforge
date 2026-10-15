@@ -1,4 +1,4 @@
-// `./clawforge backup --native` — a consistent snapshot without stopping the gateway, via
+// `./clawwright backup --native` — a consistent snapshot without stopping the gateway, via
 // OpenClaw's own `backup create --verify` in the sidecar, reshaped into the classic archive
 // layout so rotation, naming and restore need no native-specific case.
 
@@ -16,8 +16,8 @@ import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
-const DATA_DIR = "/srv/clawforge/data";
-const BACKUP_DIR = "/srv/clawforge/backups";
+const DATA_DIR = "/srv/clawwright/data";
+const BACKUP_DIR = "/srv/clawwright/backups";
 const NATIVE_ROOT = "20260101T000000-openclaw-backup";
 const NATIVE_LISTING = [
   `${NATIVE_ROOT}/`,
@@ -70,7 +70,7 @@ function stubNativeCtx(
         if (command === "mkdir") { files.add(args.at(-1) ?? ""); return { code: 0, stdout: "", stderr: "" }; }
         if (command === "tar" && args.includes("-tzf")) {
           const archive = args.at(-1) ?? "";
-          const stdout = archive.includes(".clawforge-native-") ? NATIVE_LISTING : "data/\ndata/config/openclaw.json\n";
+          const stdout = archive.includes(".clawwright-native-") ? NATIVE_LISTING : "data/\ndata/config/openclaw.json\n";
           return { code: 0, stdout, stderr: "" };
         }
         if (command === "tar" && args.includes("-xzf")) {
@@ -161,8 +161,8 @@ function stubNativeCtx(
   // --- rotation still works: the published name is the ordinary full-backup name ----------
   check("a native backup keeps the plain full-backup name", new RegExp(`^${BACKUP_DIR}/${deploymentName()}-\\d{8}-\\d{6}\\.tar\\.gz$`).test(archive), true);
   check("the published archive exists where rotate()/newestArchive() look for it", files.has(archive), true);
-  check("no leftover staging directory remains", [...files].some((path) => path.includes(".clawforge-backup-")), false);
-  check("no leftover native staging file remains", [...files].some((path) => path.includes(".clawforge-native-")), false);
+  check("no leftover staging directory remains", [...files].some((path) => path.includes(".clawwright-backup-")), false);
+  check("no leftover native staging file remains", [...files].some((path) => path.includes(".clawwright-native-")), false);
 }
 
 // --- --native refuses anything but the full profile -----------------------------------------
@@ -176,7 +176,7 @@ function stubNativeCtx(
   check("--native refuses a non-full profile", message.includes("only supports the full profile"), true);
 }
 
-// --- unavailable native support is reported distinctly, for ./clawforge upgrade's fallback --
+// --- unavailable native support is reported distinctly, for ./clawwright upgrade's fallback --
 
 {
   const { ctx, files } = stubNativeCtx("unsupported");
@@ -212,10 +212,10 @@ function stubNativeCtx(
   check("a create failure after writing surfaces as an error", message.length > 0, true);
   check(
     "the failed create output is removed from the live config directory",
-    [...files].some((path) => path.startsWith(`${DATA_DIR}/config/.clawforge-native-`)),
+    [...files].some((path) => path.startsWith(`${DATA_DIR}/config/.clawwright-native-`)),
     false,
   );
-  check("cleanup explicitly removes the native output", calls.some((call) => call.startsWith("exec rm -f --") && call.includes(".clawforge-native-")), true);
+  check("cleanup explicitly removes the native output", calls.some((call) => call.startsWith("exec rm -f --") && call.includes(".clawwright-native-")), true);
 }
 
 // --- a live file the native archive omits (session transcripts, in the pinned image: the
@@ -241,7 +241,7 @@ function stubNativeCtx(
   check("a -shm sidecar is never re-added", omittedOnPurpose("state/openclaw.sqlite-shm"), true);
   check("a -journal sidecar is never re-added", omittedOnPurpose("agents/main/agent/db.sqlite-journal"), true);
   check("a browser profile lock is never re-added", omittedOnPurpose("browser/profile/SingletonLock"), true);
-  check("the run's own native archive is never re-added", omittedOnPurpose(".clawforge-native-1234.tar.gz"), true);
+  check("the run's own native archive is never re-added", omittedOnPurpose(".clawwright-native-1234.tar.gz"), true);
   check("a session transcript is still re-added", omittedOnPurpose("agents/main/sessions/s1.jsonl"), false);
   const wal = `${DATA_DIR}/config/state/openclaw.sqlite-wal`;
   const { ctx, calls } = stubNativeCtx("ok", { extraLiveFile: wal });
@@ -262,7 +262,7 @@ function stubNativeCtx(
   check("an extraction failure surfaces as an error", message.length > 0, true);
   check(
     "the in-flight native archive is removed from config/ rather than left behind",
-    [...files].some((path) => path.startsWith(`${DATA_DIR}/config/.clawforge-native-`)),
+    [...files].some((path) => path.startsWith(`${DATA_DIR}/config/.clawwright-native-`)),
     false,
   );
 }
@@ -274,7 +274,7 @@ function stubNativeCtx(
 {
   const name = "data";
   const excludes = excludesFor("full", name);
-  check("excludesFor(full) excludes a native archive left live in config/", excludes.includes(`${name}/config/.clawforge-native-*`), true);
+  check("excludesFor(full) excludes a native archive left live in config/", excludes.includes(`${name}/config/.clawwright-native-*`), true);
   check(
     "the published native manifest's own archive-root path is not among the exclude patterns",
     excludes.includes(`${name}/${NATIVE_MANIFEST_NAME}`),

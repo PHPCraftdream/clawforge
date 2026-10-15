@@ -402,26 +402,26 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
   for (const profile of profiles) {
     check(
       `the instance lock never travels (${profile})`,
-      excludesFor(profile, "data").includes("data/clawforge-operation.lock"),
+      excludesFor(profile, "data").includes("data/clawwright-operation.lock"),
       true,
     );
     check(
       `credential staging never travels in ${profile}`,
-      excludesFor(profile, "data").includes("data/config/.env.clawforge-*"),
+      excludesFor(profile, "data").includes("data/config/.env.clawwright-*"),
       true,
     );
     check(
       `interrupted dry-run payload never travels in ${profile}`,
-      excludesFor(profile, "data").includes("data/config/clawforge-desired.dry-*.json"),
+      excludesFor(profile, "data").includes("data/config/clawwright-desired.dry-*.json"),
       true,
     );
   }
 
   // The journal is this host's history and its snapshots are copies of THIS host's
   // configuration. That belongs in a backup of this instance and nowhere else.
-  check("the journal is kept in a full backup", excludesFor("full", "data").includes("data/clawforge-operations"), false);
-  check("but not handed to another host", excludesFor("migrate", "data").includes("data/clawforge-operations"), true);
-  check("nor to someone the agent is shared with", excludesFor("share", "data").includes("data/clawforge-operations"), true);
+  check("the journal is kept in a full backup", excludesFor("full", "data").includes("data/clawwright-operations"), false);
+  check("but not handed to another host", excludesFor("migrate", "data").includes("data/clawwright-operations"), true);
+  check("nor to someone the agent is shared with", excludesFor("share", "data").includes("data/clawwright-operations"), true);
   check("the old oc journal is excluded from migration", excludesFor("migrate", "data").includes("data/oc-operations"), true);
   check("the old oc ownership files are excluded from sharing", excludesFor("share", "data").includes("data/oc-managed.json"), true);
 
@@ -466,7 +466,7 @@ check("without declarations the exclude lists are unchanged", excludesFor("migra
 for (const profile of ["migrate", "share"] as const) {
   const excludes = excludesFor(profile, "data[1]");
   check(`base excludes quote a glob metacharacter in the root (${profile})`, excludes.includes("data\\[1\\]/config/.env"), true);
-  check(`base exclude wildcards remain active (${profile})`, excludes.includes("data\\[1\\]/config/.env.clawforge-*"), true);
+  check(`base exclude wildcards remain active (${profile})`, excludes.includes("data\\[1\\]/config/.env.clawwright-*"), true);
 }
 
 // --- the privilege prefix is chosen per capability over every path involved --------------

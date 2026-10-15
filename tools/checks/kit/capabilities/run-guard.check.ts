@@ -106,8 +106,8 @@ check(
 );
 check(
   "a leftover in ignored space is named, though --porcelain hides it",
-  diffSnapshots(snapshot(), snapshot({ ignoredStatus: "!! .claude/clawforge-deploy-policy-scratch/unrelated.secrets.env\n" })),
-  ["git ignored gained: !! .claude/clawforge-deploy-policy-scratch/unrelated.secrets.env"],
+  diffSnapshots(snapshot(), snapshot({ ignoredStatus: "!! .claude/clawwright-deploy-policy-scratch/unrelated.secrets.env\n" })),
+  ["git ignored gained: !! .claude/clawwright-deploy-policy-scratch/unrelated.secrets.env"],
 );
 check(
   "an ignored file that vanished during the run is named too",
@@ -127,7 +127,7 @@ check(
 
 // --- All filesystem witnesses live in one throwaway git repository, never the checkout. -------
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-runguard-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-runguard-"));
 try {
   const git = await runProcess("git", ["init", "-q"], { cwd: root, timeoutMs: 60_000 });
   if (git.code !== 0) throw new Error("throwaway git init failed: " + git.output);
@@ -157,7 +157,7 @@ try {
   // Keep this binding explicit: a temp-copy mutation restoring monorepoRoot must fail
   // the does-not-touch-checkout assertion BEFORE any write or cleanup can reach it.
   const claudeDir = resolve(root, ".claude");
-  const scratch = resolve(claudeDir, "clawforge-deploy-policy-scratch");
+  const scratch = resolve(claudeDir, "clawwright-deploy-policy-scratch");
   const isolated = scratch.startsWith(root + sep) && !scratch.startsWith(monorepoRoot + sep);
   checkTrue("does not touch checkout: ignored scratch is inside the throwaway repo", isolated);
   if (isolated) {
@@ -169,7 +169,7 @@ try {
     const afterScratch = await snapshotCheckout(root);
     check("a leftover inside an existing ignored directory is named",
       afterScratch.ignoredStatus?.split("\n").filter((line) => !beforeScratch.ignoredStatus?.split("\n").includes(line)),
-      ["!! .claude/clawforge-deploy-policy-scratch/unrelated.secrets.env"]);
+      ["!! .claude/clawwright-deploy-policy-scratch/unrelated.secrets.env"]);
 
     const token = join(claudeDir, "preexisting.token");
     await writeFile(token, "AAAA");

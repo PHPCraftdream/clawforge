@@ -25,7 +25,7 @@ const manifest = buildSetManifest({
   acceptance: {},
 });
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-tar-paths-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-tar-paths-"));
 // The escape-significant component, spelled the way a Windows TEMP arrives: backslashes.
 const tomsTemp = join(root, "tom", "Temp");
 await mkdir(tomsTemp, { recursive: true });
@@ -38,7 +38,7 @@ process.env.TMP = tomsTemp;
 process.env.TMPDIR = tomsTemp;
 let integrity = "";
 try {
-  const tree = await mkdtemp(join(tmpdir(), "clawforge-tar-paths-tree-"));
+  const tree = await mkdtemp(join(tmpdir(), "clawwright-tar-paths-tree-"));
   await mkdir(join(tree, "config"), { recursive: true });
   await writeFile(join(tree, "config", "desired-state.json"), DECLARED, "utf8");
   const artifact = join(root, "fixture.tar.gz");

@@ -45,21 +45,21 @@ const isScript = (call: Call, marker: string): boolean =>
 const rsyncs = (calls: Call[]): Call[] => calls.filter((call) => call.command === "rsync");
 
 {
-  const { calls, error } = await recordedDeploy((call) => isScript(call, "# clawforge-root-prepare"));
+  const { calls, error } = await recordedDeploy((call) => isScript(call, "# clawwright-root-prepare"));
   check("root preparation failure refuses before any rsync", error.includes("cannot create"), true);
   check("root preparation failure performs no rsync", rsyncs(calls).length, 0);
-  check("root preparation uses component checks, not mkdir -p", calls.some((call) => isScript(call, "# clawforge-root-prepare") && call.args.at(-1)?.includes("mkdir -p")), false);
+  check("root preparation uses component checks, not mkdir -p", calls.some((call) => isScript(call, "# clawwright-root-prepare") && call.args.at(-1)?.includes("mkdir -p")), false);
 }
 
 {
-  const { calls, error } = await recordedDeploy((call) => isScript(call, "# clawforge-root-marker-write"));
+  const { calls, error } = await recordedDeploy((call) => isScript(call, "# clawwright-root-marker-write"));
   check("a marker appearing after the probe refuses the deploy", error.includes("could not mark"), true);
   check("marker creation failure runs no rsync", rsyncs(calls).length, 0);
 }
 
 for (const failingPath of ["/config", "/recipes"]) {
   const { calls, error } = await recordedDeploy((call) =>
-    isScript(call, "# clawforge-child-prepare") && call.args.at(-1)?.includes(failingPath) === true,
+    isScript(call, "# clawwright-child-prepare") && call.args.at(-1)?.includes(failingPath) === true,
   );
   check(`${failingPath} preparation fails closed`, error.includes("cannot prepare deploy destination"), true);
   check(`${failingPath} preparation starts no child rsync`, rsyncs(calls).length, 1);
@@ -67,7 +67,7 @@ for (const failingPath of ["/config", "/recipes"]) {
 
 {
   const { calls, error } = await recordedDeploy((call) =>
-    isScript(call, "# clawforge-destination-guard") && call.args.at(-1)?.includes("/config") === true,
+    isScript(call, "# clawwright-destination-guard") && call.args.at(-1)?.includes("/config") === true,
   );
   check("a changed config destination refuses before its --delete", error.includes("unsafe deploy destination"), true);
   check("config guard failure runs no config/recipes rsync", rsyncs(calls).length, 2);
@@ -96,7 +96,7 @@ for (const failingPath of ["/config", "/recipes"]) {
     call.options?.env?.RSYNC_PROTECT_ARGS === "0" && call.options.env.RSYNC_OLD_ARGS === "0"
   ), true);
   for (const path of ["/opt/openclaw/apps/example app/config", "/opt/openclaw/apps/example app/recipes"]) {
-    const guardIndex = calls.findIndex((call) => isScript(call, "# clawforge-destination-guard") && call.args.at(-1)?.includes(path) === true);
+    const guardIndex = calls.findIndex((call) => isScript(call, "# clawwright-destination-guard") && call.args.at(-1)?.includes(path) === true);
     const mirrorIndex = calls.findIndex((call) => call.command === "rsync" && call.args.at(-1) === `deployer@server:${path}/`);
     check(`${path} is checked before its own --delete`, guardIndex >= 0 && mirrorIndex > guardIndex && calls[mirrorIndex]?.args.includes("--delete"), true);
   }
@@ -104,7 +104,7 @@ for (const failingPath of ["/config", "/recipes"]) {
 
 // Run generated scripts with a real shell, against disposable directories only.
 await requires("posix-sh", "generated deploy scripts execute in POSIX sh", async () => {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-deploy-path-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-deploy-path-"));
   try {
     const forwardRoot = root.replaceAll("\\", "/");
     const physical = await spawnLocal("sh", ["-c", 'cd -- "$1" && pwd -P', "sh", forwardRoot], { allowFailure: true });

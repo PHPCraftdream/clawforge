@@ -16,7 +16,7 @@ import { CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-app-hooks-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-app-hooks-"));
 const previousDeployment = (() => {
   try { return deploymentDir(); } catch { return undefined; }
 })();

@@ -1,6 +1,6 @@
-# Contributing to ClawForge
+# Contributing to Clawwright
 
-ClawForge is a framework and CLI for operating self-hosted OpenClaw deployments. Changes
+Clawwright is a framework and CLI for operating self-hosted OpenClaw deployments. Changes
 should keep the framework independent from any one deployment's business content.
 
 ## Development setup
@@ -19,14 +19,14 @@ The check suite uses recording transports and disposable directories. It does no
 OpenClaw gateway or call a model. Live Docker/WSL and SSH scenarios are separate and must be
 clearly identified in a change description.
 
-`npm test` runs every check; while iterating on one, narrow it with `./clawforge check
+`npm test` runs every check; while iterating on one, narrow it with `./clawwright check
 <substring>...` (or `npm run check -- <substring>...`), which only runs checks whose relative
-path under `tools/checks/` contains at least one substring — e.g. `./clawforge check gate` or
-`./clawforge check foundation runtime`. `./clawforge check --list` prints the matching paths
+path under `tools/checks/` contains at least one substring — e.g. `./clawwright check gate` or
+`./clawwright check foundation runtime`. `./clawwright check --list` prints the matching paths
 without running them; a filter that matches nothing is refused rather than silently falling
 back to the whole suite.
 
-`./clawforge check --related` selects only the checks affected by the changes between `--base`
+`./clawwright check --related` selects only the checks affected by the changes between `--base`
 (default: the merge-base with the upstream branch, else `HEAD~1`) and the working tree — both
 committed and uncommitted files count. Selection uses the static import graph plus a data rule
 table for dependencies the graph cannot see: checks that spawn CLIs or servers, docs, goldens,
@@ -194,7 +194,7 @@ Pick the run by the moment, not by habit:
 | --- | --- | --- |
 | Editing, a few minutes in | the one check file you changed: `node --experimental-strip-types tools/checks/<path>.check.ts` | seconds |
 | A task is done, before committing | `npm run check:fast` | type check, lint, the always-run structural checks (layout, architecture ratchets, static hygiene, needs) and the checks related to the diff |
-| A change touches a command declaration, the MCP surface, goldens, docs or packaging | add the family explicitly: `./clawforge check mcp golden completion flags property binder help docs packaging` | whole-surface checks are reached by rules, not by imports |
+| A change touches a command declaration, the MCP surface, goldens, docs or packaging | add the family explicitly: `./clawwright check mcp golden completion flags property binder help docs packaging` | whole-surface checks are reached by rules, not by imports |
 | A stage or sprint ends, before a push to `main` or a release | the full suite: `npm test` | the gate; invisible dependencies are only covered here |
 | A push to a feature branch | open a pull request: CI runs the full tier on it (a branch without a pull request gets no CI run) | see "CI tiers" |
 
@@ -224,7 +224,7 @@ file). A filtered run merges into the existing data instead of replacing it; the
 rewritten atomically (temp file + rename), and a corrupt or unknown-version file is ignored
 with one warning, then rewritten. At the end of a run the runner prints where the time went:
 wall time, the serial sum of per-file times, the parallel efficiency (serial sum ÷ wall ×
-jobs) and the ten slowest files with their share. `./clawforge check --timings` prints the
+jobs) and the ten slowest files with their share. `./clawwright check --timings` prints the
 stored ranking (median per file; `--top <n>` for more or fewer) without running anything.
 CI can set `OC_CHECK_TIMINGS_OUT=<path>` to additionally write the run's per-file durations
 as JSON for upload as an artifact; `OC_CHECK_TIMINGS=off` disables the repository-root file.
@@ -291,9 +291,9 @@ A command a message, an error or a `details` text tells the user to run goes thr
 renderer (`tools/framework/core/io/invocation/` — `command`/`shellLine`/`manual` as data, `renderAdvice`/`commandLine`
 as text); a hand-written program spelling freezes one invocation into every other one. A line for another shell, host
 or scheduler is `shellLine` and nothing rewrites it — cron, `schtasks` and a remote `deploy` line reach the output layer
-exactly as built. Help prose names a command as a `{clawforge …}` token and its own flags as `{--flag}`, so one text
+exactly as built. Help prose names a command as a `{clawwright …}` token and its own flags as `{--flag}`, so one text
 reads right under every invocation. The ratchets in `tools/checks/architecture/` enforce this: a literal program
-spelling outside the renderer fails `check architecture` (`dotClawforgeLiterals`), and
+spelling outside the renderer fails `check architecture` (`dotClawwrightLiterals`), and
 `tools/framework/core/io/invocation/render.ts` is the only exemption that table names.
 
 The command table in `docs/guide/commands.md`, between its `<!-- commands:begin … -->` and

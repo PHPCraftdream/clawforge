@@ -67,7 +67,7 @@ checkTrue("the product's generated override merges to a document with no publish
 
 // --- end to end: the proof catches a merge that ignored the override ------------------------
 
-const root = await useRecipesRoot("clawforge-recipe-trial-merge");
+const root = await useRecipesRoot("clawwright-recipe-trial-merge");
 try {
   await root.write("subject", { description: "A recipe whose merge the proof watches" });
   const good = trialFixture();

@@ -5,7 +5,7 @@
 // client may depend on it while these checks run, and a process interrupted mid-test used
 // to be able to leave it deleted or half-written. Every case below either calls
 // mcpServerEntries()/mcpConfigFilePath() directly (pure, no file I/O) or runs the full
-// mcpSetup() against a disposable temp directory (installed mode: a committed ./clawforge
+// mcpSetup() against a disposable temp directory (installed mode: a committed ./clawwright
 // shim right at deploymentDir(), a consumer repo's own project root, not apps/<name>) —
 // never against monorepoRoot.
 //
@@ -17,12 +17,12 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { mcpSetup, mcpServerEntries, mcpConfigFilePath } from "#framework/commands/management/configuration/credentials/mcp.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
-import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent } from "#framework/integration/mcp/project.ts";
+import { CLAWWRIGHT_CONTROL_MCP_NAME, CLAWWRIGHT_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent } from "#framework/integration/mcp/project.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const installedDir = await mkdtemp(resolve(tmpdir(), "clawforge-mcp-installed-check-"));
+const installedDir = await mkdtemp(resolve(tmpdir(), "clawwright-mcp-installed-check-"));
 // Selected before the pure checks below, not next to the shim write: the active
 // deployment is process-wide (tools/checks/run.ts imports every check file into one
 // process), and the shim is what flips the entries into installed mode — so it must not
@@ -47,11 +47,11 @@ try {
   // monorepo included, without ever writing anywhere -----------------------------------
 
   {
-    const name = CLAWFORGE_MCP_NAME;
+    const name = CLAWWRIGHT_MCP_NAME;
     const entries = await mcpServerEntries(ctx);
-    // Not wrapped through the transport (the client shares this filesystem), and not `./clawforge`
+    // Not wrapped through the transport (the client shares this filesystem), and not `./clawwright`
     // either: a client spawns the command directly, with no shell, and the shim is a bash
-    // script — which is ENOENT on Windows even where `./clawforge` works fine in a terminal.
+    // script — which is ENOENT on Windows even where `./clawwright` works fine in a terminal.
     check("wsl mode runs the CLI through node, not the shell shim", entries[name].command, "node");
     checkTrue(
       "wsl mode's bootstrap locates the committed launcher and names the command",
@@ -67,11 +67,11 @@ try {
   {
     // ssh is the one mode a plain relative command cannot work for — the client runs on a
     // different machine from the target, so it genuinely needs the transport's own
-    // wrapping (whatever ctx.transport.clientInvocation() produces), not ./clawforge directly.
+    // wrapping (whatever ctx.transport.clientInvocation() produces), not ./clawwright directly.
     // The entries themselves do not branch on location any more than they branch on mode: the
     // same bootstrap always locates the committed launcher next to app.ts.
     const sshCtx = { ...ctx, settings: { location: "ssh" } } as unknown as Context;
-    const name = CLAWFORGE_MCP_NAME;
+    const name = CLAWWRIGHT_MCP_NAME;
     const entries = await mcpServerEntries(sshCtx);
     check("SSH targets still launch the local tooling, which owns the transport", entries[name].command, "node");
     checkTrue(
@@ -86,8 +86,8 @@ try {
   // matters — covered separately below, against its own disposable directory, so it never
   // disturbs the .mcp.json states the tests below depend on ------------------------------
 
-  await writeFile(resolve(installedDir, "clawforge"), "#!/usr/bin/env bash\n", "utf8");
-  const name = CLAWFORGE_MCP_NAME;
+  await writeFile(resolve(installedDir, "clawwright"), "#!/usr/bin/env bash\n", "utf8");
+  const name = CLAWWRIGHT_MCP_NAME;
   const configFile = resolve(installedDir, ".mcp.json");
 
   const entries = await mcpServerEntries(ctx);
@@ -115,7 +115,7 @@ try {
   checkTrue("the created file keys the mcp-serve entry", Object.prototype.hasOwnProperty.call(created.mcpServers, name));
   checkTrue(
     "the created file keys the control-mcp entry",
-    Object.prototype.hasOwnProperty.call(created.mcpServers, CLAWFORGE_CONTROL_MCP_NAME),
+    Object.prototype.hasOwnProperty.call(created.mcpServers, CLAWWRIGHT_CONTROL_MCP_NAME),
   );
 
   // .mcp.json exists with an entry for a different server: after mcp-setup, both entries
@@ -136,7 +136,7 @@ try {
   checkTrue("our mcp-serve entry is added", Object.prototype.hasOwnProperty.call(merged.mcpServers, name));
   checkTrue(
     "our control-mcp entry is added",
-    Object.prototype.hasOwnProperty.call(merged.mcpServers, CLAWFORGE_CONTROL_MCP_NAME),
+    Object.prototype.hasOwnProperty.call(merged.mcpServers, CLAWWRIGHT_CONTROL_MCP_NAME),
   );
 
   // .mcp.json contains invalid JSON: mcp-setup does not throw, and overwrites with a
@@ -161,7 +161,7 @@ try {
 // its own disposable directory — a fresh one, not installedDir above, so it never disturbs
 // the .mcp.json states the tests above depend on.
 
-const launcherDir = await mkdtemp(resolve(tmpdir(), "clawforge-mcp-launcher-check-"));
+const launcherDir = await mkdtemp(resolve(tmpdir(), "clawwright-mcp-launcher-check-"));
 useDeployment(launcherDir);
 try {
   const ctx = {
@@ -171,13 +171,13 @@ try {
   } as unknown as Context;
   const launcherFile = resolve(launcherDir, MCP_LAUNCHER_FILENAME);
 
-  // No "clawforge" shim yet: monorepo mode.
+  // No "clawwright" shim yet: monorepo mode.
   await withOutputSink(() => {}, () => mcpSetup(ctx, []));
   check("mcp-setup writes the monorepo launcher before the shim exists", await readFile(launcherFile, "utf8"), mcpLauncherContent("monorepo"));
 
   // The shim now exists: installed mode. mcp-setup switches the launcher without being asked —
   // it is still the canonical content, just a different one, not a local edit.
-  await writeFile(resolve(launcherDir, "clawforge"), "#!/usr/bin/env bash\n", "utf8");
+  await writeFile(resolve(launcherDir, "clawwright"), "#!/usr/bin/env bash\n", "utf8");
   await withOutputSink(() => {}, () => mcpSetup(ctx, []));
   check("mcp-setup switches to the installed launcher once the shim exists", await readFile(launcherFile, "utf8"), mcpLauncherContent("installed"));
 

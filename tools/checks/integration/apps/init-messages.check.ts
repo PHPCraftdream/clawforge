@@ -1,4 +1,4 @@
-// What `clawforge init` tells the user (round 26, R26-06 / R26-16): an accurate list of what to
+// What `clawwright init` tells the user (round 26, R26-06 / R26-16): an accurate list of what to
 // commit, a .env header true in both modes, absolute documentation URLs, and the opt-in
 // `--local` remedy for editor types. Runs initApp in a scratch directory.
 
@@ -20,7 +20,7 @@ async function initIn(directory: string, options?: { local?: boolean }): Promise
   return { output, env: await readFile(resolve(directory, ".env"), "utf8"), directory };
 }
 
-const fixtureRoot = await mkdtemp(join(tmpdir(), "clawforge-init-messages-"));
+const fixtureRoot = await mkdtemp(join(tmpdir(), "clawwright-init-messages-"));
 try {
   const plainDirectory = join(fixtureRoot, "plain", "deployment");
   const localDirectory = join(fixtureRoot, "local", "deployment");
@@ -30,27 +30,27 @@ try {
   await mkdir(hintDirectory, { recursive: true });
   const plain = await initIn(plainDirectory);
   const local = await initIn(localDirectory, { local: true });
-  setInvocation({ program: "./clawforge", mode: "local-package", audience: "terminal" });
+  setInvocation({ program: "./clawwright", mode: "local-package", audience: "terminal" });
   const localPackageHint = await initIn(hintDirectory);
-  setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+  setInvocation({ program: "./clawwright", mode: "checkout", audience: "terminal" });
   checkTrue("the commit advice names mcp-launch.mjs", plain.output.includes("mcp-launch.mjs"));
   checkTrue("...and app.ts, package.json, config/ and recipes/", ["app.ts", "package.json", "config/", "recipes/"].every((name) => plain.output.includes(name)));
   checkTrue("the false 'only framework-adjacent file' claim is gone", !plain.output.includes("only framework-adjacent"));
 
-  checkTrue("the .env header does not claim new-app alone copies it", !plain.env.includes("`./clawforge new-app <name>` copies this"));
+  checkTrue("the .env header does not claim new-app alone copies it", !plain.env.includes("`./clawwright new-app <name>` copies this"));
   checkTrue("...and names both new-app and init", /new-app` and `init`/.test(plain.env));
 
-  checkTrue("without --local, init hints at it", plain.output.includes("clawforge init --local"));
+  checkTrue("without --local, init hints at it", plain.output.includes("clawwright init --local"));
   checkTrue("--local prints an npm install that saves no machine path", local.output.includes("npm install --no-save "));
-  checkTrue("--local does not hint at itself", !local.output.includes("clawforge init --local"));
+  checkTrue("--local does not hint at itself", !local.output.includes("clawwright init --local"));
   const localPackage = JSON.parse(await readFile(resolve(local.directory, "package.json"), "utf8")) as { devDependencies?: unknown };
   check("--local writes no machine path into package.json", localPackage.devDependencies, undefined);
 
   // The hint goes through the renderer (review R2-1): under a local-package invocation the
   // pasted command must name the program as typed, never the bare installed spelling.
   const hint = /(\S+) init --local/.exec(localPackageHint.output)?.[1];
-  check("a local-package invocation spells the hint with the program as typed", hint, "./clawforge");
-  checkTrue("...and never the bare installed spelling", !/(^|[^/.\w])clawforge init --local/.test(localPackageHint.output));
+  check("a local-package invocation spells the hint with the program as typed", hint, "./clawwright");
+  checkTrue("...and never the bare installed spelling", !/(^|[^/.\w])clawwright init --local/.test(localPackageHint.output));
   check("init declares --local through the argument machinery", INIT_ARGUMENTS.map((argument) => argument.name), ["local"]);
 
   // The localTypesOnly path must parse argv like every other path: an unknown flag is
@@ -76,7 +76,7 @@ try {
   const homepage = (JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { homepage: string }).homepage;
   check("docsUrl points at the package's own repository, default branch", docsUrl("x.md"), `${homepage.replace(/#readme$/, "")}/blob/main/docs/x.md`);
 } finally {
-  setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+  setInvocation({ program: "./clawwright", mode: "checkout", audience: "terminal" });
   await rm(fixtureRoot, { recursive: true, force: true });
 }
 

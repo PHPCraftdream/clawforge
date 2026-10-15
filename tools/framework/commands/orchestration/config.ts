@@ -1,4 +1,4 @@
-// `clawforge apply-config` — applies config/desired-state.json to the instance.
+// `clawwright apply-config` — applies config/desired-state.json to the instance.
 //
 // The declaration in the repository is the source of
 // truth: editing openclaw.json on a host makes that host diverge, re-applying brings it
@@ -40,10 +40,10 @@ export const APPLY_CONFIG_ARGUMENTS = [
  *  A real run stages under this shared name, only while holding the instance lock. A dry
  *  run gets its own name: it deliberately takes no lock, and the shared file without one
  *  could replace the payload a concurrent real apply was about to read. */
-const stagedName = "clawforge-desired.json";
+const stagedName = "clawwright-desired.json";
 
 export function stagedFileName(dryRun: boolean): string {
-  return dryRun ? `clawforge-desired.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
+  return dryRun ? `clawwright-desired.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
 }
 
 export function declarationExistsRefusal(path: string): string {
@@ -65,7 +65,7 @@ export const RESTART_ADVICE = "restart to pick it up";
 
 export function appliedHeadline(restartAdvice: boolean): string {
   return restartAdvice
-    // Not `clawforge up`: a healthy container already converges on `up`, reporting success
+    // Not `clawwright up`: a healthy container already converges on `up`, reporting success
     // while leaving the old settings live.
     ? `desired state applied — ${RESTART_ADVICE}: ${commandLine("restart")}`
     : "desired state applied";

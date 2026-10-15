@@ -1,7 +1,7 @@
-=== ./clawforge help ===
+=== ./clawwright help ===
 ==> golden-fixture — deployment of a self-hosted OpenClaw instance
     
-    Usage: ./clawforge --app golden-fixture <command> [options]
+    Usage: ./clawwright --app golden-fixture <command> [options]
     
     Start & stop:
       bootstrap            Bring the instance up (idempotent)
@@ -64,7 +64,7 @@
       new-app              Create a deployment under apps/
       remove-app           Delete apps/<name> *
       list                 List deployments under apps/
-      version              Print clawforge's own version (also: --version, -v)
+      version              Print clawwright's own version (also: --version, -v)
       completion           Print a shell completion script (bash, zsh or pwsh) to stdout
       --app <name>         Pick another deployment, before the command (default: the OC_APP one)
       control-mcp          Expose golden-fixture's commands as MCP tools, for agents
@@ -72,11 +72,11 @@
     
       ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
     
-    Run `./clawforge --app golden-fixture help <command>` or `./clawforge --app golden-fixture <command> --help` for its full description.
+    Run `./clawwright --app golden-fixture help <command>` or `./clawwright --app golden-fixture <command> --help` for its full description.
 
-=== ./clawforge check --help ===
+=== ./clawwright check --help ===
 ==> check — Framework preflight checks (no instance needed)
-    Usage: ./clawforge check [--list] [--jobs <n>] [--require <cap,...>] [--timings] [--top <n>] [--related] [--base <rev>] [<filter…>]
+    Usage: ./clawwright check [--list] [--jobs <n>] [--require <cap,...>] [--timings] [--top <n>] [--related] [--base <rev>] [<filter…>]
       --list                 Print matching check paths only
       --jobs <n>             Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))
       --require <cap,...>    Comma-separated capabilities (docker, wsl, posix-sh, rsync, linux-host) whose absence must fail a check that needs them, instead of skipping it — merged with OC_CHECK_REQUIRE
@@ -86,36 +86,36 @@
       --base <rev>           Revision --related diffs against (default: merge-base with the upstream branch, else HEAD~1)
       <filter…>              Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any
     
-    Paths, archives, the argument contract, what a server delivery contains, secret masking — the parts where a mistake is silent. `./clawforge smoke` covers a live instance instead.
-    With no filter, every check runs. One or more substrings narrow that down to checks whose path contains at least one of them, e.g. `./clawforge check gate` or `npm run check -- foundation runtime`. `--list` prints the matching paths (and, where one is declared, the host capabilities a file needs) without running them. A filter matching nothing is refused rather than silently running everything.
+    Paths, archives, the argument contract, what a server delivery contains, secret masking — the parts where a mistake is silent. `./clawwright smoke` covers a live instance instead.
+    With no filter, every check runs. One or more substrings narrow that down to checks whose path contains at least one of them, e.g. `./clawwright check gate` or `npm run check -- foundation runtime`. `--list` prints the matching paths (and, where one is declared, the host capabilities a file needs) without running them. A filter matching nothing is refused rather than silently running everything.
     A file naming a capability it cannot run without (docker, wsl, posix-sh, rsync, linux-host) is skipped, not failed, when this host lacks it. `--require` (or OC_CHECK_REQUIRE) names capabilities this host is expected to have, turning a skip into a failure for those. `--timings` prints the stored per-file timing ranking (median of the recent samples in `.check-timings.json`) without running anything.
     --related selects instead the checks the changes between --base (default: merge-base with the upstream branch, else HEAD~1) and the working tree touch; substring filters then narrow the related set down further.
 
-=== ./clawforge new-app --help ===
+=== ./clawwright new-app --help ===
 ==> new-app — Create a deployment under apps/
-    Usage: ./clawforge new-app <name>
+    Usage: ./clawwright new-app <name>
       <name>                 Deployment name (required)
     
     Writes apps/<name>/ with a .env (own data directory and project-specific port), config/desired-state.json and an app.ts declaring every framework command.
     The port avoids readable sibling .env files; it is not a host availability check. Bootstrap checks active Docker deployments AND raw listening sockets (ss/netstat) on the target before preparing data or pulling an image.
-    Refuses an existing directory unless it is empty — run this once per deployment, then ./clawforge --app <name> bootstrap.
+    Refuses an existing directory unless it is empty — run this once per deployment, then ./clawwright --app <name> bootstrap.
 
-=== ./clawforge remove-app --help ===
+=== ./clawwright remove-app --help ===
 ==> remove-app — Delete apps/<name>
-    Usage: ./clawforge remove-app <name> [--yes]
+    Usage: ./clawwright remove-app <name> [--yes]
       <name>                 Deployment name (required)
       --yes                  Perform the removal, not a dry run
     
     Deletes apps/<name>/ — the repository-side deployment directory (.env, config/, secrets/, recipes/, app.ts, client MCP configs). Never touches the target: an instance this deployment bootstrapped is untouched by this command.
     Default is a dry run: lists the top-level entries and total size, and warns when the directory carries its own `.git` history (apps/<name> is not tracked by this repository's own git — see new-app's gitInitAdvice), then exits 0 without removing anything. --yes performs the removal.
-    Refuses while the deployment still has a bootstrapped instance (running or stopped-but-bootstrapped, read the same way ./clawforge list reads it) — ./clawforge --app <name> destroy first (and --data if the data should go too).
+    Refuses while the deployment still has a bootstrapped instance (running or stopped-but-bootstrapped, read the same way ./clawwright list reads it) — ./clawwright --app <name> destroy first (and --data if the data should go too).
     Refuses a name that is not a plain deployment name (the same rule new-app enforces), and refuses when the directory is itself a symlink.
     
     This command can replace or destroy state, depending on the flags given.
 
-=== ./clawforge list --help ===
+=== ./clawwright list --help ===
 ==> list — List deployments under apps/
-    Usage: ./clawforge list [--json] [--no-status]
+    Usage: ./clawwright list [--json] [--no-status]
       --json                 JSON array, not text
       --no-status            Config only; do not query targets
     
@@ -124,21 +124,21 @@
     --no-status skips asking the target altogether, for a fast read of configuration alone; state then reads "not checked".
     --json prints the same rows as an array of objects instead.
 
-=== ./clawforge version --help ===
-==> version — Print clawforge's own version (also: --version, -v)
-    Usage: ./clawforge version [--json] [--verbose]
+=== ./clawwright version --help ===
+==> version — Print clawwright's own version (also: --version, -v)
+    Usage: ./clawwright version [--json] [--verbose]
       --json                 Emit { name, version, source, path } instead of the one-line text
       --verbose              Also print which copy runs and where
     
     Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. --verbose / --json also say which copy runs: global, local (the app's own dependency) or checkout, and its path.
 
-=== ./clawforge completion --help ===
+=== ./clawwright completion --help ===
 ==> completion — Print a shell completion script (bash, zsh or pwsh) to stdout
-    Usage: ./clawforge completion <shell>
+    Usage: ./clawwright completion <shell>
       <shell>                bash, zsh or pwsh [bash|zsh|pwsh] (required)
     
     Generated from the live command declarations — names, flags, and a multi-action command's own flags under the right action — so it cannot drift from --help.
-    Install: eval "$(./clawforge completion bash)"; ./clawforge completion zsh > "${fpath[1]}/_clawforge"; or take ./clawforge completion pwsh  (in bash) and pipe it through Out-String and Invoke-Expression.
+    Install: eval "$(./clawwright completion bash)"; ./clawwright completion zsh > "${fpath[1]}/_clawwright"; or take ./clawwright completion pwsh  (in bash) and pipe it through Out-String and Invoke-Expression.
     --app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.
     Completes the built-in commands only: a command a deployment declares itself is not offered, since the script is generated without loading any deployment.
     No deployment is resolved, no .env is read, no lock is touched.
@@ -146,7 +146,7 @@
 === deployment commands (both entries render these identically) ===
 === bootstrap --help ===
 ==> bootstrap — Bring the instance up (idempotent)
-    Usage: ./clawforge bootstrap [--no-pull] [--check] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright bootstrap [--no-pull] [--check] [--break-lock] [--break-foreign-lock <hostId>] [--json]
       --no-pull              Use the local image
       --check                Prerequisite report; read-only
       --break-lock           Take over the instance lock held by another operation
@@ -159,7 +159,7 @@
 
 === up --help ===
 ==> up — Start the service; wait until it serves
-    Usage: ./clawforge up [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright up [--break-lock] [--break-foreign-lock <hostId>]
       --break-lock           Take over the instance lock held by another operation
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
@@ -169,18 +169,18 @@
 
 === restart --help ===
 ==> restart — Restart so the instance re-reads its config
-    Usage: ./clawforge restart [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright restart [--break-lock] [--break-foreign-lock <hostId>]
       --break-lock           Take over the instance lock held by another operation
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
     `up` cannot do this: it converges on "running", and an instance that is already running and healthy is already converged — an edit to openclaw.json inside a bind mount changes nothing the runtime compares.
     That is why apply-config and configure-provider point here: their changes only take effect on the next start of the gateway process.
-    Restart re-reads what the container can see — never what compose baked into it: the environment was interpolated from the deployment .env once, at creation, and no restart changes it. A rotated repo-env secret needs the recreate that `secrets --apply` performs itself, or `./clawforge up`.
+    Restart re-reads what the container can see — never what compose baked into it: the environment was interpolated from the deployment .env once, at creation, and no restart changes it. A rotated repo-env secret needs the recreate that `secrets --apply` performs itself, or `./clawwright up`.
     Secrets are checked first, same as `up`; the port is not, since the container keeps the binding it already holds.
 
 === down --help ===
 ==> down — Stop and remove the containers (data is kept)
-    Usage: ./clawforge down [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright down [--break-lock] [--break-foreign-lock <hostId>]
       --break-lock           Take over the instance lock held by another operation
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
     
@@ -188,7 +188,7 @@
 
 === destroy --help ===
 ==> destroy — Remove what bootstrap created
-    Usage: ./clawforge destroy [--data] [--backups] [--snapshots] [--yes] [--confirm-name <name>] [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright destroy [--data] [--backups] [--snapshots] [--yes] [--confirm-name <name>] [--break-lock] [--break-foreign-lock <hostId>]
       --data                 Remove data directory (OC_DATA_DIR)
       --backups              Remove backup directory (OC_BACKUP_DIR)
       --snapshots            Remove snapshot directory (OC_SNAPSHOT_DIR)
@@ -200,7 +200,7 @@
     
     The inverse of bootstrap. Always stops and removes the compose project's containers, network and volumes (down, plus volumes) — nothing else goes without its own flag:
     --data removes the data directory (OC_DATA_DIR), --backups the backup directory (OC_BACKUP_DIR), --snapshots the snapshot directory (OC_SNAPSHOT_DIR).
-    Never touches the deployment directory itself (.env, config/, recipes/, secrets/) — remove that with ./clawforge remove-app once this instance is gone.
+    Never touches the deployment directory itself (.env, config/, recipes/, secrets/) — remove that with ./clawwright remove-app once this instance is gone.
     Default is a dry run: prints exactly what would be removed (container/network/volume names, and each requested directory's path and size via du -sk) and exits 0 — nothing is touched, no lock is taken.
     A real run needs BOTH --yes and --confirm-name <name> matching this deployment's own name, so a typo cannot remove the wrong instance; it then takes the instance lock like every other mutating command (--break-lock/--break-foreign-lock).
     Each requested path is refused outright rather than removed when it is not an absolute path, is a top-level or home-directory-shaped path, or is itself a symlink — these are the deployment's own declared directories, never a path typed on the command line, so this is a sanity check on the deployment's .env, not on user input.
@@ -210,7 +210,7 @@
 
 === logs --help ===
 ==> logs — Follow the service log, or read a tail
-    Usage: ./clawforge logs [--tail <n>] [--since <duration|timestamp>] [--grep <pattern>]
+    Usage: ./clawwright logs [--tail <n>] [--since <duration|timestamp>] [--grep <pattern>]
       --tail <n>             Lines to return
       --since <duration|timestamp> Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)
       --grep <pattern>       Only matching lines
@@ -222,7 +222,7 @@
 
 === backup --help ===
 ==> backup — Snapshot data; list, prune, schedule
-    Usage: ./clawforge backup [<action>] [--profile <profile>] [--hot] [--native] [--share] [--migrate] [--with-secrets] [--dry-run] [--json] [--apply] [--keep <n>] [--break-lock] [--break-foreign-lock <hostId>] [--interval <interval>]
+    Usage: ./clawwright backup [<action>] [--profile <profile>] [--hot] [--native] [--share] [--migrate] [--with-secrets] [--dry-run] [--json] [--apply] [--keep <n>] [--break-lock] [--break-foreign-lock <hostId>] [--interval <interval>]
       <action>               Omit to create a backup; an action word lists or manages backups instead [list|prune-replaced|install|uninstall|create]
       --profile <profile>    full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files) (create) [full|migrate|share]
       --hot                  Do not stop the service (risks a partial write) (create)
@@ -247,25 +247,25 @@
     
     With no action: stops the gateway for the duration by default — OpenClaw keeps state in SQLite with a multi-megabyte -wal sibling, and a copy taken mid-write is not restorable.
     --hot skips the stop for those who accept that risk.
-    --profile controls what travels in the archive (see `./clawforge help pull` for what each profile excludes); --share, --migrate and --with-secrets are shorthands for it, the same vocabulary `pull` accepts — plain backups default to full, unlike `pull`, which defaults to migrate.
+    --profile controls what travels in the archive (see `./clawwright help pull` for what each profile excludes); --share, --migrate and --with-secrets are shorthands for it, the same vocabulary `pull` accepts — plain backups default to full, unlike `pull`, which defaults to migrate.
     --native takes a consistent snapshot WITHOUT stopping the gateway instead, via OpenClaw's own `backup create --verify` in the running instance's sidecar rather than a raw tar over live state — full profile only.
     The archive it publishes is still an ordinary full backup (rotate/restore need no native-specific case), with the pristine OpenClaw archive embedded inside so `restore` can re-verify it before unpacking anything else.
     What this actually guarantees: the SQLite state (config/state, config, identity, devices) is a genuine point-in-time snapshot from OpenClaw's own mechanism, not from stopping the container.
     auth-secrets/ and any live file OpenClaw's own backup left out (in the pinned image: session transcripts under agents/<id>/sessions/) are copied in afterwards, computed generically — whatever exists live and is absent from OpenClaw's own payload, never a hardcoded name — and the count is reported.
     Those copies are hot: an append-only transcript's last line can be truncated by a write landing mid-copy, the same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.
     If the application declares afterBackup (see docs/guide/data-and-backups.md: Extending backup and restore), it runs once the archive is published and rotated — never for an internal archive smoke takes purely to prove the mechanism works. A hook that fails never deletes the archive: the failure is reported with the published path and a non-zero exit.
-    list — read-only: every archive in the backup directory (name, size, date, profile parsed from the name) and every `<data>.replaced-*` copy restore left next to the data directory (name, size, date); marks which archive a bare `./clawforge restore` would pick by default. --json for machine output.
+    list — read-only: every archive in the backup directory (name, size, date, profile parsed from the name) and every `<data>.replaced-*` copy restore left next to the data directory (name, size, date); marks which archive a bare `./clawwright restore` would pick by default. --json for machine output.
     prune-replaced — deletes `<data>.replaced-*` copies, which otherwise accumulate forever: previews what would be removed by default, only --apply removes anything, --keep <n> keeps that many newest instead of deleting all of them.
     Refuses anything that is not exactly one of those copies (a symlink, the data directory itself, an unrelated name), takes the instance lock while --apply runs.
     Archive pruning is already handled by this command's own rotation (OC_BACKUP_KEEP) — prune-replaced never touches an archive.
-    install / uninstall — print (and, with --apply, install through the transport) a crontab entry that runs a plain `./clawforge backup` every --interval (default 1d) — 30m, 6h or 1d, an explicit unit required (a bare number is minutes only for `watch install`); minutes must divide 60, hours must divide a day; anything else is refused, naming the nearest valid values — the schedule OC_BACKUP_KEEP presumes but nothing installed before this,
+    install / uninstall — print (and, with --apply, install through the transport) a crontab entry that runs a plain `./clawwright backup` every --interval (default 1d) — 30m, 6h or 1d, an explicit unit required (a bare number is minutes only for `watch install`); minutes must divide 60, hours must divide a day; anything else is refused, naming the nearest valid values — the schedule OC_BACKUP_KEEP presumes but nothing installed before this,
     mirroring `watch install`/`watch uninstall` exactly (same marker convention, same POSIX-only trust boundary, same Windows fallback: a printed `schtasks` entry, applied for real on --apply on an actual Windows host).
     
     This command can replace or destroy state, depending on the action given.
 
 === restore --help ===
 ==> restore — Restore an archive over current state
-    Usage: ./clawforge restore [<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--no-start] [--dry-run] [--json]
+    Usage: ./clawwright restore [<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--no-start] [--dry-run] [--json]
       <archive>              Archive; newest if omitted
       --force                Skip the confirmation
       --break-lock           Take over the instance lock held by another operation
@@ -287,7 +287,7 @@
 
 === pull --help ===
 ==> pull — Snapshot the instance to the snapshot directory
-    Usage: ./clawforge pull [--profile <profile>] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright pull [--profile <profile>] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock] [--break-foreign-lock <hostId>] [--json]
       --profile <profile>    full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files) [full|migrate|share]
       --share                Share profile, verified
       --with-secrets         Full profile, with keys
@@ -308,7 +308,7 @@
 
 === push --help ===
 ==> push — Push a snapshot onto the instance
-    Usage: ./clawforge push [<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--dry-run] [--json]
+    Usage: ./clawwright push [<archive>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--fresh-identity] [--dry-run] [--json]
       <archive>              Snapshot; newest if omitted
       --force                Skip the confirmation
       --break-lock           Take over the instance lock held by another operation
@@ -325,12 +325,12 @@
 
 === verify --help ===
 ==> verify — Check a snapshot for credentials
-    Usage: ./clawforge verify <archive> [--profile <profile>] [--json]
+    Usage: ./clawwright verify <archive> [--profile <profile>] [--json]
       <archive>              Archive to inspect (required)
       --profile <profile>    full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files) [full|migrate|share]
       --json                 Emit the verdict and findings as JSON — locations and kinds only, never credential values
     
-    What `./clawforge pull --share` runs automatically, callable by hand against any archive.
+    What `./clawwright pull --share` runs automatically, callable by hand against any archive.
     Structural checks (no absolute paths, no `..` escapes, no link writing outside the archive) run first and need no unpacking;
     then the archive is unpacked and searched for this instance's actual secret values —
     provider keys and the gateway token are never acceptable outside `full`, this instance's own identity/device tokens are expected in `migrate` but fatal in `share`.
@@ -340,7 +340,7 @@
 
 === upgrade --help ===
 ==> upgrade — Update the image by digest; rollback on failure
-    Usage: ./clawforge upgrade [--image <ref>] [--dry-run] [--json] [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright upgrade [--image <ref>] [--dry-run] [--json] [--break-lock] [--break-foreign-lock <hostId>]
       --image <ref>          Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE
       --dry-run              Plan only
       --json                 Outcome as JSON
@@ -352,14 +352,14 @@
     --image repo@sha256:… names exact content; without a tag it keeps this deployment's tag when it names the same repository, so the pin stays a channel a plain upgrade can re-resolve — a digest of a different repository pins as-is, and the next plain upgrade then needs --image <repo:tag>. A pin left with no tag (repo@sha256:… from before pins kept one) has no channel to recover without guessing, and is refused with --image <repo:tag> as the remedy.
     Records the currently running digest, takes a consistent pre-upgrade backup (the native path from `backup --native` when the image supports it, else a stopped full backup), recreates the gateway on the new digest, waits for /startupz then /readyz, and runs `openclaw doctor --lint`.
     On any failure it recreates on the previous digest; when the failure was the container exiting during migrations (upstream: code 78), it also restores the pre-upgrade backup, since the data may already have changed.
-    On success it pins the deployment's OPENCLAW_IMAGE to repo:tag@sha256:… (the channel it was resolved from, alongside the new digest), so a later recreate stays on it — re-pin the deployment's own record with ./clawforge lock afterwards.
+    On success it pins the deployment's OPENCLAW_IMAGE to repo:tag@sha256:… (the channel it was resolved from, alongside the new digest), so a later recreate stays on it — re-pin the deployment's own record with ./clawwright lock afterwards.
     --dry-run prints the current digest, the channel, what it resolves to at the registry, and whether that is an upgrade — changing nothing, not even taking the instance lock.
     
     This command can replace or destroy state, depending on the flags given.
 
 === smoke --help ===
 ==> smoke — Acceptance run: health, agent, config, snapshots, MCP
-    Usage: ./clawforge smoke [--quick] [--json]
+    Usage: ./clawwright smoke [--quick] [--json]
       --quick                Skip the slow check
       --json                 Outcome as JSON
     
@@ -367,14 +367,14 @@
     the gateway is healthy by both the HTTP probes and the runtime's own verdict; the agent answers end to end, meaning the provider key actually resolved;
     a manually drifted setting is overridden back to the declaration; a snapshot restores byte-for-byte;
     the verifier both accepts a shareable archive AND rejects one carrying credentials; the MCP bridge speaks clean JSON-RPC.
-    The drift check restores the declaration on its way out, verdict already in; if that restore fails, the check fails saying the instance may still hold the drifted value and naming ./clawforge apply-config as the repair.
+    The drift check restores the declaration on its way out, verdict already in; if that restore fails, the check fails saying the instance may still hold the drifted value and naming ./clawwright apply-config as the repair.
     Every check lands as passed, failed, not-checked (this deployment makes the check inapplicable) or could-not-check (it could not obtain a verdict — the instance was unreachable, the call never answered); the run exits non-zero unless every applicable check passed.
     Briefly stops the gateway once, for the three archive-based checks (the shareable and secret-rejecting snapshots, and the round-trip backup/restore) — one outage window, typically well under a minute, not three; every other check runs with the gateway up.
     --quick skips the slow round-trip check, but still shares that one stop/start window with the two snapshot checks it does not skip.
 
 === inspect --help ===
 ==> inspect — Declared versus running, with differences
-    Usage: ./clawforge inspect [--json]
+    Usage: ./clawwright inspect [--json]
       --json                 Whole inspection as JSON
     
     One answer instead of the several commands whose results a coder otherwise has to combine: gateway state and both health verdicts, the image and its digest, every declared setting against its live value, which secrets are in place, and what each recipe expects (its agent, MCP server, cron job and mirrored files) against what the instance actually has.
@@ -386,47 +386,47 @@
     and the default local store missing a value the target still holds (STORE_INCOMPLETE — watched only when the store file exists, since bootstrap puts values on the target without creating one).
     All three are warnings that name the command that repairs them: recover-env, apply-config --dump, secrets --dump. The instance is fine; what is at risk is reproducing it.
     observed.connectionFacts and observed.secretStore carry the per-fact comparison and the store's missing names; absent means not checked, never checked-and-fine.
-    Read-only: it starts, writes and registers nothing. `./clawforge plan` turns its findings into actions.
-    The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — `./clawforge cli-start` first makes this noticeably faster.
+    Read-only: it starts, writes and registers nothing. `./clawwright plan` turns its findings into actions.
+    The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — `./clawwright cli-start` first makes this noticeably faster.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === doctor --help ===
 ==> doctor — Report what is wrong and what to run
-    Usage: ./clawforge doctor [--json]
+    Usage: ./clawwright doctor [--json]
       --json                 Verdict and next actions as JSON
     
-    The same inspection as `./clawforge inspect`, read for its problems rather than its inventory — one gatherer, so the two can never disagree.
+    The same inspection as `./clawwright inspect`, read for its problems rather than its inventory — one gatherer, so the two can never disagree.
     Exits non-zero when a blocking problem was found, which is the part a CI step or an agent can act on without reading the text.
     Warnings do not fail it: an instance with no lock file still works, and an outbound endpoint the container cannot reach this second — EGRESS_UNREACHABLE, asked of the container itself — is the outside world's doing, not the instance's.
     The deployment-folder findings — a stale .env fact, a missing desired-state.json, an incomplete local store — are warnings for the same reason: the instance is doing its job, and a folder that is merely behind must not fail a build.
     A check that fails on everything it has an opinion about stops being consulted.
     Also runs the security gate — `openclaw security audit` and `openclaw secrets audit` inside the instance, plus what only the host side can see: the gateway published on every interface (blocking unless acknowledged in config/security-suppressions.json), a public port that Docker's DOCKER-USER chain may let bypass an active UFW, and the deployment's own secret file permissions.
-    Never every ./clawforge inspect/plan call — each audit is a container exec — only doctor and accept. Suppress a finding by upstream checkId in config/security-suppressions.json; it stays visible but stops counting.
+    Never every ./clawwright inspect/plan call — each audit is a container exec — only doctor and accept. Suppress a finding by upstream checkId in config/security-suppressions.json; it stays visible but stops counting.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === plan --help ===
 ==> plan — Actions the declaration implies, without running
-    Usage: ./clawforge plan [--set <artifact>] [--json]
+    Usage: ./clawwright plan [--set <artifact>] [--json]
       --set <artifact>       Plan from a built set
       --json                 Plan as JSON
     
-    Turns what `./clawforge inspect` found into steps, in the order the dependencies actually require — a never-bootstrapped deployment first, secrets before anything starts, configuration before the restart that reads it, the gateway up before provisioning talks to it, recipes last.
+    Turns what `./clawwright inspect` found into steps, in the order the dependencies actually require — a never-bootstrapped deployment first, secrets before anything starts, configuration before the restart that reads it, the gateway up before provisioning talks to it, recipes last.
     That order is the framework's job. Before this command it lived in whoever had learned it.
     Each step says which finding put it there.
     A few steps are advisory: reconnecting an MCP client is something only the client can do, the lock file is never re-pinned automatically since doing that would rubber-stamp whatever drifted,
     and any other problem this framework has no specific step for yet still gets one — named advisory rather than left out, so a problem plan cannot act on is still a problem the reader sees, never one "nothing to do" quietly absorbs.
-    Recovery steps appear early too: a stale .env plans ./clawforge recover-env and a missing desired-state.json plans ./clawforge apply-config --dump, both run exactly as planned — the dump's --force refusal protects an existing declaration, and this one is absent.
-    An incomplete local store plans ./clawforge secrets --dump as advisory instead: it refuses to overwrite an existing store without --force, and whether the store's contents matter is the reader's decision, not a step.
+    Recovery steps appear early too: a stale .env plans ./clawwright recover-env and a missing desired-state.json plans ./clawwright apply-config --dump, both run exactly as planned — the dump's --force refusal protects an existing declaration, and this one is absent.
+    An incomplete local store plans ./clawwright secrets --dump as advisory instead: it refuses to overwrite an existing store without --force, and whether the store's contents matter is the reader's decision, not a step.
     "nothing to do" prints only once inspect finds this deployment healthy with no problems at all — never merely because plan has no step for what it found.
-    Changes nothing. `./clawforge apply` runs exactly this list.
+    Changes nothing. `./clawwright apply` runs exactly this list.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === apply --help ===
 ==> apply — Apply the plan, then confirm the instance
-    Usage: ./clawforge apply [--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright apply [--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--json]
       --set <artifact>       Install a built set
       --expect <checksum>    Plan checksum
       --dry-run              Show the steps only
@@ -434,12 +434,12 @@
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Outcome as JSON
     
-    Runs exactly the steps `./clawforge plan` lists, in that order, and stops at the first failure — the steps depend on each other, so continuing would report success for an instance nobody has. Every step lands in the operation journal as done, failed, advisory (never this command's job) or blocked (an earlier step already failed) — the words `./clawforge operations` reads back, nothing left out.
+    Runs exactly the steps `./clawwright plan` lists, in that order, and stops at the first failure — the steps depend on each other, so continuing would report success for an instance nobody has. Every step lands in the operation journal as done, failed, advisory (never this command's job) or blocked (an earlier step already failed) — the words `./clawwright operations` reads back, nothing left out.
     Then it inspects again and reports what it found. "Applied" and "working" are different claims and this command makes the stronger one: every step can succeed and the instance still be broken for a reason no step was looking at.
     --expect <checksum> refuses to run if the declaration changed since that plan was computed (the plan's declarationChecksum). Checked before the first step, because the whole value of the refusal is that it happens first.
-    Advisory steps are never performed: reconnecting an MCP client is the client's to do, re-pinning the lock file is a decision, not a repair, and so is the store recovery a plan lists when the local secret store is incomplete — ./clawforge secrets --dump would overwrite it only with --force, so apply reports the step as advisory and leaves the decision where it belongs.
+    Advisory steps are never performed: reconnecting an MCP client is the client's to do, re-pinning the lock file is a decision, not a repair, and so is the store recovery a plan lists when the local secret store is incomplete — ./clawwright secrets --dump would overwrite it only with --force, so apply reports the step as advisory and leaves the decision where it belongs.
     The operator-side recovery steps that are executable — recover-env, apply-config --dump — run under the same rules as every step: one operation id, a journal entry each, stop at the first failure; they write to the deployment folder rather than the instance, so their runners take no instance lock of their own.
-    --dry-run only lists what the plan computed — it touches nothing, so it cannot tell you whether desired-state.json would actually validate against the target's own schema. `./clawforge apply-config --dry-run` does: a real (lockless) `config set --batch-file --dry-run` against the target, usable even before the instance is healthy.
+    --dry-run only lists what the plan computed — it touches nothing, so it cannot tell you whether desired-state.json would actually validate against the target's own schema. `./clawwright apply-config --dry-run` does: a real (lockless) `config set --batch-file --dry-run` against the target, usable even before the instance is healthy.
     
     This command can replace or destroy state, depending on the flags given.
     
@@ -447,24 +447,24 @@
 
 === accept --help ===
 ==> accept — Run this deployment's acceptance checks
-    Usage: ./clawforge accept [<recipe>] [--set <artifact>] [--with-model] [--json]
+    Usage: ./clawwright accept [<recipe>] [--set <artifact>] [--with-model] [--json]
       <recipe>               Recipe to check (default: every recipe that declares checks)
       --set <artifact>       Check the verified artifact and save an acceptance receipt
       --with-model           Include model checks
       --json                 Report as JSON
     
-    `./clawforge smoke` proves the instance is healthy. It cannot say whether the wiki a recipe serves is reachable, whether the agent built from that recipe has the tools it was given, or whether its cron job matches what the recipe declares — those are properties of this deployment, not of the framework.
+    `./clawwright smoke` proves the instance is healthy. It cannot say whether the wiki a recipe serves is reachable, whether the agent built from that recipe has the tools it was given, or whether its cron job matches what the recipe declares — those are properties of this deployment, not of the framework.
     So a recipe declares them in recipes/<name>/acceptance.json and this runs them. The check kinds are the framework's (mcp_responds, mcp_tool, agent_has_tools, cron_matches, agent_answers); no code travels from a deployment into the framework.
     Checks marked usesModel are never run without --with-model: they cost tokens and take an agent turn, which writes to that agent's own workspace. They are always reported as "not-checked" and counted — a suite that silently drops what it did not run reads as coverage it does not have.
     A check that was attempted but got no verdict — the server would not start, the instance refused the call — is reported as "could-not-check" with the reason, never as passed.
-    Also runs the security gate — see `./clawforge doctor`'s own description — and fails on a blocking finding the same way a failed check does.
+    Also runs the security gate — see `./clawwright doctor`'s own description — and fails on a blocking finding the same way a failed check does.
     Exits non-zero when a check fails, could not be checked, or the security gate finds a blocking issue.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === rollback --help ===
 ==> rollback — Restore the configuration an operation replaced
-    Usage: ./clawforge rollback [--operation <id>] [--no-restart] [--previous-set] [--break-lock] [--break-foreign-lock <hostId>] [--json] [--dry-run]
+    Usage: ./clawwright rollback [--operation <id>] [--no-restart] [--previous-set] [--break-lock] [--break-foreign-lock <hostId>] [--json] [--dry-run]
       --operation <id>       Operation id to undo (default: the most recent one with a snapshot)
       --no-restart           Restore without restarting
       --previous-set         Reinstall the previously installed set instead of restoring one config file
@@ -474,11 +474,11 @@
       --dry-run              What would happen
       --previous-set cannot be combined with any of --operation or --no-restart
     
-    `./clawforge apply` copies the live configuration aside before its first mutating step. This puts that copy back and restarts, because a configuration the instance has not read is not in force.
-    Not the same operation as `./clawforge push`, and the difference matters at exactly the wrong moment: push replaces the whole data directory from a snapshot — every workspace, every agent's memory, every transcript written since. This replaces one file. Undoing a bad configuration should not cost an agent its notes.
+    `./clawwright apply` copies the live configuration aside before its first mutating step. This puts that copy back and restarts, because a configuration the instance has not read is not in force.
+    Not the same operation as `./clawwright push`, and the difference matters at exactly the wrong moment: push replaces the whole data directory from a snapshot — every workspace, every agent's memory, every transcript written since. This replaces one file. Undoing a bad configuration should not cost an agent its notes.
     Without --operation it undoes the most recent run that took a snapshot. A run that changed nothing took none and is not offered.
     The rollback is itself recorded as an operation.
-    --previous-set is a different path entirely: reinstalls the set that was installed here before the one currently in force — prompts, MCP registrations, schedules and gateway settings together, through ./clawforge apply --set, not this command's own single-file restore.
+    --previous-set is a different path entirely: reinstalls the set that was installed here before the one currently in force — prompts, MCP registrations, schedules and gateway settings together, through ./clawwright apply --set, not this command's own single-file restore.
     Refuses if no previous set is on record, or if its artifact is no longer in sets/.
     Neither path replaces the other: a deployment never installed from a set still has only the config-snapshot path above.
     
@@ -488,7 +488,7 @@
 
 === operations --help ===
 ==> operations — What mutating runs did and left behind
-    Usage: ./clawforge operations [<id>] [--limit <n>] [--takeover-lock] [--break-lock] [--break-foreign-lock <hostId>] [--confirmed] [--json]
+    Usage: ./clawwright operations [<id>] [--limit <n>] [--takeover-lock] [--break-lock] [--break-foreign-lock <hostId>] [--confirmed] [--json]
       <id>                   Operation id to show
       --limit <n>            How many recent operations to list (default 10)
       --takeover-lock        Release lock metadata only
@@ -502,7 +502,7 @@
       --break-foreign-lock requires --takeover-lock
     
     Every run that changes the instance writes a journal entry on the target as it goes — step by step, not at the end, because a run that dies halfway is exactly the case the record exists for.
-    Without an id this lists the most recent ones; with one it shows that run in full: which steps ran, which failed, which never started, and whether a configuration snapshot was taken that `./clawforge rollback` can put back.
+    Without an id this lists the most recent ones; with one it shows that run in full: which steps ran, which failed, which never started, and whether a configuration snapshot was taken that `./clawwright rollback` can put back.
     An operation with no outcome did not reach its own end — killed, disconnected or still running. That is reported as unfinished rather than dressed up as a result.
     
     This command can replace or destroy state, depending on the flags given.
@@ -511,7 +511,7 @@
 
 === apply-config --help ===
 ==> apply-config — Apply the deployment's desired-state.json
-    Usage: ./clawforge apply-config [--dry-run] [--dump] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright apply-config [--dry-run] [--dump] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]
       --dry-run              Validate the apply without writing; refused together with --dump
       --dump                 Reconstruct desired-state.json from the live instance's config
       --force                Overwrite an existing desired-state.json (with --dump); refused without it
@@ -540,7 +540,7 @@
 
 === expose --help ===
 ==> expose — Expose the gateway: SSH tunnel or tailscale
-    Usage: ./clawforge expose <action> [--local-port <port>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright expose <action> [--local-port <port>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>] [--json]
       <action>               ssh, tailscale or status [ssh|tailscale|status] (required)
       --local-port <port>    local port to bind (defaults to the gateway's own port) (ssh)
       --run                  open the tunnel in the foreground until Ctrl+C; needs a real terminal (ssh)
@@ -560,13 +560,13 @@
     tailscale — probes, on the target, whether `tailscale` exists and is logged in (`tailscale status --json`), then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>` command — tailnet-only HTTPS, never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given).
     --apply runs it on the target through the transport — mutating, so it needs MCP confirmation and the instance lock (guarded()), same as every other mutating command.
     status — the published bind address/port read back from the RUNNING container (never just .env, which can be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is 0.0.0.0 or ::.
-    The same one-line summary appears in `./clawforge status`. --json emits the same facts structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.
+    The same one-line summary appears in `./clawwright status`. --json emits the same facts structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.
     
     This command can replace or destroy state, depending on the action given.
 
 === watch --help ===
 ==> watch — Health monitoring with webhook alerts
-    Usage: ./clawforge watch <action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright watch <action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]
       <action>               check, install, uninstall, status or test [check|install|uninstall|status|test] (required)
       --json                 Emit JSON instead of text (check, status, test)
       --interval <interval>  time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24) (install)
@@ -620,7 +620,7 @@
 
 === incident --help ===
 ==> incident — Contain, collect evidence, rotate tokens, audit
-    Usage: ./clawforge incident [--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright incident [--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]
       --dry-run              Plan only
       --keep-exposure        Proceed with the gateway published on every interface
       --tail <n>             Log lines to collect (default 500)
@@ -630,13 +630,13 @@
     
     OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the `tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, which would also drop every other service's own route on that host);
     when the route shape cannot be parsed reliably, nothing is turned off and the exact manual command is printed instead.
-    Refuses the whole run outright while the gateway is published on every interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawforge up, or pass --keep-exposure if that is already handled elsewhere.
+    Refuses the whole run outright while the gateway is published on every interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawwright up, or pass --keep-exposure if that is already handled elsewhere.
     A contain failure (most commonly, this account is not the tailscale operator on the target — the report names the fix) is noted, never fatal: rotate still runs.
     preserve — before rotate can recreate the container, a log tail and a raw `docker inspect` of the container running right now are written into this run's own evidence directory;
     compose removes the old container once the new one is up, and its json-file log goes with it, so this has to happen first.
     rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into the running container so it actually takes effect (a repo-env value like this one is fixed at container-creation time);
-    every MCP client paired against the old token needs ./clawforge mcp-creds again.
-    audit — the same security gate `./clawforge doctor`/`./clawforge accept` run, plus `openclaw doctor --lint`, both reported here rather than gating the run.
+    every MCP client paired against the old token needs ./clawwright mcp-creds again.
+    audit — the same security gate `./clawwright doctor`/`./clawwright accept` run, plus `openclaw doctor --lint`, both reported here rather than gating the run.
     collect — a bounded log tail of whatever is running by then, both audit outputs and a short status summary, joined with preserve's own files into one manifest, into a private, owner-only apps/<name>/incidents/<timestamp>/ directory — never inside the repository's tracked tree (apps/ is gitignored wholesale);
     every file is masked for known secrets before it is written.
     preserve and collect run and write unconditionally, even when rotate or audit fails: the report still shows where the evidence landed, and the original failure still reaches you afterwards as a non-zero exit.
@@ -648,7 +648,7 @@
 
 === recover-env --help ===
 ==> recover-env — Repair .env from the running instance
-    Usage: ./clawforge recover-env [--dry-run] [--adopt-runtime] [--json]
+    Usage: ./clawwright recover-env [--dry-run] [--adopt-runtime] [--json]
       --dry-run              Changes only
       --adopt-runtime        Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing
       --json                 Outcome as JSON
@@ -662,7 +662,7 @@
 
 === memory --help ===
 ==> memory — Declare, set up, inspect, index, verify memory
-    Usage: ./clawforge memory <action> [--mode <mode>] [--backend <backend>] [--provider <id>] [--model <model>] [--env <var>] [--model-path <path>] [--model-checksum <sha256>] [--model-source <source>] [--model-version <version>] [--json] [--plugin-version <version>] [--model-max-bytes <bytes>] [--agent <id>] [--all-agents] [--allow-install] [--allow-download] [--deep] [--allow-spend]
+    Usage: ./clawwright memory <action> [--mode <mode>] [--backend <backend>] [--provider <id>] [--model <model>] [--env <var>] [--model-path <path>] [--model-checksum <sha256>] [--model-source <source>] [--model-version <version>] [--json] [--plugin-version <version>] [--model-max-bytes <bytes>] [--agent <id>] [--all-agents] [--allow-install] [--allow-download] [--deep] [--allow-spend]
       <action>               Memory action [plan|configure|setup|status|index|verify] (required)
       --mode <mode>          Intentional memory mode (plan, configure) [embeddings|keyword|disabled]
       --backend <backend>    Explicit backend (plan, configure) [builtin]
@@ -716,7 +716,7 @@
 
 === status --help ===
 ==> status — Show containers, image, health, data usage
-    Usage: ./clawforge status [--json]
+    Usage: ./clawwright status [--json]
       --json                 Status as JSON
     
     Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
@@ -726,37 +726,37 @@
 
 === lock --help ===
 ==> lock — Pin the instance's composition, or verify it
-    Usage: ./clawforge lock [--check] [--json]
+    Usage: ./clawwright lock [--check] [--json]
       --check                Compare instead of writing
       --json                 Lock or differences as JSON
     
     Writes config/deployment.lock.json: the framework version, the image reference and its resolved digest, a checksum per recipe file, a checksum of the declaration, and the names — never the values — of the secrets the instance requires.
     desired-state.json already reproduces the settings. What it cannot say is which image actually ran (a tag moves, a digest does not) or which version of a recipe's content an agent was answering from.
     The boundary, since it is easy to over-promise: this pins the composition, not the behaviour. The same lock brought up twice is the same code, image and content — and the model can still answer differently.
-    --check compares without writing; `./clawforge inspect` reports the same differences as warnings, because an instance that drifted from its lock still works and it is the reader who decides whether the difference was intended.
+    --check compares without writing; `./clawwright inspect` reports the same differences as warnings, because an instance that drifted from its lock still works and it is the reader who decides whether the difference was intended.
     Meant to be committed.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === cli --help ===
 ==> cli — Run the OpenClaw CLI in a throwaway container
-    Usage: ./clawforge cli <args…>
+    Usage: ./clawwright cli <args…>
       <args…>                Arguments passed to OpenClaw's CLI verbatim, e.g. ["config", "get", "gateway.mode"] (required)
     
     Everything after `cli` is passed straight through to OpenClaw's own CLI, e.g.
-    `./clawforge cli config get gateway.mode`.
+    `./clawwright cli config get gateway.mode`.
     By default each call is a fresh one-off container sharing the gateway's network namespace, paying for its create/destroy on every call.
-    Run `./clawforge cli-start` once and this execs into that container instead, skipping that cost — noticeably faster, though both paths go through the WSL2/Docker Desktop boundary either way and neither is instant.
-    `./clawforge cli --help` prints this text, same as `./clawforge help cli`; to reach OpenClaw's own --help instead, put it after a bare --: `./clawforge cli -- --help`.
+    Run `./clawwright cli-start` once and this execs into that container instead, skipping that cost — noticeably faster, though both paths go through the WSL2/Docker Desktop boundary either way and neither is instant.
+    `./clawwright cli --help` prints this text, same as `./clawwright help cli`; to reach OpenClaw's own --help instead, put it after a bare --: `./clawwright cli -- --help`.
     
     This command replaces or destroys state.
 
 === exec --help ===
 ==> exec — Run a command in the same sidecar as `cli`
-    Usage: ./clawforge exec <args…>
+    Usage: ./clawwright exec <args…>
       <args…>                Command and arguments to run, e.g. ["curl", "-fsS", "http://127.0.0.1:18789/healthz"] (required)
     
-    Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever command you give it, e.g. `./clawforge exec curl -fsS http://127.0.0.1:18789/healthz` or `./clawforge exec cat /app/docs/channels/telegram.md`.
+    Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever command you give it, e.g. `./clawwright exec curl -fsS http://127.0.0.1:18789/healthz` or `./clawwright exec cat /app/docs/channels/telegram.md`.
     Same container as `cli`: the OpenClaw image, the gateway's network namespace, the same data mounts, the same one-off-vs-helper choice.
     A captured run (over MCP or a pipe) decodes its output as UTF-8 text: bytes that are not valid UTF-8 come back as replacement characters, not the original bytes.
     
@@ -764,7 +764,7 @@
 
 === host --help ===
 ==> host — Run a command on the host, not in a container
-    Usage: ./clawforge host <context> [--root] [--confirm-root] <args…>
+    Usage: ./clawwright host <context> [--root] [--confirm-root] <args…>
       <context>              Where to run: target (the deployment's transport), engine (the container engine's machine), local (this machine) [target|engine|local] (required)
       --root                 Request root. On target/local: half of the elevation consent, dead without --confirm-root. On engine: half of the consent every command needs to run at all — the distro's only user is root (uid 0)
       --confirm-root         Second consent; both flags together are required — to elevate on target/local, and for an engine command to run at all
@@ -787,18 +787,18 @@
 === cli-start --help ===
 ==> cli-start — Start the persistent CLI helper
     
-    `./clawforge cli` and `./clawforge mcp-serve` normally pay for a fresh container on every call (`docker compose run --rm`) — creating and tearing one down costs several seconds even with a warm image.
+    `./clawwright cli` and `./clawwright mcp-serve` normally pay for a fresh container on every call (`docker compose run --rm`) — creating and tearing one down costs several seconds even with a warm image.
     This starts a long-lived container instead (same image, mounts and network as the one-off), so both commands `docker exec` into it instead of creating a new one — consistently faster, though the exact saving depends on how busy Docker Desktop's WSL2 VM is at the time.
-    Idempotent. Not started by `./clawforge up`; `./clawforge down` removes it along with anything else under the "cli" profile.
+    Idempotent. Not started by `./clawwright up`; `./clawwright down` removes it along with anything else under the "cli" profile.
 
 === cli-stop --help ===
 ==> cli-stop — Stop the persistent CLI helper
     
-    `./clawforge cli`/`./clawforge mcp-serve` fall back to a one-off container once this is stopped.
+    `./clawwright cli`/`./clawwright mcp-serve` fall back to a one-off container once this is stopped.
 
 === configure-provider --help ===
 ==> configure-provider — Configure model providers from target env vars
-    Usage: ./clawforge configure-provider [--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright configure-provider [--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]
       --provider <id>        Provider id, e.g. openai
       --env <var>            Secret variable, e.g. OPENAI_API_KEY
       --force                Replace an existing SecretRef
@@ -810,7 +810,7 @@
 
 === secrets --help ===
 ==> secrets — Show required secrets and their state
-    Usage: ./clawforge secrets [--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright secrets [--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]
       --template             Write template into config/
       --print-template       Template only
       --init-store           Create an empty store
@@ -844,7 +844,7 @@
 
 === recipe --help ===
 ==> recipe — Deploy service recipes beside the instance
-    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--apply] [--version <version>] [--artifact <basename>]
+    Usage: ./clawwright recipe [<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--apply] [--version <version>] [--artifact <basename>]
       <action>               Recipe action [list|import|new|check|verify|onboard|diagnose|install|trial|remove|inspect|recover|migrate|retire-legacy|status|logs|pin|run]
       <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, retire-legacy, status, logs, pin, run); Recipe whose *.check.ts files to run — they run with your rights, not sandboxed (check)
       <new-name>             import under this name instead of the source directory's own name (import)
@@ -912,7 +912,7 @@
 
 === provision-agent --help ===
 ==> provision-agent — Wire a recipe's MCP server to an OpenClaw agent
-    Usage: ./clawforge provision-agent <recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]
+    Usage: ./clawwright provision-agent <recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]
       <recipe>               Recipe name under recipes/ (required)
       --break-lock           Take over the instance lock held by another operation
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
@@ -921,11 +921,11 @@
     Idempotent, re-runnable: creates the isolated agent declared by recipes/<recipe>/agent/config.json if missing, mirrors the recipe's files into its data mount so the container can spawn its server.ts, registers it as an MCP server, and — if agent/cron-message.txt is present — adds a cron job that sends the agent that message on a schedule.
     Workspace prompt files (recipes/<recipe>/agent/*.md) are declared state and get rewritten every run, same as apply-config; anything the agent writes to its own workspace afterward (e.g. under memory/) is never touched by this command.
     A cron job needing a scope this deployment's "cli" client does not have yet is reported for manual approval through a trusted admin session or the Control UI; only accept and set try offer --with-model for explicit model approval. A scope upgrade never starts a model turn implicitly.
-    Requires the gateway to be running (./clawforge up).
+    Requires the gateway to be running (./clawwright up).
 
 === deploy --help ===
 ==> deploy — Deploy over SSH and bootstrap the server
-    Usage: ./clawforge deploy <target> [--path <path>] [--no-bootstrap] [--adopt] [--dry-run] [--json]
+    Usage: ./clawwright deploy <target> [--path <path>] [--no-bootstrap] [--adopt] [--dry-run] [--json]
       <target>               user@host (required)
       --path <path>          Remote install directory (default: OC_REMOTE_PATH)
       --no-bootstrap         Copy files without starting
@@ -939,7 +939,7 @@
     A custom recipesDir must be relative and stay inside the deployment; absolute or external recipe roots are refused before connecting.
     The server generates its own gateway token, so a leaked local one cannot unlock it, and provider keys are never copied — put them in <data>/config/.env there, same as locally.
     Refuses to touch anything if a dependency is missing on the server, rather than leaving it half set up.
-    Available only when the framework runs from a ClawForge checkout: there has to be a checkout for "mirror the framework" to mean anything. Installed as a package it refuses outright rather than mirroring whatever sits above the package.
+    Available only when the framework runs from a Clawwright checkout: there has to be a checkout for "mirror the framework" to mean anything. Installed as a package it refuses outright rather than mirroring whatever sits above the package.
     
     This command can replace or destroy state, depending on the flags given.
 
@@ -948,18 +948,18 @@
     
     Runs OpenClaw's own `mcp serve` and speaks JSON-RPC straight through stdio —
     this is the bridge an MCP client (Claude Code, Codex, Claude Desktop) uses to read and send messages in OpenClaw's channels.
-    Set up a client with `./clawforge mcp-setup`; this command is what the generated config actually invokes, not something to run by hand.
-    Not the same thing as `./clawforge control-mcp`, which exposes this deployment's own commands as MCP tools instead — mcp-setup registers both.
-    By default this is a one-off container; run `./clawforge cli-start` first and it execs into that container instead, cutting the wait before the client's first response — paid once per connection either way.
+    Set up a client with `./clawwright mcp-setup`; this command is what the generated config actually invokes, not something to run by hand.
+    Not the same thing as `./clawwright control-mcp`, which exposes this deployment's own commands as MCP tools instead — mcp-setup registers both.
+    By default this is a one-off container; run `./clawwright cli-start` first and it execs into that container instead, cutting the wait before the client's first response — paid once per connection either way.
 
 === mcp-setup --help ===
 ==> mcp-setup — Configure project MCP servers (Claude Code, Codex)
-    Usage: ./clawforge mcp-setup [--client <client>] [--json] [--rewrite-launcher]
+    Usage: ./clawwright mcp-setup [--client <client>] [--json] [--rewrite-launcher]
       --client <client>      Client configuration to update (default both) [claude|codex|both]
       --json                 Changed files as JSON
       --rewrite-launcher     Overwrite edited mcp-launch.mjs (refused by default)
     
-    Registers `clawforge` (mcp-serve, the bridge to OpenClaw's own channels) and `clawforge-control` —
+    Registers `clawwright` (mcp-serve, the bridge to OpenClaw's own channels) and `clawwright-control` —
     control-mcp, this deployment's own commands as tools (status, backup, secrets, and the rest), so they don't have to be typed by hand.
     Writes project .mcp.json for Claude Code and .codex/config.toml for Codex. Other servers and settings are preserved; invalid or ambiguous configuration is refused.
     init and new-app do this automatically. Use --client claude or --client codex to update only one client. Launch paths are resolved inside the project, without absolute host paths. The client may still require project trust or server approval; reconnect it after setup.
@@ -968,16 +968,16 @@
 
 === mcp-creds --help ===
 ==> mcp-creds — Print service URL, token and MCP client config
-    Usage: ./clawforge mcp-creds [--json] [--token]
+    Usage: ./clawwright mcp-creds [--json] [--token]
       --json                 Client config only
       --token                Gateway token only
     
-    The same information `./clawforge mcp-setup` writes to a file, printed instead —
+    The same information `./clawwright mcp-setup` writes to a file, printed instead —
     useful for pasting into a client by hand or checking what --json/--token would produce.
 
 === set --help ===
 ==> set — Build or validate the set artifact
-    Usage: ./clawforge set <action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]
+    Usage: ./clawwright set <action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]
       <action>               Set action [build|validate|diff|receipts|try|forget] (required)
       <artifacts…>           Two positional artifacts (diff)
       --name <name>          Set name (default: the deployment's name) (build, validate); Object name (forget)
@@ -1010,7 +1010,7 @@
     diff <A> <B> compares verified artifacts semantically; --from and --to provide the same inputs over MCP.
     receipts lists saved acceptance evidence; --set-id filters it and --receipt shows one record.
     try --set <artifact> installs it into a throwaway instance this creates on the spot — its own directory, data path and free port, never the real deployment's — runs whatever acceptance the set declares, and tears the instance down afterwards unless --keep is given. One operation: a coder gets back whether the set actually works without touching their own instance to find out.
-    forget --kind <agent|mcp-server|cron-job> --name <name> removes an object this framework created and stops tracking it — what ./clawforge plan proposes on its own for an orphaned MCP server or cron job, and what a coder runs by hand for an orphaned agent, since deleting one also prunes its workspace and memory.
+    forget --kind <agent|mcp-server|cron-job> --name <name> removes an object this framework created and stops tracking it — what ./clawwright plan proposes on its own for an orphaned MCP server or cron job, and what a coder runs by hand for an orphaned agent, since deleting one also prunes its workspace and memory.
     
     This command can replace or destroy state, depending on the action given.
     

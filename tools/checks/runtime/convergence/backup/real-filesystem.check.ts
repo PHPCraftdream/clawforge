@@ -123,7 +123,7 @@ function freshTransport(): Transport {
 // exclude is escaped. Exercise both public profiles through createBackup, including the
 // privacy verifier that must approve the staging archive before it is published.
 async function globProfile(profile: "migrate" | "share", transport: Transport): Promise<void> {
-  const root = `/tmp/clawforge-backup-glob-${randomBytes(4).toString("hex")}`;
+  const root = `/tmp/clawwright-backup-glob-${randomBytes(4).toString("hex")}`;
   const dataDir = `${root}/data[1]`;
   const backupDir = `${root}/backups`;
   try {
@@ -164,7 +164,7 @@ if (p202Transport !== undefined) {
 // The auditor's repro: a non-empty data root that is itself a symlink. Backup must
 // refuse before anything misleading is written, and the data behind the link stays put.
 async function symlinkRootScenario(transport: Transport): Promise<void> {
-  const root = `/tmp/clawforge-backup-root-link-${randomBytes(4).toString("hex")}`;
+  const root = `/tmp/clawwright-backup-root-link-${randomBytes(4).toString("hex")}`;
   try {
     const fixture = writeTree([
       `mkdir -p ${q(`${root}/data2/config`)} ${q(`${root}/data2/workspace`)}`,
@@ -197,7 +197,7 @@ async function symlinkRootScenario(transport: Transport): Promise<void> {
 // createArchive() refuses the same layout on its own — the invariant lives at the point
 // of archiving too, for every caller that is not createBackup().
 async function archiveLinkScenario(transport: Transport): Promise<void> {
-  const root = `/tmp/clawforge-backup-archive-link-${randomBytes(4).toString("hex")}`;
+  const root = `/tmp/clawwright-backup-archive-link-${randomBytes(4).toString("hex")}`;
   try {
     const fixture = writeTree([
       `mkdir -p ${q(`${root}/data2/config`)}`,
@@ -223,7 +223,7 @@ async function archiveLinkScenario(transport: Transport): Promise<void> {
 // exactly that — so createBackup refuses the same shape and publishes nothing. The
 // instance lock lives in a <name>-locks sibling, so it cannot seed the tree with content.
 async function emptyRootScenario(transport: Transport): Promise<void> {
-  const root = `/tmp/clawforge-backup-empty-${randomBytes(4).toString("hex")}`;
+  const root = `/tmp/clawwright-backup-empty-${randomBytes(4).toString("hex")}`;
   try {
     await transport.mkdirp(`${root}/empty-data`);
     const emptyArchive = `${root}/empty.tar.gz`;
@@ -245,18 +245,18 @@ async function emptyRootScenario(transport: Transport): Promise<void> {
 // The guard is not a ban on backing up: a real data directory still round-trips —
 // backup produces an archive that carries the data, and restore recovers it.
 async function roundTripScenario(transport: Transport): Promise<void> {
-  const root = `/tmp/clawforge-backup-roundtrip-${randomBytes(4).toString("hex")}`;
+  const root = `/tmp/clawwright-backup-roundtrip-${randomBytes(4).toString("hex")}`;
   try {
     const dataDir = `${root}/data`;
     const fixture = writeTree([
       `mkdir -p ${q(`${dataDir}/config`)} ${q(`${dataDir}/workspace`)}`,
       `printf '%s\\n' '{"provider":{}}' > ${q(`${dataDir}/config/openclaw.json`)}`,
       `printf 'fixture\\n' > ${q(`${dataDir}/workspace/SOUL.md`)}`,
-      // The provenance marker a clawforge-created tree carries: it travels with the
+      // The provenance marker a clawwright-created tree carries: it travels with the
       // archive, so the restore's ensureDataDirs sees a tree of this framework's own making
       // and may narrow its ownership work to the standard paths instead of refusing a tree
       // it cannot vouch for.
-      `printf 'clawforge data directory\\n' > ${q(`${dataDir}/${DATA_DIR_MARKER}`)}`,
+      `printf 'clawwright data directory\\n' > ${q(`${dataDir}/${DATA_DIR_MARKER}`)}`,
     ]);
     await execFixture(transport, fixture);
 

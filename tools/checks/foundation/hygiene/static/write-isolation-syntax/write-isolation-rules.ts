@@ -167,7 +167,7 @@ function isCleanSignal(expr: string, clean: ReadonlySet<string>): boolean {
 export function isAnchoredSignal(expr: string, origin: string): boolean {
   if (ANCHORED_TOKEN.test(expr)) return true;
   // Relative components in join(tempRoot, './file') do not anchor the root.
-  // A bare relative string literal as the whole target ("tools/clawforge.ts") is
+  // A bare relative string literal as the whole target ("tools/clawwright.ts") is
   // checkout-relative; absolute paths (/tmp/..., C:\...) and unclassifiable shapes are not.
   const bare = origin.trim().match(/^(["'])([\s\S]*)\1$/);
   if (bare !== null) {
@@ -598,7 +598,7 @@ export function checkoutWriteHits(source: string, context?: SourceContext): Hit[
 
 /**
  * createApp without isolation. Two escapes keep the invariant, not the spelling:
- * an `isolatedAppsRoot(…)` call, or a clean CLAWFORGE_CHECKS_APPS_DIR redirect (system
+ * an `isolatedAppsRoot(…)` call, or a clean CLAWWRIGHT_CHECKS_APPS_DIR redirect (system
  * install checks point the scaffold's apps dir at an mkdtemp checkout and then call
  * createApp — sandboxed, not physical).
  */
@@ -608,12 +608,12 @@ function appsDirRedirectIsClean(masked: string, original: string, clean: Readonl
   // at the same offsets. Both the bracketed (process.env["..."]) and dotted spellings count.
   const shapes = [
     /process\s*\.\s*env\s*\[[^\]]*\]\s*=\s*([^\n;]+)/g,
-    /\bCLAWFORGE_CHECKS_APPS_DIR\b\s*=\s*([^\n;]+)/g,
+    /\bCLAWWRIGHT_CHECKS_APPS_DIR\b\s*=\s*([^\n;]+)/g,
   ];
   for (const re of shapes) {
     for (const m of masked.matchAll(re)) {
       const from = m.index ?? 0;
-      if (!original.slice(from, from + m[0].length).includes("CLAWFORGE_CHECKS_APPS_DIR")) continue;
+      if (!original.slice(from, from + m[0].length).includes("CLAWWRIGHT_CHECKS_APPS_DIR")) continue;
       if (isCleanSignal(m[1], clean)) return true;
     }
   }

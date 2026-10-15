@@ -17,7 +17,7 @@ import { check, finish, requires } from "#checks/kit/harness.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 for (const failure of ["find", "rm"] as const) {
-  const backupDir = "/srv/clawforge/backup-policy-check";
+  const backupDir = "/srv/clawwright/backup-policy-check";
   const own = `${backupDir}/${deploymentName()}-20260101-000000.tar.gz`;
   const calls: string[] = [];
   const ctx = {
@@ -56,7 +56,7 @@ for (const failure of ["find", "rm"] as const) {
       },
     },
   } as unknown as Context;
-  await rotate(ctx, "/srv/clawforge/backup-policy-check");
+  await rotate(ctx, "/srv/clawwright/backup-policy-check");
   check("a successful empty listing is distinct from an enumeration failure", calls.includes("rm"), false);
 }
 
@@ -84,7 +84,7 @@ for (const testCase of [
     },
   } as unknown as Context;
   let output = "";
-  await withOutputSink((line) => { output += line; }, () => rotate(ctx, "/srv/clawforge/backup-policy-check"));
+  await withOutputSink((line) => { output += line; }, () => rotate(ctx, "/srv/clawwright/backup-policy-check"));
 
   check(`OC_BACKUP_KEEP=${JSON.stringify(testCase.value)} ${testCase.proceeds ? "still lists archives" : "never lists archives"}`, calls.includes("find"), testCase.proceeds);
   if (testCase.invalid) {
@@ -96,7 +96,7 @@ for (const testCase of [
 
 // Passing a path with shell metacharacters as a literal find argument must not execute it.
 await requires("linux-host", "rotation does not execute path metacharacters below a quoted path", async () => {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-backup-quote-check-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-backup-quote-check-"));
   const marker = join(root, "shell-injected");
   const backupDir = join(root, `backup files '$(touch ${marker})' ; echo hacked`);
   try {
@@ -166,7 +166,7 @@ async function runRealTarProfile(profile: "migrate" | "share", transport: Transp
     async start(): Promise<void> { throw new Error("backup fixture must not start a runtime"); },
     async waitForHealth(): Promise<void> {},
   };
-  const root = `/tmp/clawforge-backup-glob-${randomBytes(4).toString("hex")}`;
+  const root = `/tmp/clawwright-backup-glob-${randomBytes(4).toString("hex")}`;
   const dataDir = `${root}/data[1]`;
   const backupDir = `${root}/backups`;
   try {

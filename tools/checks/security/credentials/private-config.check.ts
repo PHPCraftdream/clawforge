@@ -43,7 +43,7 @@ assert.throws(() => generatePrivateSecret(8), /at least 16/);
 const previousRecipes = (() => {
   try { return recipesDirectory(); } catch { return undefined; }
 })();
-const scratch = await mkdtemp(join(tmpdir(), "clawforge-private-config-check-"));
+const scratch = await mkdtemp(join(tmpdir(), "clawwright-private-config-check-"));
 await mkdir(join(scratch, "declared"), { recursive: true });
 await writeFile(join(scratch, "declared", "recipe.json"), JSON.stringify({ description: "declared", privatePaths: ["recipe-private"] }), "utf8");
 
@@ -392,7 +392,7 @@ await requires("local-posix", "the real POSIX transport round-trip", async () =>
     // requires() already held local-posix: a probe that disagrees is a failure, never a skip.
     checkTrue("real-transport round-trip: local-posix holds, so a POSIX transport must answer", false);
   } else {
-    const dataDir = `/tmp/clawforge-exec-secrets-${randomBytes(4).toString("hex")}`;
+    const dataDir = `/tmp/clawwright-exec-secrets-${randomBytes(4).toString("hex")}`;
     const locks = locksDir(dataDir);
     const execCtx = { settings: { dataDir, env: {} }, transport } as unknown as Context;
     try {
@@ -418,7 +418,7 @@ await requires("local-posix", "the real POSIX transport round-trip", async () =>
   const available = await local.exec("sh", ["-c", "command -v cygpath >/dev/null"], { allowFailure: true })
     .then((result) => result.code === 0, () => false);
   if (available) {
-    const dataDir = join(tmpdir(), `clawforge-exec-local-${randomBytes(4).toString("hex")}`).replaceAll("\\", "/");
+    const dataDir = join(tmpdir(), `clawwright-exec-local-${randomBytes(4).toString("hex")}`).replaceAll("\\", "/");
     const locks = locksDir(dataDir);
     try {
       const localCtx = { settings: { dataDir, env: {} }, transport: local } as unknown as Context;
@@ -470,8 +470,8 @@ async function realPosixTransport(): Promise<Transport | undefined> {
     check("symlink-ancestor checks: local-posix holds, so a POSIX transport must answer", "none", "a POSIX transport");
   } else {
     const tag = randomBytes(4).toString("hex");
-    const root = `/tmp/clawforge-trav-${tag}`;
-    const recipes = await mkdtemp(join(tmpdir(), "clawforge-trav-recipes-"));
+    const root = `/tmp/clawwright-trav-${tag}`;
+    const recipes = await mkdtemp(join(tmpdir(), "clawwright-trav-recipes-"));
     const previousRecipesDir = (() => {
       try { return recipesDirectory(); } catch { return undefined; }
     })();

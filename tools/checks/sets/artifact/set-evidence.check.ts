@@ -12,7 +12,7 @@ import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { RunOneOffOptions } from "#framework/runtime/runtime.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-evidence-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-evidence-check-"));
 const previous = (() => { try { return deploymentDir(); } catch { return undefined; } })();
 const image = `fixture@sha256:${"a".repeat(64)}`;
 // Flips at the ACTUAL acceptance-check execution (the tool call carrying

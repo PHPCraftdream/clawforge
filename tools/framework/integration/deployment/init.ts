@@ -1,9 +1,9 @@
-// `clawforge init` — the installed-mode counterpart to the monorepo's `new-app` (scaffold.ts).
+// `clawwright init` — the installed-mode counterpart to the monorepo's `new-app` (scaffold.ts).
 //
 // scaffold.ts creates one of several deployments under a monorepo's apps/, named by
 // argument. This creates the one and only deployment a consumer repo has, in its own root
 // — no name argument, no apps/<name> nesting. The declaration below imports from the
-// package specifier ("@clawforge/framework/app"), which only makes sense once the
+// package specifier ("clawwright/app"), which only makes sense once the
 // framework is installed as a dependency, never inside this monorepo.
 //
 // Same measure of usable as scaffold.ts: the generated deployment must run immediately
@@ -35,9 +35,9 @@ export function declarationFor(name: string): string {
 //
 // Run it with: ${renderAdvice(command(["status"]), SHIM_TARGET)}
 
-import { defineApp } from "@clawforge/framework/app";
-import { mountPoints } from "@clawforge/framework/mounts";
-import { openclawCommands } from "@clawforge/framework/commands";
+import { defineApp } from "clawwright/app";
+import { mountPoints } from "clawwright/mounts";
+import { openclawCommands } from "clawwright/commands";
 
 export default defineApp({
   name: "${name}",
@@ -59,11 +59,11 @@ const DESIRED_STATE = `[
 ]
 `;
 
-// The committed clawforge shim — invokes the installed
+// The committed clawwright shim — invokes the installed
 // package directly so Git Bash under WSL works even when only `node.exe` is on PATH.
 // Bash-only, same as this monorepo's own; Windows users can use npm's
-// generated node_modules/.bin/clawforge.cmd or .ps1 instead. Without a local install it
-// hands over to a system-wide `clawforge`.
+// generated node_modules/.bin/clawwright.cmd or .ps1 instead. Without a local install it
+// hands over to a system-wide `clawwright`.
 // The shim's own hand-over, spelled by the frame constructors (design §4.1): the
 // deployment shim the committed shim names, and its v1 JSON — one source, so the emitted
 // text stays byte-identical with every other writer's (decision O7).
@@ -73,13 +73,13 @@ const SHIM_HANDOVER = serializeInvocation(handoverOf(SHIM_TARGET));
 const SHIM_SPELLING = handoverOf(SHIM_TARGET).program;
 
 export const SHIM = `#!/usr/bin/env bash
-# Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
+# Delegates to the installed clawwright CLI. Committed so ./clawwright <command> works
 # without typing a package path or npx by hand.
 set -Eeuo pipefail
-# Hints in the CLI say "./clawforge" for this entry, "clawforge" for the system-wide command.
-# Both variables: new frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
-export CLAWFORGE_INVOCATION='${SHIM_HANDOVER}'
-export CLAWFORGE_INVOKED_AS=${SHIM_SPELLING}
+# Hints in the CLI say "./clawwright" for this entry, "clawwright" for the system-wide command.
+# Both variables: new frameworks read the JSON one, older ones only CLAWWRIGHT_INVOKED_AS.
+export CLAWWRIGHT_INVOCATION='${SHIM_HANDOVER}'
+export CLAWWRIGHT_INVOKED_AS=${SHIM_SPELLING}
 DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 node_bin=""
 for candidate in node node.exe /usr/local/bin/node "/c/Program Files/nodejs/node.exe" "/mnt/c/Program Files/nodejs/node.exe"; do
@@ -92,14 +92,14 @@ if [[ -z "$node_bin" ]]; then
   echo "error: Node not found — install Node 24 or newer first" >&2
   exit 1
 fi
-script_path="$DIR/node_modules/@clawforge/framework/dist/entry/bin.js"
+script_path="$DIR/node_modules/clawwright/dist/entry/bin.js"
 if [[ ! -f "$script_path" ]]; then
   # No install of its own: run the system-wide package with the node found above (npm's own
   # shim needs node on PATH, which cron and WSL-with-Windows-node lack). Never this file again.
-  entry_rel="node_modules/@clawforge/framework/dist/entry/bin.js"
+  entry_rel="node_modules/clawwright/dist/entry/bin.js"
   global=""
   search=()
-  if global="$(command -v clawforge)" && [[ "$(cd "$(dirname "$global")" && pwd)" != "$DIR" ]]; then
+  if global="$(command -v clawwright)" && [[ "$(cd "$(dirname "$global")" && pwd)" != "$DIR" ]]; then
     global_dir="$(cd "$(dirname "$global")" && pwd)"
     if resolved="$(readlink -f "$global" 2>/dev/null)"; then search+=("$resolved"); fi
     search+=("$global_dir/$entry_rel" "$global_dir/../lib/$entry_rel")
@@ -120,7 +120,7 @@ if [[ ! -f "$script_path" ]]; then
   elif [[ -n "$global" ]]; then
     exec "$global" "$@"
   else
-    echo "error: $script_path not found — run npm install, or install clawforge system-wide" >&2
+    echo "error: $script_path not found — run npm install, or install clawwright system-wide" >&2
     exit 1
   fi
 fi
@@ -142,7 +142,7 @@ exec "$node_bin" --experimental-strip-types "$script_path" "$@"
 
 /** The committed shim file writer; the durable-output check drives it directly. */
 export async function writeShim(root: string): Promise<void> {
-  const file = resolve(root, "clawforge");
+  const file = resolve(root, "clawwright");
   await writeFile(file, SHIM, "utf8");
   await chmod(file, 0o755);
 }
@@ -263,7 +263,7 @@ async function applyModuleType(root: string, action: ModuleTypeAction): Promise<
   }
 }
 
-/** The placement decision the installed entry already made — how far inside a ClawForge
+/** The placement decision the installed entry already made — how far inside a Clawwright
  *  checkout it is and whether its types are local — which `init` reads to decide where to
  *  print the editor-types line (see resolveInstalledEntry). */
 /** The refusals init prints when the target directory already holds deployment state. */
@@ -314,11 +314,11 @@ export function makeInitGateCommand(
     details:
       "Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) " +
       "directly into the current directory, plus config/, secrets/, recipes/, .gitignore " +
-      "entries for the deployment state and node_modules/, and a committed clawforge entrypoint " +
+      "entries for the deployment state and node_modules/, and a committed clawwright entrypoint " +
       "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
       "are created automatically, without changing global client settings.\n" +
       "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
-      `${INIT_REFUSES_NOTE} — run this once, then {clawforge bootstrap}. ` +
+      `${INIT_REFUSES_NOTE} — run this once, then {clawwright bootstrap}. ` +
       "`init {--local}` in an already initialised directory only prints the editor-types npm line and writes nothing.",
     body: commandBody({
       needs: "nothing",
@@ -338,16 +338,16 @@ export function makeInitGateCommand(
   });
 }
 
-/** `--local`: editors resolve `@clawforge/framework` only from a node_modules the app has.
+/** `--local`: editors resolve `clawwright` only from a node_modules the app has.
  *  The package is unpublished, so a registry spec would fail; the running copy's own directory
  *  works today. --no-save: `--save-dev <dir>` would commit a machine path (file:…) into
  *  package.json. Printed, never run — init does not run npm. */
 export async function localTypesLines(): Promise<string[]> {
   const directory = (await frameworkPackage())?.dir;
-  const spec = directory === undefined ? "@clawforge/framework" : `"${directory}"`;
+  const spec = directory === undefined ? "clawwright" : `"${directory}"`;
   return [
     `editor types: run  ${noSaveInstall(spec)}`,
-    "  (not on the registry yet; once it is: npm install --save-dev @clawforge/framework)",
+    "  (not on the registry yet; once it is: npm install --save-dev clawwright)",
   ];
 }
 
@@ -414,7 +414,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   // Types resolve already when this CLI runs from the app's own node_modules.
   const ownInstall = frameworkRoot.startsWith(resolve(root, "node_modules"));
   if (!ownInstall && options.local === true) for (const line of await localTypesLines()) info(line);
-  else if (!ownInstall) info(`editors cannot resolve @clawforge/framework types without a local install: ${commandLine(["init", "--local"])}`);
+  else if (!ownInstall) info(`editors cannot resolve clawwright types without a local install: ${commandLine(["init", "--local"])}`);
 
   const boundaryNote = await wslBoundaryNote(envFile);
   if (boundaryNote !== undefined) info(boundaryNote);

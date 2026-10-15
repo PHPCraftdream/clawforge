@@ -2,8 +2,8 @@
 
 ## Scope
 
-ClawForge controls Docker services, reads and writes deployment state, can execute the
-OpenClaw CLI, and can run commands on a remote host over SSH. Its `clawforge-control` MCP
+Clawwright controls Docker services, reads and writes deployment state, can execute the
+OpenClaw CLI, and can run commands on a remote host over SSH. Its `clawwright-control` MCP
 server exposes the same command surface to a client process. Treat the CLI and generated MCP
 configuration as privileged tooling for the selected deployment.
 

@@ -198,7 +198,7 @@ interface DestroyPlan extends DestroyValues {
  *  with it. Never touches the deployment directory itself (.env, config/, recipes/,
  *  secrets/) — that is `remove-app`'s job, one layer up, repository-side.
  *
- *  No operation record: Journal writes into `${dataDir}/clawforge-operations`, which
+ *  No operation record: Journal writes into `${dataDir}/clawwright-operations`, which
  *  `--data` is about to remove along with everything else in the tree — recording a
  *  destruction inside the thing being destroyed answers nothing a later reader could use. */
 export const DESTROY = commandBody({

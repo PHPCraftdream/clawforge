@@ -22,8 +22,8 @@ custom variable name:
 
 ```bash
 printf '%s=%s\n' OPENAI_API_KEY '<key>' >> /srv/openclaw/data/config/.env
-./clawforge configure-provider --provider openai --env OPENAI_API_KEY
-./clawforge up
+./clawwright configure-provider --provider openai --env OPENAI_API_KEY
+./clawwright up
 ```
 
 The command writes only `{ "source": "env", "id": "OPENAI_API_KEY" }` to
@@ -35,10 +35,10 @@ custom OpenClaw providers without a provider-specific framework table.
 ### Secrets: manifest, template, store
 
 ```bash
-./clawforge secrets                              # what is required and what is missing
-./clawforge secrets --template                   # config/secrets.template.env (no values)
-./clawforge secrets --init-store --store prod    # a blank apps/<name>/secrets/prod.env
-./clawforge secrets --apply --store prod         # install the values on the target
+./clawwright secrets                              # what is required and what is missing
+./clawwright secrets --template                   # config/secrets.template.env (no values)
+./clawwright secrets --init-store --store prod    # a blank apps/<name>/secrets/prod.env
+./clawwright secrets --apply --store prod         # install the values on the target
 ```
 
 The manifest comes from two sources, and that is not redundancy: `openclaw.json` holds
@@ -71,15 +71,15 @@ token stayed live. `secrets --apply` therefore recreates the running container i
 it delivers repo-env values — the container is replaced, not merely signalled; connections
 drop — waits for health, and confirms against the container's own environment, by variable
 name and never by value, that the new values are in force. A stopped instance picks them up
-on its next start; a runtime that cannot recreate is told to run `./clawforge up` rather
+on its next start; a runtime that cannot recreate is told to run `./clawwright up` rather
 than left with an instruction that cannot work.
 
-`./clawforge up` and `./clawforge bootstrap` refuse to start when something is missing: a refusal with a
+`./clawwright up` and `./clawwright bootstrap` refuse to start when something is missing: a refusal with a
 list beats a gateway crash-looping on `SecretRefResolutionError`.
 
 ### Declared memory
 
-`./clawforge memory` declares and runs OpenClaw's agent memory search. Pick one of three
+`./clawwright memory` declares and runs OpenClaw's agent memory search. Pick one of three
 modes: `embeddings` (vector search through an embedding provider, plus keyword search),
 `keyword` (full-text search only, no provider) or `disabled`. The flow is always the same:
 `memory plan` previews the settings a mode implies, `memory configure` writes them into
@@ -96,15 +96,15 @@ splitting existing object operations without replacing live memorySearch. Review
 complete declaration before explicitly applying it through the existing native batch tool.
 
 ```bash
-./clawforge memory plan --mode keyword --backend builtin
-./clawforge memory configure --mode keyword --backend builtin
-./clawforge apply-config --dry-run
-./clawforge apply-config
-./clawforge restart
-./clawforge cli-start
-./clawforge memory status --json
-./clawforge memory index --agent main --json
-./clawforge memory verify --agent main --json
+./clawwright memory plan --mode keyword --backend builtin
+./clawwright memory configure --mode keyword --backend builtin
+./clawwright apply-config --dry-run
+./clawwright apply-config
+./clawwright restart
+./clawwright cli-start
+./clawwright memory status --json
+./clawwright memory index --agent main --json
+./clawwright memory verify --agent main --json
 ```
 
 Keyword declares enabled true, provider none, fallback none, hybrid true and vector false.
@@ -126,12 +126,12 @@ a matching model revision, SHA256, exact official plugin version, and maximum by
 (no greater than 64 GiB). Substitute reviewed values for the placeholders below:
 
 ```bash
-./clawforge memory configure --mode embeddings --backend builtin --provider local --model-path /home/node/.openclaw/models/approved.gguf --model-checksum <sha256> --model-source <immutable-hf-url> --model-version <commit>
-./clawforge apply-config --dry-run
-./clawforge apply-config
-./clawforge restart
-./clawforge cli-start
-./clawforge memory setup --agent main --model-source <immutable-hf-url> --model-version <commit> --model-checksum <sha256> --model-max-bytes <bytes> --plugin-version <exact-version> --allow-install --allow-download --json
+./clawwright memory configure --mode embeddings --backend builtin --provider local --model-path /home/node/.openclaw/models/approved.gguf --model-checksum <sha256> --model-source <immutable-hf-url> --model-version <commit>
+./clawwright apply-config --dry-run
+./clawwright apply-config
+./clawwright restart
+./clawwright cli-start
+./clawwright memory setup --agent main --model-source <immutable-hf-url> --model-version <commit> --model-checksum <sha256> --model-max-bytes <bytes> --plugin-version <exact-version> --allow-install --allow-download --json
 ```
 
 Setup requires both resource consents even when the plugin and model are cached, plus
@@ -215,11 +215,11 @@ acquisition/release are outside these helper execution deadlines.
 ### Backup and restore
 
 ```bash
-./clawforge backup                 # the gateway is stopped for the duration of the snapshot
-./clawforge backup --hot           # no stop, at the risk of catching a partial write
-./clawforge backup --native        # no stop, consistent anyway: OpenClaw's own backup mechanism
-./clawforge restore                # from the newest archive, with a confirmation
-./clawforge restore --dry-run      # print the plan, change nothing
+./clawwright backup                 # the gateway is stopped for the duration of the snapshot
+./clawwright backup --hot           # no stop, at the risk of catching a partial write
+./clawwright backup --native        # no stop, consistent anyway: OpenClaw's own backup mechanism
+./clawwright restore                # from the newest archive, with a confirmation
+./clawwright restore --dry-run      # print the plan, change nothing
 ```
 
 The stop is not caution for its own sake: state lives in SQLite with a multi-megabyte
@@ -294,13 +294,13 @@ that is not a non-negative integer is a warning and falls back to the default of
 otherwise it is rotating a backlog nothing keeps adding to:
 
 ```bash
-./clawforge backup install                    # print the crontab entry (or Windows equivalent)
-./clawforge backup install --apply             # actually install it — daily by default
-./clawforge backup install --interval 6h --apply
-./clawforge backup uninstall --apply
+./clawwright backup install                    # print the crontab entry (or Windows equivalent)
+./clawwright backup install --apply             # actually install it — daily by default
+./clawwright backup install --interval 6h --apply
+./clawwright backup uninstall --apply
 ```
 
-`backup install` / `backup uninstall` wire a plain `./clawforge backup` onto a schedule —
+`backup install` / `backup uninstall` wire a plain `./clawwright backup` onto a schedule —
 `--interval` takes a duration (default `1d`) in the same grammar as `watch install`: `30m`,
 `6h`, `1d` — an explicit unit is always required (a bare number is minutes only for
 `watch install`); minutes must divide 60, hours must
@@ -310,8 +310,8 @@ naming the nearest valid values (e.g. `6h, 8h`). Mirrors `watch install`/`watch 
 shared crontab-marker convention and the Windows fallback: crontab where an unattended cron
 can be trusted to find this tooling (a real SSH host or a POSIX `local` target), otherwise a
 printed — and, with `--apply` on an actual Windows host, applied — `schtasks /create`
-command. Its own marker (`clawforge-backup:<identity>`) is distinct from `watch install`'s
-(`clawforge-watch:<identity>`), so installing one never disturbs the other, even for the
+command. Its own marker (`clawwright-backup:<identity>`) is distinct from `watch install`'s
+(`clawwright-watch:<identity>`), so installing one never disturbs the other, even for the
 same deployment. Identity hashes the canonical deployment root and execution location,
 not the basename or Compose name; same-basename projects can keep independent schedules.
 Reinstall/uninstall changes only that identity. Previous basename cron entries are only
@@ -320,7 +320,7 @@ Ambiguous old Windows task names are never overwritten or deleted automatically:
 their action/root and remove your own old task before installing the keyed task to avoid
 duplicate execution. See the monitoring guide above for SSH identity and lock details.
 
-`./clawforge doctor`/`inspect` now notice when that schedule silently stopped: `BACKUP_MISSING`
+`./clawwright doctor`/`inspect` now notice when that schedule silently stopped: `BACKUP_MISSING`
 (no full archive in `OC_BACKUP_DIR` at all — a `migrate`/`share`-only directory counts as
 missing too, since neither is what a bare `restore` recovers from) and `BACKUP_STALE` (the
 newest full archive is older than `OC_BACKUP_MAX_AGE` allows, default `2d`). Both are
@@ -334,17 +334,17 @@ a value that does not parse is a warning falling back to the default, the same a
 ### Listing archives and cleaning up after a restore
 
 ```bash
-./clawforge backup list                  # archives + <data>.replaced-* copies, with size/date
-./clawforge backup list --json
-./clawforge backup prune-replaced        # preview only — nothing is deleted
-./clawforge backup prune-replaced --apply
-./clawforge backup prune-replaced --apply --keep 2   # keep the 2 newest, remove the rest
+./clawwright backup list                  # archives + <data>.replaced-* copies, with size/date
+./clawwright backup list --json
+./clawwright backup prune-replaced        # preview only — nothing is deleted
+./clawwright backup prune-replaced --apply
+./clawwright backup prune-replaced --apply --keep 2   # keep the 2 newest, remove the rest
 ```
 
 `restore` keeps the previous data directory rather than deleting it — renamed to
 `<data>.replaced-<timestamp>`, so a wrong restore is recoverable. Nothing removes those
 automatically: run enough restores and they accumulate, each one a full copy of the data
-directory. `backup list` shows both what a bare `./clawforge restore` would pick by default
+directory. `backup list` shows both what a bare `./clawwright restore` would pick by default
 (the newest FULL archive) and every `.replaced-*` copy currently sitting there, so the
 operator sees which one before running a restore that is already in flight, not from its log.
 
@@ -374,7 +374,7 @@ cannot undo plaintext exposure.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { protectPrivateDirectory, createPrivateBinaryFile } from "@clawforge/framework/private-config";
+import { protectPrivateDirectory, createPrivateBinaryFile } from "clawwright/private-config";
 
 export default defineApp({
   // ...
@@ -451,9 +451,9 @@ root) never call it either, for the same reason `afterBackup` skips smoke's arch
 ### Upgrading the image: `upgrade`
 
 ```bash
-./clawforge upgrade                       # to the deployment's own OPENCLAW_IMAGE, by digest
-./clawforge upgrade --image <ref>         # to a specific reference instead
-./clawforge upgrade --dry-run             # print the plan, change nothing
+./clawwright upgrade                       # to the deployment's own OPENCLAW_IMAGE, by digest
+./clawwright upgrade --image <ref>         # to a specific reference instead
+./clawwright upgrade --dry-run             # print the plan, change nothing
 ```
 
 The target is resolved to a digest and pulled by that digest — never the tag, because
@@ -461,7 +461,7 @@ another deployment on the same Docker daemon may use the same tag, and pulling i
 silently change what that deployment gets on its own next recreate. With no `--image`, the
 CHANNEL is what gets resolved, not the digest already sitting in `.env`: once `OPENCLAW_IMAGE`
 is pinned (`repo:tag@sha256:…`, either by `bootstrap` or by a previous `upgrade`), a plain
-`./clawforge upgrade` still means "is there anything newer on `repo:tag`", and only when the
+`./clawwright upgrade` still means "is there anything newer on `repo:tag`", and only when the
 registry answers with the same digest already running does it report there is nothing to do.
 `--image repo:tag` resolves that reference the same way; `--image repo@sha256:…` names exact
 content and is used as-is, no registry round trip needed. A pin left over from before this
@@ -500,13 +500,13 @@ plain `upgrade` (or `--dry-run`) re-resolves the channel as usual. On upgrade su
 `.env` is pinned to `repo:tag@sha256:…`
 (the channel it was resolved from, alongside the new digest) — `apply` never rewrites
 `config/deployment.lock.json` (see [Instance settings as code](operations.md#instance-settings-as-code)),
-so re-pin it deliberately with `./clawforge lock` afterwards.
+so re-pin it deliberately with `./clawwright lock` afterwards.
 
 `--dry-run` prints the currently running digest, the channel it will check (when there is
 one), what that channel resolves to at the registry right now, and whether that counts as an
 upgrade — without taking the instance lock or changing anything.
 
-This is the deliberate, explicit move; `./clawforge bootstrap` makes the same pin happen on its
+This is the deliberate, explicit move; `./clawwright bootstrap` makes the same pin happen on its
 own the first time it pulls a tag, precisely so a deployment is never left running on a moving
 one without an operator having chosen so (task #32) — see
 [Quick start](../../README.md#quick-start) and `IMAGE_UNPINNED`/`IMAGE_TAG_MOVED` above. Once a deployment is
@@ -516,10 +516,10 @@ is.
 ## Moving state and sharing agents
 
 ```bash
-./clawforge pull                  # snapshot the state (migrate profile)
-./clawforge pull --share          # a version fit to hand to someone else
-./clawforge push --force          # push a snapshot back
-./clawforge push --fresh-identity # cloning rather than moving
+./clawwright pull                  # snapshot the state (migrate profile)
+./clawwright pull --share          # a version fit to hand to someone else
+./clawwright push --force          # push a snapshot back
+./clawwright push --fresh-identity # cloning rather than moving
 ```
 
 | Profile | What is inside | What for |
@@ -545,20 +545,20 @@ Each `pull` keeps only the newest `OC_SNAPSHOT_KEEP` snapshots (10 by default, s
 ### Checking before handing over
 
 ```bash
-./clawforge verify <archive>                        # the strict check, for sharing
-./clawforge verify --profile migrate <archive>
+./clawwright verify <archive>                        # the strict check, for sharing
+./clawwright verify --profile migrate <archive>
 ```
 
 Not only exclusion lists are checked but the contents: the archive is unpacked into a
 temporary directory and searched for this instance's actual secret values, binary files
 included. Two classes are distinguished — provider keys and the gateway token are never
 acceptable, while identity tokens are expected when moving and fatal when sharing.
-`./clawforge pull --share` runs the check itself and deletes the archive when it fails.
+`./clawwright pull --share` runs the check itself and deletes the archive when it fails.
 
 The `share` profile is described from both ends: a list of exclusions when the archive is
 built, and a list of what is allowed when it is checked. The second exists because a new
 directory appearing in the data would otherwise travel with the archive — which is how the
-check caught a forgotten `clawforge-desired.json`.
+check caught a forgotten `clawwright-desired.json`.
 
 The archive's structure is checked before unpacking: absolute paths, escapes through `..`
 and links through which the archive would write outside are rejected. A link pointing

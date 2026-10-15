@@ -1,4 +1,4 @@
-// `clawforge watch status` — the persisted last state, when it changed, whether an alert
+// `clawwright watch status` — the persisted last state, when it changed, whether an alert
 // webhook/heartbeat is configured, when `watch check` last ran, the most recent
 // config/delivery error, an undelivered alert, and whether the schedule looks stale.
 // Never either URL itself, in any form: only booleans and (for the heartbeat) the last

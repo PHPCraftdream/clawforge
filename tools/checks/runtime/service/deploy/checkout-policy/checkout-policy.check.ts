@@ -1,5 +1,5 @@
 // check:exclusive — writes a scratch tree into the real checkout, which other deploy checks scan.
-// Checks what `./clawforge deploy` would actually send to a server.
+// Checks what `./clawwright deploy` would actually send to a server.
 //
 // No server and no network: the transport is a stub that records every command instead of
 // running it. What matters here is the composition of the delivery — a deployment's .env
@@ -41,7 +41,7 @@ const recordingCtx = {
 await withOutputSink(
   () => {},
   async () => {
-    await deploy(recordingCtx, ["deployer@server", "--path", "/opt/clawforge test"]);
+    await deploy(recordingCtx, ["deployer@server", "--path", "/opt/clawwright test"]);
   },
 );
 
@@ -104,11 +104,11 @@ check("at least one ssh call was made", sshCalls.length > 0, true);
 // checkout only when the framework is colocated in one. Installed as a package it lands on
 // the package's parent — and this command rsyncs that with --delete. Both answers are
 // checked against real directories: the whole deploy() run above already exercises the
-// accepting branch (this checkout has tools/clawforge.ts, and the sync above happened), so what is
+// accepting branch (this checkout has tools/clawwright.ts, and the sync above happened), so what is
 // left is the refusal, which no arrangement of this repository could otherwise reach.
 
 {
-  const fake = await mkdtemp(join(tmpdir(), "clawforge-deploy-mode-check-"));
+  const fake = await mkdtemp(join(tmpdir(), "clawwright-deploy-mode-check-"));
   try {
     check("a directory with no gate script is not a checkout", await isMonorepoCheckout(fake), false);
 
@@ -125,7 +125,7 @@ check("at least one ssh call was made", sshCalls.length > 0, true);
     // The gate script is the evidence, so planting one flips the answer — the predicate
     // reads the filesystem rather than pattern-matching a path.
     await mkdir(resolve(fake, "tools"), { recursive: true });
-    await writeFile(resolve(fake, "tools", "clawforge.ts"), "// gate");
+    await writeFile(resolve(fake, "tools", "clawwright.ts"), "// gate");
     check("a directory holding the gate script is a checkout", await isMonorepoCheckout(fake), true);
     check("and deploy accepts it as the source", await frameworkSourceRoot(fake), fake);
   } finally {
@@ -137,7 +137,7 @@ check("at least one ssh call was made", sshCalls.length > 0, true);
 //
 // deploy builds apps/<name> and a remote --app <name> from the deployment's own identity.
 // With OC_COMPOSE_PROJECT set (an instance already running under a name this directory
-// cannot have — Docker accepts underscores, safeName does not), the remote clawforge is a
+// cannot have — Docker accepts underscores, safeName does not), the remote clawwright is a
 // different, freshly-scaffolded install with no reason to share that override, and its own
 // --app parser applies the same safeName rule regardless — an override with an underscore
 // sent there would be refused on arrival.
@@ -200,7 +200,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   const expectedRemoteRecipes = `/apps/${FIXTURE_APP}/${recipesDir}/`;
   const defaultRemoteRecipes = `/apps/${FIXTURE_APP}/recipes/`;
   check("relative recipesDir is sent to its matching remote directory", customRemote.includes(expectedRemoteRecipes), true);
-  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("# clawforge-child-prepare") && call.args.at(-1)?.includes(recipesDir));
+  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("# clawwright-child-prepare") && call.args.at(-1)?.includes(recipesDir));
   check("relative recipesDir is created under the remote app", customMkdir?.args.at(-1)?.includes(recipesDir), true);
   check("relative recipesDir does not also write the default root", customRemote.includes(defaultRemoteRecipes), false);
 }

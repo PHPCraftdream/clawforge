@@ -65,9 +65,9 @@ const evilFullPassed = await withOutputSink(
 check("a full archive with an unsafe path is still rejected", evilFullPassed, false);
 
 const interruptedSecret = makeCtx(
-  "data/\ndata/config/.env.clawforge-interrupted\n",
+  "data/\ndata/config/.env.clawwright-interrupted\n",
   "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
-    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/.env.clawforge-interrupted\n",
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/.env.clawwright-interrupted\n",
 );
 const interruptedSecretPassed = await withOutputSink(
   () => {},
@@ -77,9 +77,9 @@ check("a leftover provider staging file fails the migrate check", interruptedSec
 checkTrue("the staging-file refusal still runs the private scan", interruptedSecret.calls.some((call) => call.args.includes("-xzf")));
 
 const interruptedDryRun = makeCtx(
-  "data/\ndata/config/clawforge-desired.dry-12345678.json\n",
+  "data/\ndata/config/clawwright-desired.dry-12345678.json\n",
   "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
-    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/clawforge-desired.dry-12345678.json\n",
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/clawwright-desired.dry-12345678.json\n",
 );
 check(
   "a pre-existing dry-run payload fails the migrate check",
@@ -596,7 +596,7 @@ for (const transport of [new WslTransport("test-distro"), new SshTransport("test
 }
 
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-local-private-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-local-private-"));
   const directory = join(root, "private");
   const path = join(directory, "patterns");
   const local = new LocalTransport();

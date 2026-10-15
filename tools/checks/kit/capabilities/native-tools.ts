@@ -115,7 +115,7 @@ async function validateBash(binary: string, on: ProbeHost): Promise<boolean> {
   if (platform !== "win32") return succeeded(run(binary, ["-c", "exit 0"], on));
   let root: string | undefined;
   try {
-    root = await mkdtemp(join(tmpdir(), "clawforge-native-bash-"));
+    root = await mkdtemp(join(tmpdir(), "clawwright-native-bash-"));
     const witness = join(root, "witness.cjs");
     await writeFile(witness, "process.stdout.write(JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd()}));\n");
     const script = [
@@ -132,7 +132,7 @@ async function validateBash(binary: string, on: ProbeHost): Promise<boolean> {
       'test ! -e work/source && test -f work/destination || exit 72',
       'exec "$node" "$witness" "$sentinel"',
     ].join("\n");
-    const result = run(binary, ["-c", script, "clawforge-native", SENTINEL, forward(root), forward(on.exec), forward(witness)], on, root);
+    const result = run(binary, ["-c", script, "clawwright-native", SENTINEL, forward(root), forward(on.exec), forward(witness)], on, root);
     if (!succeeded(result)) return false;
     const answer = JSON.parse(result.stdout) as { argv?: unknown; cwd?: string };
     return JSON.stringify(answer.argv) === JSON.stringify([SENTINEL])
@@ -157,7 +157,7 @@ async function validateTar(binary: string, on: ProbeHost): Promise<boolean> {
   try {
     const identity = run(binary, ["--version"], on);
     if (!succeeded(identity) || !/^tar \(GNU tar\) /m.test(identity.stdout)) return false;
-    root = await mkdtemp(join(tmpdir(), "clawforge-gnu-tar-"));
+    root = await mkdtemp(join(tmpdir(), "clawwright-gnu-tar-"));
     await writeFile(join(root, "payload"), SENTINEL);
     const flags = platform === "win32" ? ["--force-local"] : [];
     const archive = forward(join(root, "archive.tar.gz"));

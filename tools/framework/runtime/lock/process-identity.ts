@@ -17,9 +17,9 @@ export const probeSeams = {
 };
 
 // Whether a pid this framework recorded is still the process that recorded it — shared here
-// since every pid clawforge writes into a lock/guard file is this tool's own process.pid,
+// since every pid clawwright writes into a lock/guard file is this tool's own process.pid,
 // wherever it runs. `process.pid`/`process.kill()` always mean the machine actually running
-// `clawforge`, never a WSL/SSH target reached through a transport — checking liveness THROUGH
+// `clawwright`, never a WSL/SSH target reached through a transport — checking liveness THROUGH
 // the transport would compare the wrong two things and call every cross-transport lock
 // "foreign" forever.
 

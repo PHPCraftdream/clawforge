@@ -1,4 +1,4 @@
-// `./clawforge watch check` — the parts that do not need a live target:
+// `./clawwright watch check` — the parts that do not need a live target:
 //
 // - watchLevel(): only the four liveness codes ever move the needle (PROVIDER_MISSING is
 //   deliberately excluded — unreliable detection), and severity decides ok/degraded/down the
@@ -91,7 +91,7 @@ async function deathOf(run: () => unknown): Promise<string> {
     false,
   );
 }
-const root = await mkdtemp(join(tmpdir(), "clawforge-watch-check-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-watch-check-check-"));
 useDeployment(root);
 const originalFetch = globalThis.fetch;
 

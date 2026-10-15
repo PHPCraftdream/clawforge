@@ -1,5 +1,5 @@
 // check:exclusive — deploy() gates on the real remote boundary, but its checkout-root scan
-// reads a synthetic source root via the CLAWFORGE_CHECKS_SOURCE_ROOT seam, so nothing below
+// reads a synthetic source root via the CLAWWRIGHT_CHECKS_SOURCE_ROOT seam, so nothing below
 // writes inside the real checkout.
 // deploy's sensitive-name policy: one table of name shapes, three locations each (a recipe,
 // the deployment's own config/, an arbitrary checkout subtree), one required outcome — refuse
@@ -51,7 +51,7 @@ async function clearReadOnly(dir: string): Promise<void> {
 // four carriers. A fresh recording context per run: a refusal must leave zero calls, and
 // the completing run must leave the recipes rsync behind.
 {
-  const sensitiveRoot = await mkdtemp(join(tmpdir(), "clawforge-deploy-sensitive-"));
+  const sensitiveRoot = await mkdtemp(join(tmpdir(), "clawwright-deploy-sensitive-"));
   useDeployment(sensitiveRoot);
   const runCtx = (record: { command: string; args: string[] }[]): Context => ({
     ...ctx,
@@ -135,7 +135,7 @@ async function clearReadOnly(dir: string): Promise<void> {
 // deploy before anything is sent, while a genuinely missing config/ keeps deploying (the
 // happy-path groups above carry no config/ at all).
 {
-  const configRoot = await mkdtemp(join(tmpdir(), "clawforge-deploy-config-error-"));
+  const configRoot = await mkdtemp(join(tmpdir(), "clawwright-deploy-config-error-"));
   useDeployment(configRoot);
   const runCtx = (record: { command: string; args: string[] }[]): Context => ({
     ...ctx,
@@ -182,7 +182,7 @@ async function clearReadOnly(dir: string): Promise<void> {
 // name inside a recipe or config/ already refused the whole deploy. One table of
 // sensitive-name shapes, three locations each, one required outcome.
 //
-// The checkout-root scan reads a SYNTHETIC source root via the CLAWFORGE_CHECKS_SOURCE_ROOT
+// The checkout-root scan reads a SYNTHETIC source root via the CLAWWRIGHT_CHECKS_SOURCE_ROOT
 // seam (frameworkSourceRoot()'s check-only override): deploy() still takes its real gate
 // before the first rsync, but the tree the gate scans is the fixture below, so no scratch
 // file is ever planted in this checkout.
@@ -204,19 +204,19 @@ async function clearReadOnly(dir: string): Promise<void> {
   }
 
   // One synthetic source root for the whole group, carrying exactly what the scan reads:
-  // a tools/clawforge.ts marker (isMonorepoCheckout's acceptance test) and a git repo whose
+  // a tools/clawwright.ts marker (isMonorepoCheckout's acceptance test) and a git repo whose
   // HEAD holds tools/framework/.env.example — the tracked-shaped file — so tracked+clean
   // vetting and the blob-hash twin both behave as in a real checkout.
-  const syntheticRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-05-source-"));
+  const syntheticRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-05-source-"));
   const git = (args: string[]) => execFileAsync("git", ["-C", syntheticRoot, ...args]);
   await mkdir(resolve(syntheticRoot, "tools", "framework"), { recursive: true });
-  await writeFile(resolve(syntheticRoot, "tools", "clawforge.ts"), "// checkout marker\n");
+  await writeFile(resolve(syntheticRoot, "tools", "clawwright.ts"), "// checkout marker\n");
   await writeFile(resolve(syntheticRoot, "tools", "framework", ".env.example"), "TEMPLATE=example\n");
   await git(["init"]);
   await git(["add", "."]);
   await git(["-c", "user.name=check", "-c", "user.email=check@example.test", "commit", "--no-gpg-sign", "-m", "fixture"]);
-  const previousSourceRoot = process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"];
-  process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"] = syntheticRoot;
+  const previousSourceRoot = process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"];
+  process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"] = syntheticRoot;
   try {
 
   // Sensitive-name shapes named explicitly in the finding: a bare .env, the .env.* shape
@@ -230,12 +230,12 @@ async function clearReadOnly(dir: string): Promise<void> {
     "api.token",
   ];
 
-  const scratchRoot = resolve(syntheticRoot, ".clawforge-p1-05-scratch");
+  const scratchRoot = resolve(syntheticRoot, ".clawwright-p1-05-scratch");
 
   for (const relativePath of sensitiveRelativePaths) {
     // (1) Inside a recipe.
     {
-      const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-recipe-"));
+      const root = await mkdtemp(join(tmpdir(), "clawwright-p1-05-recipe-"));
       useDeployment(root);
       try {
         const target = resolve(root, "recipes", "sensitive", relativePath);
@@ -258,7 +258,7 @@ async function clearReadOnly(dir: string): Promise<void> {
 
     // (2) Inside the deployment's own config/, the other tree the syncs below deliver.
     {
-      const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-config-"));
+      const root = await mkdtemp(join(tmpdir(), "clawwright-p1-05-config-"));
       useDeployment(root);
       try {
         const target = resolve(root, "config", relativePath);
@@ -284,7 +284,7 @@ async function clearReadOnly(dir: string): Promise<void> {
     // This is the case that shipped before the fix: cases (1) and (2) already refused for the
     // very same name.
     {
-      const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-checkout-"));
+      const root = await mkdtemp(join(tmpdir(), "clawwright-p1-05-checkout-"));
       useDeployment(root); // an empty deployment: neither recipe nor config scan finds anything
       try {
         const target = resolve(scratchRoot, relativePath);
@@ -332,7 +332,7 @@ async function clearReadOnly(dir: string): Promise<void> {
   // A DIFFERENT untracked file at a sensitive name must still refuse — proving the content
   // check does not widen the hole into "any untracked file near a tracked one is fine".
   {
-    const copyScratch = resolve(syntheticRoot, ".clawforge-p1-05-content-copy-scratch");
+    const copyScratch = resolve(syntheticRoot, ".clawwright-p1-05-content-copy-scratch");
     try {
       const trackedTemplate = await readFile(resolve(syntheticRoot, "tools", "framework", ".env.example"));
       await mkdir(copyScratch, { recursive: true });
@@ -341,12 +341,12 @@ async function clearReadOnly(dir: string): Promise<void> {
       const untrackedFindings = await collectSensitiveCheckoutNames(syntheticRoot);
       check(
         "an untracked byte-identical copy of tracked content is not refused",
-        untrackedFindings.some((entry) => entry.path === ".clawforge-p1-05-content-copy-scratch/.env.example"),
+        untrackedFindings.some((entry) => entry.path === ".clawwright-p1-05-content-copy-scratch/.env.example"),
         false,
       );
       check(
         "an untracked file with no tracked twin still refuses, even right beside the copy",
-        untrackedFindings.some((entry) => entry.path === ".clawforge-p1-05-content-copy-scratch/unrelated.secrets.env"),
+        untrackedFindings.some((entry) => entry.path === ".clawwright-p1-05-content-copy-scratch/unrelated.secrets.env"),
         true,
       );
     } finally {
@@ -359,7 +359,7 @@ async function clearReadOnly(dir: string): Promise<void> {
   // so a concurrent agent's scratch secret there neither refuses nor ships.
   {
     check("rsync excludes Claude Code's .claude/", EXCLUDES.includes(".claude/"), true);
-    const claudeScratch = resolve(syntheticRoot, ".claude", "clawforge-deploy-policy-scratch");
+    const claudeScratch = resolve(syntheticRoot, ".claude", "clawwright-deploy-policy-scratch");
     let planted = false;
     try {
       await mkdir(claudeScratch, { recursive: true });
@@ -383,7 +383,7 @@ async function clearReadOnly(dir: string): Promise<void> {
   // The preflight scan must skip the same local checkout trees rsync omits, while still
   // visiting authored source below a nested apps/ directory.
   {
-    const root = await mkdtemp(join(tmpdir(), "clawforge-checkout-filter-"));
+    const root = await mkdtemp(join(tmpdir(), "clawwright-checkout-filter-"));
     try {
       for (const name of [
         "node_modules/pkg/.env.production",
@@ -411,8 +411,8 @@ async function clearReadOnly(dir: string): Promise<void> {
     }
   }
   } finally {
-    if (previousSourceRoot === undefined) delete process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"];
-    else process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"] = previousSourceRoot;
+    if (previousSourceRoot === undefined) delete process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"];
+    else process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"] = previousSourceRoot;
     await clearReadOnly(resolve(syntheticRoot, ".git")).catch(() => {});
     await rm(syntheticRoot, { recursive: true, force: true });
   }

@@ -1,7 +1,7 @@
 {
   "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it. Retired: localizeOptOuts (infoRaw/reportErrorVerbatim/localizeHints) counted three symbols that no longer exist, so it could never move; the property it stood for, that the output layers print the text they are given, is pinned by advice-matrix.check.ts (info() and reportError write rendered advice un-rewritten).",
   "rawArgvScans": {
-    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawforge.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone. 37 -> 36 (stage 7 S2.2): parseCall and execute.ts's --json probe read the action pick from selectAction (core/command/parse.ts); their own first-word scans are gone. 36 -> 40 (stage 7 S2.4): core/values/kinds.ts arrives (its interval wrapper's message-prefix slice, and the ssh/text leading-dash refusals over one raw value), and the interval wrappers in backup/watch install slice parseInterval's refusal prefix — all one-value refusals, exempted with reasons; schedule.ts's stale exemption is deleted with the flip that removed its line. Back at 36 (stage 7 S2.4, second pass): the dash refusals are expressed without startsWith (raw[0] === \"-\"), the install wrappers call kinds.ts's shared intervalRangeRefusal (whose own line is slice-based and adds no scan), and the kinds.ts interval wrapper's line is the one exempted occurrence — the same nature schedule.ts's deleted exemption had. 36 -> 35 (stage 7 S2.8): step()'s two branch-local `--` tests collapse into one hoisted const, the completion table's actionArgument find is gone with the transition-table refactor, and the no-slot/unknown refusal no longer scans (token[0] === \"-\"); S2.8 third pass: the pending option's declared-long-token refusal moved wholly into step(), so the driver's dead lookahead and its exempt line are gone, and the dashed lookups are restricted to flags and options as HEAD's parser did",
+    "comment": "invariant (rf6): membership/prefix scans over argv-like names (argv/args/rawArgv/launchArgv .includes/.indexOf/.find/... , indexOf(\"--\"), startsWith(\"--, slice(2)) in tools/framework/{entry,integration,core,commands} plus tools/clawwright.ts must be the tokenizer's, an entry seam, or an exempt line recorded with a reason — total counts occurrences including exempt ones, so any new scan fails. 38 -> 37 (rf6-p16): rollback --operation uses the shared path-segment grammar, its own prefix scan is gone. 37 -> 36 (stage 7 S2.2): parseCall and execute.ts's --json probe read the action pick from selectAction (core/command/parse.ts); their own first-word scans are gone. 36 -> 40 (stage 7 S2.4): core/values/kinds.ts arrives (its interval wrapper's message-prefix slice, and the ssh/text leading-dash refusals over one raw value), and the interval wrappers in backup/watch install slice parseInterval's refusal prefix — all one-value refusals, exempted with reasons; schedule.ts's stale exemption is deleted with the flip that removed its line. Back at 36 (stage 7 S2.4, second pass): the dash refusals are expressed without startsWith (raw[0] === \"-\"), the install wrappers call kinds.ts's shared intervalRangeRefusal (whose own line is slice-based and adds no scan), and the kinds.ts interval wrapper's line is the one exempted occurrence — the same nature schedule.ts's deleted exemption had. 36 -> 35 (stage 7 S2.8): step()'s two branch-local `--` tests collapse into one hoisted const, the completion table's actionArgument find is gone with the transition-table refactor, and the no-slot/unknown refusal no longer scans (token[0] === \"-\"); S2.8 third pass: the pending option's declared-long-token refusal moved wholly into step(), so the driver's dead lookahead and its exempt line are gone, and the dashed lookups are restricted to flags and options as HEAD's parser did",
     "files": {},
     "total": 34,
     "exempt": {
@@ -67,7 +67,7 @@
           "const declined = !isHelpRequest && (first.startsWith(\"-\") || candidates.includes(first));": 1
         }
       },
-      "tools/clawforge.ts": {
+      "tools/clawwright.ts": {
         "reason": "the entry seam: rawArgv is born here; --project-root is decided before any command declaration exists; the --json test only silences an stderr note (over-suppressing it is harmless), read through the bare-`--` boundary helper",
         "lines": {
           "const argv = normalizeVersionAlias(process.argv.slice(2));": 1,
@@ -77,7 +77,7 @@
       "tools/framework/integration/mcp/call.ts": {
         "reason": "narrowing a document's structured advice payload field, not a process-argv scan",
         "lines": {
-          "if (advice.kind === \"clawforge\") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === \"string\");": 1
+          "if (advice.kind === \"clawwright\") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === \"string\");": 1
         }
       },
       "tools/framework/commands/management/provision-agent/declaration.ts": {
@@ -106,21 +106,21 @@
       }
     }
   },
-  "dotClawforgeLiterals": {
-    "comment": "stage 4 (Advice): ./clawforge must reach output only through one renderer",
+  "dotClawwrightLiterals": {
+    "comment": "stage 4 (Advice): ./clawwright must reach output only through one renderer",
     "files": {},
     "exempt": {
       "tools/framework/core/io/invocation/frame.ts": {
         "reason": "the one owner of the program spelling (moved from render.ts, the former renderer owner)",
         "lines": {
-          "export const SHIM_PROGRAM = \"./clawforge\";": 1
+          "export const SHIM_PROGRAM = \"./clawwright\";": 1
         }
       },
       "tools/framework/integration/deployment/init.ts": {
         "reason": "the committed shim names itself: its own comments and the two invocation variables",
         "lines": {
-          "# Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works": 1,
-          "# Hints in the CLI say \"./clawforge\" for this entry, \"clawforge\" for the system-wide command.": 1
+          "# Delegates to the installed clawwright CLI. Committed so ./clawwright <command> works": 1,
+          "# Hints in the CLI say \"./clawwright\" for this entry, \"clawwright\" for the system-wide command.": 1
         }
       },
       "tools/framework/integration/mcp/project.ts": {
@@ -130,56 +130,56 @@
       "tools/framework/integration/completion/bash.ts": {
         "reason": "the generated script registers both spellings of the command",
         "lines": {
-          "\"complete -F _clawforge_complete ./clawforge\\n\";": 1
+          "\"complete -F _clawwright_complete ./clawwright\\n\";": 1
         }
       },
       "tools/framework/integration/completion/index.ts": {
         "reason": "the zsh script's #compdef header names both spellings",
         "lines": {
-          "\"#compdef clawforge ./clawforge\\n\" +": 1
+          "\"#compdef clawwright ./clawwright\\n\" +": 1
         }
       },
       "tools/framework/integration/completion/pwsh.ts": {
         "reason": "the PowerShell registration names the same two spellings, as bash's does",
         "lines": {
-          "\"Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock $clawforgeCompleter\\n\"": 1
+          "\"Register-ArgumentCompleter -Native -CommandName clawwright, ./clawwright -ScriptBlock $clawwrightCompleter\\n\"": 1
         }
       }
     },
     "total": 6
   },
-  "dotClawforgeLiteralsNonTs": {
-    "comment": "stage 6 (review round 7): ./clawforge in static non-.ts product files under tools/framework (yml/yaml/sh/json/md/txt, plus dot/extensionless text files up to 1 MB); the compose :? guard message named a program rendered by docker compose, where it does not exist. README and .env.example lines are exempt: both document the deployment's committed launcher itself, like the shim.",
+  "dotClawwrightLiteralsNonTs": {
+    "comment": "stage 6 (review round 7): ./clawwright in static non-.ts product files under tools/framework (yml/yaml/sh/json/md/txt, plus dot/extensionless text files up to 1 MB); the compose :? guard message named a program rendered by docker compose, where it does not exist. README and .env.example lines are exempt: both document the deployment's committed launcher itself, like the shim.",
     "files": {},
     "exempt": {
       "tools/framework/README.md": {
         "reason": "the package README documents the committed launcher itself, like the shim",
         "lines": {
-          "./clawforge bootstrap": 1,
-          "not on `PATH`, and afterwards the `./clawforge` launcher it writes takes over. The": 1
+          "./clawwright bootstrap": 1,
+          "not on `PATH`, and afterwards the `./clawwright` launcher it writes takes over. The": 1
         }
       },
       "tools/framework/.env.example": {
-        "reason": "copied into deployments in both modes: a checkout has the monorepo shim and init writes the same ./clawforge shim into an installed deployment (writeShim), so each command advice holds as typed; Windows cmd/pwsh users type npm's bin wrapper, as the tool's own hints say",
+        "reason": "copied into deployments in both modes: a checkout has the monorepo shim and init writes the same ./clawwright shim into an installed deployment (writeShim), so each command advice holds as typed; Windows cmd/pwsh users type npm's bin wrapper, as the tool's own hints say",
         "lines": {
-          "# `new-app` and `init` copy this into the deployment; `./clawforge bootstrap` fills in the": 1,
-          "# Where this repository's checkout lives on the target when deploying over SSH (./clawforge": 1,
-          "# Host directory holding all persistent state. Created by `./clawforge bootstrap` with owner": 1,
-          "# Gateway auth token. Generated by `./clawforge bootstrap`; keep it secret.": 1,
-          "# Where `./clawforge backup` writes archives.": 1,
-          "# Where `./clawforge pull` stores snapshots taken from the instance.": 1,
-          "# `./clawforge backup install` for the schedule that actually produces those backups.": 1,
-          "# `./clawforge doctor`/`inspect`'s BACKUP_STALE threshold: how old the newest full backup": 1,
-          "# Alert target for `./clawforge watch check`: POSTed only on a state transition (ok/degraded/": 1,
-          "# `./clawforge watch check`'s free-space floor for the data directory, in MB. Below it:": 1,
-          "# `./clawforge doctor`/`inspect`'s DISK_LOW threshold, in MB — separate from": 1
+          "# `new-app` and `init` copy this into the deployment; `./clawwright bootstrap` fills in the": 1,
+          "# Where this repository's checkout lives on the target when deploying over SSH (./clawwright": 1,
+          "# Host directory holding all persistent state. Created by `./clawwright bootstrap` with owner": 1,
+          "# Gateway auth token. Generated by `./clawwright bootstrap`; keep it secret.": 1,
+          "# Where `./clawwright backup` writes archives.": 1,
+          "# Where `./clawwright pull` stores snapshots taken from the instance.": 1,
+          "# `./clawwright backup install` for the schedule that actually produces those backups.": 1,
+          "# `./clawwright doctor`/`inspect`'s BACKUP_STALE threshold: how old the newest full backup": 1,
+          "# Alert target for `./clawwright watch check`: POSTed only on a state transition (ok/degraded/": 1,
+          "# `./clawwright watch check`'s free-space floor for the data directory, in MB. Below it:": 1,
+          "# `./clawwright doctor`/`inspect`'s DISK_LOW threshold, in MB — separate from": 1
         }
       }
     },
     "total": 13
   },
-  "dotClawforgeConcatLiterals": {
-    "comment": "stage 4 (Advice): the concatenation spelling \".\" + \"/clawforge\" of the program name — same single-renderer invariant as dotClawforgeLiterals, 0 outside it",
+  "dotClawwrightConcatLiterals": {
+    "comment": "stage 4 (Advice): the concatenation spelling \".\" + \"/clawwright\" of the program name — same single-renderer invariant as dotClawwrightLiterals, 0 outside it",
     "total": 0
   },
   "rawArgvPredicates": {
@@ -401,7 +401,7 @@
       "tools/checks/foundation/cli/host.check.ts": {
         "reason": "value selection: the env names the host platform; the case runs on every host",
         "lines": {
-          "await host(ctxWith({}), [\"local\", \"--\", process.execPath, \"-e\", \"console.log('clawforge host local e2e')\"], envWith(process.platform, []));": 1
+          "await host(ctxWith({}), [\"local\", \"--\", process.execPath, \"-e\", \"console.log('clawwright host local e2e')\"], envWith(process.platform, []));": 1
         }
       },
       "tools/checks/integration/agent/provision-agent.check.ts": {
@@ -788,14 +788,14 @@
     "total": 304
   },
   "frameReads": {
-    "comment": "stage 7 S1.3 (design docs/internal/refactor-stage7-frame-design.md §8): occurrences of invocation()/currentFrame() in product code outside the exempt modules core/io/invocation/**, core/io/help-render.ts, core/io/log.ts. Scan scope: tools/framework/**/*.ts plus tools/clawforge.ts. Measured at the S1.3 resolver refactor: 0 — the reads the design lists as pre-S1.3 (entry/resolve.ts, entry/delegate.ts, entry/bin.ts, integration/deployment/scaffold.ts, tools/clawforge.ts) are gone; the only remaining raw reads are the exempt ones (help-render.ts: 2 invocation() default arguments; invocation/{index,render,prose}.ts). Shrink-only at target 0: any occurrence fails.",
+    "comment": "stage 7 S1.3 (design docs/internal/refactor-stage7-frame-design.md §8): occurrences of invocation()/currentFrame() in product code outside the exempt modules core/io/invocation/**, core/io/help-render.ts, core/io/log.ts. Scan scope: tools/framework/**/*.ts plus tools/clawwright.ts. Measured at the S1.3 resolver refactor: 0 — the reads the design lists as pre-S1.3 (entry/resolve.ts, entry/delegate.ts, entry/bin.ts, integration/deployment/scaffold.ts, tools/clawwright.ts) are gone; the only remaining raw reads are the exempt ones (help-render.ts: 2 invocation() default arguments; invocation/{index,render,prose}.ts). Shrink-only at target 0: any occurrence fails.",
     "total": 0
   },
   "frameInstalls": {
-    "comment": "stage 7 S1.3 (design §8): installFrame(/setInvocation( call sites outside the accessor module; app-selection refinement installs are obsolete, leaving one process-entry install in each owning entry. Verified measured sites: entry/bin.ts:68 and tools/clawforge.ts:64.",
+    "comment": "stage 7 S1.3 (design §8): installFrame(/setInvocation( call sites outside the accessor module; app-selection refinement installs are obsolete, leaving one process-entry install in each owning entry. Verified measured sites: entry/bin.ts:68 and tools/clawwright.ts:64.",
     "files": {
       "tools/framework/entry/bin.ts": 1,
-      "tools/clawforge.ts": 1
+      "tools/clawwright.ts": 1
     },
     "total": 2
   },
@@ -834,9 +834,9 @@
       "checkout gate shim (cwd: apps/demo) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "checkout gate, handed over by the init shim | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "checkout gate, handed over by the monorepo MCP launcher | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"--app\",\"demo\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
-      "MCP launcher (installed): no variables — the entry default | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
+      "MCP launcher (installed): no variables — the entry default | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawwright-checkout is a Clawwright checkout — init writes an installed-style deployment (its own committed clawwright entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
       "MCP launcher (installed): no variables — the entry default | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
-      "defaultLaunch: global install | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
+      "defaultLaunch: global install | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawwright-checkout is a Clawwright checkout — init writes an installed-style deployment (its own committed clawwright entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
       "defaultLaunch: global install | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "defaultLaunch: checkout copy | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "defaultLaunch: local package (posix) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
@@ -898,127 +898,127 @@
       "defaultLaunch: local package (win32) | help prose: remove-app destroy | posix": "the pasted program does not resolve — npm's Windows bin spelling pasted in a POSIX shell — the backslashes are escapes there (D1/O1)",
       "defaultLaunch: local package (win32) | law: quoting round-trip | posix": "the pasted program does not resolve — npm's Windows bin spelling pasted in a POSIX shell — the backslashes are escapes there (D1/O1)",
       "defaultLaunch: local package (win32, Git Bash) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
-      "manual verbatim (bare word) | refusal: init inside a ClawForge checkout | posix": "the pasted program does not resolve — the pasted first word ./clawforge drifts from the declared hand-set program cw",
-      "manual verbatim (bare word) | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
-      "manual verbatim (bare word) | gate inline note (1) | posix": "the pasted program does not resolve — the pasted first word ./clawforge drifts from the declared hand-set program cw",
+      "manual verbatim (bare word) | refusal: init inside a Clawwright checkout | posix": "the pasted program does not resolve — the pasted first word ./clawwright drifts from the declared hand-set program cw",
+      "manual verbatim (bare word) | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawwright-checkout is a Clawwright checkout — init writes an installed-style deployment (its own committed clawwright entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
+      "manual verbatim (bare word) | gate inline note (1) | posix": "the pasted program does not resolve — the pasted first word ./clawwright drifts from the declared hand-set program cw",
       "manual verbatim (bare word) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
-      "manual verbatim (spaced program) | refusal: init inside a ClawForge checkout | posix": "the pasted program does not resolve — the pasted first word ./clawforge drifts from the declared hand-set program /opt/claw forge/clawforge",
-      "manual verbatim (spaced program) | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
-      "manual verbatim (spaced program) | help prose: restart up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"up\"] where the advice declares [\"up\"]",
+      "manual verbatim (spaced program) | refusal: init inside a Clawwright checkout | posix": "the pasted program does not resolve — the pasted first word ./clawwright drifts from the declared hand-set program /opt/claw forge/clawwright",
+      "manual verbatim (spaced program) | refusal: not initialised (installed) | posix": "the resolver refused the pasted line: refuse — /clawwright-checkout is a Clawwright checkout — init writes an installed-style deployment (its own committed clawwright entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root, run the gate from its root:",
+      "manual verbatim (spaced program) | help prose: restart up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"up\"] where the advice declares [\"up\"]",
       "manual verbatim (spaced program) | help prose: restart up | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: destroy remove-app | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"remove-app\"] where the advice declares [\"remove-app\"]",
+      "manual verbatim (spaced program) | help prose: destroy remove-app | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"remove-app\"] where the advice declares [\"remove-app\"]",
       "manual verbatim (spaced program) | help prose: destroy remove-app | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: backup help pull | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"help\",\"pull\"] where the advice declares [\"help\",\"pull\"]",
+      "manual verbatim (spaced program) | help prose: backup help pull | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"help\",\"pull\"] where the advice declares [\"help\",\"pull\"]",
       "manual verbatim (spaced program) | help prose: backup help pull | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: backup restore | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"restore\"] where the advice declares [\"restore\"]",
+      "manual verbatim (spaced program) | help prose: backup restore | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"restore\"] where the advice declares [\"restore\"]",
       "manual verbatim (spaced program) | help prose: backup restore | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: backup backup | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"backup\"] where the advice declares [\"backup\"]",
+      "manual verbatim (spaced program) | help prose: backup backup | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"backup\"] where the advice declares [\"backup\"]",
       "manual verbatim (spaced program) | help prose: backup backup | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: verify pull --share | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"pull\",\"--share\"] where the advice declares [\"pull\",\"--share\"]",
+      "manual verbatim (spaced program) | help prose: verify pull --share | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"pull\",\"--share\"] where the advice declares [\"pull\",\"--share\"]",
       "manual verbatim (spaced program) | help prose: verify pull --share | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: upgrade lock | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"lock\"] where the advice declares [\"lock\"]",
+      "manual verbatim (spaced program) | help prose: upgrade lock | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"lock\"] where the advice declares [\"lock\"]",
       "manual verbatim (spaced program) | help prose: upgrade lock | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: smoke apply-config | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"apply-config\"] where the advice declares [\"apply-config\"]",
+      "manual verbatim (spaced program) | help prose: smoke apply-config | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"apply-config\"] where the advice declares [\"apply-config\"]",
       "manual verbatim (spaced program) | help prose: smoke apply-config | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: inspect plan | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"plan\"] where the advice declares [\"plan\"]",
+      "manual verbatim (spaced program) | help prose: inspect plan | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"plan\"] where the advice declares [\"plan\"]",
       "manual verbatim (spaced program) | help prose: inspect plan | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: inspect cli-start | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli-start\"] where the advice declares [\"cli-start\"]",
+      "manual verbatim (spaced program) | help prose: inspect cli-start | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli-start\"] where the advice declares [\"cli-start\"]",
       "manual verbatim (spaced program) | help prose: inspect cli-start | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: doctor inspect | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"inspect\"] where the advice declares [\"inspect\"]",
+      "manual verbatim (spaced program) | help prose: doctor inspect | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"inspect\"] where the advice declares [\"inspect\"]",
       "manual verbatim (spaced program) | help prose: doctor inspect | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: plan inspect | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"inspect\"] where the advice declares [\"inspect\"]",
+      "manual verbatim (spaced program) | help prose: plan inspect | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"inspect\"] where the advice declares [\"inspect\"]",
       "manual verbatim (spaced program) | help prose: plan inspect | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: plan recover-env | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"recover-env\"] where the advice declares [\"recover-env\"]",
+      "manual verbatim (spaced program) | help prose: plan recover-env | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"recover-env\"] where the advice declares [\"recover-env\"]",
       "manual verbatim (spaced program) | help prose: plan recover-env | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: plan apply-config --dump | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"apply-config\",\"--dump\"] where the advice declares [\"apply-config\",\"--dump\"]",
+      "manual verbatim (spaced program) | help prose: plan apply-config --dump | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"apply-config\",\"--dump\"] where the advice declares [\"apply-config\",\"--dump\"]",
       "manual verbatim (spaced program) | help prose: plan apply-config --dump | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: plan secrets --dump | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"secrets\",\"--dump\"] where the advice declares [\"secrets\",\"--dump\"]",
+      "manual verbatim (spaced program) | help prose: plan secrets --dump | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"secrets\",\"--dump\"] where the advice declares [\"secrets\",\"--dump\"]",
       "manual verbatim (spaced program) | help prose: plan secrets --dump | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: plan apply | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"apply\"] where the advice declares [\"apply\"]",
+      "manual verbatim (spaced program) | help prose: plan apply | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"apply\"] where the advice declares [\"apply\"]",
       "manual verbatim (spaced program) | help prose: plan apply | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: apply plan | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"plan\"] where the advice declares [\"plan\"]",
+      "manual verbatim (spaced program) | help prose: apply plan | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"plan\"] where the advice declares [\"plan\"]",
       "manual verbatim (spaced program) | help prose: apply plan | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: apply operations | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"operations\"] where the advice declares [\"operations\"]",
+      "manual verbatim (spaced program) | help prose: apply operations | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"operations\"] where the advice declares [\"operations\"]",
       "manual verbatim (spaced program) | help prose: apply operations | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: apply secrets --dump | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"secrets\",\"--dump\"] where the advice declares [\"secrets\",\"--dump\"]",
+      "manual verbatim (spaced program) | help prose: apply secrets --dump | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"secrets\",\"--dump\"] where the advice declares [\"secrets\",\"--dump\"]",
       "manual verbatim (spaced program) | help prose: apply secrets --dump | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: apply apply-config --dry-run | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"apply-config\",\"--dry-run\"] where the advice declares [\"apply-config\",\"--dry-run\"]",
+      "manual verbatim (spaced program) | help prose: apply apply-config --dry-run | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"apply-config\",\"--dry-run\"] where the advice declares [\"apply-config\",\"--dry-run\"]",
       "manual verbatim (spaced program) | help prose: apply apply-config --dry-run | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: accept smoke | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"smoke\"] where the advice declares [\"smoke\"]",
+      "manual verbatim (spaced program) | help prose: accept smoke | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"smoke\"] where the advice declares [\"smoke\"]",
       "manual verbatim (spaced program) | help prose: accept smoke | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: accept doctor | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"doctor\"] where the advice declares [\"doctor\"]",
+      "manual verbatim (spaced program) | help prose: accept doctor | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"doctor\"] where the advice declares [\"doctor\"]",
       "manual verbatim (spaced program) | help prose: accept doctor | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: rollback apply | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"apply\"] where the advice declares [\"apply\"]",
+      "manual verbatim (spaced program) | help prose: rollback apply | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"apply\"] where the advice declares [\"apply\"]",
       "manual verbatim (spaced program) | help prose: rollback apply | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: rollback push | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"push\"] where the advice declares [\"push\"]",
+      "manual verbatim (spaced program) | help prose: rollback push | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"push\"] where the advice declares [\"push\"]",
       "manual verbatim (spaced program) | help prose: rollback push | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: rollback apply --set | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"apply\",\"--set\"] where the advice declares [\"apply\",\"--set\"]",
+      "manual verbatim (spaced program) | help prose: rollback apply --set | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"apply\",\"--set\"] where the advice declares [\"apply\",\"--set\"]",
       "manual verbatim (spaced program) | help prose: rollback apply --set | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: operations rollback | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"rollback\"] where the advice declares [\"rollback\"]",
+      "manual verbatim (spaced program) | help prose: operations rollback | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"rollback\"] where the advice declares [\"rollback\"]",
       "manual verbatim (spaced program) | help prose: operations rollback | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: expose status | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"status\"] where the advice declares [\"status\"]",
+      "manual verbatim (spaced program) | help prose: expose status | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"status\"] where the advice declares [\"status\"]",
       "manual verbatim (spaced program) | help prose: expose status | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: incident up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"up\"] where the advice declares [\"up\"]",
+      "manual verbatim (spaced program) | help prose: incident up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"up\"] where the advice declares [\"up\"]",
       "manual verbatim (spaced program) | help prose: incident up | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: incident mcp-creds | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"mcp-creds\"] where the advice declares [\"mcp-creds\"]",
+      "manual verbatim (spaced program) | help prose: incident mcp-creds | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"mcp-creds\"] where the advice declares [\"mcp-creds\"]",
       "manual verbatim (spaced program) | help prose: incident mcp-creds | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: incident doctor | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"doctor\"] where the advice declares [\"doctor\"]",
+      "manual verbatim (spaced program) | help prose: incident doctor | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"doctor\"] where the advice declares [\"doctor\"]",
       "manual verbatim (spaced program) | help prose: incident doctor | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: incident accept | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"accept\"] where the advice declares [\"accept\"]",
+      "manual verbatim (spaced program) | help prose: incident accept | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"accept\"] where the advice declares [\"accept\"]",
       "manual verbatim (spaced program) | help prose: incident accept | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: lock inspect | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"inspect\"] where the advice declares [\"inspect\"]",
+      "manual verbatim (spaced program) | help prose: lock inspect | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"inspect\"] where the advice declares [\"inspect\"]",
       "manual verbatim (spaced program) | help prose: lock inspect | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli cli config get gateway.mode | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli\",\"config\",\"get\",\"gateway.mode\"] where the advice declares [\"cli\",\"config\",\"get\",\"gateway.mode\"]",
+      "manual verbatim (spaced program) | help prose: cli cli config get gateway.mode | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli\",\"config\",\"get\",\"gateway.mode\"] where the advice declares [\"cli\",\"config\",\"get\",\"gateway.mode\"]",
       "manual verbatim (spaced program) | help prose: cli cli config get gateway.mode | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli cli-start | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli-start\"] where the advice declares [\"cli-start\"]",
+      "manual verbatim (spaced program) | help prose: cli cli-start | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli-start\"] where the advice declares [\"cli-start\"]",
       "manual verbatim (spaced program) | help prose: cli cli-start | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli cli --help | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli\",\"--help\"] where the advice declares [\"cli\",\"--help\"]",
+      "manual verbatim (spaced program) | help prose: cli cli --help | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli\",\"--help\"] where the advice declares [\"cli\",\"--help\"]",
       "manual verbatim (spaced program) | help prose: cli cli --help | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli help cli | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"help\",\"cli\"] where the advice declares [\"help\",\"cli\"]",
+      "manual verbatim (spaced program) | help prose: cli help cli | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"help\",\"cli\"] where the advice declares [\"help\",\"cli\"]",
       "manual verbatim (spaced program) | help prose: cli help cli | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli cli -- --help | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli\",\"--\",\"--help\"] where the advice declares [\"cli\",\"--\",\"--help\"]",
+      "manual verbatim (spaced program) | help prose: cli cli -- --help | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli\",\"--\",\"--help\"] where the advice declares [\"cli\",\"--\",\"--help\"]",
       "manual verbatim (spaced program) | help prose: cli cli -- --help | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: exec exec curl -fsS http://127.0.0.1:18789/healthz | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"exec\",\"curl\",\"-fsS\",\"http://127.0.0.1:18789/healthz\"] where the advice declares [\"exec\",\"curl\",\"-fsS\",\"http://127.0.0.1:18789/healthz\"]",
+      "manual verbatim (spaced program) | help prose: exec exec curl -fsS http://127.0.0.1:18789/healthz | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"exec\",\"curl\",\"-fsS\",\"http://127.0.0.1:18789/healthz\"] where the advice declares [\"exec\",\"curl\",\"-fsS\",\"http://127.0.0.1:18789/healthz\"]",
       "manual verbatim (spaced program) | help prose: exec exec curl -fsS http://127.0.0.1:18789/healthz | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: exec exec cat /app/docs/channels/telegram.md | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"exec\",\"cat\",\"/app/docs/channels/telegram.md\"] where the advice declares [\"exec\",\"cat\",\"/app/docs/channels/telegram.md\"]",
+      "manual verbatim (spaced program) | help prose: exec exec cat /app/docs/channels/telegram.md | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"exec\",\"cat\",\"/app/docs/channels/telegram.md\"] where the advice declares [\"exec\",\"cat\",\"/app/docs/channels/telegram.md\"]",
       "manual verbatim (spaced program) | help prose: exec exec cat /app/docs/channels/telegram.md | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli-start cli | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli\"] where the advice declares [\"cli\"]",
+      "manual verbatim (spaced program) | help prose: cli-start cli | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli\"] where the advice declares [\"cli\"]",
       "manual verbatim (spaced program) | help prose: cli-start cli | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli-start mcp-serve | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"mcp-serve\"] where the advice declares [\"mcp-serve\"]",
+      "manual verbatim (spaced program) | help prose: cli-start mcp-serve | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"mcp-serve\"] where the advice declares [\"mcp-serve\"]",
       "manual verbatim (spaced program) | help prose: cli-start mcp-serve | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli-start up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"up\"] where the advice declares [\"up\"]",
+      "manual verbatim (spaced program) | help prose: cli-start up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"up\"] where the advice declares [\"up\"]",
       "manual verbatim (spaced program) | help prose: cli-start up | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli-start down | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"down\"] where the advice declares [\"down\"]",
+      "manual verbatim (spaced program) | help prose: cli-start down | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"down\"] where the advice declares [\"down\"]",
       "manual verbatim (spaced program) | help prose: cli-start down | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli-stop cli | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli\"] where the advice declares [\"cli\"]",
+      "manual verbatim (spaced program) | help prose: cli-stop cli | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli\"] where the advice declares [\"cli\"]",
       "manual verbatim (spaced program) | help prose: cli-stop cli | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: cli-stop mcp-serve | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"mcp-serve\"] where the advice declares [\"mcp-serve\"]",
+      "manual verbatim (spaced program) | help prose: cli-stop mcp-serve | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"mcp-serve\"] where the advice declares [\"mcp-serve\"]",
       "manual verbatim (spaced program) | help prose: cli-stop mcp-serve | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: provision-agent up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"up\"] where the advice declares [\"up\"]",
+      "manual verbatim (spaced program) | help prose: provision-agent up | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"up\"] where the advice declares [\"up\"]",
       "manual verbatim (spaced program) | help prose: provision-agent up | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: mcp-serve mcp-setup | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"mcp-setup\"] where the advice declares [\"mcp-setup\"]",
+      "manual verbatim (spaced program) | help prose: mcp-serve mcp-setup | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"mcp-setup\"] where the advice declares [\"mcp-setup\"]",
       "manual verbatim (spaced program) | help prose: mcp-serve mcp-setup | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: mcp-serve control-mcp | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"control-mcp\"] where the advice declares [\"control-mcp\"]",
+      "manual verbatim (spaced program) | help prose: mcp-serve control-mcp | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"control-mcp\"] where the advice declares [\"control-mcp\"]",
       "manual verbatim (spaced program) | help prose: mcp-serve control-mcp | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: mcp-serve cli-start | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"cli-start\"] where the advice declares [\"cli-start\"]",
+      "manual verbatim (spaced program) | help prose: mcp-serve cli-start | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"cli-start\"] where the advice declares [\"cli-start\"]",
       "manual verbatim (spaced program) | help prose: mcp-serve cli-start | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: mcp-creds mcp-setup | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"mcp-setup\"] where the advice declares [\"mcp-setup\"]",
+      "manual verbatim (spaced program) | help prose: mcp-creds mcp-setup | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"mcp-setup\"] where the advice declares [\"mcp-setup\"]",
       "manual verbatim (spaced program) | help prose: mcp-creds mcp-setup | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: set plan | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"plan\"] where the advice declares [\"plan\"]",
+      "manual verbatim (spaced program) | help prose: set plan | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"plan\"] where the advice declares [\"plan\"]",
       "manual verbatim (spaced program) | help prose: set plan | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: check smoke | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"smoke\"] where the advice declares [\"smoke\"]",
+      "manual verbatim (spaced program) | help prose: check smoke | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"smoke\"] where the advice declares [\"smoke\"]",
       "manual verbatim (spaced program) | help prose: check smoke | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: check check gate | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"check\",\"gate\"] where the advice declares [\"check\",\"gate\"]",
+      "manual verbatim (spaced program) | help prose: check check gate | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"check\",\"gate\"] where the advice declares [\"check\",\"gate\"]",
       "manual verbatim (spaced program) | help prose: check check gate | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: new-app bootstrap | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"--app\",\"x\",\"bootstrap\"] where the advice declares [\"bootstrap\"]",
+      "manual verbatim (spaced program) | help prose: new-app bootstrap | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"--app\",\"x\",\"bootstrap\"] where the advice declares [\"bootstrap\"]",
       "manual verbatim (spaced program) | help prose: new-app bootstrap | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: remove-app list | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"list\"] where the advice declares [\"list\"]",
+      "manual verbatim (spaced program) | help prose: remove-app list | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"list\"] where the advice declares [\"list\"]",
       "manual verbatim (spaced program) | help prose: remove-app list | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | help prose: remove-app destroy | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"--app\",\"x\",\"destroy\"] where the advice declares [\"destroy\"]",
+      "manual verbatim (spaced program) | help prose: remove-app destroy | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"--app\",\"x\",\"destroy\"] where the advice declares [\"destroy\"]",
       "manual verbatim (spaced program) | help prose: remove-app destroy | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
       "manual verbatim (spaced program) | help prose: completion completion pwsh (install) | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
-      "manual verbatim (spaced program) | gate inline note (1) | posix": "the pasted program does not resolve — the pasted first word ./clawforge drifts from the declared hand-set program /opt/claw forge/clawforge",
-      "manual verbatim (spaced program) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawforge'\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
+      "manual verbatim (spaced program) | gate inline note (1) | posix": "the pasted program does not resolve — the pasted first word ./clawwright drifts from the declared hand-set program /opt/claw forge/clawwright",
+      "manual verbatim (spaced program) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"forge/clawwright'\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "manual verbatim (spaced program) | law: quoting round-trip | pwsh": "the renderer quotes the program word; pwsh reads a quoted word as a string — invoking it needs the call operator & (owner decision: per-shell rows or a documented entry)",
       "system-wide inside apps/demo (cwd selection) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "fixture G0: shim before 710cf66 wrote no variables | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",

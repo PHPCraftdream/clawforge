@@ -10,7 +10,7 @@ import { readName } from "#framework/core/values/names.ts";
 import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
-const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-recipe-check-")));
+const root = await realpath(await mkdtemp(join(tmpdir(), "clawwright-recipe-check-")));
 const fixture = await createDeploymentFixture({ root });
 const app = { name: "recipe-check-fixture", description: "fixture", commands: { recipe: openclawCommands.recipe } };
 const directory = join(root, "recipes", "local");

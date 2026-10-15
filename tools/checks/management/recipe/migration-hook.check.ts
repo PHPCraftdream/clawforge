@@ -16,7 +16,7 @@ for (const bad of [{ ...declaration, verification: "../verify.ts" }, { ...declar
   try { parseMigrationBackup(bad); } catch { refused = true; }
   checkTrue("mixed modes, escaping paths and extra keys rejected", refused);
 }
-const directory = await mkdtemp(join(tmpdir(), "clawforge-migration-hook-"));
+const directory = await mkdtemp(join(tmpdir(), "clawwright-migration-hook-"));
 const ctx = {} as Context;
 const recipe: Recipe = { name: "observer", description: "observer", enabled: true, directory,
   definitionPath: join(directory, "compose.yml"), migrationBackup: declaration };

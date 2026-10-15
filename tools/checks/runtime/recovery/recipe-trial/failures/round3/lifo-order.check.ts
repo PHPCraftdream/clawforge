@@ -9,7 +9,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { ref, trialFixture, useRecipesRoot, type RecordedCall } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-lifo");
+const root = await useRecipesRoot("clawwright-recipe-trial-lifo");
 try {
   await root.write("subject", { description: "A recipe whose down needs its pinned file" });
   const fixture = trialFixture();
@@ -38,9 +38,9 @@ try {
   check("the run succeeds — compose down found its pinned document", error, "");
   checkTrue("the pinned document was written into the scratch home",
     fixture.privateWrites.some((path) => path.endsWith("pinned-compose.json")));
-  checkTrue("the scratch home was removed", fixture.removed.some((path) => path.includes(".clawforge-recipe-trial-")));
+  checkTrue("the scratch home was removed", fixture.removed.some((path) => path.includes(".clawwright-recipe-trial-")));
   const downIndex = timeline.indexOf("down");
-  const homeRemoveIndex = timeline.findIndex((entry) => entry.startsWith("remove:") && entry.includes(".clawforge-recipe-trial-"));
+  const homeRemoveIndex = timeline.findIndex((entry) => entry.startsWith("remove:") && entry.includes(".clawwright-recipe-trial-"));
   checkTrue("compose down ran", downIndex >= 0);
   checkTrue("the scratch-home removal ran", homeRemoveIndex >= 0);
   checkTrue("compose down ran BEFORE the scratch-home removal (LIFO: first registered, removed last)",

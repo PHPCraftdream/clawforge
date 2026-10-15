@@ -259,7 +259,7 @@ export async function runControls(
   const timeoutMs = options.timeoutMs ?? 600_000;
   const totalStart = Date.now();
   const copyStart = Date.now();
-  const tempRoot = await mkdtemp(join(tmpdir(), "clawforge-controls-"));
+  const tempRoot = await mkdtemp(join(tmpdir(), "clawwright-controls-"));
   try {
     await copyRepo(repoRoot, tempRoot);
     if (controls.some((control) => control.needsGit === true)) await initGitIndex(tempRoot);

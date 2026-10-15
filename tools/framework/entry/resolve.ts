@@ -1,6 +1,6 @@
 // One decision for "where am I, which deployment, which framework copy runs it, how do I
 // name myself" (refactor plan stage 2, invariant I3). Pure: the file system arrives as a
-// probe, nothing here spawns, exits or imports app.ts — the entries (tools/clawforge.ts,
+// probe, nothing here spawns, exits or imports app.ts — the entries (tools/clawwright.ts,
 // entry/bin.ts via entry/delegate.ts) execute the returned decision. Every refusal's
 // wording is pinned by the entry matrix under tools/checks/golden/.
 
@@ -321,11 +321,11 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
 
 // --- the installed command: which framework copy runs --------------------------------------------
 
-const PACKAGE = "@clawforge/framework";
+const PACKAGE = "clawwright";
 
-/** The checkout's own gate, purely: `root` holds tools/clawforge.ts next to the framework sources. */
+/** The checkout's own gate, purely: `root` holds tools/clawwright.ts next to the framework sources. */
 export function checkoutGateIn(root: string, fs: FsProbe): string | undefined {
-  const gate = resolve(root, "tools", "clawforge.ts");
+  const gate = resolve(root, "tools", "clawwright.ts");
   const manifest = fs.readFile(resolve(root, "tools", "framework", "package.json"));
   if (manifest === undefined) return undefined;
   try {
@@ -335,7 +335,7 @@ export function checkoutGateIn(root: string, fs: FsProbe): string | undefined {
   }
 }
 
-/** The ClawForge checkout at or above `start` (the same test as the hand-over gate). */
+/** The Clawwright checkout at or above `start` (the same test as the hand-over gate). */
 export function findCheckoutRootIn(start: string, fs: FsProbe): string | undefined {
   let dir = resolve(start);
   for (;;) {
@@ -412,7 +412,7 @@ export type HandoverDecision =
   | { readonly kind: "refuse-app-value"; readonly reason: "invalid-app-value"; readonly typed: string; readonly message: string }
   | { readonly kind: "refuse-app-value"; readonly reason: "app-conflict"; readonly typed: string; readonly app: string };
 
-/** Whose framework runs `appRoot` when `clawforge` is the system-wide command: the local
+/** Whose framework runs `appRoot` when `clawwright` is the system-wide command: the local
  *  package, that checkout's own gate, the checkout gate of the apps/<name> it sits in —
  *  or this package. Two framework copies in one process would split module state, so it
  *  is always exactly one. */
@@ -478,7 +478,7 @@ export interface InstalledEntryInput {
 
 export type InstalledEntryDecision =
   /** reportError refusals: the --project-root refusal, init nesting inside a deployment,
-   *  and init inside a ClawForge checkout (its rows spell the checkout root). */
+   *  and init inside a Clawwright checkout (its rows spell the checkout root). */
   | { readonly kind: "refuse"; readonly refusals: readonly UserError[]; readonly ancestor?: string; readonly checkout?: string }
   /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
   | { readonly kind: "checkout-types-note"; readonly line: string }
@@ -494,7 +494,7 @@ export type InstalledEntryDecision =
       readonly localTypesOnly: boolean;
       /** The deployment found at or above the cwd, when the cwd is not itself one. */
       readonly ancestor: string | undefined;
-      /** The ClawForge checkout at or above the cwd, when the directory is in one. */
+      /** The Clawwright checkout at or above the cwd, when the directory is in one. */
       readonly checkout: string | undefined;
     };
 
@@ -541,7 +541,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
   }
   // A checkout deployment reads the framework from the checkout's sources: nothing to install.
   if (localTypesOnly && ancestor !== undefined && importsCheckoutSourcesIn(ancestor, fs)) {
-    return { kind: "checkout-types-note", line: `editor types: this deployment imports the framework from its ClawForge checkout, so they already resolve there — ${NOTHING_TO_INSTALL_NOTE} (npm ci in the checkout root is enough)` };
+    return { kind: "checkout-types-note", line: `editor types: this deployment imports the framework from its Clawwright checkout, so they already resolve there — ${NOTHING_TO_INSTALL_NOTE} (npm ci in the checkout root is enough)` };
   }
   const checkout = scheduled ? undefined : findCheckoutRootIn(cwd, fs);
   if (initializing && ancestor === undefined && checkout !== undefined) {
@@ -569,8 +569,8 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
       checkout,
       refusals: [
         new UserError(
-          `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +
-            `clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
+          `${checkout} is a Clawwright checkout — init writes an installed-style deployment (its own committed ` +
+            `clawwright entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
             `is new-app under apps/. From the checkout root, run the gate from its root:`,
           { advice },
         ),
@@ -620,7 +620,7 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
   const refusals: readonly UserError[] = checkout === undefined
     ? [new UserError(`this directory ${NOT_INITIALISED_NOTE}`, { advice: [command(["init"])] })]
     : [
-        new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
+        new UserError(`this is a Clawwright checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
             command([], { at: "checkout-root" }),
             ...(rootedLaunch(frame.launch).kind === "system"

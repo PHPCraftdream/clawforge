@@ -12,7 +12,7 @@ interface VerificationJournal {
 
 const declaration = { consistency: "application-verified-cold", persistentState: "all-in-declared-named-volumes-and-bind-mounts",
   cleanShutdown: "verified-by-post-stop-hook", restore: "application-safe-including-compensation", verification: "migration-verify.ts" } as const;
-const root = "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc";
+const root = "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc";
 const stopStartedAt = "2026-10-09T00:00:00.000000000Z";
 const finishedAt = "2026-10-09T00:00:02.000000000Z";
 check("exact verification accepted", verifyMigrationReceipt({ verified: true }), { verified: true });

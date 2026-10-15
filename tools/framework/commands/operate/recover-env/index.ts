@@ -1,4 +1,4 @@
-// `clawforge recover-env` — repairs .env's CONNECTION FACTS (OC_DATA_DIR,
+// `clawwright recover-env` — repairs .env's CONNECTION FACTS (OC_DATA_DIR,
 // OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT, OPENCLAW_IMAGE) from the running container,
 // which compose resolved from that same .env at creation time.
 //

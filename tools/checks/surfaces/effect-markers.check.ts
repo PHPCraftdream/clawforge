@@ -69,8 +69,8 @@ checkTrue("the gates declare at least one destructive command to derive the case
 // `help <gate command>` shares renderHelp with MCP (rf6-fix33); both surfaces keep the effect note.
 {
   const gate = checkoutGate();
-  const registry = commandRegistry({ deployment: openclawCommands, gate, appName: "clawforge" });
-  const app: AppDefinition = { name: "clawforge", description: "d", commands: openclawCommands };
+  const registry = commandRegistry({ deployment: openclawCommands, gate, appName: "clawwright" });
+  const app: AppDefinition = { name: "clawwright", description: "d", commands: openclawCommands };
   for (const command of gate) {
     const note = effectNote(command);
     if (note === undefined) continue;

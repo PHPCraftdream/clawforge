@@ -1,4 +1,4 @@
-// `./clawforge expose tailscale` — the probe (absent / logged out / present), the exact
+// `./clawwright expose tailscale` — the probe (absent / logged out / present), the exact
 // `tailscale serve` command, funnel refused outright, and the one property that matters most:
 // --apply only ever reaches `tailscale serve` on the target while holding the instance lock,
 // proven with the same lock harness tools/checks/security/credentials/secrets-command/

@@ -1,5 +1,5 @@
 // Help-prose tokens (design 2.1–2.3): every `{…}` span in a declaration's `details` must
-// read as a token, `{clawforge …}` must name a command that takes the argv it spells, and
+// read as a token, `{clawwright …}` must name a command that takes the argv it spells, and
 // `{--name}` must be a flag this very command declares — so a renamed flag breaks the
 // check, not the help. The declarations are read from the one command registry
 // (entry/registry.ts) — the same list help, completion and the docs table read.
@@ -33,7 +33,7 @@ const byName = new Map(declarations.map((declaration) => [declaration.name, decl
 const PLACEHOLDER = /^<.*>$/;
 const EXAMPLE = "x";
 
-/** Every `{…}` span claiming to be a token: one whose content opens with neither clawforge
+/** Every `{…}` span claiming to be a token: one whose content opens with neither clawwright
  *  nor -- is prose (JSON in the text) and ignored. Tokens do not nest, so a span ends at
  *  the first "}". */
 function claimedSpans(details: string): readonly string[] {
@@ -41,7 +41,7 @@ function claimedSpans(details: string): readonly string[] {
     const content = span.slice(1, -1);
     // install too (rf6-fix33): an {install ...} span is a command line a user pastes, so it
     // answers to the same registry check — a typo in it used to read as plain text.
-    return content.startsWith("clawforge") || content.startsWith("install") || content.startsWith("--");
+    return content.startsWith("clawwright") || content.startsWith("install") || content.startsWith("--");
   });
 }
 
@@ -103,24 +103,24 @@ for (const declaration of declarations) {
 }
 
 // The synthetic table keeps the rules live against the real declarations, which now carry
-// {clawforge …} tokens of their own (the advice matrix's group 5 rows). Every string parses
+// {clawwright …} tokens of their own (the advice matrix's group 5 rows). Every string parses
 // and must be accepted; a rule that
 // stopped rejecting a broken token fails here first.
 const SYNTHETIC_TOKENS: readonly (readonly [string, string])[] = [
-  ["status", "{clawforge}"],
-  ["status", "{clawforge --app <name> status}"],
-  ["status", "{clawforge status --json}"],
+  ["status", "{clawwright}"],
+  ["status", "{clawwright --app <name> status}"],
+  ["status", "{clawwright status --json}"],
   ["status", "{--json}"],
-  ["logs", "{clawforge logs --tail <n>}"],
-  ["apply-config", "{clawforge apply-config --dump --force}"],
+  ["logs", "{clawwright logs --tail <n>}"],
+  ["apply-config", "{clawwright apply-config --dump --force}"],
   ["apply-config", "{--dry-run}"],
-  ["backup", "{clawforge backup list --json}"],
-  ["set", "{clawforge set validate --json}"],
-  ["check", "{clawforge help logs}"],
-  ["check", "{clawforge check --list}"],
+  ["backup", "{clawwright backup list --json}"],
+  ["set", "{clawwright set validate --json}"],
+  ["check", "{clawwright help logs}"],
+  ["check", "{clawwright check --list}"],
   ["list", "{--no-status}"],
-  ["version", "{clawforge version --json}"],
-  ["control-mcp", "{clawforge control-mcp}"],
+  ["version", "{clawwright version --json}"],
+  ["control-mcp", "{clawwright control-mcp}"],
 ];
 for (const [name, text] of SYNTHETIC_TOKENS) {
   const declaration = byName.get(name);

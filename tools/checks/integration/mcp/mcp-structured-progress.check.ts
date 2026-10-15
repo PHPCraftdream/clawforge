@@ -9,7 +9,7 @@ import { frameworkVersion } from "#framework/commands/management/lock.ts";
 
 useLinuxHost();
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-structured-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-mcp-structured-"));
 try {
   await mkdir(join(root, "config"));
   await writeFile(join(root, ".env"), "OC_DATA_DIR=/tmp/fixture\nOC_TARGET_LOCATION=local\n");
@@ -58,7 +58,7 @@ try {
 // once its turn actually comes).
 {
   const expectedVersion = await frameworkVersion();
-  const root2 = await mkdtemp(join(tmpdir(), "clawforge-mcp-concurrency-"));
+  const root2 = await mkdtemp(join(tmpdir(), "clawwright-mcp-concurrency-"));
   try {
     await mkdir(join(root2, "config"));
     await writeFile(join(root2, ".env"), "OC_DATA_DIR=/tmp/fixture\nOC_TARGET_LOCATION=local\n");

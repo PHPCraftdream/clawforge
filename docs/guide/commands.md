@@ -4,19 +4,19 @@ A summary of every command's arguments and purpose. For what's current at the mo
 run it, ask the tool itself:
 
 ```bash
-./clawforge help               # the same list as below, current as of the moment you run it
-./clawforge help <command>     # full description of a command and its arguments
-./clawforge <command> --help   # the same thing, different syntax
+./clawwright help               # the same list as below, current as of the moment you run it
+./clawwright help <command>     # full description of a command and its arguments
+./clawwright <command> --help   # the same thing, different syntax
 ```
 
 The `--help` text is not an abridgement: it is where side effects and ordering are spelled
 out (why `push` installs keys before starting rather than after, for instance). An MCP
-client sees a one-line summary as each tool's description under `./clawforge control-mcp` — not
+client sees a one-line summary as each tool's description under `./clawwright control-mcp` — not
 that whole text, which would cost every session's context before the first real call — plus a
-pointer to the `help` tool, which returns exactly what `./clawforge help <command>` prints. What
+pointer to the `help` tool, which returns exactly what `./clawwright help <command>` prints. What
 follows below is what does not fit in `--help` — the whole model, file formats, diagnostics.
 
-When the system-wide `clawforge` runs inside one deployment but advice names another, it
+When the system-wide `clawwright` runs inside one deployment but advice names another, it
 prints the command with `--project-root <checkout>/apps/<name>` — a supported way to point
 the command at that specific deployment instead of the one it stands in.
 
@@ -140,7 +140,7 @@ over automatically, without the flag.
 | `new-app` | `<name>` | Create a deployment under apps/ (checkout only) |
 | `remove-app` | `<name> [--yes]` | Delete apps/<name> (destructive for some actions) (checkout only) |
 | `list` | `[--json] [--no-status]` | List deployments under apps/ (checkout only) |
-| `version` | `[--json] [--verbose]` | Print clawforge's own version (also: --version, -v) |
+| `version` | `[--json] [--verbose]` | Print clawwright's own version (also: --version, -v) |
 | `completion` | `<shell>` | Print a shell completion script (bash, zsh or pwsh) to stdout |
 | `init` | `[--local]` | Initialise this directory as an OpenClaw deployment (installed only) |
 | `control-mcp` | — | Expose `<app>`'s commands as MCP tools, for agents |
@@ -152,7 +152,7 @@ over automatically, without the flag.
 
 The table above is generated from the command declarations, so it carries each command's name,
 its arguments and its one-line summary; the full text of any of them is
-`./clawforge help <command>`. What does not fit on a line lives on the page that owns it:
+`./clawwright help <command>`. What does not fit on a line lives on the page that owns it:
 
 * `backup` — the schedules `install`/`uninstall` write, archive rotation and the native
   snapshot path: [data-and-backups.md](data-and-backups.md)
@@ -167,17 +167,17 @@ its arguments and its one-line summary; the full text of any of them is
 
 ## Shell completion
 
-`./clawforge completion <bash|zsh|pwsh>` prints a completion script to stdout: one fixed
+`./clawwright completion <bash|zsh|pwsh>` prints a completion script to stdout: one fixed
 interpreter plus one table of the command names, flags and actions, generated from the
 command registry — the same registry `--help`, the MCP schema and the table above read. No
 per-command code lives in the script, so bash, zsh (which loads that same body through
 `bashcompinit`) and PowerShell behave identically. It never embeds a machine path: only the
-invoked name, `clawforge` or `./clawforge`, both registered so either spelling completes.
+invoked name, `clawwright` or `./clawwright`, both registered so either spelling completes.
 
 ```bash
-eval "$(./clawforge completion bash)"                         # current shell (bash 3.2 included)
-./clawforge completion zsh > "${fpath[1]}/_clawforge"       # new zsh shell (or: source <(...) now)
-./clawforge completion pwsh | Out-String | Invoke-Expression # current PowerShell session
+eval "$(./clawwright completion bash)"                         # current shell (bash 3.2 included)
+./clawwright completion zsh > "${fpath[1]}/_clawwright"       # new zsh shell (or: source <(...) now)
+./clawwright completion pwsh | Out-String | Invoke-Expression # current PowerShell session
 ```
 
 In a monorepo checkout, `--app <name>`'s own value is completed too — lazily, by calling
@@ -186,7 +186,7 @@ something actually asks for it, never baked into the generated script. An instal
 (`entry/bin.ts`) has no `--app` at all, and its own completion script never mentions it.
 
 After `help <command>` only `--help` is offered, where the command names used to be offered
-again at every word. A script saved to a file (`> "${fpath[1]}/_clawforge"`) has to be
+again at every word. A script saved to a file (`> "${fpath[1]}/_clawwright"`) has to be
 generated again after an upgrade; the `source <(…)` and `| Out-String | Invoke-Expression`
 forms pick up the new script by themselves.
 
@@ -195,7 +195,7 @@ shell profile, which a tool call has no shell to install into.
 
 ## The machine itself: `host`
 
-`./clawforge host <context> -- <command>` runs one ad hoc command against the operator's own
+`./clawwright host <context> -- <command>` runs one ad hoc command against the operator's own
 machine layers instead of the deployment's containers: `target` (the deployment's own
 transport), `engine` (wherever the container engine actually executes — Docker Desktop's
 `docker-desktop` WSL2 distro on Windows), and `local` (this machine, unwrapped). Where no

@@ -7,7 +7,7 @@ import { runTrialDryRun } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { DATA_DIR, captured, messageOf, ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-ambiguous");
+const root = await useRecipesRoot("clawwright-recipe-trial-ambiguous");
 try {
   await root.write("subject", { description: "A recipe with one declared privatePath", privatePaths: ["state"] });
   const fixture = trialFixture();

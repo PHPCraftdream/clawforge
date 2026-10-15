@@ -42,11 +42,11 @@ assert.equal(
 
 // --- the exact docker argv, so a flag change is a visible diff here, not just in behavior --
 
-assert.deepEqual(buildCreateArgv("clawforge-check-linux-abcd1234", []), [
+assert.deepEqual(buildCreateArgv("clawwright-check-linux-abcd1234", []), [
   "create",
   "--rm",
   "--name",
-  "clawforge-check-linux-abcd1234",
+  "clawwright-check-linux-abcd1234",
   "-e",
   "CI=true",
   "node:24",
@@ -57,14 +57,14 @@ assert.deepEqual(buildCreateArgv("clawforge-check-linux-abcd1234", []), [
 
 assert.deepEqual(buildCreateArgv("c1", ["backup"]).slice(-1), [buildInnerScript(["backup"])]);
 
-assert.deepEqual(buildCopyArgv("/tmp/clawforge-check-linux-xyz", "c1"), ["cp", "/tmp/clawforge-check-linux-xyz", `c1:${CONTAINER_WORKDIR}`]);
+assert.deepEqual(buildCopyArgv("/tmp/clawwright-check-linux-xyz", "c1"), ["cp", "/tmp/clawwright-check-linux-xyz", `c1:${CONTAINER_WORKDIR}`]);
 // A host path is passed through untouched — no separator rewriting, no trailing-dot suffix:
 // buildCopyArgv relies on CONTAINER_WORKDIR not pre-existing in the container instead (see
 // check-linux-argv.ts), which is exactly what makes this safe to build the same way on every
 // host OS, backslashes and drive letters included.
-assert.deepEqual(buildCopyArgv("C:\\Users\\dev\\AppData\\Local\\Temp\\clawforge-check-linux-xyz", "c1"), [
+assert.deepEqual(buildCopyArgv("C:\\Users\\dev\\AppData\\Local\\Temp\\clawwright-check-linux-xyz", "c1"), [
   "cp",
-  "C:\\Users\\dev\\AppData\\Local\\Temp\\clawforge-check-linux-xyz",
+  "C:\\Users\\dev\\AppData\\Local\\Temp\\clawwright-check-linux-xyz",
   `c1:${CONTAINER_WORKDIR}`,
 ]);
 
@@ -77,7 +77,7 @@ assert.equal(isHostArtifactPath("node_modules/foo/index.js"), true);
 assert.equal(isHostArtifactPath("a/node_modules/b/c.js"), true);
 assert.equal(isHostArtifactPath("tools/framework/dist"), true);
 assert.equal(isHostArtifactPath("tools/framework/dist/entry/bin.js"), true);
-assert.equal(isHostArtifactPath("tools/clawforge.ts"), false);
+assert.equal(isHostArtifactPath("tools/clawwright.ts"), false);
 assert.equal(isHostArtifactPath("package.json"), false);
 // Same directory, unrelated name: a prefix match on "dist" alone would wrongly drop this.
 assert.equal(isHostArtifactPath("tools/framework/distinct-file.ts"), false);

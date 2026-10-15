@@ -32,7 +32,7 @@ const DEFAULT_HOOK_TIMEOUT_MS = 30_000;
  *  must not hang on one sidecar's stopped-forever loop. Override lets a check exercise the
  *  timeout path in seconds instead of half a minute. */
 function hookTimeoutMs(): number {
-  const override = Number(process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS);
+  const override = Number(process.env.CLAWWRIGHT_RECIPE_HOOK_TIMEOUT_MS);
   return Number.isFinite(override) && override > 0 ? override : DEFAULT_HOOK_TIMEOUT_MS;
 }
 

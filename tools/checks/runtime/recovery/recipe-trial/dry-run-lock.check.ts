@@ -8,7 +8,7 @@ import { runTrialDryRun } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { captured, DATA_DIR, messageOf, ref, trialFixture, useRecipesRoot } from "./fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-dryrun");
+const root = await useRecipesRoot("clawwright-recipe-trial-dryrun");
 try {
   await root.write("planned", {
     description: "A recipe the plan describes",
@@ -32,11 +32,11 @@ try {
       privatePaths: { entry: string; bytes: number | null; state: string }[]; totalBytes: number | null; boundBytes: number; overrideFile: string;
     };
     checkTrue("dry-run: the report says dryRun, unchanged, ok", document.dryRun === true && document.changed === false && document.ok === true);
-    checkTrue("dry-run: the report carries the project name", /^clawforge-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}$/.test(document.project));
+    checkTrue("dry-run: the report carries the project name", /^clawwright-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}$/.test(document.project));
     check("dry-run: per-path sizes are reported", document.privatePaths, [{ entry: `${DATA_DIR}/state`, bytes: 4096, state: "measured" }]);
     check("dry-run: the total and the bound are reported", [document.totalBytes, document.boundBytes], [4096, 268435456]);
     checkTrue("dry-run: the override is included verbatim", /^#.recipe.trial:/.test(document.overrideFile) && document.overrideFile.includes("services:"));
-    checkTrue("dry-run: the scratch home in the report matches the trial-home shape", document.scratchHome.includes(".clawforge-recipe-trial-"));
+    checkTrue("dry-run: the scratch home in the report matches the trial-home shape", document.scratchHome.includes(".clawwright-recipe-trial-"));
   }
 
   // --- dry-run over the bound still refuses ------------------------------------------------------

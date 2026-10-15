@@ -1,4 +1,4 @@
-// `./clawforge set build` and where it reads recipes from: an application recipesDir outside
+// `./clawwright set build` and where it reads recipes from: an application recipesDir outside
 // the deployment (absolute and relative), an active set source, a recipe root equal to the
 // deployment root, and a recipes source that is unreadable rather than absent — which must
 // refuse, not become a valid empty set.
@@ -25,7 +25,7 @@ try {
   // An application can keep recipes outside its deployment. The archive keys stay portable,
   // while the builder must read bytes from that configured source rather than a stale local
   // recipes/ directory.
-  const externalRecipes = await mkdtemp(join(tmpdir(), "clawforge-set-external-recipes-"));
+  const externalRecipes = await mkdtemp(join(tmpdir(), "clawwright-set-external-recipes-"));
   const binaryAsset = Uint8Array.from([0, 255, 1, 254, 128, 13, 10]);
   try {
     await mkdir(resolve(externalRecipes, "demo"), { recursive: true });
@@ -66,7 +66,7 @@ try {
 
   // With an artifact source active, both the declaration and recipes come from that source,
   // while the resulting archive is still stored in the deployment's sets/ directory.
-  const sourceRoot = await mkdtemp(join(tmpdir(), "clawforge-set-source-"));
+  const sourceRoot = await mkdtemp(join(tmpdir(), "clawwright-set-source-"));
   try {
     const sourceDeclaration = JSON.stringify([{ path: "gateway.mode", value: "remote" }]);
     await mkdir(resolve(sourceRoot, "config"), { recursive: true });
@@ -91,7 +91,7 @@ try {
 
   // A recipe root can coincide with the deployment root. Select sources by logical key so the
   // deployment declaration remains `config/...` instead of being sliced as a recipe path.
-  const sameRoot = await mkdtemp(join(tmpdir(), "clawforge-set-same-root-"));
+  const sameRoot = await mkdtemp(join(tmpdir(), "clawwright-set-same-root-"));
   const previousDeployment = deployment;
   try {
     await mkdir(resolve(sameRoot, "config"), { recursive: true });
@@ -127,7 +127,7 @@ try {
   // is absence; validateAction goes through collectManifest, so one refusal covers
   // `set build` and `set validate` alike.
   {
-    const notADirectory = await mkdtemp(join(tmpdir(), "clawforge-set-recipes-file-"));
+    const notADirectory = await mkdtemp(join(tmpdir(), "clawwright-set-recipes-file-"));
     const recipesFile = resolve(notADirectory, "recipes");
     await writeFile(recipesFile, "a plain file where the recipes directory belongs\n");
     try {

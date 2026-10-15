@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Installs this checkout's framework as the system-wide `clawforge` command.
+// Installs this checkout's framework as the system-wide `clawwright` command.
 //
 //   npm run install:system                     into npm's global prefix
 //   npm run install:system -- --prefix <dir>   into another prefix (the check uses a scratch one)
@@ -8,7 +8,7 @@
 // that tarball with `npm install -g`: a copy, not a link to this working tree, so the command
 // does not change under later edits. Then runs the installed command itself.
 //
-// Remove it with: npm uninstall -g @clawforge/framework
+// Remove it with: npm uninstall -g clawwright
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -76,9 +76,9 @@ if (!existsSync(resolve(repoRoot, "node_modules", "@typescript", "native-preview
   refuse("the build needs this checkout's dev dependencies — run `npm ci` here first");
 }
 
-const scratch = mkdtempSync(join(tmpdir(), "clawforge-install-"));
+const scratch = mkdtempSync(join(tmpdir(), "clawwright-install-"));
 try {
-  process.stderr.write(`==> packing @clawforge/framework ${version} (builds dist/)\n`);
+  process.stderr.write(`==> packing clawwright ${version} (builds dist/)\n`);
   const packed = npm(["pack", "--pack-destination", scratch], packageDir);
   const tarball = readdirSync(scratch).find((entry) => entry.endsWith(".tgz"));
   if (packed.status !== 0 || tarball === undefined) failed("npm pack", packed);
@@ -96,23 +96,23 @@ try {
     prefix = asked.stdout.trim();
   }
   const bin = binDirectory(prefix);
-  const shim = join(bin, windows ? "clawforge.cmd" : "clawforge");
+  const shim = join(bin, windows ? "clawwright.cmd" : "clawwright");
   if (!existsSync(shim)) refuse(`npm reported success, but ${shim} does not exist`);
 
   // The shim itself, the way a shell runs it: a .cmd needs cmd.exe.
   const ran = windows
     ? spawnSync(`"${shim}" version`, { shell: true, encoding: "utf8", cwd: scratch })
     : spawnSync(shim, ["version"], { encoding: "utf8", cwd: scratch });
-  if (ran.status !== 0 || !ran.stdout.includes(`clawforge ${version}`)) failed(`${shim} version`, ran);
+  if (ran.status !== 0 || !ran.stdout.includes(`clawwright ${version}`)) failed(`${shim} version`, ran);
 
-  process.stderr.write(`${INSTALLED_MARK} ${shim} (clawforge ${version})\n`);
+  process.stderr.write(`${INSTALLED_MARK} ${shim} (clawwright ${version})\n`);
   if (onPath(bin)) {
-    process.stderr.write("    in an app folder: clawforge init, then clawforge bootstrap / status / help\n");
+    process.stderr.write("    in an app folder: clawwright init, then clawwright bootstrap / status / help\n");
   } else {
-    process.stderr.write(`    ${bin} ${NOT_ON_PATH_HINT} — add it to use \`clawforge\` from any folder\n`);
+    process.stderr.write(`    ${bin} ${NOT_ON_PATH_HINT} — add it to use \`clawwright\` from any folder\n`);
   }
   // Only for npm's own global prefix: a scratch --prefix is never expected to be on PATH.
-  const shadow = requestedPrefix === undefined ? shadowMessage(shim, resolveOnPath("clawforge")) : undefined;
+  const shadow = requestedPrefix === undefined ? shadowMessage(shim, resolveOnPath("clawwright")) : undefined;
   if (shadow !== undefined) process.stderr.write(`${shadow}\n`);
 } finally {
   rmSync(scratch, { recursive: true, force: true });

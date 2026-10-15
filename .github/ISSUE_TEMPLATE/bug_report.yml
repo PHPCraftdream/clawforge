@@ -1,5 +1,5 @@
 name: Bug report
-description: Something ClawForge did wrong or refused unexpectedly
+description: Something Clawwright did wrong or refused unexpectedly
 labels: [bug]
 body:
   - type: markdown
@@ -11,8 +11,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: ClawForge version
-      description: Output of `./clawforge version --verbose` (or a commit hash for a checkout).
+      label: Clawwright version
+      description: Output of `./clawwright version --verbose` (or a commit hash for a checkout).
     validations:
       required: true
   - type: dropdown

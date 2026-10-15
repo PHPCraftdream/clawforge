@@ -48,7 +48,7 @@ export interface LifecycleFixture {
 }
 
 export async function createFixture(): Promise<LifecycleFixture> {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-set-lifecycle-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-set-lifecycle-"));
   const previousDeployment = (() => {
     try {
       return deploymentDir();

@@ -137,7 +137,7 @@ const MISSING = "no-such-artifact.tar.gz";
 // The check's own independent spelling of the artifact fact's sentence (plan.ts's
 // missingArtifactRefusal is NOT referenced); tokens split on single spaces, the rendered
 // command line kept as the one token the sentence carries.
-const missingArtifactSentence = ["no-such-artifact.tar.gz", "not", "found", "—", "build", "one", "with", "./clawforge set build,", "or", "pass", "the", "path", "to", "an", "existing", "set", "artifact"].join(" ");
+const missingArtifactSentence = ["no-such-artifact.tar.gz", "not", "found", "—", "build", "one", "with", "./clawwright set build,", "or", "pass", "the", "path", "to", "an", "existing", "set", "artifact"].join(" ");
 for (const [name, argv, blamed] of [
   ["set try --set with a missing artifact", ["try", "--set", MISSING], "set"],
   ["set diff --from/--to with missing artifacts", ["diff", "--from", MISSING, "--to", MISSING], "from"],

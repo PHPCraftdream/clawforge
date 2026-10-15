@@ -1,5 +1,5 @@
-// The persistent CLI helper: `./clawforge cli-start` brings up a long-lived container so
-// `./clawforge cli`/`./clawforge mcp-serve` can `docker exec` into it instead of paying `docker compose
+// The persistent CLI helper: `./clawwright cli-start` brings up a long-lived container so
+// `./clawwright cli`/`./clawwright mcp-serve` can `docker exec` into it instead of paying `docker compose
 // run --rm`'s create/destroy cost on every call. Covers both layers:
 //   - DockerRuntime.startHelper/stopHelper/helperRunning/execInHelper against a stubbed
 //     transport (no docker, no network);
@@ -358,7 +358,7 @@ function runtimeStub(overrides: {
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
-  check("cli() dies when the gateway is not running and the helper is not up", message?.includes("./clawforge up"), true);
+  check("cli() dies when the gateway is not running and the helper is not up", message?.includes("./clawwright up"), true);
 }
 
 // --- cli() over MCP: captured output, arguments passed through untouched -------------------
@@ -526,7 +526,7 @@ check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, unde
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
-  check("exec() dies when the gateway is not running and the helper is not up", message?.includes("./clawforge up"), true);
+  check("exec() dies when the gateway is not running and the helper is not up", message?.includes("./clawwright up"), true);
 }
 
 {
@@ -636,7 +636,7 @@ check("exec is no longer kept out of MCP", openclawCommands.exec.consoleOnly, un
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
-  check("cliStart() dies when the gateway is not running", message?.includes("./clawforge up"), true);
+  check("cliStart() dies when the gateway is not running", message?.includes("./clawwright up"), true);
 }
 
 {

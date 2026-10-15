@@ -39,7 +39,7 @@ function fakeProbeScript(present: Record<string, boolean | string[]>): string {
   ].join("\n");
 }
 
-const dir = await mkdtemp(join(tmpdir(), "clawforge-harness-check-"));
+const dir = await mkdtemp(join(tmpdir(), "clawwright-harness-check-"));
 try {
   const allPass = await runScript(
     dir,

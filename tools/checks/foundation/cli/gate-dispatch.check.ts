@@ -61,7 +61,7 @@ async function runGate(
   try {
   const { code, output, timedOut } = await runProcess(
     process.execPath,
-    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
+    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawwright.ts"), ...args],
     { cwd: cwd ?? childApps.root, timeoutMs },
   );
   return { code, stdout: output, timedOut };
@@ -230,7 +230,7 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   check("points at help instead of dumping it", text.includes(commandLine(["help"])), true);
 }
 
-// The gate children inherit the seam (CLAWFORGE_CHECKS_APPS_DIR), so no spawn reads or writes the checkout's own apps/.
+// The gate children inherit the seam (CLAWWRIGHT_CHECKS_APPS_DIR), so no spawn reads or writes the checkout's own apps/.
 const apps = await isolatedAppsRoot("gate-dispatch");
 try {
 
@@ -323,19 +323,19 @@ try {
 
   {
     const expected = await frameworkVersion();
-    const empty = await mkdtemp(join(tmpdir(), "clawforge-version-check-"));
+    const empty = await mkdtemp(join(tmpdir(), "clawwright-version-check-"));
     try {
       const flag = await runGate(["--version"], { cwd: empty });
       check("--version exits 0 from an empty directory", flag.code, 0);
-      check("--version prints clawforge <version>", flag.stdout.trim(), `clawforge ${expected}`);
+      check("--version prints clawwright <version>", flag.stdout.trim(), `clawwright ${expected}`);
 
       const short = await runGate(["-v"], { cwd: empty });
       check("-v exits 0 from an empty directory", short.code, 0);
-      check("-v prints the same line as --version", short.stdout.trim(), `clawforge ${expected}`);
+      check("-v prints the same line as --version", short.stdout.trim(), `clawwright ${expected}`);
 
       const bare = await runGate(["version"], { cwd: empty });
       check("version exits 0 from an empty directory", bare.code, 0);
-      check("version prints the same line too", bare.stdout.trim(), `clawforge ${expected}`);
+      check("version prints the same line too", bare.stdout.trim(), `clawwright ${expected}`);
 
       const extra = await runGate(["version", "extra-arg"], { cwd: empty });
       check("version extra-arg exits non-zero", extra.code === 0, false);
@@ -349,7 +349,7 @@ try {
   await apps.dispose();
 }
 
-// --- selectChecks(): ./clawforge check's own pure filter -----------------------------------
+// --- selectChecks(): ./clawwright check's own pure filter -----------------------------------
 
 const checkLabels = [
   "foundation/cli/gate-commands.check.ts",

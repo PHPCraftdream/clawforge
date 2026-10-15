@@ -13,8 +13,8 @@ still uses.
 
 | Step | Command | Expected |
 | --- | --- | --- |
-| 1 | `./clawforge new-app <name>` | exit 0; one compact ACL note at most; next steps name `git init` for the lock |
-| 2 | `status`, `doctor`, `inspect` before bootstrap | no target writes; `NOT_BOOTSTRAPPED` → `./clawforge bootstrap`; status says nothing is deployed |
+| 1 | `./clawwright new-app <name>` | exit 0; one compact ACL note at most; next steps name `git init` for the lock |
+| 2 | `status`, `doctor`, `inspect` before bootstrap | no target writes; `NOT_BOOTSTRAPPED` → `./clawwright bootstrap`; status says nothing is deployed |
 | 3 | `bootstrap` with an unwritable data root | one `sudo install -d` line covering the whole data family |
 | 4 | `bootstrap` | exit 0 through a pipe; no restart advice mid-run; a provider hint when none is configured |
 | 5 | `doctor` | no `ENV_STALE`; `PROVIDER_MISSING` when no provider; exit 0 without blocking findings |

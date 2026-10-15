@@ -1,4 +1,4 @@
-// `./clawforge set validate` — one case per rule, and the case that matters most.
+// `./clawwright set validate` — one case per rule, and the case that matters most.
 //
 // A validator that always finds something is one people learn to skip, so the first
 // assertion here is that a coherent set produces nothing at all. The rest provoke each rule
@@ -114,7 +114,7 @@ async function treeContent(deployment: string, manifest: SetManifest): Promise<P
 // reads desiredStateFile() from the active deployment, so without this the cases below read
 // a real deployment's declaration — and passed only because a failure to resolve it at all
 // used to be swallowed.
-const baseDeployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-base-"));
+const baseDeployment = await mkdtemp(join(tmpdir(), "clawwright-set-validate-base-"));
 await mkdir(resolve(baseDeployment, "config"), { recursive: true });
 await writeFile(resolve(baseDeployment, "config", "desired-state.json"), "[]");
 useDeployment(baseDeployment);
@@ -181,7 +181,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
 // on a machine that did not build it would report every good set as broken.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-set-validate-check-"));
   try {
     await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
     await mkdir(resolve(deployment, "config"), { recursive: true });
@@ -240,7 +240,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
 // failure, so a malformed declaration validated clean instead of being reported.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-shape-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-set-validate-shape-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify({ gateway: { mode: "local" } }));
@@ -265,7 +265,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
 // otherwise coherent artifact validated as valid: true, problems: [].
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-parse-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-set-validate-parse-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     await writeFile(resolve(deployment, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"loc');
@@ -285,13 +285,13 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
 // --- the default name is derivable from any deployment name ---------------------------------
 //
 // Found by running the command for real rather than by reasoning: this deployment is called
-// "clawforge", and a set name becomes a file under sets/, so it goes through safeName's
+// "clawwright", and a set name becomes a file under sets/, so it goes through safeName's
 // narrow alphabet. The default was invalid by construction on the very deployment that ships
 // it. Loosening safeName was the wrong fix — that rule stops `../..` reaching a path — so the
 // derivation happens where the default is taken.
 
 check("an underscore in the deployment name is derived away", defaultSetName("open_claw"), "open-claw");
-check("the ClawForge directory name stays a valid set name", defaultSetName("clawforge"), "clawforge");
+check("the Clawwright directory name stays a valid set name", defaultSetName("clawwright"), "clawwright");
 check("a name already valid is unchanged", defaultSetName("demo"), "demo");
 check("leading digits and punctuation are stripped rather than smuggled through", defaultSetName("2nd.App"), "nd-app");
 
@@ -312,7 +312,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
 // Found by running `set validate` on a tree whose image was still a tag with no lock: the
 // manifest build died in requiredImage() before validateSet ran, so SET_IMAGE_UNPINNED — the
 // validator's own check for exactly this — was unreachable, --json returned nothing, and the
-// advice ("run clawforge lock") pointed at a command that refuses before the first bootstrap.
+// advice ("run clawwright lock") pointed at a command that refuses before the first bootstrap.
 
 {
   const deployment = await createBuildDeployment();
@@ -328,7 +328,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     const pinned = problem("SET_IMAGE_UNPINNED", "");
     check("the finding is blocking like the inspection table says", pinned.severity, "blocking");
     check("the advice names a step possible before the first bootstrap", pinned.nextAction.includes("bootstrap"), true);
-    check("the advice no longer sends the reader to lock", pinned.next.kind === "clawforge" && pinned.next.argv[0] === "lock", false);
+    check("the advice no longer sends the reader to lock", pinned.next.kind === "clawwright" && pinned.next.argv[0] === "lock", false);
 
     // build: the hard refusal stays — only validate tolerates the gap.
     let refused = false;
@@ -488,7 +488,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     check(
       "the advice is a concrete edit, not the validator itself",
       badDocument.nextActions.some((action: string) => action.includes("recipes/delta")) &&
-        badDocument.nextActions.every((action: string) => action !== "./clawforge set validate"),
+        badDocument.nextActions.every((action: string) => action !== "./clawwright set validate"),
       true,
     );
 
@@ -553,7 +553,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
 // on the target. One gap per case, each with the edit that actually closes it.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-recipe-json-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-set-validate-recipe-json-"));
   try {
     await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
     await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
@@ -569,7 +569,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     check("a recipe.json that is not JSON is a finding", codes(problems), ["SET_RECIPE_INVALID"]);
     check("the finding is the loader's, naming the file", problems[0]?.detail.includes("recipes/demo/recipe.json"), true);
     const remedy = (problems[0] ?? { next: undefined }).next as CommandAdvice | undefined;
-    check("the remedy is set validate again, naming the file to fix", [remedy?.kind, remedy?.kind === "clawforge" ? remedy.argv.join("/") : "", remedy?.note?.includes("recipes/demo/recipe.json")], ["clawforge", "set/validate", true]);
+    check("the remedy is set validate again, naming the file to fix", [remedy?.kind, remedy?.kind === "clawwright" ? remedy.argv.join("/") : "", remedy?.note?.includes("recipes/demo/recipe.json")], ["clawwright", "set/validate", true]);
 
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{}");
     problems = await validateSet(await treeContent(deployment, coherent()), { checkFiles: true });
@@ -593,7 +593,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     await rm(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
     await rm(resolve(deployment, "recipes", "demo"), { recursive: true });
     const missingDir = await validateSet(await treeContent(deployment, coherent()), { checkFiles: true });
-    check("a missing recipe directory points at the tree and a rebuild", missingDir[0]?.nextAction.startsWith("./clawforge set build"), true);
+    check("a missing recipe directory points at the tree and a rebuild", missingDir[0]?.nextAction.startsWith("./clawwright set build"), true);
     check("and names the directory", missingDir[0]?.nextAction.includes("recipes/demo"), true);
   } finally {
     await rm(deployment, { recursive: true, force: true });

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Entry point for the ClawForge tooling that manages OpenClaw.
+# Entry point for the Clawwright tooling that manages OpenClaw.
 #
 # The only shell file left by design: it runs before Node, so it cannot be TypeScript.
-# It finds a usable Node and hands over to tools/clawforge.ts — nothing else.
+# It finds a usable Node and hands over to tools/clawwright.ts — nothing else.
 #
 # It deliberately does NOT require Linux. The tooling can run on the Windows Node and
 # reach the target through wsl.exe; which transport is used is decided in TypeScript,
 # not here. Prerequisites are the user's responsibility — this installs nothing, so
 # `npm install` has to have been run once in this repository (json5 is a real dependency).
 #
-#   ./clawforge <command> [options]
+#   ./clawwright <command> [options]
 
 set -Eeuo pipefail
 
@@ -52,7 +52,7 @@ if (( node_major < 24 )); then
   exit 1
 fi
 
-script_path="$REPO_ROOT/tools/clawforge.ts"
+script_path="$REPO_ROOT/tools/clawwright.ts"
 
 # A Windows Node cannot open a POSIX path like /d/dev/... or /mnt/d/dev/..., so the script
 # path is translated explicitly. Automatic MSYS path conversion is switched off instead of

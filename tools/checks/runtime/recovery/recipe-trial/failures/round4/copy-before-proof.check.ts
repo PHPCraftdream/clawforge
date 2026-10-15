@@ -4,7 +4,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-copy-order");
+const root = await useRecipesRoot("clawwright-recipe-trial-copy-order");
 try {
   await root.write("subject", { description: "A copied-data bind", privatePaths: ["state"] });
   const fixture = trialFixture();

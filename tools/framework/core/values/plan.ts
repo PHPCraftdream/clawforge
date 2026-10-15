@@ -7,11 +7,11 @@
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { resolve } from "node:path";
 
-const ARTIFACT = Symbol("clawforge.local-artifact");
-const RECIPE_SOURCE = Symbol("clawforge.local-recipe-source");
-const RECIPE_REF = Symbol("clawforge.recipe-ref");
-const CHECKSUM = Symbol("clawforge.checksum");
-const OPERATION_ID = Symbol("clawforge.operation-id");
+const ARTIFACT = Symbol("clawwright.local-artifact");
+const RECIPE_SOURCE = Symbol("clawwright.local-recipe-source");
+const RECIPE_REF = Symbol("clawwright.recipe-ref");
+const CHECKSUM = Symbol("clawwright.checksum");
+const OPERATION_ID = Symbol("clawwright.operation-id");
 
 /** A local file proven to exist as a regular file by `localFile`'s resolve. */
 export interface LocalArtifact {

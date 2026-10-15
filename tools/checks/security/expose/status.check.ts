@@ -1,5 +1,5 @@
-// `./clawforge expose status` — summarizeExposure()/exposureOneLiner() (the pure logic, and
-// the same one-liner `./clawforge status` folds in) across loopback/wildcard/non-loopback/
+// `./clawwright expose status` — summarizeExposure()/exposureOneLiner() (the pure logic, and
+// the same one-liner `./clawwright status` folds in) across loopback/wildcard/non-loopback/
 // not-running, and the full command: it must warn loudly on 0.0.0.0/::, stay quiet on a
 // loopback address, and fold in a tailscale summary only when tailscale is present.
 
@@ -43,7 +43,7 @@ check("running, a real non-loopback address is neither loopback nor wildcard", s
   bindAddress: "10.0.0.5", port: "18789", running: true, loopback: false, wildcard: false,
 });
 
-// --- exposureOneLiner: the exact text ./clawforge status folds in --------------------------------
+// --- exposureOneLiner: the exact text ./clawwright status folds in --------------------------------
 
 check(
   "loopback reads as loopback-only",
@@ -53,7 +53,7 @@ check(
 check(
   "wildcard points at the fuller report",
   exposureOneLiner(summarizeExposure(ctxWithSettings(), { bindAddress: "0.0.0.0", port: "18789" })),
-  "0.0.0.0:18789 (PUBLIC INTERFACE — see ./clawforge expose status)",
+  "0.0.0.0:18789 (PUBLIC INTERFACE — see ./clawwright expose status)",
 );
 check(
   "not running says so, without claiming to have confirmed it",

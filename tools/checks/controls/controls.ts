@@ -131,7 +131,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     note: "SSH-operator and target-local scheduler ownership derive independently and the check demands equality, so a drift in one path fails it",
     product: "tools/framework/commands/operate/schedule.ts",
     search: `root = await realpath(deploymentDir());`,
-    replace: `root = "clawforge-drift";`,
+    replace: `root = "clawwright-drift";`,
     check: "tools/checks/runtime/schedule/identity.check.ts",
     fragment: "same-basename Windows task names differ",
   },

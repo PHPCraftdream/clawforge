@@ -1,4 +1,4 @@
-// `./clawforge expose ssh` — the tunnel command text for various host/port values, the
+// `./clawwright expose ssh` — the tunnel command text for various host/port values, the
 // wsl/local "no tunnel needed" explanation, and --run's gate (a real terminal only; it must
 // die before ever touching the local ssh client under a captured/piped output, the same
 // `shouldFollow()` gate `host` already uses).
@@ -154,7 +154,7 @@ checkTrue(
   const originalWrite = process.stderr.write;
   const originalExitCode = process.exitCode;
   const originalDeployment = selectedDeployment();
-  const root = await mkdtemp(join(tmpdir(), "clawforge-expose-ssh-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-expose-ssh-"));
   const calls: { command: string; args: readonly string[]; stdio: unknown }[] = [];
   let childCode = 0;
   let output = "";

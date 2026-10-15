@@ -1,4 +1,4 @@
-// `clawforge expose ssh` — the SSH tunnel that reaches a loopback-bound remote gateway, for
+// `clawwright expose ssh` — the SSH tunnel that reaches a loopback-bound remote gateway, for
 // OC_TARGET_LOCATION=ssh deployments (the same shape `deploy` prints once, right after a
 // fresh deploy). wsl/local targets need no tunnel at all: Docker Desktop's WSL2 integration
 // (or a shared filesystem, for local) already forwards the published port to this machine's

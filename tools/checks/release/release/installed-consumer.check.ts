@@ -1,7 +1,7 @@
 // The published package, installed the way an operator installs it, running a command.
 //
 // Everything else in this suite tests the sources. This packs the real tarball, puts it in a
-// directory that looks exactly like what `npm init -y` leaves behind, runs `clawforge init`
+// directory that looks exactly like what `npm init -y` leaves behind, runs `clawwright init`
 // there and then runs a command through the installed entry point. That path had never been
 // covered, and it is where a release-blocking defect lived: `npm init -y` writes an explicit
 // "type": "commonjs", under which Node refuses the ESM app.ts that init writes, so every
@@ -46,7 +46,7 @@ const DEFAULT_CONSUMER_PACKAGE = {
 };
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const base = await mkdtemp(join(tmpdir(), "clawforge-installed-check-"));
+const base = await mkdtemp(join(tmpdir(), "clawwright-installed-check-"));
 // Declared here so the finally can clean up even when the failure happens before the
 // assignment inside the try block.
 let packRoot: string | undefined;
@@ -55,7 +55,7 @@ try {
   // --- pack the real thing from a temp copy of the packing tree ---------------------------
   // npm runs the package's prepack, which builds dist/. Packing a temp copy (same layout as
   // system-install.check.ts) means that dist/ lands in the temp tree, never in the checkout.
-  packRoot = await mkdtemp(join(tmpdir(), "clawforge-pack-"));
+  packRoot = await mkdtemp(join(tmpdir(), "clawwright-pack-"));
   await mkdir(join(packRoot, "tools"), { recursive: true });
   await cp(resolve(monorepoRoot, "tools", "framework"), join(packRoot, "tools", "framework"), {
     recursive: true,
@@ -85,12 +85,12 @@ try {
 
     // --- a consumer directory exactly as npm leaves it --------------------------------------
     const consumer = join(base, "consumer");
-    await mkdir(join(consumer, "node_modules", "@clawforge"), { recursive: true });
+    await mkdir(join(consumer, "node_modules"), { recursive: true });
     await writeFile(resolve(consumer, "package.json"), `${JSON.stringify(DEFAULT_CONSUMER_PACKAGE, undefined, 2)}\n`, "utf8");
-    await cp(join(extracted, "package"), join(consumer, "node_modules", "@clawforge", "framework"), { recursive: true });
+    await cp(join(extracted, "package"), join(consumer, "node_modules", "clawwright"), { recursive: true });
     await cp(resolve(monorepoRoot, "node_modules", "json5"), join(consumer, "node_modules", "json5"), { recursive: true });
 
-    const entry = join(consumer, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js");
+    const entry = join(consumer, "node_modules", "clawwright", "dist", "entry", "bin.js");
     check("the packed entry point is where the bin field says it is", await access(entry).then(() => true, () => false), true);
 
     // --- init, then a command, both through the installed entry point -----------------------
@@ -101,12 +101,12 @@ try {
     const consumerPackage = JSON.parse(await readFile(resolve(consumer, "package.json"), "utf8")) as { type?: string };
     check("and leaves the directory loadable as ESM", consumerPackage.type, "module");
     check("app.ts is written", await access(resolve(consumer, "app.ts")).then(() => true, () => false), true);
-    check("and so is the ./clawforge shim", await access(resolve(consumer, "clawforge")).then(() => true, () => false), true);
+    check("and so is the ./clawwright shim", await access(resolve(consumer, "clawwright")).then(() => true, () => false), true);
 
     // The generated declaration is also the public API's compile-time contract. Assert a
     // concrete callback type and reject `any`, so a present-but-empty declaration cannot pass.
     await writeFile(resolve(consumer, "typecheck.ts"), `import app from "./app.ts";
-import { defineApp, type AppDefinition } from "@clawforge/framework/app";
+import { defineApp, type AppDefinition } from "clawwright/app";
 
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 type AssertFalse<T extends false> = T;
@@ -168,7 +168,7 @@ void summaryTypeGuard;
     await writeFile(join(consumer, "hook-check.mjs"), `import { strict as assert } from "node:assert";
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { importHookModule } from "./node_modules/@clawforge/framework/dist/commands/management/recipe/hook-runtime.js";
+import { importHookModule } from "./node_modules/clawwright/dist/commands/management/recipe/hook-runtime.js";
 const hook = fileURLToPath(new URL("./recipes/hook-check/verify.ts", import.meta.url));
 assert.equal((await importHookModule(hook)).verify(), "first");
 await writeFile(new URL("./recipes/hook-check/helper.ts", import.meta.url), 'export const value: string = "second";\\n');

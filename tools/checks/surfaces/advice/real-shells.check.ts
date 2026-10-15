@@ -59,7 +59,7 @@ const fwd = (path: string): string => path.split(BS).join("/");
 
 // --- the stub tree (outside the checkout; the root path carries a space) ----------------------
 
-const ROOT = await mkdtemp(join(tmpdir(), "clawforge s16 stubs "));
+const ROOT = await mkdtemp(join(tmpdir(), "clawwright s16 stubs "));
 const DOCS = join(ROOT, "docs");
 const DEMO = join(ROOT, "apps", "demo");
 const CONFIG = join(DEMO, "config");
@@ -73,15 +73,15 @@ const cmdStub = (id: string): string => ["@", NODE, ' "' + PRINTER + '" "', id, 
 const psStub = (id: string): string => ["& ", NODE, " ", JSON.stringify(PRINTER), " ", JSON.stringify(id), " @args"].join("");
 const STUBS: readonly (readonly [string, string])[] = [
   ["printer.cjs", `process.stdout.write(JSON.stringify({ stub: process.argv[2], cwd: process.cwd(), argv: process.argv.slice(3) }));`],
-  ["clawforge", shStub(fwd(join(ROOT, "clawforge")))],
-  ["clawforge.cmd", cmdStub("%~f0")],
+  ["clawwright", shStub(fwd(join(ROOT, "clawwright")))],
+  ["clawwright.cmd", cmdStub("%~f0")],
   // A second command a quoting bug would let cmd run: first on PATH, it only leaves a marker.
   ["calc.cmd", `@echo ran> "%~dp0${MARKER_NAME}"`],
-  ["clawforge.ps1", psStub("$PSCommandPath")],
-  ["apps/demo/clawforge", shStub(fwd(join(DEMO, "clawforge")))],
-  ["node_modules/.bin/clawforge", shStub(fwd(join(BIN, "clawforge")))],
-  ["node_modules/.bin/clawforge.cmd", cmdStub("%~f0")],
-  ["node_modules/.bin/clawforge.ps1", psStub("$PSCommandPath")],
+  ["clawwright.ps1", psStub("$PSCommandPath")],
+  ["apps/demo/clawwright", shStub(fwd(join(DEMO, "clawwright")))],
+  ["node_modules/.bin/clawwright", shStub(fwd(join(BIN, "clawwright")))],
+  ["node_modules/.bin/clawwright.cmd", cmdStub("%~f0")],
+  ["node_modules/.bin/clawwright.ps1", psStub("$PSCommandPath")],
 ];
 await mkdir(ROOT, { recursive: true });
 await mkdir(DOCS, { recursive: true });
@@ -123,8 +123,8 @@ const shim = (root: string): Launch => ({ kind: "checkout-shim", root });
 const deploy = (root: string): Launch => ({ kind: "deployment-shim", root });
 const npmBin = (root: string): Launch => ({ kind: "npm-bin", root });
 const atRoot: Places = { checkoutRoot: ROOT };
-const bashVerbatim = (): Launch => ({ kind: "verbatim", program: fwd(join(ROOT, "clawforge")), mode: "checkout" });
-const spacedVerbatim = (): Launch => ({ kind: "verbatim", program: join(ROOT, "clawforge"), mode: "checkout" });
+const bashVerbatim = (): Launch => ({ kind: "verbatim", program: fwd(join(ROOT, "clawwright")), mode: "checkout" });
+const spacedVerbatim = (): Launch => ({ kind: "verbatim", program: join(ROOT, "clawwright"), mode: "checkout" });
 const case4 = (msys: boolean): RealCase["frame"] => ({
   ...frameOf({ kind: "system" }, msys, DEMO, atRoot),
   app: { state: "selected", name: "demo", by: "cwd" },
@@ -193,11 +193,11 @@ async function drive(name: string, shell: "bash" | "pwsh" | "cmd", advice: Advic
   // Production hands a shell-named advice to the renderer with the target frame it builds
   // (installLineParts builds targetFrame(currentFrame(), shell)) — never a caller-side
   // re-transition of the frame itself.
-  // Only a clawforge-kind line takes the production target-frame transition, and it does
+  // Only a clawwright-kind line takes the production target-frame transition, and it does
   // so through the production WRITER (installLineParts builds targetFrame(currentFrame(),
   // shell) itself): the operator frame is installed and the advice handed over, never a
   // caller-side transition. A shell row is pasted as spelled, wherever the run stands.
-  const isCommand = advice.kind === "clawforge";
+  const isCommand = advice.kind === "clawwright";
   const isShellNamed = isCommand && "shell" in advice && advice.shell !== undefined;
   let pasteBase = paste;
   let spelled = "";
@@ -326,9 +326,9 @@ const nativeFrame: Frame = { ...frameOf({ kind: "system" }, false, ROOT), shells
 const nativePart = renderAdviceParts(command(NATIVE_ARGS), nativeFrame)[0]!;
 const nativeScopeWords = ["&", "{", "$PSNativeCommandArgumentPassing", "=", "'Legacy';"];
 const nativeWords = nativePart.line.split(" ");
-check("native advice: scoped Legacy block present", [nativeWords.slice(0, 6), nativeWords.at(-1)], [[...nativeScopeWords, "clawforge"], "}"]);
+check("native advice: scoped Legacy block present", [nativeWords.slice(0, 6), nativeWords.at(-1)], [[...nativeScopeWords, "clawwright"], "}"]);
 check("native advice: ordinary words need no scoped preference", renderAdviceParts(command(["status", "two words", "last\\"]), nativeFrame)[0]!.line.split(" "),
-  ["clawforge", "status", '"two', 'words"', "'last\\'"]);
+  ["clawwright", "status", '"two', 'words"', "'last\\'"]);
 check("native advice: spaced trailing backslash needs scoped preference", renderAdviceParts(command(["space tail\\"]), nativeFrame)[0]!.line.split(" ").slice(0, 5), nativeScopeWords);
 const nativeRoot = join(ROOT, "native");
 await mkdir(nativeRoot);
@@ -341,7 +341,7 @@ const shimPath = shimCandidates.find((path) => existsSync(join(path, "package.js
 checkTrue("native wrappers: real npm cmd-shim available", shimPath !== undefined);
 if (shimPath !== undefined) {
   const generate = require(shimPath) as (from: string, to: string) => Promise<void>;
-  await generate(nativeEntry, join(nativeRoot, "clawforge"));
+  await generate(nativeEntry, join(nativeRoot, "clawwright"));
   for (const binary of ["powershell.exe", "pwsh"]) {
     const probe = await runProcess(binary, ["-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()"], { timeoutMs: TIMEOUT_MS });
     if (probe.code !== 0) {
@@ -363,8 +363,8 @@ if (shimPath !== undefined) {
     checkTrue(`shell advice ${binary}: function exit 0`, functionRun.code === 0);
     check(`shell advice ${binary}: function argv`, JSON.parse(functionRun.stdout.trim() || "null"), NATIVE_ARGS);
     for (const extension of ["ps1", "cmd"]) {
-      const wrapper = join(nativeRoot, `clawforge.${extension}`).replaceAll("'", "''");
-      const line = nativePart.line.replace("clawforge ", `& '${wrapper}' `);
+      const wrapper = join(nativeRoot, `clawwright.${extension}`).replaceAll("'", "''");
+      const line = nativePart.line.replace("clawwright ", `& '${wrapper}' `);
       const modern = version.split(".").map(Number);
       const modes = modern[0]! > 7 || (modern[0] === 7 && modern[1]! >= 3)
         ? [undefined, "Standard", "Windows", "Legacy"] : [undefined, "Standard"];

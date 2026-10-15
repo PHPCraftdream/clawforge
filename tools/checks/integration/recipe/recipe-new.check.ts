@@ -1,4 +1,4 @@
-// `./clawforge recipe new <name>` (U11b): scaffolds recipes/<name>/ with a minimal valid
+// `./clawwright recipe new <name>` (U11b): scaffolds recipes/<name>/ with a minimal valid
 // recipe.json and a compose.yml skeleton, no hooks by default — repository-side, like
 // import: no target, no instance lock, refuses an existing directory. --with-hooks adds
 // commented prepare.ts/verify.ts stubs that still parse and export real (no-op) hooks.
@@ -32,7 +32,7 @@ async function exists(path: string): Promise<boolean> {
 // `new` never reaches transport or runtime, same as import — an empty stub is enough.
 const ctx = { settings: { env: {} } } as unknown as Context;
 
-const scratch = resolve(tmpdir(), `clawforge-recipe-new-check-${Date.now()}`);
+const scratch = resolve(tmpdir(), `clawwright-recipe-new-check-${Date.now()}`);
 
 try {
   useDeployment(resolve(scratch, "example-deployment"));
@@ -94,7 +94,7 @@ try {
   const verifyText = await readFile(resolve(hookedDir, "verify.ts"), "utf8");
   check(
     "prepare.ts's commented example imports from the published private-config entry point",
-    prepareText.includes('from "@clawforge/framework/private-config"'),
+    prepareText.includes('from "clawwright/private-config"'),
     true,
   );
   check("prepare.ts states hooks run with the operator's rights", prepareText.includes("the operator's rights"), true);

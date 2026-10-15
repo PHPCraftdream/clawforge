@@ -56,24 +56,24 @@ check("service inventory",
 checkTrue("short port parsed", (await analyzeEffectiveConfig({ services: { web: { ports: ["8080:80"] } } }, allowed, project, resolveIdentity)).services[0]?.ports[0]?.target === "80");
 checkTrue("build metadata", (await analyzeEffectiveConfig({ services: { web: { build: { context: "." } } } }, allowed, project, resolveIdentity)).services[0]?.builds === true);
 const foreignTag = await (async () => {
-  try { await analyzeEffectiveConfig({ services: { web: { build: { context: "." }, image: "nginx:1" } } }, allowed, project, resolveIdentity, new Map([["web", "clawforge-recipe-trial-build-expected"]])); return "accepted"; }
+  try { await analyzeEffectiveConfig({ services: { web: { build: { context: "." }, image: "nginx:1" } } }, allowed, project, resolveIdentity, new Map([["web", "clawwright-recipe-trial-build-expected"]])); return "accepted"; }
   catch (error) { return error instanceof Error ? error.message : String(error); }
 })();
 checkTrue("unplanned image refused", /merged.build.service.has.tag.*nginx:1.*expected/.test(foreignTag));
 checkTrue("builder binding accepted",
-  (await analyzeEffectiveConfig({ services: { web: { build: { context: "." }, image: "clawforge-recipe-trial-build-abc-def--web" } } }, allowed, project, resolveIdentity, new Map([["web", "clawforge-recipe-trial-build-abc-def--web"]]))).services.length === 1);
+  (await analyzeEffectiveConfig({ services: { web: { build: { context: "." }, image: "clawwright-recipe-trial-build-abc-def--web" } } }, allowed, project, resolveIdentity, new Map([["web", "clawwright-recipe-trial-build-abc-def--web"]]))).services.length === 1);
 const missingImageTag = await (async () => {
-  try { await analyzeEffectiveConfig({ services: { web: { build: { context: "." } } } }, allowed, project, resolveIdentity, new Map([["web", "clawforge-recipe-trial-build-expected"]])); return "accepted"; }
+  try { await analyzeEffectiveConfig({ services: { web: { build: { context: "." } } } }, allowed, project, resolveIdentity, new Map([["web", "clawwright-recipe-trial-build-expected"]])); return "accepted"; }
   catch (error) { return error instanceof Error ? error.message : String(error); }
 })();
 checkTrue("missing build tag refusal", /expected.the.exact.trial.tag/.test(missingImageTag));
 const mismatchedTag = await (async () => {
-  try { await analyzeEffectiveConfig({ services: { web: { build: { context: "." }, image: "clawforge-recipe-trial-build-other" } } }, allowed, project, resolveIdentity, new Map([["web", "clawforge-recipe-trial-build-expected"]])); return "accepted"; }
+  try { await analyzeEffectiveConfig({ services: { web: { build: { context: "." }, image: "clawwright-recipe-trial-build-other" } } }, allowed, project, resolveIdentity, new Map([["web", "clawwright-recipe-trial-build-expected"]])); return "accepted"; }
   catch (error) { return error instanceof Error ? error.message : String(error); }
 })();
 checkTrue("mismatched tag refused", /merged.build.service.has.tag.*expected.the.exact.trial.tag/.test(mismatchedTag));
 const extraBuild = await (async () => {
-  try { await analyzeEffectiveConfig({ services: { added: { build: { context: "." }, image: "clawforge-recipe-trial-build-added" } } }, allowed, project, resolveIdentity, new Map()); return "accepted"; }
+  try { await analyzeEffectiveConfig({ services: { added: { build: { context: "." }, image: "clawwright-recipe-trial-build-added" } } }, allowed, project, resolveIdentity, new Map()); return "accepted"; }
   catch (error) { return error instanceof Error ? error.message : String(error); }
 })();
 checkTrue("extra builder refused", /added.image/.test(extraBuild));
@@ -151,7 +151,7 @@ checkTrue("malformed port refused",
 
 // --- refuseRawInclude ---------------------------------------------------------------------
 
-const dir = await mkdtemp(join(tmpdir(), "clawforge-recipe-trial-ports-"));
+const dir = await mkdtemp(join(tmpdir(), "clawwright-recipe-trial-ports-"));
 async function composeOf(name: string, text: string): Promise<string> {
   const path = resolve(dir, name);
   await writeFile(path, text, "utf8");
@@ -199,9 +199,9 @@ const emptyDoc = buildOverride([], new Map());
 check("empty config override",
   [emptyDoc.split("\n")[0]?.startsWith("#"), emptyDoc.split("\n")[1] === "services:" + SP + "{}", emptyDoc.split("\n").length],
   [true, true, 3]);
-const builtDoc = buildOverride([{ name: "Builder", builds: true, ports: [] }], new Map([["Builder", "clawforge-recipe-trial-build-abc-def--builder"]]));
+const builtDoc = buildOverride([{ name: "Builder", builds: true, ports: [] }], new Map([["Builder", "clawwright-recipe-trial-build-abc-def--builder"]]));
 checkTrue("trial image tag override",
-  new RegExp("^" + SP + "*image:" + SP + "clawforge-recipe-trial-build-abc-def--builder$", "m").test(builtDoc));
+  new RegExp("^" + SP + "*image:" + SP + "clawwright-recipe-trial-build-abc-def--builder$", "m").test(builtDoc));
 
 // --- assertNoPublications ---------------------------------------------------------------------
 
@@ -268,9 +268,9 @@ checkTrue("loopback ephemeral bind allowed",
 
 const tagDoc = buildOverride(
   [{ name: "api", builds: true, ports: [] }, { name: "db", builds: false, ports: [] }],
-  new Map([["api", "clawforge-recipe-trial-build-0123456789ab-0a1b2c3d--api"]]));
+  new Map([["api", "clawwright-recipe-trial-build-0123456789ab-0a1b2c3d--api"]]));
 checkTrue("trial tag namespace",
-  new RegExp("^" + SP + "*image:" + SP + "clawforge-recipe-trial-build-[0-9a-f]{12}-[0-9a-f]{8}--api$", "m").test(tagDoc)
+  new RegExp("^" + SP + "*image:" + SP + "clawwright-recipe-trial-build-[0-9a-f]{12}-[0-9a-f]{8}--api$", "m").test(tagDoc)
   && !tagDoc.includes("nginx"));
 
 finish("recipe-trial-ports");

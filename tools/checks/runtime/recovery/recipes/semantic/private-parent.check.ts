@@ -18,7 +18,7 @@ const tools = await io.transport.exec("sh", ["-c", "set -eu; for tool in stat re
 if (tools.code !== 0 || !tools.stdout.includes("GNU coreutils"))
   throw new Error("private-parent requires native GNU stat and POSIX ownership tools");
 const base = await mkdtemp(`${tmpdir()}/recipe-parent-`);
-const parent = `${base}/.clawforge-recipe-recovery`;
+const parent = `${base}/.clawwright-recipe-recovery`;
 const root = () => join(parent, randomUUID());
 async function filesystemState(paths: string[]) {
   return Promise.all(paths.map(async (path) => {

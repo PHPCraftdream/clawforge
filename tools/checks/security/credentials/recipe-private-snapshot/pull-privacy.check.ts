@@ -34,7 +34,7 @@ const previousRecipesDir = (() => {
   }
 })();
 
-const recipes = await mkdtemp(join(tmpdir(), "clawforge-pp-migrate-"));
+const recipes = await mkdtemp(join(tmpdir(), "clawwright-pp-migrate-"));
 await mkdir(join(recipes, "declared"), { recursive: true });
 await writeFile(join(recipes, "declared", "recipe.json"), JSON.stringify({ description: "declared", privatePaths: ["recipe-private", "vault", "config/private.env"] }), "utf8");
 

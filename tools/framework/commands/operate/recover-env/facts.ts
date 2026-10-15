@@ -39,7 +39,7 @@ export interface ConnectionFactDiff {
   kind: "missing" | "diverged";
 }
 
-/** The .env value clawforge itself would use for one connection fact — not necessarily what
+/** The .env value clawwright itself would use for one connection fact — not necessarily what
  *  is literally written. OC_COMPOSE_PROJECT alone defaults an empty/absent value to the
  *  deployment directory's own name (composeProjectName()), the same fallback a Context
  *  build applies and what compose resolves into the running label — otherwise an empty

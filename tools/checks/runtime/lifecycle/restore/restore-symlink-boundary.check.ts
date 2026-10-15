@@ -118,7 +118,7 @@ if (transport === undefined) {
 } else {
   // --- the audit's repro: an archive whose root entry is a symlink ---------------------------
   {
-    const root = `/tmp/clawforge-restore-root-link-${randomBytes(4).toString("hex")}`;
+    const root = `/tmp/clawwright-restore-root-link-${randomBytes(4).toString("hex")}`;
     const outside = `${root}/outside`;
     const payload = `${root}/payload`;
     const archive = `${root}/archive.tar.gz`;
@@ -160,7 +160,7 @@ if (transport === undefined) {
   // requiring the source tree to actually be walked through the link, the same way a crafted
   // archive would arrive over the wire.
   {
-    const root = `/tmp/clawforge-restore-link-chain-${randomBytes(4).toString("hex")}`;
+    const root = `/tmp/clawwright-restore-link-chain-${randomBytes(4).toString("hex")}`;
     const outside = `${root}/outside`;
     const payload = `${root}/payload`;
     const archive = `${root}/archive.tar.gz`;
@@ -207,7 +207,7 @@ if (transport === undefined) {
 
   // --- GNU tar quoting prevents a delimiter in a member name from hiding an escaping link --
   {
-    const root = "/tmp/clawforge-restore-arrow-link-" + randomBytes(4).toString("hex");
+    const root = "/tmp/clawwright-restore-arrow-link-" + randomBytes(4).toString("hex");
     const outside = root + "/outside";
     const payload = root + "/payload";
     const archive = root + "/archive.tar.gz";
@@ -249,7 +249,7 @@ if (transport === undefined) {
 
   // --- the ensureDataDirs() chmod path: auth-secrets shipped as an external link -------------
   {
-    const root = `/tmp/clawforge-restore-chmod-${randomBytes(4).toString("hex")}`;
+    const root = `/tmp/clawwright-restore-chmod-${randomBytes(4).toString("hex")}`;
     const outside = `${root}/outside`;
     const payload = `${root}/payload`;
     const archive = `${root}/archive.tar.gz`;
@@ -294,7 +294,7 @@ if (transport === undefined) {
 
   // --- the --fresh-identity deletion path: config shipped as an external link ----------------
   {
-    const root = `/tmp/clawforge-restore-fresh-id-${randomBytes(4).toString("hex")}`;
+    const root = `/tmp/clawwright-restore-fresh-id-${randomBytes(4).toString("hex")}`;
     const outside = `${root}/outside`;
     const payload = `${root}/payload`;
     const archive = `${root}/archive.tar.gz`;
@@ -326,7 +326,7 @@ if (transport === undefined) {
   // exactly what a bare string-prefix comparison would wave through, in
   // miniature, at the restore boundary). The refusal must use the path-separator form.
   {
-    const root = `/tmp/clawforge-restore-prefix-${randomBytes(4).toString("hex")}`;
+    const root = `/tmp/clawwright-restore-prefix-${randomBytes(4).toString("hex")}`;
     const sibling = `${root}/dataEVIL`;
     const payload = `${root}/payload`;
     const archive = `${root}/archive.tar.gz`;
@@ -362,7 +362,7 @@ if (transport === undefined) {
 
   // --- a benign archive must still restore: the gate is not a ban on restoring ---------------
   {
-    const root = `/tmp/clawforge-restore-benign-${randomBytes(4).toString("hex")}`;
+    const root = `/tmp/clawwright-restore-benign-${randomBytes(4).toString("hex")}`;
     const payload = `${root}/payload`;
     const archive = `${root}/archive.tar.gz`;
     const dataDir = `${root}/data`;

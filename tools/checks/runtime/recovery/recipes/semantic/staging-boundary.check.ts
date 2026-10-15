@@ -309,8 +309,8 @@ async function nativeBoundary(): Promise<void> {
       const service = JSON.parse(content).services.service;
       check("prepared native file retains explicit input image and mounts", [service.image, service.volumes],
         ["fixture:unused", []]);
-      check("prepared native file identifies independently allocated source", service.labels["io.clawforge.recipe.definition"], definition);
-      checkTrue("prepared native file carries SHA256-shaped provenance", /^[a-f0-9]{64}$/.test(service.labels["io.clawforge.recipe.document-sha256"]));
+      check("prepared native file identifies independently allocated source", service.labels["io.clawwright.recipe.definition"], definition);
+      checkTrue("prepared native file carries SHA256-shaped provenance", /^[a-f0-9]{64}$/.test(service.labels["io.clawwright.recipe.document-sha256"]));
       return content;
     }
     const preparedBucket = join(base, "1", "3");
@@ -379,7 +379,7 @@ async function nativeBoundary(): Promise<void> {
         await writeFile(retainedResolved, `${retainedBytes}\n`);
       } else if (damage === "digest") {
         const changed = JSON.parse(retainedBytes);
-        changed.services.service.labels["io.clawforge.recipe.document-sha256"] = "0".repeat(64);
+        changed.services.service.labels["io.clawwright.recipe.document-sha256"] = "0".repeat(64);
         await writeFile(retainedResolved, JSON.stringify(changed));
       } else {
         await chmod(home, 0o555);

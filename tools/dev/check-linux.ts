@@ -60,7 +60,7 @@ async function listCleanFiles(): Promise<string[]> {
  *  stray build output) can reach the container. A file git lists but the working tree lacks
  *  (staged-then-deleted) is skipped rather than failing the whole snapshot. */
 async function snapshotCleanTree(files: readonly string[]): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-check-linux-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-check-linux-"));
   for (const relPath of files) {
     const dest = join(dir, relPath);
     await mkdir(dirname(dest), { recursive: true });
@@ -91,7 +91,7 @@ async function main(): Promise<number> {
   verifyDockerAvailable();
 
   const files = await listCleanFiles();
-  const containerName = `clawforge-check-linux-${randomBytes(4).toString("hex")}`;
+  const containerName = `clawwright-check-linux-${randomBytes(4).toString("hex")}`;
   const tempDir = await snapshotCleanTree(files);
   process.stderr.write(`check:linux: snapshotted ${String(files.length)} file(s) into a clean copy\n`);
 

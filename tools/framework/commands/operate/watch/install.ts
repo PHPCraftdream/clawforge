@@ -1,4 +1,4 @@
-// `clawforge watch install` / `watch uninstall` — a scheduler entry that runs `watch check`
+// `clawwright watch install` / `watch uninstall` — a scheduler entry that runs `watch check`
 // every N minutes.
 //
 // crontab, not a systemd --user timer: a timer needs `loginctl enable-linger` and systemd as

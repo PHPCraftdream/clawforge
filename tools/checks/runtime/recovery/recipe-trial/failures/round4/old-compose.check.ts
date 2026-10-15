@@ -6,7 +6,7 @@ import { runTrialAction, runTrialDryRun } from "#framework/commands/management/r
 import { checkTrue, finish } from "#checks/kit/harness.ts";
 import { messageOf, ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-old-compose");
+const root = await useRecipesRoot("clawwright-recipe-trial-old-compose");
 try {
   await root.write("subject", { description: "A recipe on an old Compose" });
 

@@ -23,14 +23,14 @@ function runScript(script: string, input: string): Promise<ProcessResult> {
 }
 
 await requires("posix-host", "recipe trial over MCP", async () => {
-  const deploymentRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-trial-deploy-"));
+  const deploymentRoot = await mkdtemp(join(tmpdir(), "clawwright-mcp-trial-deploy-"));
   const recipesRoot = join(deploymentRoot, "recipes");
   await mkdir(join(recipesRoot, "subject"), { recursive: true });
   await writeFile(join(recipesRoot, "subject", "recipe.json"),
     JSON.stringify({ description: "The MCP-path trial subject" }), "utf8");
   await writeFile(join(recipesRoot, "subject", "compose.yml"), "services:\n  app:\n    image: nginx\n    ports:\n      - \"8080:80\"\n", "utf8");
   await writeFile(join(deploymentRoot, ".env"),
-    `OC_DATA_DIR=${join(deploymentRoot, "data")}\nOC_TARGET_LOCATION=wsl\nOC_COMPOSE_PROJECT=clawforge-mcp-trial\n`, "utf8");
+    `OC_DATA_DIR=${join(deploymentRoot, "data")}\nOC_TARGET_LOCATION=wsl\nOC_COMPOSE_PROJECT=clawwright-mcp-trial\n`, "utf8");
 
   // The stub transport inside the subprocess (kept as a plain string-built object: no JSON
   // round trip needed — the script text embeds the recipes and deployment roots verbatim).
@@ -138,7 +138,7 @@ await requires("posix-host", "recipe trial over MCP", async () => {
   const report = dryRun?.result as Record<string, unknown> | undefined;
   check("the envelope carries the REAL dry-run report's recipe", report?.recipe, "subject");
   checkTrue("the dry-run report carries the real trial project shape",
-    typeof report?.project === "string" && /^clawforge-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}$/.test(report.project));
+    typeof report?.project === "string" && /^clawwright-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}$/.test(report.project));
   check("the dry-run report states the privatePaths bound", report?.boundBytes, 268435456);
   checkTrue("the dry-run report is a dry run", report?.dryRun === true && report?.ok === true);
 

@@ -31,17 +31,17 @@ function stubBackupCtx(
   options: { tarFailure?: boolean; publishCollision?: boolean; symlinkedRoot?: boolean; emptyArchive?: boolean } = {},
 ): { ctx: Context; calls: string[]; files: Set<string>; contents: Map<string, string> } {
   const calls: string[] = [];
-  const files = new Set(["/srv/clawforge/data"]);
+  const files = new Set(["/srv/clawwright/data"]);
   const contents = new Map<string, string>();
   const holder = JSON.stringify({
     operationId: "op-holder", what: "apply", by: "someone@host pid 1", takenAt: new Date().toISOString(),
   });
   const ctx = {
-    settings: { dataDir: "/srv/clawforge/data", backupDir: "/srv/clawforge/backups", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", backupDir: "/srv/clawwright/backups", env: {} },
     transport: {
       description: "stub",
       async exists(path: string): Promise<boolean> {
-        return path === "/srv/clawforge/data";
+        return path === "/srv/clawwright/data";
       },
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         calls.push(`exec ${command} ${args.join(" ")}`);
@@ -51,7 +51,7 @@ function stubBackupCtx(
           return { code: options.symlinkedRoot === true ? 0 : 1, stdout: "", stderr: "" };
         }
         if (options.symlinkedRoot === true && command === "readlink") {
-          return { code: 0, stdout: "/srv/clawforge/real-data", stderr: "" };
+          return { code: 0, stdout: "/srv/clawwright/real-data", stderr: "" };
         }
         // listArchive() of a staging archive: content beneath the root, except when this
         // run simulates a content-free archive (what a symlinked root used to produce).
@@ -165,7 +165,7 @@ function stubBackupCtx(
   const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
   // Unchanged on purpose: a backup directory written before this still reads correctly.
   check("a full backup keeps the plain name", /-\d{8}-\d{6}\.tar\.gz$/.test(archive), true);
-  check("a successful backup removes its staging directory", [...files].some((path) => path.includes(".clawforge-backup-")), false);
+  check("a successful backup removes its staging directory", [...files].some((path) => path.includes(".clawwright-backup-")), false);
 }
 
 // A failed tar must never expose a partial archive under the name restore/rotation discovers.
@@ -196,7 +196,7 @@ function stubBackupCtx(
     },
   );
   check("a symlinked data root is refused", message.includes("is a symlink to"), true);
-  check("the refusal names the real directory the link points to", message.includes("/srv/clawforge/real-data"), true);
+  check("the refusal names the real directory the link points to", message.includes("/srv/clawwright/real-data"), true);
   check("a refused symlink-root backup never pauses the gateway", calls.includes("pause"), false);
   check("a refused symlink-root backup writes no archive", [...files].some((path) => path.endsWith(".tar.gz")), false);
 }
@@ -238,7 +238,7 @@ function stubBackupCtx(
 // A running stack without quiesce/resume blocks backup; a stopped stack stays quiet.
 
 {
-  const recipes = await mkdtemp(join(tmpdir(), "clawforge-backup-recipe-check-"));
+  const recipes = await mkdtemp(join(tmpdir(), "clawwright-backup-recipe-check-"));
   try {
     await mkdir(resolve(recipes, "vault"), { recursive: true });
     await writeFile(resolve(recipes, "vault", "recipe.json"), JSON.stringify({ description: "sidecar under the data directory" }), "utf8");

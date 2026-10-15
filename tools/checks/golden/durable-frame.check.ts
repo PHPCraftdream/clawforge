@@ -40,20 +40,20 @@ const data = completionData(surfaceRegistry(), true);
 
 // --- HEAD literals (captured once from a detached HEAD worktree, no normalization) -------
 
-const HEAD_SHIM_SHA256 = "197bfbab1b800d1a7e799c2d5aafa7f310e235e3d3666ed6f5ddd70c7a79c293";
-const HEAD_LAUNCHER_MONOREPO_SHA256 = "1b262c9451a95fb2fd2d2aa640db3fc6105e3ffc3046021a9ebe54bce18432ea";
-const HEAD_LAUNCHER_INSTALLED_SHA256 = "8d13989ac240ef6cdfa222d9c3afae9e7dde90647b97ce41014d9930fbfaa71e";
+const HEAD_SHIM_SHA256 = "fa71a67cf94572a84f81f07afbe3730957781d20f227dd34838962f8840718c3";
+const HEAD_LAUNCHER_MONOREPO_SHA256 = "c6432c1a51f1fce08169fbeb213e7a164e686526e87d950662b4a3674cb395c8";
+const HEAD_LAUNCHER_INSTALLED_SHA256 = "b3a9dbad48246177b20d06bb6d235dd02b4c34396eabafa2ca0a0881e213438f";
 const HEAD_INIT_STORED = [
   "// This deployment.",
   "//",
   "// Says which service this deployment manages and which framework commands it exposes.",
   "// Its configuration lives next to this file: .env, config/, secrets/, recipes/.",
   "//",
-  "// Run it with: ./clawforge status",
+  "// Run it with: ./clawwright status",
   "",
-  "import { defineApp } from \"@clawforge/framework/app\";",
-  "import { mountPoints } from \"@clawforge/framework/mounts\";",
-  "import { openclawCommands } from \"@clawforge/framework/commands\";",
+  "import { defineApp } from \"clawwright/app\";",
+  "import { mountPoints } from \"clawwright/mounts\";",
+  "import { openclawCommands } from \"clawwright/commands\";",
   "",
   "export default defineApp({",
   "  name: \"demo\",",
@@ -74,7 +74,7 @@ const HEAD_SCAFFOLD_STORED = [
   "// Says which service this deployment manages and which framework commands it exposes.",
   "// Its configuration lives next to this file: .env, config/, secrets/, recipes/.",
   "//",
-  "// Run it with:  ./clawforge --app demo status",
+  "// Run it with:  ./clawwright --app demo status",
   "",
   "import { defineApp } from \"../../tools/framework/core/app.ts\";",
   "import { mountPoints } from \"../../tools/framework/runtime/mounts.ts\";",
@@ -150,9 +150,9 @@ const OPERATOR_FRAMES = [
 
 // --- the production fixture the writers resolve their deployment against --------------------
 
-const FIXTURE = "clawforge-df-fixture";
+const FIXTURE = "clawwright-df-fixture";
 // a unique parent keeps parallel runs apart; the deployment dir keeps its literal name
-const fixtureParent = await mkdtemp(join(tmpdir(), "clawforge-df-"));
+const fixtureParent = await mkdtemp(join(tmpdir(), "clawwright-df-"));
 const fixtureRoot = join(fixtureParent, FIXTURE);
 await mkdir(fixtureRoot, { recursive: true });
 useDeployment(fixtureRoot);
@@ -164,7 +164,7 @@ const localCtx = { transport: { description: "local" }, settings: {} } as unknow
 
 // --- cron: the production invocation builder + the production line builder ------------------
 
-const SSH_CRON = "*/5 * * * * cd '/srv/openclaw' && ./clawforge '--app' 'clawforge-df-fixture' 'watch' 'check' >/dev/null 2>&1 # clawforge-watch:scheduler-id";
+const SSH_CRON = "*/5 * * * * cd '/srv/openclaw' && ./clawwright '--app' 'clawwright-df-fixture' 'watch' 'check' >/dev/null 2>&1 # clawwright-watch:scheduler-id";
 for (const [label, frame] of OPERATOR_FRAMES) {
   await under(frame, async () => {
     const inv = await posixTargetInvocation(sshCtx, ["watch", "check"]);
@@ -188,20 +188,20 @@ for (const [label, frame] of OPERATOR_FRAMES) {
 // --- deploy's installed-mode refusal: durable text for the server -----------------------------
 
 {
-  const fake = await mkdtemp(join(tmpdir(), "clawforge-df-nocheckout-"));
-  const previous = process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ];
-  process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ] = fake;
+  const fake = await mkdtemp(join(tmpdir(), "clawwright-df-nocheckout-"));
+  const previous = process.env[ "CLAWWRIGHT_CHECKS_SOURCE_ROOT" ];
+  process.env[ "CLAWWRIGHT_CHECKS_SOURCE_ROOT" ] = fake;
   try {
     await under(fromSub, async () => {
       let error: unknown;
       try { await frameworkSourceRoot(fake); } catch (caught) { error = caught; }
       const advice = error !== undefined && typeof error === "object" && error !== null && Array.isArray((error as { advice?: unknown }).advice) ? ((error as { advice: unknown[] }).advice)[0] as Parameters<typeof renderAdvice>[0] : undefined;
       check("the installed-mode refusal spells the server's own bootstrap line",
-        advice === undefined ? String(advice) : renderAdvice(advice, fromSub), "./clawforge bootstrap");
+        advice === undefined ? String(advice) : renderAdvice(advice, fromSub), "./clawwright bootstrap");
     });
   } finally {
-    if (previous === undefined) delete process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ];
-    else process.env[ "CLAWFORGE_CHECKS_SOURCE_ROOT" ] = previous;
+    if (previous === undefined) delete process.env[ "CLAWWRIGHT_CHECKS_SOURCE_ROOT" ];
+    else process.env[ "CLAWWRIGHT_CHECKS_SOURCE_ROOT" ] = previous;
     await rm(fake, { recursive: true, force: true });
   }
 }
@@ -209,7 +209,7 @@ for (const [label, frame] of OPERATOR_FRAMES) {
 // --- schtasks: the production argv builder over the production WSL client invocation --------
 
 const wsl = new WslTransport("Ubuntu-24.04");
-const SCHTASKS_ENTRY = "/srv/openclaw/clawforge";
+const SCHTASKS_ENTRY = "/srv/openclaw/clawwright";
 const wslCtx = {
   transport: { description: "wsl:Ubuntu-24.04", clientInvocation: wsl.clientInvocation.bind(wsl) },
   paths: { async toTarget(): Promise<string> { return SCHTASKS_ENTRY; } },
@@ -217,11 +217,11 @@ const wslCtx = {
 } as unknown as Context;
 const schtasksInvocation = wsl.clientInvocation(SCHTASKS_ENTRY, ["--app", FIXTURE, "backup"]);
 check("the schtasks /create command, through the production builders, is the literal target line",
-  schtasksCreateCommand("clawforge-scheduler-id-backup", 1440, schtasksInvocation),
+  schtasksCreateCommand("clawwright-scheduler-id-backup", 1440, schtasksInvocation),
   {
     command: "schtasks",
-    args: ["/create", "/tn", "clawforge-scheduler-id-backup", "/sc", "DAILY", "/tr",
-      `wsl.exe -d Ubuntu-24.04 --exec bash -lc "set -e; cd -- '/srv/openclaw'; exec './clawforge' '--app' 'clawforge-df-fixture' 'backup'"`, "/f"],
+    args: ["/create", "/tn", "clawwright-scheduler-id-backup", "/sc", "DAILY", "/tr",
+      `wsl.exe -d Ubuntu-24.04 --exec bash -lc "set -e; cd -- '/srv/openclaw'; exec './clawwright' '--app' 'clawwright-df-fixture' 'backup'"`, "/f"],
   });
 {
   // The whole print path of the Windows fallback, driven per operator frame: the header
@@ -240,7 +240,7 @@ check("the schtasks /create command, through the production builders, is the lit
   }
   checkTrue("the schtasks fallback print is byte-identical under every operator frame", new Set(captures).size === 1);
   expectBytes("the schtasks fallback manual header", captures[0]!.split("\n")[0]!, `    ${MANUAL_INSTALL_HEADER}`);
-  expectBytes("the schtasks fallback wsl.exe line", captures[0]!.split("\n")[1]!, "      wsl.exe -d Ubuntu-24.04 --exec bash -lc \"set -e; cd -- '/srv/openclaw'; exec './clawforge' '--app' 'clawforge-df-fixture' 'backup'\"");
+  expectBytes("the schtasks fallback wsl.exe line", captures[0]!.split("\n")[1]!, "      wsl.exe -d Ubuntu-24.04 --exec bash -lc \"set -e; cd -- '/srv/openclaw'; exec './clawwright' '--app' 'clawwright-df-fixture' 'backup'\"");
 }
 // --- init and scaffold: the production stored-text writers ----------------------------------
 
@@ -248,19 +248,19 @@ for (const [label, frame] of OPERATOR_FRAMES) {
   await under(frame, async () => {
     expectBytes(`${label}: init's stored app.ts text`, initDeclaration("demo"), HEAD_INIT_STORED);
     expectBytes(`${label}: scaffold's stored app.ts text`, scaffoldDeclaration("demo"), HEAD_SCAFFOLD_STORED);
-    expectBytes(`${label}: the stored run-it line through the target frame`, renderAdvice(command(["status"], { app: "demo" }), targetFrame({ kind: "checkout-shim", root: "" }, "posix")), "./clawforge --app demo status");
+    expectBytes(`${label}: the stored run-it line through the target frame`, renderAdvice(command(["status"], { app: "demo" }), targetFrame({ kind: "checkout-shim", root: "" }, "posix")), "./clawwright --app demo status");
   });
 }
 
 // --- deploy: the remote lines from the remote checkout's own frame (S1.5b) -------------------
 //
-// R19-10: the server line is spelled for the SERVER (./clawforge at the remote root),
+// R19-10: the server line is spelled for the SERVER (./clawwright at the remote root),
 // whatever launcher ran this deploy; R18-05: the cd prefix quotes the remote path by the
 // POSIX rule. Exact bytes, a remote path with a space and a $, under every operator frame.
 
 const REMOTE_ROOT = "/srv/open claw/$site";
-const REMOTE_BOOTSTRAP = `cd '/srv/open claw/$site' && ./clawforge --app clawforge-df-fixture bootstrap`;
-const REMOTE_SECRETS = `cd '/srv/open claw/$site' && ./clawforge --app clawforge-df-fixture secrets --apply`;
+const REMOTE_BOOTSTRAP = `cd '/srv/open claw/$site' && ./clawwright --app clawwright-df-fixture bootstrap`;
+const REMOTE_SECRETS = `cd '/srv/open claw/$site' && ./clawwright --app clawwright-df-fixture secrets --apply`;
 for (const [label, frame] of OPERATOR_FRAMES) {
   await under(frame, async () => {
     expectBytes(`${label}: deploy's remote bootstrap line`, bootstrapRemoteLine(REMOTE_ROOT, name), REMOTE_BOOTSTRAP);
@@ -271,10 +271,10 @@ for (const [label, frame] of OPERATOR_FRAMES) {
 // --- the shim and launcher FILE writers, whole file contents and their sha256 ---------------
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-df-writer-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-df-writer-"));
   try {
     await writeShim(dir);
-    const shimFile = await readFile(join(dir, "clawforge"), "utf8");
+    const shimFile = await readFile(join(dir, "clawwright"), "utf8");
     checkTrue("the shim file writer emits exactly the SHIM template", bytesEqual(shimFile, SHIM));
     check("the committed shim file's sha256 equals HEAD's", sha256(shimFile), HEAD_SHIM_SHA256);
     for (const mode of ["monorepo", "installed"] as const) {
@@ -298,37 +298,37 @@ const zshLines = (): readonly string[] => renderCompletion("zsh", data).split("\
 
 for (const [label, frame] of [["checkout root", atRoot], ["checkout subdirectory", fromSub]] as const) {
   await under(frame, async () => {
-    expectBytes(`${label}: the bash Install header`, bashInstall(), "# Install: eval \"$(./clawforge completion bash)\"");
-    expectBytes(`${label}: the zsh Install header`, zshLines()[3]!, "# grammar. Install: ./clawforge completion zsh > \"${fpath[1]}/_clawforge\" (new shell), or");
-    expectBytes(`${label}: the zsh source line`, zshLines()[4]!, "# source <(./clawforge completion zsh) in the current one.");
-    expectBytes(`${label}: the pwsh Install header keeps the S1.4 sentence form`, pwshInstall(), "# Install: run ./clawforge completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell");
+    expectBytes(`${label}: the bash Install header`, bashInstall(), "# Install: eval \"$(./clawwright completion bash)\"");
+    expectBytes(`${label}: the zsh Install header`, zshLines()[3]!, "# grammar. Install: ./clawwright completion zsh > \"${fpath[1]}/_clawwright\" (new shell), or");
+    expectBytes(`${label}: the zsh source line`, zshLines()[4]!, "# source <(./clawwright completion zsh) in the current one.");
+    expectBytes(`${label}: the pwsh Install header keeps the S1.4 sentence form`, pwshInstall(), "# Install: run ./clawwright completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell");
   });
 }
 
 await under(systemWide, async () => {
-  expectBytes("installed: the bash Install header", bashInstall(), "# Install: eval \"$(clawforge completion bash)\"");
-  expectBytes("installed: the pwsh Install header is the pipeline form", pwshInstall(), "# Install: clawforge completion pwsh | Out-String | Invoke-Expression");
+  expectBytes("installed: the bash Install header", bashInstall(), "# Install: eval \"$(clawwright completion bash)\"");
+  expectBytes("installed: the pwsh Install header is the pipeline form", pwshInstall(), "# Install: clawwright completion pwsh | Out-String | Invoke-Expression");
 });
 
 await under(win32BinFromSub, async () => {
   // R18-06: the stored bash line spells npm's wrapper the way BASH reads it — forward
   // slashes, relative to the deployment root, never the operator's subdirectory or the
   // Windows wrapper this run was typed under.
-  expectBytes("the bash Install header never spells the operator's Windows wrapper (R18-06): forward slashes from the target root, never the operator's cwd", bashInstall(), "# Install: eval \"$(node_modules/.bin/clawforge completion bash)\"");
-  expectBytes("the zsh Install header under the Windows wrapper spells the POSIX program", zshLines()[3]!, "# grammar. Install: node_modules/.bin/clawforge completion zsh > \"${fpath[1]}/_clawforge\" (new shell), or");
+  expectBytes("the bash Install header never spells the operator's Windows wrapper (R18-06): forward slashes from the target root, never the operator's cwd", bashInstall(), "# Install: eval \"$(node_modules/.bin/clawwright completion bash)\"");
+  expectBytes("the zsh Install header under the Windows wrapper spells the POSIX program", zshLines()[3]!, "# grammar. Install: node_modules/.bin/clawwright completion zsh > \"${fpath[1]}/_clawwright\" (new shell), or");
   // The pwsh header names the wrapper the way POWERSHELL resolves it: the target shell's
   // own spelling (the .cmd wrapper), never a bash-only spelling.
-  expectBytes("the pwsh Install header under the Windows wrapper spells the wrapper for pwsh", pwshInstall(), "# Install: node_modules\\.bin\\clawforge completion pwsh | Out-String | Invoke-Expression");
+  expectBytes("the pwsh Install header under the Windows wrapper spells the wrapper for pwsh", pwshInstall(), "# Install: node_modules\\.bin\\clawwright completion pwsh | Out-String | Invoke-Expression");
 });
 
 // --- the scheduled target frame constructors ------------------------------------------------
 
 check("scheduledTargetFrame spells the deployment shim pasted at its root",
   scheduledInvocation(scheduledTargetFrame("/srv/openclaw"), ["--app", "demo", "backup"]),
-  { cwd: "/srv/openclaw", command: "./clawforge", args: ["--app", "demo", "backup"] });
+  { cwd: "/srv/openclaw", command: "./clawwright", args: ["--app", "demo", "backup"] });
 check("a checkout-rooted job runs the checkout shim at the checkout root",
   scheduledInvocation(scheduledTargetFrame(CHECKOUT, true), ["--app", "demo", "watch", "check"]),
-  { cwd: CHECKOUT, command: "./clawforge", args: ["--app", "demo", "watch", "check"] });
+  { cwd: CHECKOUT, command: "./clawwright", args: ["--app", "demo", "watch", "check"] });
 
 // --- the ratchet: durable writers read no operator frame -------------------------------------
 //

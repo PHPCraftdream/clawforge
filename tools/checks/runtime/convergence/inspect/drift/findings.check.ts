@@ -1,4 +1,4 @@
-// `./clawforge inspect` — one finding per situation: a stopped instance, CONFIG_DRIFT,
+// `./clawwright inspect` — one finding per situation: a stopped instance, CONFIG_DRIFT,
 // SECRET_MISSING, PROVIDER_MISSING, RESTART_REQUIRED (with its fractional-mtime edge cases) and
 // RECIPE_MIRROR_DRIFT for prompts. See ../fixture.ts for the shared stub.
 
@@ -55,7 +55,7 @@ const scenarios: (() => Promise<void>)[] = [
     check("exactly the changed setting is reported", configDrift.problems.length, 1);
     check("a differing declared value is drift", drift !== undefined, true);
     check("the detail names only the path and mismatch", drift?.detail, "gateway.mode differs from the declaration");
-    check("the remedy is the one command that fixes it", drift?.nextAction, "./clawforge apply");
+    check("the remedy is the one command that fixes it", drift?.nextAction, "./clawwright apply");
 
     // No <data>/config/.env at all: the provider key has nowhere to come from.
     const noEnv = await gatherInspection(stubContext({ mirrorChecksums: goodChecksums }));
@@ -85,7 +85,7 @@ const scenarios: (() => Promise<void>)[] = [
     check("no provider configured is reported", codes(noneConfigured.problems), ["PROVIDER_MISSING"]);
     const finding = noneConfigured.problems.find((entry) => entry.code === "PROVIDER_MISSING");
     check("it is a warning — detection cannot see env-keyed, subscription or CLI-backend providers", finding?.severity, "warning");
-    check("the remedy is configure-provider", finding?.nextAction, "./clawforge configure-provider");
+    check("the remedy is configure-provider", finding?.nextAction, "./clawwright configure-provider");
 
     // A provider named only through auth.profiles (never models.providers) still counts —
     // collectConfiguredProviders() reads both, and this must not re-derive its own guess.
@@ -117,7 +117,7 @@ const scenarios: (() => Promise<void>)[] = [
       stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, startedAtMs: 1_000_000, configMtimeSeconds: 2_000 }),
     );
     check("config newer than the running instance asks for a restart", codes(newer.problems), ["RESTART_REQUIRED"]);
-    check("the remedy is restart, not up", newer.problems[0]?.nextAction, "./clawforge restart");
+    check("the remedy is restart, not up", newer.problems[0]?.nextAction, "./clawwright restart");
 
     const afterFractional = await gatherInspection(stubContext({
       targetEnv: "ZAI_API_KEY=k\n",

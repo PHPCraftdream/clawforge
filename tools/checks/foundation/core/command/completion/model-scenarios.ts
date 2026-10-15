@@ -18,7 +18,7 @@ export function modelScenarios(
       .filter((key) => key.startsWith(command + " ") && key !== [command, "*"].join(" "))
       .map((key) => key.slice(command.length + 1));
 {
-  // R32-02: `clawforge sta<Tab>` used to see the command "sta"; only the words BEFORE the cursor
+  // R32-02: `clawwright sta<Tab>` used to see the command "sta"; only the words BEFORE the cursor
   // pick the command, so a prefix typed anywhere still completes behind it.
   check("a typed prefix at the top level still completes commands (R32-02)", at(data, ["sta"], 0).includes("status"), true);
   check("a typed flag prefix completes --app", at(data, ["--ap"], 0).includes("--app"), true);

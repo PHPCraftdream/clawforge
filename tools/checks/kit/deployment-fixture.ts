@@ -45,7 +45,7 @@ export const TRANSPORT_SENTINEL = "deployment fixture: the recording transport d
 export const FIXTURE_TRANSPORT_DESCRIPTION = "local";
 
 // Single source for the mkdtemp prefix — the self-check scans the OS temp dir by it.
-export const FIXTURE_TEMP_PREFIX = "clawforge-deployment-fixture-";
+export const FIXTURE_TEMP_PREFIX = "clawwright-deployment-fixture-";
 
 const ENV_KEYS = ["OC_TARGET_LOCATION", "OC_DATA_DIR", "OPENCLAW_GATEWAY_PORT", "OPENCLAW_GATEWAY_TOKEN"] as const;
 

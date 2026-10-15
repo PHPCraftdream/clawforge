@@ -57,7 +57,7 @@ async function checkNeverSelectedThrows(): Promise<void> {
     "}",
   ].join("\n");
 
-  const scratch = await mkdtemp(join(tmpdir(), "clawforge-deployment-names-"));
+  const scratch = await mkdtemp(join(tmpdir(), "clawwright-deployment-names-"));
   const scriptFile = join(scratch, "deployment-dir-guard.ts");
   await writeFile(scriptFile, script, "utf8");
   try {

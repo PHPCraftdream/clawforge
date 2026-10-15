@@ -11,8 +11,8 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { repointLines } from "#framework/commands/lifecycle/restore/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
-const DATA_DIR = "/srv/clawforge-restore-outcome/data";
-const ARCHIVE = "/srv/clawforge-restore-outcome/backups/full.tar.gz";
+const DATA_DIR = "/srv/clawwright-restore-outcome/data";
+const ARCHIVE = "/srv/clawwright-restore-outcome/backups/full.tar.gz";
 
 function fixture(secretsPresent: boolean): { ctx: Context; calls: string[] } {
   const calls: string[] = [];
@@ -53,8 +53,8 @@ function fixture(secretsPresent: boolean): { ctx: Context; calls: string[] } {
 }
 
 for (const scenario of [
-  { name: "missing secrets", secretsPresent: false, noStart: false, started: false, reason: "missing-secrets", nextAction: "./clawforge secrets --apply --store <name>, then ./clawforge up" },
-  { name: "explicit no-start", secretsPresent: true, noStart: true, started: false, reason: "no-start", nextAction: "./clawforge up" },
+  { name: "missing secrets", secretsPresent: false, noStart: false, started: false, reason: "missing-secrets", nextAction: "./clawwright secrets --apply --store <name>, then ./clawwright up" },
+  { name: "explicit no-start", secretsPresent: true, noStart: true, started: false, reason: "no-start", nextAction: "./clawwright up" },
   { name: "healthy startup", secretsPresent: true, noStart: false, started: true },
 ]) {
   const { ctx, calls } = fixture(scenario.secretsPresent);

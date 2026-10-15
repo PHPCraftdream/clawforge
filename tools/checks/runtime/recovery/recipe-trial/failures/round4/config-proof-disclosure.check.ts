@@ -6,7 +6,7 @@ import { runTrialDryRun } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { captured, ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-config-proof");
+const root = await useRecipesRoot("clawwright-recipe-trial-config-proof");
 try {
   await root.write("subject", { description: "A recipe whose dry-run must disclose the skipped proof" });
   const fixture = trialFixture();

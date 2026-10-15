@@ -47,7 +47,7 @@ export class SshPathBridge implements PathBridge {
   /** Slash-normalised, for prefix matching against either D:\dev\x or /mnt/d/dev/x. */
   #localRepo: string;
   /** As the caller wrote it, so the reverse translation gives paths back in the same
-   *  shape rather than a mixed D:\dev\x/clawforge. */
+   *  shape rather than a mixed D:\dev\x/clawwright. */
   #localRepoOriginal: string;
   #localSeparator: string;
   #remoteRepo: string;

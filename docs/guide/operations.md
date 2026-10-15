@@ -2,10 +2,10 @@
 
 ## Diagnose and repair through the framework
 
-Start with the deployment's ClawForge CLI or `clawforge-control` MCP tools, not custom
+Start with the deployment's Clawwright CLI or `clawwright-control` MCP tools, not custom
 scripts or direct Docker/WSL/SSH administration. This framework exists to simplify complete
 OpenClaw setup and recovery; operating it is also a check that its tools cover the real task.
-Use the launcher appropriate to the deployment and shell (`./clawforge` below is the checkout
+Use the launcher appropriate to the deployment and shell (`./clawwright` below is the checkout
 or POSIX-shim spelling).
 
 1. Run `status --json` and `inspect --json`; use `doctor --json` when a failing exit status
@@ -37,9 +37,9 @@ State what the framework could diagnose and repair, where a manual fallback was 
 and which end-to-end check remains unperformed. A missing operation is a framework gap to
 improve, not a reason to silently establish a second script-based workflow.
 
-From a native Windows shell, use the installed Windows ClawForge launcher or invoke Git Bash
+From a native Windows shell, use the installed Windows Clawwright launcher or invoke Git Bash
 explicitly. The `bash.exe` in the Windows `System32` directory is the legacy WSL launcher, not Git Bash: it can
-reinterpret quoted foreign arguments and expand `$` or command substitutions before ClawForge
+reinterpret quoted foreign arguments and expand `$` or command substitutions before Clawwright
 receives them. For WSL operation, enter the WSL shell first rather than forwarding scripts
 through that legacy launcher.
 
@@ -131,9 +131,9 @@ Edit the declaration, look at what that implies, apply it, get an answer about t
 instance:
 
 ```bash
-./clawforge inspect            # what is declared, what is running, where they disagree
-./clawforge plan               # the ordered steps that would fix it, and why each one is there
-./clawforge apply              # run exactly those, then inspect again and report the result
+./clawwright inspect            # what is declared, what is running, where they disagree
+./clawwright plan               # the ordered steps that would fix it, and why each one is there
+./clawwright apply              # run exactly those, then inspect again and report the result
 ```
 
 This exists because the dependencies used to live in whoever had learned them: configuration
@@ -144,7 +144,7 @@ it is a run that reports success and leaves the instance on the old settings.
 
 Every finding carries a code (`CONFIG_DRIFT`, `SECRET_MISSING`, `RESTART_REQUIRED`,
 `RECIPE_MIRROR_DRIFT`, …) and the command that resolves it, so an agent branches on the code
-instead of reading prose. `./clawforge doctor` is the same inspection as a verdict, exiting non-zero
+instead of reading prose. `./clawwright doctor` is the same inspection as a verdict, exiting non-zero
 when something blocking was found. Over MCP these four return `structuredContent` —
 `{operationId, changed, healthy, problems, warnings, nextActions, nextSteps, result}` — beside the usual
 text.
@@ -217,10 +217,10 @@ Two more findings answer questions the ones above cannot. `NOT_BOOTSTRAPPED` rep
 exist on the target, so `status`/`doctor`/`inspect` answer that plainly instead of asking the
 runtime at all: every runtime call shells out to compose, which needs somewhere to write its
 own private environment file beside the data directory, and creating that place is exactly
-the `mkdir` a still-root-owned parent refuses pre-bootstrap. `./clawforge up` is not the
+the `mkdir` a still-root-owned parent refuses pre-bootstrap. `./clawwright up` is not the
 remedy here (compose would bind-mount a data directory that does not exist yet, creating it
-root-owned), so the finding points at `./clawforge bootstrap` instead, and `GATEWAY_DOWN`
-does not also fire beside it. `./clawforge bootstrap --check` answers the same question
+root-owned), so the finding points at `./clawwright bootstrap` instead, and `GATEWAY_DOWN`
+does not also fire beside it. `./clawwright bootstrap --check` answers the same question
 read-only, before that first bootstrap ever runs: docker present and its daemon answering,
 compose v2, whether the data/backup/snapshot directories can be prepared without a sudo
 password (and the exact `sudo install -d` line to run if not), whether the gateway port is
@@ -244,12 +244,12 @@ to something and the instance is doing its job, but the next recreate this deplo
 (`up`, `restart` after a compose change, `apply`) is one pull elsewhere away from switching what
 it gets, with nobody here having decided so. `IMAGE_TAG_MOVED` is its present-tense sibling: the
 local tag has ALREADY moved since this container was created, caught before that next recreate
-is the first place anyone notices. Both point at `./clawforge upgrade`, which resolves and pins
-by digest deliberately. `./clawforge bootstrap` prevents most of this before it starts: since
+is the first place anyone notices. Both point at `./clawwright upgrade`, which resolves and pins
+by digest deliberately. `./clawwright bootstrap` prevents most of this before it starts: since
 task #32, the moment a fresh pull proves what a shared tag holds, bootstrap pins `OPENCLAW_IMAGE`
 to that exact digest in `.env` — the same write `upgrade` makes on success — so this deployment's
 own next recreate can no longer be moved by somebody else's pull. A deployment already pinned to
-a digest is left alone by a bootstrap re-run; `./clawforge upgrade` is the only way to move it
+a digest is left alone by a bootstrap re-run; `./clawwright upgrade` is the only way to move it
 from there.
 
 Two things `apply` will not do. It never reconnects an MCP client, because the client owns
@@ -260,16 +260,16 @@ listed in the plan as advisory steps, addressed to you.
 ### When it goes wrong
 
 ```bash
-./clawforge operations           # what recent runs did, step by step
-./clawforge operations <id>      # one run in full, including what never started
-./clawforge rollback             # put back the configuration the last run replaced
+./clawwright operations           # what recent runs did, step by step
+./clawwright operations <id>      # one run in full, including what never started
+./clawwright rollback             # put back the configuration the last run replaced
 ```
 
 `apply` copies the live configuration aside before its first mutating step, writes each step
 to a journal on the target as it finishes, and stops at the first failure — so what it did
 and where it stopped survive the run itself. `rollback` restores that one file and restarts.
 
-It is not `./clawforge push`, and the difference matters at the worst possible moment: push replaces
+It is not `./clawwright push`, and the difference matters at the worst possible moment: push replaces
 the whole data directory from a snapshot, taking every workspace, every agent's memory and
 every transcript written since. Undoing a bad configuration should not cost an agent its
 notes, so they are separate operations.
@@ -312,7 +312,7 @@ Use `status --json` for host/PID/birth evidence and `operations <id>` for the op
 `--break-lock` requests an ownership-checked takeover, deliberately not `--force`: `--force` means
 "yes, I mean it" for a destructive command and is set automatically from an MCP caller's
 `confirm`, so sharing the name would have made every confirmed tool call seize whatever lock
-someone else was holding. Every pid a lock records is this tool's own — wherever `clawforge`
+someone else was holding. Every pid a lock records is this tool's own — wherever `clawwright`
 itself runs, never anything on a WSL or SSH transport's target — so when the holder was
 recorded on this same machine and its pid is provably gone, the refusal says so plainly. A
 record that also carries a boot identity and a native process start time proves death by
@@ -331,7 +331,7 @@ not a signal. Not every lock-taking command accepts `--break-lock`
 supports takeover, never an arbitrary mutation just to remove the lock.
 
 An operation lock or its shorter-lived bookkeeping guard may belong to a different machine.
-A remote PID cannot be checked locally: first verify that the recorded owner's ClawForge
+A remote PID cannot be checked locally: first verify that the recorded owner's Clawwright
 process is gone on that machine. The intended command must support both `--break-lock` and
 `--break-foreign-lock <hostId>` with the exact recorded identity. A wrong identity refuses.
 Bookkeeping-guard takeovers retain their existing audit in
@@ -354,7 +354,7 @@ deletion; inspect the reported parked path before any separately authorized repa
 
 ### Does this deployment's own work work
 
-`./clawforge smoke` proves the instance is healthy. It cannot know whether the wiki one of your
+`./clawwright smoke` proves the instance is healthy. It cannot know whether the wiki one of your
 recipes serves is reachable or whether the agent built from it has the tools it was given —
 those are properties of a deployment. So a recipe declares them:
 
@@ -366,7 +366,7 @@ those are properties of a deployment. So a recipe declares them:
 ]}
 ```
 
-in `recipes/<name>/acceptance.json`, and `./clawforge accept` runs them. The kinds are the
+in `recipes/<name>/acceptance.json`, and `./clawwright accept` runs them. The kinds are the
 framework's, so no code travels from a deployment into it. A check marked `usesModel` costs
 tokens and takes an agent turn — which writes to that agent's workspace — so it never runs
 without `--with-model`, and is always reported as `not-checked` and counted rather than
@@ -380,7 +380,7 @@ four — `done`, `failed`, `advisory`, `blocked` — because a step is an action
 records, not a question awaiting a verdict.
 
 Some read and reconciliation checks use OpenClaw's CLI. If the Gateway requests a wider
-scope, ClawForge never starts a model turn implicitly. `accept --with-model` and
+scope, Clawwright never starts a model turn implicitly. `accept --with-model` and
 `set try --with-model` explicitly opt into approving that exact request through the `main`
 agent; without the flag the check is reported as `could-not-check` and the request can be
 approved manually.
@@ -392,10 +392,10 @@ somewhere, and a directory of configuration describing it — and undoing them i
 action:
 
 ```bash
-./clawforge --app <name> destroy                          # dry run: what would go
-./clawforge --app <name> destroy --yes --confirm-name <name>   # actually remove it
-./clawforge remove-app <name>                              # dry run: apps/<name>/ itself
-./clawforge remove-app <name> --yes                        # actually delete it
+./clawwright --app <name> destroy                          # dry run: what would go
+./clawwright --app <name> destroy --yes --confirm-name <name>   # actually remove it
+./clawwright remove-app <name>                              # dry run: apps/<name>/ itself
+./clawwright remove-app <name> --yes                        # actually delete it
 ```
 
 `destroy` is the inverse of `bootstrap`. It always stops and removes the compose project's
@@ -430,12 +430,12 @@ warning when it carries its own `.git` history (`apps/` is gitignored at the mon
 but nothing stops an operator from `git init`-ing one deployment directory on its own, per
 `new-app`'s own advice — that history is not otherwise visible from outside it). It refuses
 while the deployment still has a bootstrapped instance — `running` or
-`stopped`-but-bootstrapped, read the exact same way `./clawforge list` reads it — naming
+`stopped`-but-bootstrapped, read the exact same way `./clawwright list` reads it — naming
 `destroy` as the next step. It refuses a name that is not a plain deployment name (the same
 alphabet `new-app` enforces) and a directory that is itself a symlink.
 
 Neither command touches an operation record: `destroy --data` would remove
-`clawforge-operations/` along with everything else in the tree it lives in, so a record
+`clawwright-operations/` along with everything else in the tree it lives in, so a record
 written moments before answers nothing a later reader could use; `remove-app` never reaches
 the target at all.
 
@@ -447,10 +447,10 @@ binding, trusted plugins, the model provider's catalogue — lives in
 a ready payload for OpenClaw's own `openclaw config set --batch-file`.
 
 ```bash
-./clawforge apply-config              # apply
-./clawforge apply-config --dry-run    # validate without writing anything
-./clawforge apply-config --dump       # lost the file? recover the commonly declared paths from the live instance
-./clawforge restart                   # the instance reads this file only at startup
+./clawwright apply-config              # apply
+./clawwright apply-config --dry-run    # validate without writing anything
+./clawwright apply-config --dump       # lost the file? recover the commonly declared paths from the live instance
+./clawwright restart                   # the instance reads this file only at startup
 ```
 
 `bootstrap` calls this itself, so `deploy` rolls the same settings out to a server. Hand

@@ -36,7 +36,7 @@ function ownerAlias(trustee: string, owner: string): string {
 /** The DACL as saved SDDL — the same locale-free form the product verifies with, read here
  *  independently so the check does not trust the code under test to grade itself. */
 async function savedAces(file: string): Promise<{ daclProtected: boolean; aces: { type: string; flags: string; rights: string; trustee: string }[] }> {
-  const saved = join(tmpdir(), `clawforge-check-dacl-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  const saved = join(tmpdir(), `clawwright-check-dacl-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
   const result = await icacls([file, "/save", saved]);
   if (result.code !== 0) throw new Error(`icacls /save failed: ${result.stdout.trim()}`);
   try {
@@ -256,12 +256,12 @@ async function hostileNameChecks(root: string, distros: string[]): Promise<void>
   }
   const distro = distros[0] ?? "";
   const tag = randomBytes(4).toString("hex");
-  const marker = (n: number) => `/root.clawforge-canary-${tag}${n}`;
+  const marker = (n: number) => `/root.clawwright-canary-${tag}${n}`;
   const cases = [
     { label: "a space", name: "with space.env", canary: undefined as number | undefined },
-    { label: "an apostrophe", name: `isn't ; touch $HOME.clawforge-canary-${tag}2; x.env`, canary: 2 },
-    { label: "a semicolon", name: `probe; touch $HOME.clawforge-canary-${tag}3; printf REVIEW_ROOT_; id -u; fi #.env`, canary: 3 },
-    { label: "a command substitution", name: `sub$(touch $HOME.clawforge-canary-${tag}4) x.env`, canary: 4 },
+    { label: "an apostrophe", name: `isn't ; touch $HOME.clawwright-canary-${tag}2; x.env`, canary: 2 },
+    { label: "a semicolon", name: `probe; touch $HOME.clawwright-canary-${tag}3; printf REVIEW_ROOT_; id -u; fi #.env`, canary: 3 },
+    { label: "a command substitution", name: `sub$(touch $HOME.clawwright-canary-${tag}4) x.env`, canary: 4 },
   ];
   try {
     for (const [index, testCase] of cases.entries()) {
@@ -634,7 +634,7 @@ async function renameRetryChecks(root: string): Promise<void> {
   }
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-private-file-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-private-file-check-"));
 try {
   await probeContractChecks();
   await renameRetryChecks(root);

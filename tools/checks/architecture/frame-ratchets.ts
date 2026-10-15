@@ -17,7 +17,7 @@ const FRAME_READ = /\b(?:invocation|currentFrame)\(\s*\)/;
 // help-render.ts and log.ts left the exemption with S1.4: both take the frame from the invocation module (renderCurrentAdviceRows) now.
 const FRAME_READ_EXEMPT = (file: string): boolean => file.startsWith("tools/framework/core/io/invocation/");
 let frameReadTotal = 0;
-for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) {
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawwright.ts")]) {
   if (FRAME_READ_EXEMPT(rel(full))) continue;
   for (const line of (await readFile(full, "utf8")).split("\n")) {
     let stripped = line.replace(/(^|\s)\/\/.*$/, "$1");
@@ -30,7 +30,7 @@ for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) 
 report(ratchet("frameReads", baseline.frameReads.total, frameReadTotal));
 const FRAME_INSTALL = /\b(?:installFrame|setInvocation)\(/;
 const frameInstallsAfter = new Map<string, number>(); let frameInstallTotal = 0;
-for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) { if (rel(full).startsWith("tools/framework/core/io/invocation/")) continue; let counted = 0; for (const line of (await readFile(full, "utf8")).split("\n")) { let stripped = line.replace(/(^|\s)\/\/.*$/, "$1"); stripped = stripped.replace(/\/\*.*?\*\//g, ""); const trimmed = stripped.trim(); if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue; counted += (stripped.match(new RegExp(FRAME_INSTALL.source, "g")) ?? []).length; } if (counted > 0) { frameInstallsAfter.set(rel(full), counted); frameInstallTotal += counted; } }
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawwright.ts")]) { if (rel(full).startsWith("tools/framework/core/io/invocation/")) continue; let counted = 0; for (const line of (await readFile(full, "utf8")).split("\n")) { let stripped = line.replace(/(^|\s)\/\/.*$/, "$1"); stripped = stripped.replace(/\/\*.*?\*\//g, ""); const trimmed = stripped.trim(); if (trimmed.startsWith("*") || trimmed.startsWith("/*")) continue; counted += (stripped.match(new RegExp(FRAME_INSTALL.source, "g")) ?? []).length; } if (counted > 0) { frameInstallsAfter.set(rel(full), counted); frameInstallTotal += counted; } }
 report(perFileRatchet("frameInstalls", baseline.frameInstalls.files, frameInstallsAfter));
 report(ratchet("frameInstalls.total", baseline.frameInstalls.total, frameInstallTotal));
 const MODE_LITERAL = /(?:\bmode\s*(?:===|!==|==|!=|=)\s*["'](?:installed|checkout|local-package)["']|\bkind\s*(?:===|!==|==|!=|=)\s*["'](?:system|checkout-shim|deployment-shim|npm-bin|verbatim)["']|\bcase\s+["'](?:system|checkout-shim|deployment-shim|npm-bin|verbatim|installed|checkout|local-package)["']\s*:|[?]\s*["'](?:installed|checkout|local-package)["']\s*:\s*["'](?:installed|checkout|local-package)["'])/;
@@ -51,7 +51,7 @@ const modeOfBody = modeOfSource.slice(modeOfSource.indexOf("export function mode
 // else (comparison, case arm, ternary pair) outside the exact allow-list above fails.
 const modeOfLines = modeOfBody.split("\n").filter((line) => MODE_LITERAL.test(line) && !MODE_EXEMPT_LINES["tools/framework/core/io/invocation/frame.ts"].has(line.trim()));
 modeDecidersAfter.set("tools/framework/core/io/invocation/frame.ts", modeOfLines.length === 0 && /export function modeOf\(/.test(modeOfBody) ? 1 : modeOfLines.length);
-for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) { const file = rel(full); if (file === "tools/framework/core/io/invocation/frame.ts") continue; let counted = 0; for (const sourceLine of (await readFile(full, "utf8")).split("\n")) { const line = sourceLine.replace(/(^|\s)\/\/.*$/, "$1").replace(/\/\*.*?\*\//g, ""); if (line.trim().startsWith("*") || line.trim().startsWith("/*")) continue; if (MODE_EXEMPT_LINES[file]?.has(line.trim()) === true || file === "tools/framework/integration/deployment/init.ts") continue; if (MODE_LITERAL.test(line)) counted++; } if (counted > 0) modeDecidersAfter.set(file, counted); }
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawwright.ts")]) { const file = rel(full); if (file === "tools/framework/core/io/invocation/frame.ts") continue; let counted = 0; for (const sourceLine of (await readFile(full, "utf8")).split("\n")) { const line = sourceLine.replace(/(^|\s)\/\/.*$/, "$1").replace(/\/\*.*?\*\//g, ""); if (line.trim().startsWith("*") || line.trim().startsWith("/*")) continue; if (MODE_EXEMPT_LINES[file]?.has(line.trim()) === true || file === "tools/framework/integration/deployment/init.ts") continue; if (MODE_LITERAL.test(line)) counted++; } if (counted > 0) modeDecidersAfter.set(file, counted); }
 report(perFileRatchet("modeDeciders", baseline.modeDeciders.files, modeDecidersAfter));
 report(ratchet("modeDeciders.total", baseline.modeDeciders.total, modeDecidersAfter.size));
 }

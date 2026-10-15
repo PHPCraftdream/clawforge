@@ -1,5 +1,5 @@
 // check:exclusive — drops a scratch deployment into apps/ for the gate, which other checks that enumerate deployments must not see.
-// The documented hook import — `@clawforge/framework/private-config` — loads in both kinds of
+// The documented hook import — `clawwright/private-config` — loads in both kinds of
 // deployment: a checkout one (no dist build; the hook loader maps the package's public exports
 // onto the checkout's own framework sources) and an installed one (the recipe's own node_modules
 // answers first, and the checkout mapping never shadows it).
@@ -29,17 +29,17 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 // Checkout-style: the recipe has no node_modules at all, so the specifier can only come
 // from the checkout's own framework sources.
 {
-  const root = resolve(tmpdir(), `clawforge-recipe-hook-sources-${Date.now()}`);
+  const root = resolve(tmpdir(), `clawwright-recipe-hook-sources-${Date.now()}`);
   try {
     await mkdir(resolve(root, "sources"), { recursive: true });
     await writeFile(resolve(root, "sources", "recipe.json"), JSON.stringify({ description: "Framework sources probe" }), "utf8");
     await writeFile(
       resolve(root, "sources", "verify.ts"),
-      "import { generatePrivateSecret } from \"@clawforge/framework/private-config\";\nexport async function verify() { return { ok: true, revision: generatePrivateSecret().length }; }\n",
+      "import { generatePrivateSecret } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: generatePrivateSecret().length }; }\n",
       "utf8",
     );
     useRecipesDir(root);
-    check("sources: the documented @clawforge/framework/private-config import loads from the checkout's framework sources", Number((await verifyRevision("sources")).revision) > 0, true);
+    check("sources: the documented clawwright/private-config import loads from the checkout's framework sources", Number((await verifyRevision("sources")).revision) > 0, true);
   } finally {
     useRecipesDir(outerRecipes);
     await rm(root, { recursive: true, force: true });
@@ -48,27 +48,27 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 
 // Installed-style: a real package in the recipe's own node_modules answers first.
 {
-  const root = resolve(tmpdir(), `clawforge-recipe-hook-installed-${Date.now()}`);
+  const root = resolve(tmpdir(), `clawwright-recipe-hook-installed-${Date.now()}`);
   try {
-    await mkdir(resolve(root, "installed", "node_modules", "@clawforge", "framework"), { recursive: true });
+    await mkdir(resolve(root, "installed", "node_modules", "clawwright"), { recursive: true });
     await writeFile(resolve(root, "installed", "recipe.json"), JSON.stringify({ description: "Installed package probe" }), "utf8");
     await writeFile(
-      resolve(root, "installed", "node_modules", "@clawforge", "framework", "package.json"),
-      JSON.stringify({ name: "@clawforge/framework", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
+      resolve(root, "installed", "node_modules", "clawwright", "package.json"),
+      JSON.stringify({ name: "clawwright", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
       "utf8",
     );
     await writeFile(
-      resolve(root, "installed", "node_modules", "@clawforge", "framework", "private-config.js"),
+      resolve(root, "installed", "node_modules", "clawwright", "private-config.js"),
       "export function stubRevision() { return 42; }\n",
       "utf8",
     );
     await writeFile(
       resolve(root, "installed", "verify.ts"),
-      "import { stubRevision } from \"@clawforge/framework/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
+      "import { stubRevision } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
       "utf8",
     );
     useRecipesDir(root);
-    check("installed: the recipe's own @clawforge/framework package answers before any checkout mapping", (await verifyRevision("installed")).revision, 42);
+    check("installed: the recipe's own clawwright package answers before any checkout mapping", (await verifyRevision("installed")).revision, 42);
   } finally {
     useRecipesDir(outerRecipes);
     await rm(root, { recursive: true, force: true });
@@ -81,10 +81,10 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   const manifest = JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { exports: Record<string, { default: string }> };
   for (const [key, target] of Object.entries(manifest.exports)) {
     const expected = target.default.replace("./dist/", "").replace(/\.js$/, ".ts");
-    const mapped = checkoutFrameworkSource(`@clawforge/framework/${key.slice(2)}`);
+    const mapped = checkoutFrameworkSource(`clawwright/${key.slice(2)}`);
     check(`export ${key} maps to its source file`, mapped !== undefined && mapped.replaceAll("\\", "/").endsWith(`/tools/framework/${expected}`), true);
   }
-  check("an unknown subpath maps to nothing", checkoutFrameworkSource("@clawforge/framework/not-an-export"), undefined);
+  check("an unknown subpath maps to nothing", checkoutFrameworkSource("clawwright/not-an-export"), undefined);
   check("a foreign package maps to nothing", checkoutFrameworkSource("json5"), undefined);
   check("the mapping table covers no more than the package's exports", Object.keys(FRAMEWORK_EXPORT_SOURCES).sort(), Object.keys(manifest.exports).sort());
 }
@@ -92,11 +92,11 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 // The gate's own resolver (a deployment's app.ts) answers with the same sources.
 {
   const probe = await import("#framework/entry/delegate.ts");
-  check("the gate resolver is exported for tools/clawforge.ts", typeof probe.resolveFrameworkFromSources, "function");
+  check("the gate resolver is exported for tools/clawwright.ts", typeof probe.resolveFrameworkFromSources, "function");
 }
 
 // The gate itself: a checkout deployment whose app.ts imports the public
-// `@clawforge/framework/app` specifier loads only while tools/clawforge.ts registers
+// `clawwright/app` specifier loads only while tools/clawwright.ts registers
 // resolveFrameworkFromSources() — a probe of the loader's own functions cannot tell.
 {
   // Unique per run: a fixed name would overwrite and delete a directory someone else owns,
@@ -105,7 +105,7 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   // killed runs are swept ONLY when they carry that mark — `gateprobe-*` is a legal
   // deployment name and this check must never delete what it did not create (R33-02).
   const prefix = "gateprobe-";
-  const marker = ".clawforge-check-fixture";
+  const marker = ".clawwright-check-fixture";
   const appsDir = apps.root;
   await mkdir(appsDir, { recursive: true });
   // A sweep deletes only marked leftovers: a user's own gateprobe-* deployment — same
@@ -141,7 +141,7 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   await writeFile(
     resolve(appDir, "app.ts"),
     [
-      "import { defineApp } from \"@clawforge/framework/app\";",
+      "import { defineApp } from \"clawwright/app\";",
       "export default defineApp({ name: \"gateprobe\", description: \"checkout gate probe\", commands: { ping: { summary: \"probe\" } } });",
       "",
     ].join("\n"),
@@ -150,15 +150,15 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   try {
     const result = await runProcess(
       process.execPath,
-      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "status"],
+      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawwright.ts"), "--app", name, "status"],
       { cwd: apps.root, timeoutMs: 120_000 },
     );
     // Positive assertion: the app LOADED far enough for the dispatcher to answer — a loader
     // failure, a timeout or an otherwise empty output must fail here, not pass vacuously.
     const loaded = result.output.includes("unknown command: status");
     check(
-      "a checkout deployment's app.ts importing @clawforge/framework/app loads through the gate",
-      loaded && !result.output.includes("cannot load deployment") && !result.output.includes("Cannot find package '@clawforge/framework'"),
+      "a checkout deployment's app.ts importing clawwright/app loads through the gate",
+      loaded && !result.output.includes("cannot load deployment") && !result.output.includes("Cannot find package 'clawwright'"),
       true,
     );
     if (!loaded) process.stderr.write(`    ${result.output.split("\n").filter((line) => /unknown command|cannot load|Cannot find|Error/.test(line)).slice(0, 4).join("\n    ")}\n`);

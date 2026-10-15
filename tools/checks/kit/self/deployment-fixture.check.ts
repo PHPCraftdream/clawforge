@@ -23,7 +23,7 @@ import { clearDeployment, selectedDeployment, useDeployment } from "#framework/r
 import { monorepoRoot, parseEnv } from "#framework/core/env.ts";
 
 // The OS temp dir is shared with the rest of the suite — sibling check files create their own
-// clawforge-deployment-fixture-* fixtures concurrently, so entries beyond this test's own
+// clawwright-deployment-fixture-* fixtures concurrently, so entries beyond this test's own
 // fixture roots cannot be attributed here; the exact no-new-entries proof lives in the
 // injected root's PRIVATE parent listing, which stays a strict deep-equal.
 async function prefixedTempEntries(): Promise<string[]> {
@@ -190,7 +190,7 @@ function resultOf(lineSource: string): ChildResult | undefined {
   }
 };
 
-const childDir = await mkdtemp(join(tmpdir(), "clawforge-fixture-check-"));
+const childDir = await mkdtemp(join(tmpdir(), "clawwright-fixture-check-"));
 try {
   const control = await runScript(
     childDir,
@@ -282,7 +282,7 @@ try {
   // --- injectable root: handed over, contained, and removed on dispose too ---------------------
 
   // The parent itself is this test's scratch and must not outlive the assertion.
-  const parent = await mkdtemp(join(tmpdir(), "clawforge-fixture-parent-"));
+  const parent = await mkdtemp(join(tmpdir(), "clawwright-fixture-parent-"));
   try {
     const before = await readdir(parent);
     const injected = await createDeploymentFixture({ root: join(parent, "dep") });
@@ -297,7 +297,7 @@ try {
 
   // --- SetupError: validate names the first missing thing -------------------------------------
 
-  const broken = await mkdtemp(join(tmpdir(), "clawforge-broken-fixture-"));
+  const broken = await mkdtemp(join(tmpdir(), "clawwright-broken-fixture-"));
   await mkdir(join(broken, "recipes", "local", "agent"), { recursive: true });
   let missingEnv = "";
   try {
@@ -358,7 +358,7 @@ check("a failed setup leaves the previous selection untouched", selectedDeployme
 // where the fixture's recursive mkdir expects a directory, so the setup fails with ENOTDIR.
 clearDeployment();
 useDeployment(join(tmpdir(), "selection-sentinel-b"));
-const parent2 = await mkdtemp(join(tmpdir(), "clawforge-fixture-parent-"));
+const parent2 = await mkdtemp(join(tmpdir(), "clawwright-fixture-parent-"));
 try {
   await writeFile(join(parent2, "dep"), "not a directory");
   let injectedThrown = "";

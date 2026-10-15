@@ -1,4 +1,4 @@
-// `clawforge expose tailscale` — tailnet-only access to the loopback-bound gateway via
+// `clawwright expose tailscale` — tailnet-only access to the loopback-bound gateway via
 // `tailscale serve`. `tailscale funnel` (public internet) is refused outright.
 //
 // The probe runs on the TARGET through the transport, not the operator's machine — a tailnet

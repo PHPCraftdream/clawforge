@@ -1,4 +1,4 @@
-// `clawforge set build` — collect everything a deployment installs into ONE artifact.
+// `clawwright set build` — collect everything a deployment installs into ONE artifact.
 // The vocabulary (manifest, the three entities set/instance/state, content id) lives in
 // set/model.ts; the collection itself is the loader in set/load.ts (one pipeline for tree
 // and artifact alike), and this is the packer that feeds it, written to sets/<name>-<id>.tar.gz.
@@ -100,7 +100,7 @@ async function writeArtifact(
 ): Promise<SetBuild> {
   const id = setManifestId(manifest);
   const secretValues = await localSecretValues();
-  const staging = await mkdtemp(join(tmpdir(), "clawforge-set-"));
+  const staging = await mkdtemp(join(tmpdir(), "clawwright-set-"));
   try {
     // Pretty-printed on purpose: setManifestId computes over the canonical form, so
     // formatting here doesn't change what the set is.
@@ -130,7 +130,7 @@ async function writeArtifact(
     const artifact = resolve(setsDir, `${setName}-${id}.tar.gz`);
     // Written to a temp file in the same directory first, so publishing is a same-filesystem
     // rename and a mid-write failure never truncates the artifact already at that path.
-    const temporary = resolve(setsDir, `.clawforge-build-${randomBytes(8).toString("hex")}.tmp`);
+    const temporary = resolve(setsDir, `.clawwright-build-${randomBytes(8).toString("hex")}.tmp`);
     try {
       // Local tar (set/artifacts/tar.ts), not the transport: a set is assembled from files
       // on THIS machine, and must not depend on a reachable target. The flags, path

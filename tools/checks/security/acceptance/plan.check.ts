@@ -1,4 +1,4 @@
-// `./clawforge plan` — the order, and why each step is in the list.
+// `./clawwright plan` — the order, and why each step is in the list.
 //
 // The order is the whole product: it encodes dependencies a coder used to have to know.
 // Getting it wrong is not a crash, it is a run that reports success and leaves the instance
@@ -95,7 +95,7 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
 {
   const actions = planActions(inspectionWith([problem("CONFIG_DRIFT", "gateway.mode differs")]));
   check("each step names the findings it resolves", actions[0].because, ["CONFIG_DRIFT"]);
-  check("and the command it will run", actions[0].command, "./clawforge apply-config");
+  check("and the command it will run", actions[0].command, "./clawwright apply-config");
 }
 
 // --- one step per recipe, and only for recipes that need one -------------------------------
@@ -147,7 +147,7 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
 // finding always becomes a step for the reader, never one apply performs.
 
 {
-  const detail = 'plugin "acme-tool" is version 2.0.0, locked at 1.0.0 — reinstall the pinned version: ./clawforge cli plugins install acme-tool@1.0.0 --force';
+  const detail = 'plugin "acme-tool" is version 2.0.0, locked at 1.0.0 — reinstall the pinned version: ./clawwright cli plugins install acme-tool@1.0.0 --force';
   const actions = planActions(inspectionWith([problem("PLUGIN_DRIFT", detail)]));
   check("a plugin drift finding becomes exactly one step", actions.length, 1);
   check("carrying the finding's own command, verbatim", actions[0].summary, detail);
@@ -157,7 +157,7 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
 }
 
 {
-  const detail = 'skill "acme-skill" (source clawhub) is locked but no longer installed — reinstall it: ./clawforge cli skills install acme-skill --force';
+  const detail = 'skill "acme-skill" (source clawhub) is locked but no longer installed — reinstall it: ./clawwright cli skills install acme-skill --force';
   const actions = planActions(inspectionWith([problem("SKILL_DRIFT", detail)]));
   check("a skill drift finding becomes exactly one step too", actions.length, 1);
   check("also advisory", actions[0].advisory, true);
@@ -171,8 +171,8 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
   // not have to parse a sentence about a different skill to find it.
   const actions = planActions(
     inspectionWith([
-      problem("PLUGIN_DRIFT", 'plugin "extra-tool" (source npm) is installed but not in the lock — review it, then either remove it or run ./clawforge lock to pin it deliberately'),
-      problem("SKILL_DRIFT", 'skill "acme-skill" (source clawhub) is locked but no longer installed — reinstall it: ./clawforge cli skills install acme-skill --force'),
+      problem("PLUGIN_DRIFT", 'plugin "extra-tool" (source npm) is installed but not in the lock — review it, then either remove it or run ./clawwright lock to pin it deliberately'),
+      problem("SKILL_DRIFT", 'skill "acme-skill" (source clawhub) is locked but no longer installed — reinstall it: ./clawwright cli skills install acme-skill --force'),
     ]),
   );
   check("each drifted plugin/skill is its own step", actions.length, 2);
@@ -202,7 +202,7 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
   const actions = planActions(inspectionWith([problem("NOT_BOOTSTRAPPED", "no data directory yet")], false));
   check("NOT_BOOTSTRAPPED comes first", actions[0]?.id, "problem:NOT_BOOTSTRAPPED");
   check("it is advisory, with no command for apply to run", [actions[0]?.advisory, actions[0]?.command], [true, undefined]);
-  checkTrue("and it points at bootstrap", (actions[0]?.summary ?? "").includes("./clawforge bootstrap"));
+  checkTrue("and it points at bootstrap", (actions[0]?.summary ?? "").includes("./clawwright bootstrap"));
 }
 
 // A code this file already gives a specific step to (e.g. LOCK_DRIFT, above) must not also

@@ -32,7 +32,7 @@ export const setsCommands: Record<string, AppCommand> = materializeCommands({
       "{--keep} is given. One operation: a coder gets back whether the set actually works " +
       "without touching their own instance to find out.\n" +
         "forget {--kind} <agent|mcp-server|cron-job> {--name} <name> removes an object this framework created and " +
-      "stops tracking it — what {clawforge plan} proposes on its own for an orphaned MCP server or " +
+      "stops tracking it — what {clawwright plan} proposes on its own for an orphaned MCP server or " +
       "cron job, and what a coder runs by hand for an orphaned agent, since deleting one also " +
       "prunes its workspace and memory.",
     structured: true,

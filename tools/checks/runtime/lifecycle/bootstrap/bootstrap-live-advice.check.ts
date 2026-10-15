@@ -106,7 +106,7 @@ function liveOrFreshContext(live: boolean): { ctx: Context; runtimeCalls: string
   return { ctx, runtimeCalls };
 }
 
-const deployment = await mkdtemp(join(tmpdir(), "clawforge-bootstrap-live-"));
+const deployment = await mkdtemp(join(tmpdir(), "clawwright-bootstrap-live-"));
 try {
   await mkdir(resolve(deployment, "config"), { recursive: true });
   await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");

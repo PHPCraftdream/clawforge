@@ -1,5 +1,5 @@
-ClawForge
-Copyright (c) 2026 ClawForge contributors.
+Clawwright
+Copyright (c) 2026 Clawwright contributors.
 
 This package includes an adapted OpenClaw Docker Compose definition. See
 `THIRD_PARTY_NOTICES.md` and https://github.com/openclaw/openclaw for the upstream project,

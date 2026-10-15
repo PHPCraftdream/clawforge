@@ -53,12 +53,12 @@ import { stageTally } from "#checks/kit/deployment-fixture.ts";
 
 // --- the fake layout (the law's own tree; paths spelled like golden/matrix.ts's) ------------
 
-const ROOT = "/clawforge-checkout";
+const ROOT = "/clawwright-checkout";
 const quoteRoot = "/law literal $ quote'";
 const APP_LOCAL = "/home/u/app-local";
-const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@clawforge/framework/entry/bin.js`;
-const SELF = "/usr/local/lib/node_modules/@clawforge/framework/dist/entry/bin.js";
-const BIN_SUFFIX = "/node_modules/.bin/clawforge";
+const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/clawwright/entry/bin.js`;
+const SELF = "/usr/local/lib/node_modules/clawwright/dist/entry/bin.js";
+const BIN_SUFFIX = "/node_modules/.bin/clawwright";
 const DEPLOYMENT_COMMANDS: readonly string[] = ["status", "bootstrap"];
 const EXPANDING_SHELLS: readonly Shell[] = ["posix", "cmd", "pwsh"];
 
@@ -68,27 +68,27 @@ const EXPANDING_SHELLS: readonly Shell[] = ["posix", "cmd", "pwsh"];
 const PATH_ENTRIES: Readonly<Record<string, string>> = { cw: "/usr/local/bin/cw" };
 const FILES: Record<string, string> = {
   ["/usr/local/bin/cw"]: "#!/bin/sh\n",
-  [`${ROOT}/clawforge`]: "#!/bin/sh\n",
-  [`${ROOT}/tools/clawforge.ts`]: "// gate\n",
-  [`${ROOT}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
+  [`${ROOT}/clawwright`]: "#!/bin/sh\n",
+  [`${ROOT}/tools/clawwright.ts`]: "// gate\n",
+  [`${ROOT}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
   [`${ROOT}/apps/openclaw/app.ts`]: "export default {};\n",
   [`${ROOT}/apps/demo/app.ts`]: "export default {};\n",
   // The case-4 target deployment exists on the law's layout, like demo and openclaw: rows
   // filled to app "x" name ROOT/apps/x, and the real resolver must accept it.
   [`${ROOT}/apps/x/app.ts`]: "export default {};\n",
   [`${APP_LOCAL}/app.ts`]: "export default {};\n",
-  // The deployment's own committed clawforge shim (what init writes into every
+  // The deployment's own committed clawwright shim (what init writes into every
   // deployment): a paste of it runs the deployment's installed package.
-  [`${APP_LOCAL}/clawforge`]: "#!/bin/sh\n",
+  [`${APP_LOCAL}/clawwright`]: "#!/bin/sh\n",
   [`${APP_LOCAL}/config/desired-state.json`]: "{}\n",
   // The hand-set spaced program (the manual verbatim producer): the fixture declares the
   // operator's own file so the pasted word resolves like any other entry.
-  ["/opt/claw forge/clawforge"]: "#!/bin/sh" + String.fromCharCode(10),
+  ["/opt/claw forge/clawwright"]: "#!/bin/sh" + String.fromCharCode(10),
   [`${ROOT}/apps/staging/app.ts`]: "export default {}\n",
   [LOCAL_ENTRY]: "// local package entry\n",
-  [`${quoteRoot}/clawforge`]: "#!/bin/sh\n",
-  [`${quoteRoot}/tools/clawforge.ts`]: "// gate\n",
-  [`${quoteRoot}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
+  [`${quoteRoot}/clawwright`]: "#!/bin/sh\n",
+  [`${quoteRoot}/tools/clawwright.ts`]: "// gate\n",
+  [`${quoteRoot}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
   [`${quoteRoot}/apps/demo/app.ts`]: "export default {}",
   [`${quoteRoot}/apps/x/app.ts`]: "export default {}",
 };
@@ -96,8 +96,8 @@ const DIRS: readonly string[] = [
   `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/x`, `${ROOT}/apps/staging`, `${ROOT}/docs`,
   `${ROOT}/tools`, `${ROOT}/tools/framework`, `${APP_LOCAL}/config`,
   `${APP_LOCAL}/node_modules`, `${APP_LOCAL}/node_modules/.bin`,
-  `${APP_LOCAL}/node_modules/@clawforge`, `${APP_LOCAL}/node_modules/@clawforge/framework`,
-  `${APP_LOCAL}/node_modules/@clawforge/framework/entry`,
+  `${APP_LOCAL}/node_modules/clawwright`,
+  `${APP_LOCAL}/node_modules/clawwright/entry`,
 ];
 /** Host-independent refusal TEXT: paths inside a recorded reason normalize exactly like
  *  the layout's paths (drive letter and separators stripped), so a baseline reason written
@@ -158,7 +158,7 @@ interface Entry {
 type ProgramResolution = Entry | { readonly problem: string };
 
 /** The pasted program resolves to an entry point on the fake layout: the checkout shim →
- *  the checkout gate; a clawforge bin wrapper → the installed entry; the bare system-wide
+ *  the checkout gate; a clawwright bin wrapper → the installed entry; the bare system-wide
  *  command → the installed entry. Anything else is spelling drift. */
 function resolveProgram(program: string, pasteDir: string, launch: string, declaredProgram: string, shell: Shell, layout: FrameLawLayout = {}): ProgramResolution {
   if (launch === "verbatim") {
@@ -179,16 +179,16 @@ function resolveProgram(program: string, pasteDir: string, launch: string, decla
     const at = fakePath(pathResolve(pasteDir, program));
     return hasEntry(at) ? { kind: "installed" } : { problem: `${at} is not a declared entry on the layout` };
   }
-  if (program === "clawforge") return { kind: "installed" };
+  if (program === "clawwright") return { kind: "installed" };
   const at = fakePath(pathResolve(pasteDir, program.replaceAll("\\", "/")));
-  if (at === `${ROOT}/clawforge`) return { kind: "gate" };
-  if (at === `${APP_LOCAL}/clawforge`) return { kind: "installed" };
-  if (program === SHIM_PROGRAM && pasteDir !== ROOT && at !== `${ROOT}/clawforge`) {
+  if (at === `${ROOT}/clawwright`) return { kind: "gate" };
+  if (at === `${APP_LOCAL}/clawwright`) return { kind: "installed" };
+  if (program === SHIM_PROGRAM && pasteDir !== ROOT && at !== `${ROOT}/clawwright`) {
     return { problem: `the shim hint spells ${SHIM_PROGRAM} from the checkout root, not from the paste directory ${pasteDir} — relative spellings land in S1.2b (O4/D10)` };
   }
   // The tokenizer folds backslash escapes, so a pasted npm bin spelling arrives as one
   // unbroken word: recognize the folded shape to keep naming its mechanism (D1/O1).
-  if (shell === "posix" && /^node_modules\.*(bin|\\bin)?clawforge$/.test(program)) {
+  if (shell === "posix" && /^node_modules\.*(bin|\\bin)?clawwright$/.test(program)) {
     return { problem: "npm's Windows bin spelling pasted in a POSIX shell — the backslashes are escapes there (D1/O1)" };
   }
   if (program.includes("\\") && shell === "posix") {
@@ -196,11 +196,11 @@ function resolveProgram(program: string, pasteDir: string, launch: string, decla
   }
   if (at.endsWith(BIN_SUFFIX)) {
     const appRoot = at.slice(0, at.length - BIN_SUFFIX.length);
-    return fs.exists(`${appRoot}/node_modules/@clawforge/framework/entry/bin.js`)
+    return fs.exists(`${appRoot}/node_modules/clawwright/entry/bin.js`)
       ? { kind: "installed" }
-      : { problem: `${at} has no clawforge package entry on the layout` };
+      : { problem: `${at} has no clawwright package entry on the layout` };
   }
-  return { problem: `${at} is not a clawforge entry point on the layout` };
+  return { problem: `${at} is not a clawwright entry point on the layout` };
 }
 
 const sameWords = (a: readonly string[], b: readonly string[]): boolean =>
@@ -225,7 +225,7 @@ export interface FrameLawMeasurement {
   readonly quotingWitnesses: readonly { key: string; reached: boolean; matched: boolean }[];
 }
 
-/** The full law measurement: every clawforge-kind row of ADVICE_ROWS (plus the synthetic
+/** The full law measurement: every clawwright-kind row of ADVICE_ROWS (plus the synthetic
  *  quoting round-trip row) × every producer × the producer's shells (install/prose/quoting
  *  rows paste in all three shells), then the SELECTION_CASES drive through the gate
  *  resolver (design §5, decision O3). */
@@ -243,7 +243,7 @@ export function runFrameLaw(tally = stageTally(), layout: FrameLawLayout = {}): 
   const rows: { readonly label: string; readonly advice: (typeof ADVICE_ROWS)[number]["advice"] }[] = [
     ...ADVICE_ROWS,
     QUOTE_ROW,
-  ].filter((rowEntry) => rowEntry.advice.kind === "clawforge");
+  ].filter((rowEntry) => rowEntry.advice.kind === "clawwright");
   /** Help-prose token rows without a shell of their own and the synthetic quoting row paste
    *  in every shell, not only the producer's own set (the renderer spells them shell-free).
    *  A row WITH a shell (S1.4's CommandAdvice.shell — the install lines) spells for that
@@ -261,7 +261,7 @@ export function runFrameLaw(tally = stageTally(), layout: FrameLawLayout = {}): 
     const handedApp = handed !== undefined && handed.selectedBy !== "default" && handed.selectedBy !== "cwd" ? handed.name : undefined;
     for (const rowEntry of rows) {
       const advice = rowEntry.advice;
-      if (advice.kind !== "clawforge") continue;
+      if (advice.kind !== "clawwright") continue;
       // The FILLED advice is the law's expectation: placeholders become "x" before the
       // render, before the tokenization and before the resolver call (rule P4).
       const filled = {
@@ -559,13 +559,13 @@ export function runFrameLaw(tally = stageTally(), layout: FrameLawLayout = {}): 
   const quotingRows = [
     // The case-4 selector names a checkout whose path carries `$` and `'`.
     { label: "law: quoting dollar + apostrophe project-root", advice: command(["status"], { app: "x" }), frame: quoteFrame,
-      program: "clawforge", args: ["--project-root", `${quoteRoot}/apps/x`, "status"], root: `${quoteRoot}/apps/x` },
+      program: "clawwright", args: ["--project-root", `${quoteRoot}/apps/x`, "status"], root: `${quoteRoot}/apps/x` },
     // An embedded quote, a metacharacter behind it, a trailing backslash and a backslash before a quote.
     { label: "law: quoting embedded doublequote argv",
       advice: command(["status", "--reason", 'double"quote', 'a"&calc', "C:\\dir\\", 'a\\"b']), frame: quoteFrame,
-      program: "clawforge", args: ["status", "--reason", 'double"quote', 'a"&calc', "C:\\dir\\", 'a\\"b'], root: `${quoteRoot}/apps/demo` },
+      program: "clawwright", args: ["status", "--reason", 'double"quote', 'a"&calc', "C:\\dir\\", 'a\\"b'], root: `${quoteRoot}/apps/demo` },
     { label: "law: quoting pwsh-named fallback", advice: command(["completion", "pwsh", "a$b'c", 'double"quote'], { shell: "pwsh" }), frame: fallbackFrame,
-      program: "./clawforge", args: ["completion", "pwsh", "a$b'c", 'double"quote'], root: ROOT },
+      program: "./clawwright", args: ["completion", "pwsh", "a$b'c", 'double"quote'], root: ROOT },
   ];
   for (const row of quotingRows) {
     const parts = renderAdviceParts(row.advice, row.frame);

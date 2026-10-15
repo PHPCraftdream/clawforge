@@ -20,7 +20,7 @@ function expectedTree(): Tree {
   ]);
 }
 const treeView = (tree: Tree | undefined) => tree ? [...tree].map(([path, e]) => [path, { ...e, ...(e.bytes ? { bytes: [...e.bytes] } : {}) }]) : undefined;
-const backupRoot = "/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc";
+const backupRoot = "/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc";
 function populated(): RecipeRecoveryFixture {
   const f = fixture(true);
   f.storage.volumes.set("legacy_data", expectedTree());
@@ -74,7 +74,7 @@ const stop = f.calls.findIndex((c) => c.args[0] === "stop");
 checkTrue("migration source backups read only", f.calls.filter((c) => c.args.some((a) => a.includes("-cpf")))
   .every((c) => c.args.some((a) => a.includes("dst=/data,readonly"))));
 checkTrue("migration no build pull delete or destructive down", !f.calls.some((c) => c.args[0] === "remove" || c.args.includes("down") || c.args.includes("build") || c.args.includes("pull")));
-checkTrue("migration retains private journal and removes only old containers", f.files.has("/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json") && !f.containers.some((c) => c.Config.Labels["com.docker.compose.project"] === "legacy")
+checkTrue("migration retains private journal and removes only old containers", f.files.has("/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json") && !f.containers.some((c) => c.Config.Labels["com.docker.compose.project"] === "legacy")
   && f.calls.some((c) => c.args[0] === "rm" && c.args.length === 2 && c.args[1] === "1".repeat(64))
   && !f.calls.some((c) => c.args.includes("--volumes")));
 for (const [name, boundary, containerCount, setup] of [
@@ -114,7 +114,7 @@ for (const result of [null, {}, { code: 0 }, { code: 0, stdout: "", stderr: "", 
   x.transport.exec = async (command, args, options) => {
     const response = await execute(command, args, options);
     if (command === "sh" && args[0] === "-c" && args[2] === "sh" && args.length === 5
-      && args[3] === "/private/.clawforge-recipe-recovery" && args[4] === backupRoot) { contacts++; consumed = Object.is(response, result); }
+      && args[3] === "/private/.clawwright-recipe-recovery" && args[4] === backupRoot) { contacts++; consumed = Object.is(response, result); }
     return response;
   };
   try { await x.stack.planMigrate!({ ...migrationOptions(), backupRoot }); } catch (error) { refused = error instanceof Error; }
@@ -381,9 +381,9 @@ for (const mode of ["partial-up", "partial-readiness", "failed-stop", "foreign"]
       !x.calls.some((c) => c.args[0] === "start"));
     checkTrue(`${mode} retains stopped source and accurate evidence with target stop unproven`, !!refusal
       && x.containers.filter((c) => c.Config.Labels["com.docker.compose.project"] === "legacy").every((c) => c.State.Status === "exited")
-      && JSON.parse(x.files.get("/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json")!).evidence.source === "stopped"
-      && JSON.parse(x.files.get("/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json")!).evidence.sourceResumeAttempted === false
-      && JSON.parse(x.files.get("/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json")!).evidence.target === (mode === "foreign" ? "unknown" : "partial"));
+      && JSON.parse(x.files.get("/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json")!).evidence.source === "stopped"
+      && JSON.parse(x.files.get("/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json")!).evidence.sourceResumeAttempted === false
+      && JSON.parse(x.files.get("/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc/journal.json")!).evidence.target === (mode === "foreign" ? "unknown" : "partial"));
     if (mode === "foreign") {
       checkTrue("foreign target never adopted or stopped",
         !x.calls.some((c) => ["stop", "kill", "rm"].includes(c.args[0] ?? "") && c.args.includes("4".repeat(64)))
@@ -395,7 +395,7 @@ const nonprivate = populated();
 let nonprivateInjected = false;
 nonprivate.setFail((_command, args) => {
   if (!nonprivateInjected && args[0] === "run" && args.some((arg) => arg.includes("-xpf"))) {
-    nonprivate.storage.archives.get("/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc/data-0.tar")!.mode = 0o644;
+    nonprivate.storage.archives.get("/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc/data-0.tar")!.mode = 0o644;
     nonprivateInjected = true;
   }
   return false;
@@ -452,7 +452,7 @@ for (const damage of ["missing", "permissions", "owner", "symlink", "child"] as 
   if (damage === "owner") parent.uid = 999;
   if (damage === "symlink") { parent.kind = "symlink"; parent.link = "/elsewhere"; }
   if (damage === "child") {
-    x.storage.parents.set("/private/.clawforge-recipe-recovery", { ...parent });
+    x.storage.parents.set("/private/.clawwright-recipe-recovery", { ...parent });
     x.storage.parents.set(backupRoot, { ...parent });
   }
   let refused = false;

@@ -40,7 +40,7 @@ const HOOK_IMPORT_TIMEOUT_MS_DEFAULT = 30_000;
  *  environment override exists so a check can exercise the timeout path in seconds
  *  instead of half a minute. */
 function hookImportTimeoutMs(): number {
-  const override = Number(process.env.CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS);
+  const override = Number(process.env.CLAWWRIGHT_HOOK_IMPORT_TIMEOUT_MS);
   return Number.isFinite(override) && override > 0 ? override : HOOK_IMPORT_TIMEOUT_MS_DEFAULT;
 }
 

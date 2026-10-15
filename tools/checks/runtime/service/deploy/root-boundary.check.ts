@@ -63,7 +63,7 @@ function skip(name: string): void {
         async exec(command: string, args2: string[]): Promise<ExecResult> {
           if (isRootProbe(args2)) return probeReply(args2, probe);
           calls.push({ command, args: args2 });
-          if (args2.some((arg) => arg.includes("clawforge-root-marker-verify"))) {
+          if (args2.some((arg) => arg.includes("clawwright-root-marker-verify"))) {
             return { code: markerVerifyCode, stdout: "", stderr: "marker mismatch" };
           }
           return { code: 0, stdout: "", stderr: "" };
@@ -80,7 +80,7 @@ function skip(name: string): void {
   };
   const rsyncCount = (recorded: { command: string }[]) => recorded.filter((c) => c.command === "rsync").length;
   const markerWritten = (recorded: { command: string; args: string[] }[]) =>
-    recorded.findIndex((c) => (c.args.at(-1) ?? "").includes("clawforge-root-marker-write"));
+    recorded.findIndex((c) => (c.args.at(-1) ?? "").includes("clawwright-root-marker-write"));
 
   // 1. Local refusals: a dangerous --path never gets far enough to connect, let alone
   //    mkdir — relative, the filesystem root, bare top-level ground, unnormalized, and
@@ -107,7 +107,7 @@ function skip(name: string): void {
       calls[firstRsync]?.args.includes(`/${MARKER_FILE}`),
       true,
     );
-    const verifyIndex = calls.findIndex((call) => (call.args.at(-1) ?? "").includes("clawforge-root-marker-verify"));
+    const verifyIndex = calls.findIndex((call) => (call.args.at(-1) ?? "").includes("clawwright-root-marker-verify"));
     check("the marker is verified after the first framework sync", verifyIndex > firstRsync, true);
   }
 
@@ -127,7 +127,7 @@ function skip(name: string): void {
     const { calls } = await runDeploy(["deployer@server", "--no-bootstrap", "--adopt"], { empty: "no" });
     check(
       "adoption lists the affected inventory before the mirror",
-      calls.some((c) => (c.args.at(-1) ?? "").includes("clawforge-root-inventory")),
+      calls.some((c) => (c.args.at(-1) ?? "").includes("clawwright-root-inventory")),
       true,
     );
     const firstRsync = calls.findIndex((c) => c.command === "rsync");
@@ -179,7 +179,7 @@ function skip(name: string): void {
   // Losing the newly written proof aborts before deployment payload syncs continue.
   {
     const { calls, refusal } = await runDeploy(["deployer@server", "--no-bootstrap"], {}, 1);
-    const verified = calls.findIndex((call) => call.args.some((arg) => arg.includes("clawforge-root-marker-verify")));
+    const verified = calls.findIndex((call) => call.args.some((arg) => arg.includes("clawwright-root-marker-verify")));
     check("a changed marker aborts deploy after the protected framework mirror", refusal.includes("did not survive"), true);
     check("a marker failure prevents later payload rsyncs", calls.slice(verified + 1).filter((call) => call.command === "rsync").length, 0);
   }
@@ -222,7 +222,7 @@ function skip(name: string): void {
 // files must never be dirtied by a test, so the four states of one template (committed,
 // edited, staged-uncommitted, committed-again) are driven through real git here.
 {
-  const repo = await mkdtemp(join(tmpdir(), "clawforge-deploy-dirty-template-"));
+  const repo = await mkdtemp(join(tmpdir(), "clawwright-deploy-dirty-template-"));
   const git = (...args: string[]) => execFileAsync("git", ["-C", repo, ...args], { maxBuffer: 1024 * 1024 });
   try {
     await git("init");
@@ -280,7 +280,7 @@ function skip(name: string): void {
 // Deploy-level, like the sensitive-name-inside-a-recipe case above: the refusal
 // is deploy's, the rsync is deploy's.
 {
-  const recipesRoot = await mkdtemp(join(tmpdir(), "clawforge-deploy-recipes-root-"));
+  const recipesRoot = await mkdtemp(join(tmpdir(), "clawwright-deploy-recipes-root-"));
   useDeployment(recipesRoot);
   const runCtx = (record: { command: string; args: string[] }[]): Context => ({
     ...ctx,
@@ -384,7 +384,7 @@ function skip(name: string): void {
   if (probed.code !== 0) {
     skip("the root-probe script's shell contract needs a real sh");
   } else {
-    const root = await mkdtemp(join(tmpdir(), "clawforge-deploy-probe-shell-"));
+    const root = await mkdtemp(join(tmpdir(), "clawwright-deploy-probe-shell-"));
     try {
       const forwardRoot = (await realpath(root)).replaceAll("\\", "/");
       const inShellTerms = await spawnLocal(
@@ -395,8 +395,8 @@ function skip(name: string): void {
       const posixRoot = inShellTerms.code === 0 && inShellTerms.stdout.trim() !== ""
         ? inShellTerms.stdout.trim()
         : forwardRoot;
-      const markerPath = `${posixRoot}/.clawforge-deploy-marker`;
-      const markerPathForNode = `${forwardRoot}/.clawforge-deploy-marker`;
+      const markerPath = `${posixRoot}/.clawwright-deploy-marker`;
+      const markerPathForNode = `${forwardRoot}/.clawwright-deploy-marker`;
       const runScript = async (script: string) =>
         spawnLocal("sh", ["-c", ["sh", "-c", script].map(SshTransport.quote).join(" ")], { allowFailure: true });
 
@@ -409,13 +409,13 @@ function skip(name: string): void {
         { canonical: posixRoot, marker: "absent", empty: "yes" },
       );
 
-      const line1 = "clawforge-deploy-root-v1 name=example app";
+      const line1 = "clawwright-deploy-root-v1 name=example app";
       const line2 = "created=2026-09-23T00:00:00.000Z id=test";
       const written = await runScript(markerWriteScript(markerPathForNode, line1, line2));
       check("the marker write script runs through a real shell", written.code, 0);
       check(
         "and writes exactly the two marker lines, name with spaces intact",
-        (await readFile(`${forwardRoot}/.clawforge-deploy-marker`)).toString(),
+        (await readFile(`${forwardRoot}/.clawwright-deploy-marker`)).toString(),
         `${line1}\n${line2}\n`,
       );
       const duplicateWrite = await runScript(markerWriteScript(markerPathForNode, line1, line2));
@@ -430,15 +430,15 @@ function skip(name: string): void {
 
       const markerCheck = await runScript(markerVerifyScript(markerPath, line1, line2));
       check("marker verification accepts the exact generated bytes", markerCheck.code, 0);
-      await writeFile(`${forwardRoot}/.clawforge-deploy-marker`, `${line1}\nchanged\n`);
+      await writeFile(`${forwardRoot}/.clawwright-deploy-marker`, `${line1}\nchanged\n`);
       const changedMarker = await runScript(markerVerifyScript(markerPath, line1, line2));
       check("marker verification rejects changed bytes", changedMarker.code !== 0, true);
 
-      await rm(join(root, ".clawforge-deploy-marker"));
+      await rm(join(root, ".clawwright-deploy-marker"));
       const outsideMarker = resolve(root, "outside-marker");
       let linkCreated = true;
       try {
-        await symlink(outsideMarker, join(root, ".clawforge-deploy-marker"));
+        await symlink(outsideMarker, join(root, ".clawwright-deploy-marker"));
       } catch {
         linkCreated = false;
       }

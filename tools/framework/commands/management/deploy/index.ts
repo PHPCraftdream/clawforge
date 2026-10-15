@@ -1,4 +1,4 @@
-// `clawforge deploy user@host` — puts this repository on a server and brings the instance up.
+// `clawwright deploy user@host` — puts this repository on a server and brings the instance up.
 //
 // Two deliveries: the framework (code, mirrored with deletions) and the deployment
 // (configuration, only its non-secret parts). rsync and ssh run on the target side.

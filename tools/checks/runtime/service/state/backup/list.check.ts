@@ -1,4 +1,4 @@
-// `./clawforge backup list` — text and --json both report archives and `.replaced-*` copies
+// `./clawwright backup list` — text and --json both report archives and `.replaced-*` copies
 // with size and timestamp, and mark which archive restore would pick by default. Hermetic: a
 // stub transport models `find`/`du`, no real target and no instance lock (list never takes
 // one).

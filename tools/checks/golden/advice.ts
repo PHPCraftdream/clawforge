@@ -76,7 +76,7 @@ const REFINEMENT_ROWS: readonly AdviceRow[] = [
   { label: "audit fallback: cli security audit", advice: command(["cli", "security", "audit", "--json"]) },
 ];
 
-/** Group 5 (rf4-sweep-cmds1): every {clawforge …} command token the declared help prose
+/** Group 5 (rf4-sweep-cmds1): every {clawwright …} command token the declared help prose
  *  carries, collected from the declarations themselves — new prose needs no edit here. The
  *  checkout gate's own commands and the version gate read their prose the same way (they
  *  render in real help under every invocation), so they are matrixed too. */
@@ -103,7 +103,7 @@ const PROSE_ROWS: readonly AdviceRow[] = [
 /** Group 4 (rf4-sweep-cmds2): the Task Scheduler line `printSchedulingInstructions` builds for a
  *  WSL target on Windows. The app name is a plain word: a `<…>` placeholder would quote into the
  *  /tr value and cmdExeLine would refuse to paste it (its own rule). */
-const SCHTASKS_CREATE = schtasksCreateCommand("clawforge-<identity>-backup", 60, {
+const SCHTASKS_CREATE = schtasksCreateCommand("clawwright-<identity>-backup", 60, {
   command: SHIM_PROGRAM,
   args: ["--app", "demo", "backup"],
 });
@@ -117,9 +117,9 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   { label: "explicit app: status", advice: command(["status"], { app: "demo" }) },
   { label: "placeholder: logs --tail", advice: command(["logs", "--tail", "<n>"]) },
   { label: "note: up", advice: command("up", { note: "after the change" }) },
-  { label: "shell posix", advice: shellLine("posix", "cd /srv/openclaw && ./clawforge backup", { note: "in the crontab" }) },
-  { label: "shell cmd", advice: shellLine("cmd", `schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"`) },
-  { label: "shell pwsh", advice: shellLine("pwsh", "clawforge status | Out-String") },
+  { label: "shell posix", advice: shellLine("posix", "cd /srv/openclaw && ./clawwright backup", { note: "in the crontab" }) },
+  { label: "shell cmd", advice: shellLine("cmd", `schtasks /Create /SC DAILY /TN clawwright-backup /TR "clawwright backup"`) },
+  { label: "shell pwsh", advice: shellLine("pwsh", "clawwright status | Out-String") },
   { label: "manual", advice: manual("reconnect the MCP client (in Claude Code: /mcp)") },
   ...CODE_ROWS,
   ...REFINEMENT_ROWS,
@@ -135,7 +135,7 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   // Pinned as a literal (rf6-fix33): the invocation part is spelled the way cronLine writes
   // it — SshTransport.quote's '--app' — not assembled from the builders, so the row survives
   // a builder mutation unchanged and the golden shows the real shape.
-  { label: "cron: posix target line", advice: shellLine("posix", "cd <root> && ./clawforge '--app' '<name>' 'backup' >/dev/null 2>&1 # clawforge-backup:<identity>") },
+  { label: "cron: posix target line", advice: shellLine("posix", "cd <root> && ./clawwright '--app' '<name>' 'backup' >/dev/null 2>&1 # clawwright-backup:<identity>") },
   { label: "schtasks: cmd.exe create line", advice: shellLine("cmd", cmdExeLine(SCHTASKS_CREATE.command, SCHTASKS_CREATE.args)!) },
   ...PROSE_ROWS,
   // Group 6 (rf6-fix30): the checkout-root notes the gate's sentences embed — the
@@ -157,7 +157,7 @@ export interface InvocationColumn {
   readonly frame?: Frame;
 }
 
-/** The tool-form column: the MCP `ToolStep` view of a clawforge advice (design 1.4), which
+/** The tool-form column: the MCP `ToolStep` view of a clawwright advice (design 1.4), which
  *  rf4-codes fills from toolArguments. `cell` is the placeholder for a row whose advice names
  *  no tool this surface serves. */
 export interface ToolFormColumn {
@@ -185,7 +185,7 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
   ...FRAME_PRODUCERS.map((producer): InvocationColumn => ({
     label: producer.label,
     invocation: producer.invocation,
-    rootProgram: producer.frame.launch.kind === "system" ? "clawforge" : SHIM_PROGRAM,
+    rootProgram: producer.frame.launch.kind === "system" ? "clawwright" : SHIM_PROGRAM,
     frame: producer.frame,
   })),
   { label: TOOL_FORM_LABEL, cell: TOOL_FORM_CELL },

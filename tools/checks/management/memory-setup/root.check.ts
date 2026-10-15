@@ -6,7 +6,7 @@ import { runInNewContext } from "node:vm";
 import { modelRootOperation, type RootRequest, type RootFacts } from "#framework/commands/management/configuration/memory/setup/root.ts";
 import { finish, typeAssert } from "#checks/kit/harness.ts";
 
-const temporary = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), "clawforge-root-check-")));
+const temporary = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), "clawwright-root-check-")));
 const config = join(temporary, "config");
 const models = join(config, "models");
 const savedModels = join(config, "models.saved");

@@ -8,7 +8,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { captured, DATA_DIR, ref, SECRET_ENV, trialFixture, useRecipesRoot } from "./fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-readiness");
+const root = await useRecipesRoot("clawwright-recipe-trial-readiness");
 try {
   await root.write("ready", { description: "A recipe that turns healthy" });
   await root.write("degraded", {
@@ -28,7 +28,7 @@ try {
     checkTrue("the ready trial exits cleanly", run.result === undefined);
     checkTrue("the ready verdict is printed", run.chunks.some((chunk) => chunk.includes("ready")));
     check("the trial stack was probed with ownership verification off",
-      fixture.stackCalls.map((call) => [call.project.startsWith("clawforge-recipe-trial-"), call.options]),
+      fixture.stackCalls.map((call) => [call.project.startsWith("clawwright-recipe-trial-"), call.options]),
       [[true, { verifyOwnership: false }]]);
     checkTrue("log tails were fetched for the service", fixture.docker.some((argv) => argv.includes("logs")));
     checkTrue("the log tail was sanitized before printing",

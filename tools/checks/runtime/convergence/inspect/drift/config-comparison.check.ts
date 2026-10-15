@@ -1,4 +1,4 @@
-// `./clawforge inspect` — how the declaration is compared with the live config: the
+// `./clawwright inspect` — how the declaration is compared with the live config: the
 // `channels` option riding the batched CLI call, repeated/nested/aliased assignments, a JSON5
 // live config, a provider only the declaration adds, a `__proto__` path, and the set-requirement
 // image check against the running container. See ../fixture.ts for the shared stub.
@@ -166,7 +166,7 @@ try {
     const desiredStatePath = resolve(deployment, "config", "desired-state.json");
     const validDesiredState = await readFile(desiredStatePath, "utf8");
     const declaredWithPollution = JSON.parse(validDesiredState) as unknown[];
-    declaredWithPollution.push({ path: "__proto__.clawforgeReviewProbe", value: "polluted" });
+    declaredWithPollution.push({ path: "__proto__.clawwrightReviewProbe", value: "polluted" });
     await writeFile(desiredStatePath, JSON.stringify(declaredWithPollution));
     try {
       const inspection = await gatherInspection(
@@ -179,12 +179,12 @@ try {
       );
       check(
         "and Object.prototype itself is never touched",
-        (Object.prototype as Record<string, unknown>).clawforgeReviewProbe,
+        (Object.prototype as Record<string, unknown>).clawwrightReviewProbe,
         undefined,
       );
-      check("a plain object stays free of the probe too", ({} as Record<string, unknown>).clawforgeReviewProbe, undefined);
+      check("a plain object stays free of the probe too", ({} as Record<string, unknown>).clawwrightReviewProbe, undefined);
     } finally {
-      delete (Object.prototype as Record<string, unknown>).clawforgeReviewProbe;
+      delete (Object.prototype as Record<string, unknown>).clawwrightReviewProbe;
       await writeFile(desiredStatePath, validDesiredState);
     }
   }
@@ -205,7 +205,7 @@ try {
       requires: { framework: "0.1.0", image: requiredImage },
     };
     const base = stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums });
-    const installedSetPath = "/srv/clawforge/data/clawforge-installed-set.json";
+    const installedSetPath = "/srv/clawwright/data/clawwright-installed-set.json";
     const ctx = {
       ...base,
       transport: {

@@ -1,4 +1,4 @@
-// `./clawforge set build`, driven against a real temporary deployment.
+// `./clawwright set build`, driven against a real temporary deployment.
 //
 // The set's whole value is that its id means something and its contents are safe to hand to
 // another machine, so this proves exactly that: an unchanged tree builds to the same id, one
@@ -162,7 +162,7 @@ try {
   check("the archive carries the agent bundle", lists("recipes/demo/agent/AGENTS.md"), true);
   check("no .env and no secret store travels", entries.some((entry) => entry.includes(".env") || entry.startsWith("secrets/")), false);
 
-  const unpacked = await mkdtemp(join(tmpdir(), "clawforge-set-unpack-"));
+  const unpacked = await mkdtemp(join(tmpdir(), "clawwright-set-unpack-"));
   try {
     let extract = await spawnLocal("tar", process.platform === "win32" ? ["--force-local", "-xzf", first.artifact, "-C", unpacked] : ["-xzf", first.artifact, "-C", unpacked], { allowFailure: true });
     if (extract.code !== 0) await spawnLocal("tar", ["-xzf", first.artifact, "-C", unpacked]);

@@ -1,4 +1,4 @@
-// `./clawforge apply` keeping up with its own .env rewrites: a composite run re-derives its
+// `./clawwright apply` keeping up with its own .env rewrites: a composite run re-derives its
 // Context after recover-env / secrets --apply, stops when a step moves the deployment target,
 // and refreshContext() counts a changed Compose project as a moved target.
 
@@ -32,7 +32,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   try {
     // Deliberately no OPENCLAW_GATEWAY_TOKEN: the run must install it from the store mid-flight.
     await writeFile(resolve(deployment, ".env"), [
-      "OC_DATA_DIR=/srv/clawforge/data",
+      "OC_DATA_DIR=/srv/clawwright/data",
       "OPENCLAW_GATEWAY_PORT=18789",
       "OC_COMPOSE_PROJECT=refresh-check",
       "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",
@@ -95,7 +95,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     // and a dataDir the container disagrees with. The token is already here — the steps below
     // are about the target move, not about secrets.
     await writeFile(resolve(deployment, ".env"), [
-      "OC_DATA_DIR=/srv/clawforge/data",
+      "OC_DATA_DIR=/srv/clawwright/data",
       "OC_COMPOSE_PROJECT=refresh-check",
       "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",
       "OPENCLAW_GATEWAY_TOKEN=env-refresh-token-value",
@@ -112,7 +112,7 @@ import { check, finish } from "#checks/kit/harness.ts";
       facts: {
         Image: "sha256:fixture-image",
         State: { Running: true },
-        Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/clawforge/data-actual/config" }],
+        Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/clawwright/data-actual/config" }],
         NetworkSettings: { Ports: { "18789/tcp": [{ HostPort: "18790" }] } },
         Config: { Labels: { "com.docker.compose.project": "refresh-check", Image: "ghcr.io/openclaw/openclaw:extended-stable" } },
       },
@@ -127,7 +127,7 @@ import { check, finish } from "#checks/kit/harness.ts";
       service: { name: "gateway" },
       settings: () => ({ OC_APP_COMPUTED: "from-app-definition" }),
     });
-    check("the run starts on the coordinates the plan and lock were taken for", ctx.settings.dataDir, "/srv/clawforge/data");
+    check("the run starts on the coordinates the plan and lock were taken for", ctx.settings.dataDir, "/srv/clawwright/data");
 
     // Planning no longer adds an executable recover-env for a diverged .env:
     // whether the container's facts or the file's are authoritative is the operator's call, so
@@ -138,9 +138,9 @@ import { check, finish } from "#checks/kit/harness.ts";
     // (safe) form still fires it: the port is MISSING from the file, which is the one case a
     // planned recovery fills; the dataDir both sides carry differently is left alone.
     const actions: PlanAction[] = [
-      { id: "recover-env", summary: "recover-env", command: "./clawforge recover-env", because: ["ENV_STALE"] },
-      { id: "apply-config", summary: "apply-config", command: "./clawforge apply-config", because: ["CONFIG_DRIFT"] },
-      { id: "restart", summary: "restart", command: "./clawforge restart", because: ["CONFIG_DRIFT"] },
+      { id: "recover-env", summary: "recover-env", command: "./clawwright recover-env", because: ["ENV_STALE"] },
+      { id: "apply-config", summary: "apply-config", command: "./clawwright apply-config", because: ["CONFIG_DRIFT"] },
+      { id: "restart", summary: "restart", command: "./clawwright restart", because: ["CONFIG_DRIFT"] },
     ];
 
     const journal = await Journal.open(ctx, "apply", "refresh-check");
@@ -163,14 +163,14 @@ import { check, finish } from "#checks/kit/harness.ts";
 
     const message = threw instanceof Error ? threw.message : "";
     check("the run stops after the recovery moved the target", threw instanceof TargetChangedError, true);
-    check("it points at a fresh apply", [message.includes("changed the deployment target"), message.includes("gatewayPort"), message.includes("Re-run ./clawforge apply")], [true, true, true]);
+    check("it points at a fresh apply", [message.includes("changed the deployment target"), message.includes("gatewayPort"), message.includes("Re-run ./clawwright apply")], [true, true, true]);
     check("the recovery ran; everything planned for the old target is blocked", steps.map((step) => [step.id, step.status]), [["recover-env", "done"], ["apply-config", "blocked"], ["restart", "blocked"]]);
     check("each blocked step names the moved target", [steps[1].detail?.includes("target changed"), steps[1].detail?.includes("gatewayPort")], [true, true]);
 
     const envNow = await readFile(resolve(deployment, ".env"), "utf8");
     check("the missing port fact is filled from the container — the unambiguous case", envNow.includes("OPENCLAW_GATEWAY_PORT=18790"), true);
-    check("the diverged dataDir is NOT written over — that direction is the operator's", envNow.includes("OC_DATA_DIR=/srv/clawforge/data-actual"), false);
-    check("and the file keeps the dataDir it started with", envNow.includes("OC_DATA_DIR=/srv/clawforge/data"), true);
+    check("the diverged dataDir is NOT written over — that direction is the operator's", envNow.includes("OC_DATA_DIR=/srv/clawwright/data-actual"), false);
+    check("and the file keeps the dataDir it started with", envNow.includes("OC_DATA_DIR=/srv/clawwright/data"), true);
     check("the token line passes through untouched", envNow.includes("OPENCLAW_GATEWAY_TOKEN=env-refresh-token-value"), true);
     check("nothing after the recovery executed against any coordinates", state.dockerCalls.every((args) => !(args.includes("up") || args.includes("restart"))), true);
 
@@ -198,7 +198,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   const { deployment } = await setupFixtureDeployment();
   try {
     const envBody = (project: string) => [
-      "OC_DATA_DIR=/srv/clawforge/data",
+      "OC_DATA_DIR=/srv/clawwright/data",
       "OPENCLAW_GATEWAY_PORT=18789",
       `OC_COMPOSE_PROJECT=${project}`,
       "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",

@@ -25,7 +25,7 @@ import * as kinds from "#framework/core/values/kinds.ts";
 import { ValueError } from "#framework/core/values/value.ts";
 
 const DEVICE = "aux";
-const root = await mkdtemp(join(tmpdir(), "clawforge-name-compat $ O'Brien-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-name-compat $ O'Brien-"));
 const apps = await isolatedAppsRoot("name-compat");
 try {
   // A deployment directory named like a device: listed, selectable, removable.

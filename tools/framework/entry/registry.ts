@@ -1,4 +1,4 @@
-// One list for every surface a gate presents. tools/clawforge.ts and framework/entry/bin.ts
+// One list for every surface a gate presents. tools/clawwright.ts and framework/entry/bin.ts
 // build their own gate from here (checkoutGate / installedGate) instead of assembling it in
 // place, and a name-reading surface (help, completion, documentation, the structural checks)
 // reads surfaceRegistry — the one command registry — so there is no second hand list of gate
@@ -14,7 +14,7 @@ import { makeInitGateCommand, type InitPlacement } from "../integration/deployme
 import { commandRegistry, type CommandRegistry, type GateCommand } from "../integration/gate.ts";
 
 /** The checkout (monorepo) gate's own commands, in help order: the declared check/new-app/
- *  remove-app/list, version and completion — the array tools/clawforge.ts assembled in place
+ *  remove-app/list, version and completion — the array tools/clawwright.ts assembled in place
  *  until the registry commit. */
 export function checkoutGate(): GateCommand[] {
   const gate: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand()];
@@ -37,6 +37,6 @@ export function surfaceRegistry(): CommandRegistry {
   return commandRegistry({
     deployment: openclawCommands,
     gate: [...checkoutGate(), makeInitGateCommand("<app-root>")],
-    appName: "clawforge",
+    appName: "clawwright",
   });
 }

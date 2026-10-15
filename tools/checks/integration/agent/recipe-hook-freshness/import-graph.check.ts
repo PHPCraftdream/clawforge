@@ -31,7 +31,7 @@ const { outerRecipes } = scratchDeployment();
 // relative import the hook transitively reaches into the versioned URL, so this reproduces
 // the bug's exact shape: only the helper changes between two calls of one process.
 {
-  const helperRoot = resolve(tmpdir(), `clawforge-recipe-hook-helper-${Date.now()}`);
+  const helperRoot = resolve(tmpdir(), `clawwright-recipe-hook-helper-${Date.now()}`);
   try {
     await mkdir(resolve(helperRoot, "helper"), { recursive: true });
     await writeFile(resolve(helperRoot, "helper", "recipe.json"), JSON.stringify({ description: "Helper freshness probe" }), "utf8");
@@ -115,7 +115,7 @@ const { outerRecipes } = scratchDeployment();
 // an unsupported condition — is refused before the hook ever executes, instead of always
 // failing closed regardless of shape.
 {
-  const aliasRoot = resolve(tmpdir(), `clawforge-recipe-hook-alias-${Date.now()}`);
+  const aliasRoot = resolve(tmpdir(), `clawwright-recipe-hook-alias-${Date.now()}`);
   try {
     await mkdir(resolve(aliasRoot, "alias"), { recursive: true });
     await writeFile(resolve(aliasRoot, "alias", "recipe.json"), JSON.stringify({ description: "Package alias freshness probe" }), "utf8");

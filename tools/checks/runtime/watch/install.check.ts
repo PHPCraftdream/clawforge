@@ -1,4 +1,4 @@
-// `./clawforge watch install` / `watch uninstall` — the pure builders (marker, cron line,
+// `./clawwright watch install` / `watch uninstall` — the pure builders (marker, cron line,
 // which transports are schedulable), and the idempotent install/uninstall cycle against a
 // stub transport that answers `crontab`/`sh -c "command -v crontab"` and the instance
 // lock's own mkdir/test/mv/rm plumbing — the same lock harness
@@ -51,18 +51,18 @@ async function deathOf(run: () => unknown): Promise<string> {
 
 check(
   "cronLine quotes every part and carries the marker",
-  cronLine(5, { cwd: "/opt/open claw", command: "./clawforge", args: ["--app", "my app", "watch", "check"] }, "myapp"),
-  "*/5 * * * * cd '/opt/open claw' && ./clawforge '--app' 'my app' 'watch' 'check' >/dev/null 2>&1 # clawforge-watch:myapp",
+  cronLine(5, { cwd: "/opt/open claw", command: "./clawwright", args: ["--app", "my app", "watch", "check"] }, "myapp"),
+  "*/5 * * * * cd '/opt/open claw' && ./clawwright '--app' 'my app' 'watch' 'check' >/dev/null 2>&1 # clawwright-watch:myapp",
 );
 check(
   "withoutMarkedLine preserves other lines and blanks",
-  withoutMarkedLine(`0 3 * * * /usr/bin/backup.sh\n${cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "myapp")}\n\n0 4 * * * /usr/bin/other.sh\n`, "myapp"),
+  withoutMarkedLine(`0 3 * * * /usr/bin/backup.sh\n${cronLine(5, { cwd: "/x", command: "./clawwright", args: ["watch", "check"] }, "myapp")}\n\n0 4 * * * /usr/bin/other.sh\n`, "myapp"),
   ["0 3 * * * /usr/bin/backup.sh", "", "0 4 * * * /usr/bin/other.sh"],
 );
 check(
   "withoutMarkedLine leaves a DIFFERENT deployment's marked line alone",
-  withoutMarkedLine("*/5 * * * * ./clawforge watch check # clawforge-watch:other\n", "myapp"),
-  ["*/5 * * * * ./clawforge watch check # clawforge-watch:other"],
+  withoutMarkedLine("*/5 * * * * ./clawwright watch check # clawwright-watch:other\n", "myapp"),
+  ["*/5 * * * * ./clawwright watch check # clawwright-watch:other"],
 );
 
 // --- cronSchedule(): only minute steps dividing 60, or hour steps dividing a day, fire
@@ -87,7 +87,7 @@ for (const invalid of [0, 7, 25, 45, 59, 90, 300, 420, 1441, 1.5, -5]) {
     true,
   );
 }
-check("cronLine builds its schedule through cronSchedule, not its own copy", cronLine(120, { cwd: "/x", command: "./clawforge", args: [] }, "myapp").startsWith("0 */2 * * *"), true);
+check("cronLine builds its schedule through cronSchedule, not its own copy", cronLine(120, { cwd: "/x", command: "./clawwright", args: [] }, "myapp").startsWith("0 */2 * * *"), true);
 
 // --- schedulingSupport(): a property of the transport, checked against THIS platform's own
 // POSIX-ness for the "local" branch so the assertion holds on every CI runner ------------
@@ -122,13 +122,13 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
     },
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       calls.push({ command, args });
-      if (command === "sh" && args[2] === "clawforge-scheduler-root") {
+      if (command === "sh" && args[2] === "clawwright-scheduler-root") {
         return { code: 0, stdout: `${args[3]}\n`, stderr: "" };
       }
       if (command === "sh" && args[2] === "watch-state") {
         return { code: 0, stdout: await fixtureCtx.transport.readFile(args[3]).catch(() => "{}"), stderr: "" };
       }
-      if (command === "sh" && args[2] === "clawforge-crontab-update") {
+      if (command === "sh" && args[2] === "clawwright-crontab-update") {
         calls.push({ command: "crontab", args: ["-l"] });
         const transaction = stubCrontabTransaction(args, current, listingFailure);
         if (transaction.wrote) calls.push({ command: "crontab", args: ["-"] });
@@ -152,12 +152,12 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
   return { transport, calls, crontab: () => current };
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-watch-install-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-watch-install-check-"));
 useDeployment(root);
 
 try {
   const FOREIGN = "0 3 * * * /usr/bin/foreign-backup.sh";
-  const OTHER_DEPLOYMENT = "*/5 * * * * cd /opt/openclaw && ./clawforge --app other watch check >/dev/null 2>&1 # clawforge-watch:other";
+  const OTHER_DEPLOYMENT = "*/5 * * * * cd /opt/openclaw && ./clawwright --app other watch check >/dev/null 2>&1 # clawwright-watch:other";
   const { transport, calls, crontab } = crontabTransport(`${FOREIGN}\n${OTHER_DEPLOYMENT}\n`);
   const ctx = {
     transport,
@@ -337,8 +337,8 @@ try {
 // The printed operator command must survive a paste: bash -lc's script is one argument.
 check(
   "an argument with spaces and && stays one quoted argument",
-  displayCommandLine("wsl.exe", ["-d", "Ubuntu-24.04", "--", "bash", "-lc", "cd '/mnt/d/x' && ./clawforge watch check"]),
-  `wsl.exe -d Ubuntu-24.04 -- bash -lc "cd '/mnt/d/x' && ./clawforge watch check"`,
+  displayCommandLine("wsl.exe", ["-d", "Ubuntu-24.04", "--", "bash", "-lc", "cd '/mnt/d/x' && ./clawwright watch check"]),
+  `wsl.exe -d Ubuntu-24.04 -- bash -lc "cd '/mnt/d/x' && ./clawwright watch check"`,
 );
 
 finish("watch install");

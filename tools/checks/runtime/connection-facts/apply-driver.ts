@@ -50,7 +50,7 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
   const containerFacts = (): Record<string, unknown> => state.facts ?? {
     Image: "sha256:fixture-image",
     State: { Running: state.running },
-    Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/clawforge/data/config" }],
+    Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/clawwright/data/config" }],
     NetworkSettings: { Ports: { "18789/tcp": [{ HostPort: "18789" }] } },
     Config: { Labels: { "com.docker.compose.project": "refresh-check", Image: "ghcr.io/openclaw/openclaw:extended-stable" } },
   };
@@ -131,7 +131,7 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
       if (path.endsWith("/compose.env")) state.composeEnvWrites.push(text);
       // The non-dry-run staged declaration apply-config writes before invoking the CLI with
       // it: handed to the driver so a check can make the stubbed batch apply really happen.
-      if (path.endsWith("/clawforge-desired.json")) driver?.onStagedConfig?.(text);
+      if (path.endsWith("/clawwright-desired.json")) driver?.onStagedConfig?.(text);
       state.files.set(path, text);
     },
     async writePrivateFile(path, content) { state.files.set(path, typeof content === "string" ? content : ""); },

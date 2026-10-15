@@ -20,7 +20,7 @@
 // driven the way `recipe install` drives it. A third recipe is written by the check itself
 // (no fixture of its own): it declares one exact FILE inside the public workspace/ subtree,
 // whose crash leftover is a staging SIBLING of the declared path
-// (`<file>.clawforge-private-<hex>`, transport.ts), a name the declaration's exact path never
+// (`<file>.clawwright-private-<hex>`, transport.ts), a name the declaration's exact path never
 // matches and which the share allow-list passed without a staging-specific rule. The share
 // round-trip is the enforcement half of
 // the contract: verifySnapshot refuses an archive that already carries a declared private
@@ -112,7 +112,7 @@ const sortedDeclarations = JSON.stringify([...DECLARED, DECLARED_FILE].sort());
 
 // One-shot copy of the fixture recipes: the real-tar group breaks and restores a manifest
 // inside it, so nothing ever touches the repository's own fixture directory.
-const tempRecipes = await mkdtemp(join(tmpdir(), "clawforge-pp-recipes-"));
+const tempRecipes = await mkdtemp(join(tmpdir(), "clawwright-pp-recipes-"));
 await cp(fixtureDir, tempRecipes, { recursive: true });
 
 // Scratch directory on the POSIX target; set only when the real-tar group runs.
@@ -187,13 +187,13 @@ try {
 
   check(
     "a private staging leftover of an exact-file declaration is forbidden by its marker",
-    JSON.stringify(forbiddenViolations("share", [DECLARED_FILE], [`${DECLARED_FILE}.clawforge-private-deadbeef01`])),
-    JSON.stringify([".clawforge-private-"]),
+    JSON.stringify(forbiddenViolations("share", [DECLARED_FILE], [`${DECLARED_FILE}.clawwright-private-deadbeef01`])),
+    JSON.stringify([".clawwright-private-"]),
   );
   check(
     "a nested fallback leftover is caught by both markers",
-    JSON.stringify(forbiddenViolations("migrate", [DECLARED_FILE], [`${DECLARED_FILE}.clawforge-private-deadbeef01.clawforge-publish-feedface02`])),
-    JSON.stringify([".clawforge-private-", ".clawforge-publish-"]),
+    JSON.stringify(forbiddenViolations("migrate", [DECLARED_FILE], [`${DECLARED_FILE}.clawwright-private-deadbeef01.clawwright-publish-feedface02`])),
+    JSON.stringify([".clawwright-private-", ".clawwright-publish-"]),
   );
   check(
     "an unrelated public file beside the leftover stays allowed",
@@ -202,7 +202,7 @@ try {
   );
   check(
     "full still forbids nothing structurally",
-    JSON.stringify(forbiddenViolations("full", [], [`${DECLARED_FILE}.clawforge-private-deadbeef01`])),
+    JSON.stringify(forbiddenViolations("full", [], [`${DECLARED_FILE}.clawwright-private-deadbeef01`])),
     "[]",
   );
 
@@ -216,7 +216,7 @@ try {
   } else {
     transport = probed;
     const tag = randomBytes(4).toString("hex");
-    const PARENT = `/tmp/clawforge-pp-${tag}`;
+    const PARENT = `/tmp/clawwright-pp-${tag}`;
     const DATA_NAME = "data";
     const DATA = `${PARENT}/${DATA_NAME}`;
     const ARCHIVES = `${PARENT}/archives`;
@@ -234,14 +234,14 @@ try {
       `printf '%s' '${JSON.stringify({ models: { providers: {} } })}' > ${q(`${DATA}/config/openclaw.json`)}`,
       `printf '%s\\n' '# fixture' > ${q(`${DATA}/workspace/SOUL.md`)}`,
       `printf 'target-only-private-content\\n' > ${q(`${DATA}/${targetOnlyPath}`)}`,
-      `printf '%s\\n' '${JSON.stringify({ privatePaths: [targetOnlyPath] }, null, 2)}' > ${q(`${DATA}/config/clawforge-private-paths.json`)}`,
+      `printf '%s\\n' '${JSON.stringify({ privatePaths: [targetOnlyPath] }, null, 2)}' > ${q(`${DATA}/config/clawwright-private-paths.json`)}`,
     ].join("\n");
     await execScript(setup);
 
     const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
 
     await transport.exec("tar", [
-      "--exclude=data/config/clawforge-private-paths.json",
+      "--exclude=data/config/clawwright-private-paths.json",
       "-czf", targetOnlyArchive, "-C", PARENT, DATA_NAME,
     ]);
     let targetHistoryOutput = "";
@@ -251,7 +251,7 @@ try {
     );
     check("direct verify applies target-only privacy history", targetHistoryPassed, false);
     checkTrue("target-only privacy refusal names the private path", targetHistoryOutput.includes(targetOnlyPath));
-    await transport.exec("sh", ["-c", `rm -f ${q(`${DATA}/config/clawforge-private-paths.json`)} ${q(`${DATA}/${targetOnlyPath}`)}`]);
+    await transport.exec("sh", ["-c", `rm -f ${q(`${DATA}/config/clawwright-private-paths.json`)} ${q(`${DATA}/${targetOnlyPath}`)}`]);
 
     // --- both fixture hooks drive the real private-write helpers on the POSIX target --------------
 
@@ -284,18 +284,18 @@ try {
     await replacePrivateTargetFile(ctx, `${DATA}/${DECLARED_FILE}`, "FIXTURE_CREDENTIAL=review-p1-03-declared-file recipe=fixture-file\n");
     check(
       "a successful private write leaves no staging sibling beside the target",
-      (await transport.listFiles(`${DATA}/workspace`)).filter((name) => name.includes(".clawforge-")).length,
+      (await transport.listFiles(`${DATA}/workspace`)).filter((name) => name.includes(".clawwright-")).length,
       0,
     );
 
-    const privateLeftover = `${DATA}/${DECLARED_FILE}.clawforge-private-${tag}`;
+    const privateLeftover = `${DATA}/${DECLARED_FILE}.clawwright-private-${tag}`;
     await transport.writeFile(privateLeftover, "FIXTURE_CREDENTIAL=review-p1-03-interrupted-private-write recipe=fixture-file\n");
     // A transport without writePrivateFile stages the staging file itself through writeFile's
     // publish sibling, so the fallback chain can nest a second family under the first.
-    const nestedLeftover = `${privateLeftover}.clawforge-publish-${tag}`;
+    const nestedLeftover = `${privateLeftover}.clawwright-publish-${tag}`;
     // A publish leftover of a public file: not credential material, but transient junk that is
     // never instance state either — the same family, excluded for the same reason.
-    const publicLeftover = `${DATA}/workspace/public-note.md.clawforge-publish-${tag}`;
+    const publicLeftover = `${DATA}/workspace/public-note.md.clawwright-publish-${tag}`;
     // The unrelated neighbor the policy must NOT start excluding, and the wildcard base
     // exclusion probe (see below) — one round trip for all four.
     await execScript([
@@ -303,13 +303,13 @@ try {
       `printf 'FIXTURE_CREDENTIAL=review-p1-03-interrupted-fallback-write recipe=fixture-file\\n' > ${q(nestedLeftover)}`,
       `printf 'TRANSIENT=review-p1-03-interrupted-public-publish\\n' > ${q(publicLeftover)}`,
       `printf 'PUBLIC=plain-instance-content\\n' > ${q(`${DATA}/workspace/neighbor.env`)}`,
-      `printf 'PROVIDER_KEY=fixture-marker-not-a-key\\n' > ${q(`${DATA}/config/.env.clawforge-staging-${tag}`)}`,
+      `printf 'PROVIDER_KEY=fixture-marker-not-a-key\\n' > ${q(`${DATA}/config/.env.clawwright-staging-${tag}`)}`,
     ].join("\n"));
     // The negative archive assertions below mean nothing if the files were never created.
-    checkTrue("the staging leftovers and the provider-key staging file exist before archiving", await transport.exists(privateLeftover) && await transport.exists(nestedLeftover) && await transport.exists(publicLeftover) && await transport.exists(`${DATA}/config/.env.clawforge-staging-${tag}`));
+    checkTrue("the staging leftovers and the provider-key staging file exist before archiving", await transport.exists(privateLeftover) && await transport.exists(nestedLeftover) && await transport.exists(publicLeftover) && await transport.exists(`${DATA}/config/.env.clawwright-staging-${tag}`));
 
     // The base exclusions keep their wildcards — only the declaration's rules are escaped.
-    // config/.env.clawforge-* is provider-key staging: credential material a process that
+    // config/.env.clawwright-* is provider-key staging: credential material a process that
     // died between staging and rename leaves behind, catchable only by the glob. Escaping
     // every pattern would quietly disable exactly this rule, so it is pinned like the rest.
     // (The staging file itself is written in the batch above.)
@@ -322,7 +322,7 @@ try {
     checkTrue("a full archive keeps the sidecar's private file", fullListing.includes("data/sidecar-private/credentials.env"));
     checkTrue("a full archive keeps the literal vault[1] private file", fullListing.includes("data/vault[1]/credentials.env"));
     checkTrue("a full archive keeps the declared exact file", fullListing.includes(`data/${DECLARED_FILE}`));
-    check("a full archive still leaves every staging leftover out — never instance state", fullListing.some((entry) => entry.includes(".clawforge-private-") || entry.includes(".clawforge-publish-")), false);
+    check("a full archive still leaves every staging leftover out — never instance state", fullListing.some((entry) => entry.includes(".clawwright-private-") || entry.includes(".clawwright-publish-")), false);
 
     const migrate = `${ARCHIVES}/migrate.tar.gz`;
     await createArchive(ctx, { archive: migrate, profile: "migrate" });
@@ -330,11 +330,11 @@ try {
     checkTrue("a migrate archive keeps the undeclared sibling vault1 — no over-exclusion", migrateListing.includes("data/vault1/credentials.env"));
     check("a migrate archive leaves out the sidecar's private file", migrateListing.includes("data/sidecar-private/credentials.env"), false);
     check("a migrate archive leaves out the literal vault[1] — the escape, not the old glob", migrateListing.includes("data/vault[1]/credentials.env"), false);
-    check("a wildcard base exclusion (provider-key staging) stays out of a migrate archive", migrateListing.includes(`data/config/.env.clawforge-staging-${tag}`), false);
+    check("a wildcard base exclusion (provider-key staging) stays out of a migrate archive", migrateListing.includes(`data/config/.env.clawwright-staging-${tag}`), false);
     check("a migrate archive leaves out the exact-file declaration itself", migrateListing.includes(`data/${DECLARED_FILE}`), false);
-    check("a migrate archive leaves out the interrupted private-write leftover", migrateListing.includes(`data/workspace/${DECLARED_FILE}.clawforge-private-${tag}`), false);
-    check("a migrate archive leaves out the nested fallback leftover", migrateListing.includes(`data/workspace/${DECLARED_FILE}.clawforge-private-${tag}.clawforge-publish-${tag}`), false);
-    check("a migrate archive leaves out the public publish leftover", migrateListing.includes(`data/workspace/public-note.md.clawforge-publish-${tag}`), false);
+    check("a migrate archive leaves out the interrupted private-write leftover", migrateListing.includes(`data/workspace/${DECLARED_FILE}.clawwright-private-${tag}`), false);
+    check("a migrate archive leaves out the nested fallback leftover", migrateListing.includes(`data/workspace/${DECLARED_FILE}.clawwright-private-${tag}.clawwright-publish-${tag}`), false);
+    check("a migrate archive leaves out the public publish leftover", migrateListing.includes(`data/workspace/public-note.md.clawwright-publish-${tag}`), false);
     checkTrue("a migrate archive keeps the unrelated neighbor beside the leftovers", migrateListing.includes("data/workspace/neighbor.env"));
 
     // The control has served: gone before any share verdict, so the allow-list below judges a
@@ -346,7 +346,7 @@ try {
     const shareListing = await listArchive(ctx, share);
     // The exposure this policy closes: workspace/ is on the share allow-list, so the exclusion is
     // the only thing standing between the leftover and the archive.
-    check("a share archive leaves out the interrupted private-write leftover", shareListing.includes(`data/workspace/${DECLARED_FILE}.clawforge-private-${tag}`), false);
+    check("a share archive leaves out the interrupted private-write leftover", shareListing.includes(`data/workspace/${DECLARED_FILE}.clawwright-private-${tag}`), false);
     check("a share archive leaves out the exact-file declaration itself", shareListing.includes(`data/${DECLARED_FILE}`), false);
     // The positive round-trip. If the literal escaping ever broke, vault[1] would re-enter this
     // archive and this check would fail on both the forbidden-path and allow-list rules.
@@ -370,7 +370,7 @@ try {
       checkTrue(`the ${profile} refusal names the offending path`, output.join("").includes("sidecar-private"));
       // The pre-fix tar has no --exclude at all, so the crash leftovers are IN this archive:
       // the marker fragment rule is what refuses it, not the allow-list that used to pass them.
-      checkTrue(`the ${profile} refusal names a staging family of an interrupted write`, output.join("").includes(".clawforge-private-"));
+      checkTrue(`the ${profile} refusal names a staging family of an interrupted write`, output.join("").includes(".clawwright-private-"));
     }
     checkTrue(
       "a full archive containing the recipes' private paths still passes verify",

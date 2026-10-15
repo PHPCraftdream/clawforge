@@ -163,7 +163,7 @@ export interface ReconcileApplyResult {
   readonly view?: ReconcilePlanView;
 }
 /** Distinct from, and not derivable from, the MCP `confirm` token: an unexportable symbol. */
-export const RECONCILE_LARGE_REMOVAL_CONSENT: unique symbol = Symbol("clawforge.reconcile.large-removal-consent.v1");
+export const RECONCILE_LARGE_REMOVAL_CONSENT: unique symbol = Symbol("clawwright.reconcile.large-removal-consent.v1");
 /** Absolute removal bound; both bounds must hold unless the consent token is passed. */
 export const RECONCILE_MAX_REMOVED_COUNT = 100;
 /** Fraction-of-current-members removal bound. */

@@ -1,4 +1,4 @@
-// `./clawforge bootstrap` pins OPENCLAW_IMAGE the moment a fresh pull proves what a shared tag
+// `./clawwright bootstrap` pins OPENCLAW_IMAGE the moment a fresh pull proves what a shared tag
 // actually holds — the fresh-deployment half of the problem where a pull in one deployment
 // silently moves a shared tag for its neighbours on the same Docker daemon. `upgrade` already resolves
 // by digest and pins on success (upgrade.check.ts, this same directory); this is bootstrap's
@@ -8,7 +8,7 @@
 // The pin keeps the tag alongside the digest (`repo:tag@sha256:…`), on both the paths that
 // write one — the registry-resolved pin before the pull, and the local-inspect fallback after
 // it (imageReference()'s own RepoDigests answer never carries a tag, so the fallback rejoins
-// it with the channel that was pulled) — so a later `./clawforge upgrade` with no `--image`
+// it with the channel that was pulled) — so a later `./clawwright upgrade` with no `--image`
 // still has a channel to re-resolve instead of comparing the pin to itself forever.
 //
 // Lives here rather than under lifecycle/: that directory's checks are already at the 7-entry
@@ -103,7 +103,7 @@ function makeCtx(options: { image: string; pulledDigest: string | undefined; reg
 }
 
 async function withTempDeployment(envBody: string, body: () => Promise<void>): Promise<void> {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-bootstrap-image-pin-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-bootstrap-image-pin-check-"));
   useDeployment(deployment);
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
@@ -128,7 +128,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\
   check(".env is rewritten to the digest the tag just proved, WITH the tag kept alongside it", imageValue(envNow), PINNED_WITH_TAG);
   check("bootstrap says so", output.includes(PINNED_WITH_TAG) && output.includes("pinned"), true);
   check("the running image line reports the same pinned string as .env", output.split("running image: ")[1]?.split(String.fromCharCode(10))[0]?.trim(), PINNED_WITH_TAG);
-  check("and names ./clawforge upgrade as how to move it from here", output.includes("./clawforge upgrade"), true);
+  check("and names ./clawwright upgrade as how to move it from here", output.includes("./clawwright upgrade"), true);
   // Bootstrap's own final summary also reads imageReference() (to report "running image: …"),
   // unconditionally and unrelated to this pin — so the pin is what pushed the count to two,
   // not merely "asked at all", which the summary alone would already satisfy.
@@ -156,7 +156,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${ALREADY_PINN
   await withOutputSink(() => {}, () => openclawCommands.bootstrap.run(ctx, []));
   const envAfter = await readFile(envFile(), "utf8");
   check("an already-pinned deployment is never asked to re-resolve — only the final summary reads it", calls.filter((call) => call === "imageReference").length, 1);
-  check("its .env is untouched — ./clawforge upgrade is how to move it, never a bootstrap re-run", envAfter, envBefore);
+  check("its .env is untouched — ./clawwright upgrade is how to move it, never a bootstrap re-run", envAfter, envBefore);
 });
 
 // --- a digest the runtime cannot resolve locally leaves the tag alone, rather than guessing ---

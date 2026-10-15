@@ -113,7 +113,7 @@ function recordingDeployCtx(calls: { command: string; args: string[] }[]): Conte
           const script = args.at(-1) ?? "";
           // deploy() never receives --path in this file's scenarios, so the remote root is
           // always its fixed default.
-          if (script.includes("# clawforge-root-probe")) {
+          if (script.includes("# clawwright-root-probe")) {
             return { code: 0, stdout: "canonical=/opt/openclaw\nmarker=absent\nempty=yes\n", stderr: "" };
           }
         }
@@ -168,7 +168,7 @@ async function writePlainRecipe(recipes: string): Promise<string> {
   return plain;
 }
 
-const tempRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-03-"));
+const tempRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-03-"));
 const previousDeployment = (() => {
   try {
     return deploymentDir();
@@ -265,7 +265,7 @@ try {
   // declaration like agent/foo.secret would go quiet and the secret would ship in the bundle
   // map with every existing check still green. This fixture stands alone — agentBundleChecksums
   // takes an explicit directory, so no set build and no useDeployment are involved.
-  const bundleRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-03-bundle-"));
+  const bundleRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-03-bundle-"));
   try {
     const bundleRecipe = resolve(bundleRoot, "bundle");
     await mkdir(resolve(bundleRecipe, "agent"), { recursive: true });
@@ -296,7 +296,7 @@ try {
 
   // --- Group D: deploy refuses while the declared file exists, inert once it is absent -------
 
-  const deployRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-03-deploy-"));
+  const deployRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-03-deploy-"));
   try {
     await mkdir(resolve(deployRoot, "recipes", "guarded"), { recursive: true });
     await writeFile(
@@ -415,7 +415,7 @@ try {
     }
 
     // Escaping link, on its OWN copy of the recipe so earlier groups are not disturbed.
-    const escapeRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-03-escape-"));
+    const escapeRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-03-escape-"));
     try {
       await mkdir(resolve(escapeRoot, "config"), { recursive: true });
       await writeFile(resolve(escapeRoot, "config", "desired-state.json"), "[]");
@@ -455,7 +455,7 @@ try {
   // other assertion could run against the tree that carries it.
   await requires("symlink", "an internal alias to a private target is held back by every carrier", async () => {
   if (!linksWork) return;
-    const fixtureRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-01-"));
+    const fixtureRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-01-"));
     try {
       await mkdir(resolve(fixtureRoot, "config"), { recursive: true });
       await writeFile(resolve(fixtureRoot, "config", "desired-state.json"), "[]");

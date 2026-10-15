@@ -217,7 +217,7 @@ for (const bad of ["(", "[", "*"]) {
 
 // A real recipe.json in a scratch directory, the same way recipe.check.ts does it:
 // loadRecipe reads the file, so a fixture on disk is the only thing that exercises it.
-const scratch = await mkdtemp(join(tmpdir(), "clawforge-logs-bounded-check-"));
+const scratch = await mkdtemp(join(tmpdir(), "clawwright-logs-bounded-check-"));
 await mkdir(resolve(scratch, "sample"), { recursive: true });
 await writeFile(
   resolve(scratch, "sample", "recipe.json"),

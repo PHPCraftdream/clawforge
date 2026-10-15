@@ -7,7 +7,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { DATA_DIR, MULTIPORT_COMPOSE, ref, SECRET_ENV, trialFixture, useRecipesRoot } from "./fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-scratch");
+const root = await useRecipesRoot("clawwright-recipe-trial-scratch");
 try {
   await root.write("multiport", {
     description: "A recipe publishing ports with declared privatePaths",
@@ -24,7 +24,7 @@ try {
 
   const home = fixture.mkdirPrivateCalls[0] ?? "";
   check("mkdirPrivate ran exactly once, for the scratch home", fixture.mkdirPrivateCalls.length, 1);
-  checkTrue("the scratch home sits under the locks dir of the synthetic dataDir", home.startsWith(`${DATA_DIR}-locks/.clawforge-recipe-trial-`));
+  checkTrue("the scratch home sits under the locks dir of the synthetic dataDir", home.startsWith(`${DATA_DIR}-locks/.clawwright-recipe-trial-`));
   check("writePrivateFile ran three times: compose.env, override.yml, then the pinned document",
     fixture.privateWrites, [`${home}/compose.env`, `${home}/override.yml`, `${home}/pinned-compose.json`]);
   const pinned = fixture.files.get(`${home}/pinned-compose.json`) ?? "";
@@ -104,7 +104,7 @@ try {
     checkTrue("the build-service trial succeeds", builderOutcome === "");
     const builderDoc = builder.files.get(`${builder.mkdirPrivateCalls[0] ?? ""}/override.yml`) ?? "";
     checkTrue("the override replaces the build service's live tag with the trial's own image tag",
-      /clawforge-recipe-trial-build-[0-9a-f]{12}-[0-9a-f]{8}--builder/.test(builderDoc));
+      /clawwright-recipe-trial-build-[0-9a-f]{12}-[0-9a-f]{8}--builder/.test(builderDoc));
     const imageRemovals = builder.docker.filter((argv) => argv[0] === "image" && argv[1] === "rm" && argv[2] === "--force");
     check("teardown removes exactly the trial build image, by name", imageRemovals.length, 1);
     checkTrue("the removed tag is the trial-prefixed build tag", (imageRemovals[0]?.[3] ?? "").endsWith("--builder"));

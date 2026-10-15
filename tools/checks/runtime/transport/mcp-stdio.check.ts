@@ -41,7 +41,7 @@ if (mode === "--bridge") {
     }
   });
 } else {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-stdio-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-mcp-stdio-"));
   const shim = join(root, "docker-shim.mjs");
   await writeFile(shim, `
 import { mkdirSync } from 'node:fs';

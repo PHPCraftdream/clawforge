@@ -40,7 +40,7 @@ export async function schedulerIdentity(ctx: Context): Promise<string> {
   let location = "posix";
   if (ctx.transport.description.startsWith("ssh:")) {
     const result = await ctx.transport.exec("sh", [
-      "-c", 'cd -- "$1" && pwd -P', "clawforge-scheduler-root", posix.join(ctx.settings.remotePath, "apps", name),
+      "-c", 'cd -- "$1" && pwd -P', "clawwright-scheduler-root", posix.join(ctx.settings.remotePath, "apps", name),
     ], { allowFailure: true });
     root = result.stdout.replace(/\n$/, "");
     if (result.code !== 0 || !root.startsWith("/") || /[\r\n]/.test(root)) {
@@ -65,11 +65,11 @@ export interface PriorSchedule {
  *  "this job, this deployment" so a re-run replaces exactly one entry, never another job's or
  *  another deployment's. */
 export function jobMarker(job: string, identity: string): string {
-  return `# clawforge-${job}:${identity}`;
+  return `# clawwright-${job}:${identity}`;
 }
 
 export function scheduledTaskName(job: string, identity: string): string {
-  return `clawforge-${identity}-${job}`;
+  return `clawwright-${identity}-${job}`;
 }
 
 /** Cron steps fire evenly only when they divide 60 (minutes) or 24 (hours); other steps are
@@ -206,7 +206,7 @@ command -v flock >/dev/null 2>&1 || fail 21 'flock is required to serialize sche
 uid=$(id -u) || fail 22 'could not identify scheduler account'
 case "$uid" in ''|*[!0-9]*) fail 22 'invalid scheduler account uid';; esac
 [ ! -L /tmp ] && [ "$(stat -c '%u:%a' /tmp)" = 0:1777 ] || fail 23 'lock parent /tmp must be a root-owned sticky directory (1777), not a symlink'
-lock_dir=/tmp/clawforge-crontab-$uid
+lock_dir=/tmp/clawwright-crontab-$uid
 mkdir -m 700 -- "$lock_dir" 2>/dev/null || :
 [ ! -L "$lock_dir" ] && [ -d "$lock_dir" ] && [ "$(stat -c '%u:%a' -- "$lock_dir")" = "$uid:700" ] || fail 24 'unsafe scheduler lock directory (expected account-owned directory, mode 700, no symlink)'
 exec 9< "$lock_dir" || fail 25 'could not open scheduler account lock'
@@ -260,7 +260,7 @@ export async function updateCrontab(ctx: Context, job: string, name: string, lin
   if (line !== undefined && /[\r\n]/.test(line)) die(CRONTAB_ENTRY_ONE_LINE);
   if (line !== undefined && !ownedCronLine(line, job, name)) die(CRONTAB_ENTRY_OWNED);
   const result = await ctx.transport.exec("sh", [
-    "-c", CRONTAB_TRANSACTION, "clawforge-crontab-update", ownedCronPattern(job, name, prior), line ?? "", line === undefined ? "uninstall" : "install",
+    "-c", CRONTAB_TRANSACTION, "clawwright-crontab-update", ownedCronPattern(job, name, prior), line ?? "", line === undefined ? "uninstall" : "install",
   ], { allowFailure: true });
   if (result.code !== 0) {
     const reason = CRONTAB_FAILURES[result.code] ?? SCHEDULER_TRANSACTION_FAILED;
@@ -297,7 +297,7 @@ export function schedulingSupport(ctx: Context): SchedulingSupport {
 }
 
 /** One pasteable command line: an argument with spaces or shell operators (WSL's
- *  `bash -lc "cd … && clawforge …"`) is one argv element and must stay quoted, or `&&`
+ *  `bash -lc "cd … && clawwright …"`) is one argv element and must stay quoted, or `&&`
  *  would be run by whatever shell the operator pastes it into. Also how a `schtasks /tr`
  *  value is built: it takes exactly one string the same way. */
 export function displayCommandLine(command: string, args: readonly string[]): string {
@@ -319,7 +319,7 @@ export function cmdExeLine(command: string, args: readonly string[]): string | u
 }
 
 export async function installedShimExists(root: string): Promise<boolean> {
-  return access(resolve(root, "clawforge")).then(
+  return access(resolve(root, "clawwright")).then(
     () => true,
     () => false,
   );
@@ -436,7 +436,7 @@ export async function printSchedulingInstructions(
   // runs from decides where the entry lives and how the stored text names it; the
   // transport spells that same entry for its own shell.
   const target = scheduledTargetFrame(installed ? deploymentDir() : monorepoRoot, !installed);
-  const entryHost = resolve(target.cwd.kind === "dir" ? target.cwd.path : monorepoRoot, "clawforge");
+  const entryHost = resolve(target.cwd.kind === "dir" ? target.cwd.path : monorepoRoot, "clawwright");
   const posixArgs = installed ? [...jobArgs] : ["--app", name, ...jobArgs];
   const entryTarget = await ctx.paths.toTarget(entryHost);
   const invocation = ctx.transport.clientInvocation(entryTarget, posixArgs);

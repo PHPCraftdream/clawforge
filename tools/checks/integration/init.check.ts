@@ -1,4 +1,4 @@
-// `clawforge init` — must not overwrite state a directory already holds.
+// `clawwright init` — must not overwrite state a directory already holds.
 //
 // Only app.ts's existence used to be checked before writing anything: an .env or a
 // config/desired-state.json already there (leftover from something else, or a previous init
@@ -31,10 +31,10 @@ import { check, checkTrue, finish, isolatedAppsRoot } from "#checks/kit/harness.
  *  is the checkout root the sentence directs to. */
 function renderAdviceAtOwnRoot(): string {
   const root = "/fake-checkout";
-  const on: Invocation = { program: "./clawforge", mode: "checkout", audience: "terminal" };
+  const on: Invocation = { program: "./clawwright", mode: "checkout", audience: "terminal" };
   const files: Record<string, string> = {
-    [`${root}/tools/clawforge.ts`]: "// gate",
-    [`${root}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
+    [`${root}/tools/clawwright.ts`]: "// gate",
+    [`${root}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
   };
   const dirs = [`${root}/tools`, `${root}/tools/framework`];
   const normalize = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
@@ -84,7 +84,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- an existing .env must refuse init, not be silently overwritten -----------------------
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const root = join(base, "deployment-env");
   await mkdir(root, { recursive: true });
   try {
@@ -103,7 +103,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- an existing config/desired-state.json must refuse init too ---------------------------
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const root = join(base, "deployment-desired");
   await mkdir(root, { recursive: true });
   try {
@@ -123,7 +123,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- a genuinely fresh directory still initialises normally --------------------------------
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const root = join(base, "deployment-fresh");
   await mkdir(root, { recursive: true });
   try {
@@ -151,7 +151,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
     // OS resolves the file as an executable, not when it is handed a path to run. Without
     // the flag repeated here, a consumer that disables type stripping fails with "Unknown
     // file extension \".ts\"" when bin.js dynamically imports this deployment's app.ts.
-    const shim = await readFile(resolve(root, "clawforge"), "utf8");
+    const shim = await readFile(resolve(root, "clawwright"), "utf8");
     check("the shim passes --experimental-strip-types when invoking node directly", shim.includes("--experimental-strip-types"), true);
 
     // Mirrors cli-help.check.ts's own assertion on scaffold.ts's new-app output: an
@@ -173,12 +173,12 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- init --local on an initialised directory prints the npm line and writes nothing -------
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const root = join(base, "deployment-local");
   await mkdir(root, { recursive: true });
   try {
     check("the first init succeeds", await run(root), undefined);
-    const files = ["app.ts", ".env", ".gitignore", "package.json", "clawforge"];
+    const files = ["app.ts", ".env", ".gitignore", "package.json", "clawwright"];
     const before = await Promise.all(files.map((name) => readFile(resolve(root, name), "utf8")));
 
     let output = "";
@@ -207,7 +207,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 {
   const lines = templateLines(true);
 
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   try {
     // Running it twice is a no-op.
     const twice = join(base, "twice");
@@ -222,7 +222,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
     // the exact idempotency bug init.ts's own includes() heuristic had.
     const legacy = join(base, "legacy");
     await mkdir(legacy, { recursive: true });
-    const oldBlock = "\n# @clawforge/framework: installed, not vendored — the whole point of installing it as a\n# dependency instead of copying it in is that it never has to be committed.\nnode_modules/\n\n# OpenClaw deployment state — host paths, the gateway token, secrets and snapshots.\n.env\nsecrets/\n";
+    const oldBlock = "\n# clawwright: installed, not vendored — the whole point of installing it as a\n# dependency instead of copying it in is that it never has to be committed.\nnode_modules/\n\n# OpenClaw deployment state — host paths, the gateway token, secrets and snapshots.\n.env\nsecrets/\n";
     await writeFile(resolve(legacy, ".gitignore"), oldBlock, "utf8");
     await updateGitignore(legacy, lines);
     const upgraded = (await readFile(resolve(legacy, ".gitignore"), "utf8")).split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#"));
@@ -256,13 +256,13 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- nextStepsLines: the shared "next:" block, pure ------------------------------------------
 
 {
-  const underSrv = nextStepsLines(".env", "/srv/openclaw/data", "./clawforge bootstrap");
+  const underSrv = nextStepsLines(".env", "/srv/openclaw/data", "./clawwright bootstrap");
   check("names the data directory the .env chose", underSrv.some((line) => line.includes("/srv/openclaw/data")), true);
   check("an /srv default gets the root-owned hint", underSrv.some((line) => line.includes(ROOT_OWNED)), true);
   check("...pointing at bootstrap --check", underSrv.some((line) => line.includes(commandLine(["bootstrap", "--check"]))), true);
-  check("and bootstrap itself is still the final step", underSrv.at(-1), "  3. ./clawforge bootstrap");
+  check("and bootstrap itself is still the final step", underSrv.at(-1), "  3. ./clawwright bootstrap");
 
-  const elsewhere = nextStepsLines(".env", "/home/coder/openclaw-data", "./clawforge bootstrap");
+  const elsewhere = nextStepsLines(".env", "/home/coder/openclaw-data", "./clawwright bootstrap");
   check("a data directory NOT under /srv gets no root-owned hint", elsewhere.some((line) => line.includes(ROOT_OWNED)), false);
   check("but still points at bootstrap --check as the next step", elsewhere.some((line) => line.includes(commandLine(["bootstrap", "--check"]))), true);
 
@@ -274,7 +274,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- and reaches init's own real output, naming the actual generated data directory ----------
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const root = join(base, "deployment-next-steps");
   await mkdir(root, { recursive: true });
   try {
@@ -288,8 +288,8 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
     check("a data directory was actually generated", typeof dataDir === "string" && dataDir !== "", true);
     check("init's own output names it", dataDir !== undefined && output.includes(dataDir), true);
     check("and points at bootstrap --check before bootstrap itself", output.includes(commandLine(["bootstrap", "--check"])), true);
-    const checkStepIndex = output.indexOf("2. ./clawforge bootstrap --check");
-    const bootstrapStepIndex = output.indexOf("3. ./clawforge bootstrap");
+    const checkStepIndex = output.indexOf("2. ./clawwright bootstrap --check");
+    const bootstrapStepIndex = output.indexOf("3. ./clawwright bootstrap");
     check("bootstrap --check (step 2) is printed before plain bootstrap (step 3)", checkStepIndex !== -1 && bootstrapStepIndex !== -1 && checkStepIndex < bootstrapStepIndex, true);
   } finally {
     await rm(base, { recursive: true, force: true });
@@ -300,7 +300,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 // --- scaffold.ts's new-app, checked in mcp-project.check.ts, applied to installed mode) -----
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   try {
     const claimed = join(base, "sibling-claimed");
     await mkdir(claimed, { recursive: true });
@@ -317,12 +317,12 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 
 // --- the deployment must be loadable as ESM afterwards -------------------------------------
 //
-// app.ts imports @clawforge/framework, and Node decides how to read a .ts file from the
+// app.ts imports clawwright, and Node decides how to read a .ts file from the
 // nearest package.json's "type". Init must provide ESM for the generated declaration without
 // changing how source files already in the directory are interpreted.
 
 async function freshRoot(name: string): Promise<{ base: string; root: string }> {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const root = join(base, name);
   await mkdir(root, { recursive: true });
   return { base, root };
@@ -345,7 +345,7 @@ async function gatewayPortOf(root: string): Promise<number> {
 }
 
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const first = join(base, "project-alpha");
   const second = join(base, "project-beta");
   await mkdir(first, { recursive: true });
@@ -400,18 +400,18 @@ async function gatewayPortOf(root: string): Promise<number> {
 {
   const { base, root } = await freshRoot("deployment-typeless");
   try {
-    // What `npm install @clawforge/framework` leaves behind in a repository that had a
+    // What `npm install clawwright` leaves behind in a repository that had a
     // package.json before the framework was added.
     await writeFile(
       resolve(root, "package.json"),
-      `${JSON.stringify({ name: "consumer", version: "1.2.3", dependencies: { "@clawforge/framework": "^0.1.0" } }, undefined, 2)}\n`,
+      `${JSON.stringify({ name: "consumer", version: "1.2.3", dependencies: { "clawwright": "^0.1.0" } }, undefined, 2)}\n`,
       "utf8",
     );
 
     check("a package.json without a type initialises", await run(root), undefined);
     const parsed = await packageJsonOf(root);
     check("the type is filled in", parsed.type, "module");
-    check("and nothing else in the file is lost", JSON.stringify([parsed.name, parsed.version, parsed.dependencies]), JSON.stringify(["consumer", "1.2.3", { "@clawforge/framework": "^0.1.0" }]));
+    check("and nothing else in the file is lost", JSON.stringify([parsed.name, parsed.version, parsed.dependencies]), JSON.stringify(["consumer", "1.2.3", { "clawwright": "^0.1.0" }]));
   } finally {
     await rm(base, { recursive: true, force: true });
   }
@@ -534,13 +534,13 @@ async function gatewayPortOf(root: string): Promise<number> {
 // a SECOND checkout-shaped tree, so neither the running copy's spelling nor a cwd-relative
 // path can sneak in (review R16-1).
 {
-  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const base = await mkdtemp(join(tmpdir(), "clawwright-init-check-"));
   const fake = join(base, "checkout");
   const newDep = join(fake, "apps", "newdep");
   await mkdir(newDep, { recursive: true });
   await mkdir(resolve(fake, "tools", "framework"), { recursive: true });
-  await writeFile(resolve(fake, "tools", "framework", "package.json"), JSON.stringify({ name: "@clawforge/framework" }), "utf8");
-  await writeFile(resolve(fake, "tools", "clawforge.ts"), "// gate", "utf8");
+  await writeFile(resolve(fake, "tools", "framework", "package.json"), JSON.stringify({ name: "clawwright" }), "utf8");
+  await writeFile(resolve(fake, "tools", "clawwright.ts"), "// gate", "utf8");
   try {
     const refused = await new Promise<string>((resolvePromise) => {
       const child = spawn(
@@ -578,15 +578,15 @@ async function gatewayPortOf(root: string): Promise<number> {
 //
 // The refusal's rows must not depend on the cwd they refused from: bin.ts sets its
 // invocation default from where the run stands (root.ts's checkout branch), and a
-// clawforge-kind row is re-spelled with it — from a nested subfolder the first row used to
-// read ../../../clawforge, which pasted at the checkout root resolves outside it (R17).
+// clawwright-kind row is re-spelled with it — from a nested subfolder the first row used to
+// read ../../../clawwright, which pasted at the checkout root resolves outside it (R17).
 // Fake fs as in the golden entry matrix; no process.
 {
   const fakeRoot = "/fake-checkout";
   const nested = `${fakeRoot}/deep/nested/sub`;
   const files: Record<string, string> = {
-    [`${fakeRoot}/tools/clawforge.ts`]: "// gate",
-    [`${fakeRoot}/tools/framework/package.json`]: JSON.stringify({ name: "@clawforge/framework" }),
+    [`${fakeRoot}/tools/clawwright.ts`]: "// gate",
+    [`${fakeRoot}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
   };
   const dirs = [`${fakeRoot}/tools`, `${fakeRoot}/tools/framework`, nested];
   const normalize = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
@@ -600,7 +600,7 @@ async function gatewayPortOf(root: string): Promise<number> {
   // The frame bin.ts sets for this refusal, decided from the same roots (rf6-fix33: the
   // frame is the resolver's input now).
   const up = relative(resolve(nested), fakeRoot).split(sep).join("/");
-  const decision = resolveInstalledEntry({ cwd: nested, rawArgv: ["init"], platform: "linux", fs, frame: frameFromInvocation({ program: `${up}/clawforge`, mode: "checkout", audience: "terminal" }, { host: "posix", msys: false }) });
+  const decision = resolveInstalledEntry({ cwd: nested, rawArgv: ["init"], platform: "linux", fs, frame: frameFromInvocation({ program: `${up}/clawwright`, mode: "checkout", audience: "terminal" }, { host: "posix", msys: false }) });
   if (decision.kind !== "refuse") {
     check("init from a nested checkout folder is refused", decision.kind, "refuse");
   } else {
@@ -610,7 +610,7 @@ async function gatewayPortOf(root: string): Promise<number> {
     // rows — a shim launch carries the shim's POSIX-only shells, so the re-rooted row
     // spells without the bash note, like the spawned run above.
     const up = relative(resolve(nested), decision.checkout!).split(sep).join("/");
-    const refusing: Invocation = { program: `${up}/clawforge`, mode: "checkout", audience: "terminal" };
+    const refusing: Invocation = { program: `${up}/clawwright`, mode: "checkout", audience: "terminal" };
     const frame = {
       ...frameFromInvocation(refusing, { host: "posix", msys: false }),
       launch: launchFromHandover(refusing, { cwd: nested, fs: { exists: fs.exists, readFile: fs.readFile }, checkoutRoot: decision.checkout }),

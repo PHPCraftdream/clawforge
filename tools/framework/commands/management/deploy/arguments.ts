@@ -43,10 +43,10 @@ export const DEPLOY_ARGUMENTS = [
 export const INSTALLED_PACKAGE_MODE = "the framework is running from an installed package";
 
 export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<string> {
-  // Check-only seam (stage 7 S0.4): a check process sets CLAWFORGE_CHECKS_SOURCE_ROOT so
+  // Check-only seam (stage 7 S0.4): a check process sets CLAWWRIGHT_CHECKS_SOURCE_ROOT so
   // the deploy preflight scans a temp source tree; nothing user-facing sets it, so unset
   // means the checkout itself.
-  const override = process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"];
+  const override = process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"];
   if (override !== undefined && override !== "") root = override;
   if (!(await isMonorepoCheckout(root))) {
     // The bootstrap line runs on the SERVER, so it is spelled for that host, not for
@@ -54,9 +54,9 @@ export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<
     // local-package copy this run's program names a node_modules wrapper the server has
     // none of. A shell row, so no surface re-spells it for the local invocation.
     die(
-      "deploy mirrors a ClawForge checkout to the server with rsync, and there is no " +
+      "deploy mirrors a Clawwright checkout to the server with rsync, and there is no " +
         `checkout here — ${INSTALLED_PACKAGE_MODE}\n` +
-        "Deploying in this mode means installing @clawforge/framework on the server and " +
+        "Deploying in this mode means installing clawwright on the server and " +
         "sending only this deployment's own files, which is a different command and does " +
         "not exist yet. Deploy from a checkout, or copy this deployment's directory across " +
         "and run the bootstrap there:",

@@ -1,13 +1,13 @@
-# ClawForge for OpenClaw
+# Clawwright for OpenClaw
 
-[![CI](https://github.com/PHPCraftdream/clawforge/actions/workflows/ci.yml/badge.svg)](https://github.com/PHPCraftdream/clawforge/actions/workflows/ci.yml)
+[![CI](https://github.com/PHPCraftdream/clawwright/actions/workflows/ci.yml/badge.svg)](https://github.com/PHPCraftdream/clawwright/actions/workflows/ci.yml)
 [![Node.js >=24](https://img.shields.io/badge/node.js-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE)
-[![MCP server](https://img.shields.io/badge/MCP-server-6E56CF)](docs/guide/deploy-and-mcp.md#mcp-clawforge-in-claude-code-and-codex)
+[![MCP server](https://img.shields.io/badge/MCP-server-6E56CF)](docs/guide/deploy-and-mcp.md#mcp-clawwright-in-claude-code-and-codex)
 [![Targets: WSL2 | Linux | SSH](https://img.shields.io/badge/targets-WSL2%20%7C%20Linux%20%7C%20SSH-informational)](docs/guide/requirements.md)
 [![Status: 0.x, pre-release](https://img.shields.io/badge/status-0.x%20pre--release-orange)](CHANGELOG.md)
 
-A reproducible ClawForge environment for running [OpenClaw](https://github.com/openclaw/openclaw)
+A reproducible Clawwright environment for running [OpenClaw](https://github.com/openclaw/openclaw)
 yourself: identical locally (WSL2) and on a remote Linux server, with persistent data,
 state snapshots and an MCP bridge.
 
@@ -15,11 +15,11 @@ This repository does not fork OpenClaw and does not build it from source. It run
 official `ghcr.io/openclaw/openclaw` image and adds a thin layer of tooling around it.
 
 Built for an operator and for an agent alike: besides the bridge to OpenClaw's own channels,
-every ClawForge command is also offered as an MCP tool (`./clawforge control-mcp`), so an AI
+every Clawwright command is also offered as an MCP tool (`./clawwright control-mcp`), so an AI
 agent — under Claude Code, Codex or any other MCP client — can bootstrap, inspect, back up or
 roll back the same instance directly, with the same arguments and the same findings a human
 operator would see on a terminal. See
-[Deploying and MCP](docs/guide/deploy-and-mcp.md#mcp-clawforge-in-claude-code-and-codex).
+[Deploying and MCP](docs/guide/deploy-and-mcp.md#mcp-clawwright-in-claude-code-and-codex).
 
 Side services run next to the instance as recipes: `recipe install` builds and starts one,
 `recipe run` executes its declared actions, `recipe trial` rehearses it on a throwaway copy of
@@ -43,11 +43,11 @@ choice — see [docs/guide/requirements.md](docs/guide/requirements.md).
 
 ```bash
 npm install                    # json5, plus the dev tooling the checks use
-./clawforge new-app openclaw   # deployment directory: .env, config/, secrets/, recipes/
-./clawforge bootstrap --check  # read-only: docker, compose v2, this directory, the port, disk space
-./clawforge bootstrap          # from nothing: token, directories, image, config, provider, start
-./clawforge status             # what is running and whether it is healthy
-./clawforge smoke              # acceptance run
+./clawwright new-app openclaw   # deployment directory: .env, config/, secrets/, recipes/
+./clawwright bootstrap --check  # read-only: docker, compose v2, this directory, the port, disk space
+./clawwright bootstrap          # from nothing: token, directories, image, config, provider, start
+./clawwright status             # what is running and whether it is healthy
+./clawwright smoke              # acceptance run
 ```
 
 On a fresh host `/srv` is usually root-owned: `bootstrap --check` reports `FAIL` and prints the
@@ -57,80 +57,80 @@ The first step is needed once per machine: a deployment is not kept in the repos
 is the configuration of one host, with its paths and its keys. `apps/` is entirely in
 `.gitignore`.
 
-Works from WSL and from Windows' Git Bash (the checkout entry `./clawforge` is a bash
+Works from WSL and from Windows' Git Bash (the checkout entry `./clawwright` is a bash
 script; PowerShell works for the installed package): Windows Node reaches the
 target through `wsl.exe`, so there is no need to install Node inside WSL.
 
 Web interface: `http://127.0.0.1:<OPENCLAW_GATEWAY_PORT>` — `new-app` picks the port (20000–32767)
-and writes it to `.env`; `./clawforge status` or `./clawforge mcp-creds` print the actual URL.
+and writes it to `.env`; `./clawwright status` or `./clawwright mcp-creds` print the actual URL.
 Token in `.env` (`OPENCLAW_GATEWAY_TOKEN`).
-Running `./clawforge bootstrap` again is safe: it re-pulls the image (a digest-pinned
+Running `./clawwright bootstrap` again is safe: it re-pulls the image (a digest-pinned
 `OPENCLAW_IMAGE` is left alone) and rewrites desired-state, but does not restart an
-already-running gateway — run `./clawforge restart` afterwards to pick up changed settings. It never
+already-running gateway — run `./clawwright restart` afterwards to pick up changed settings. It never
 touches data already on disk. The first time it pulls a shared tag, it pins `OPENCLAW_IMAGE` in
 `.env` to `repo:tag@sha256:…` — the exact digest that pull just proved, alongside the tag it
 came from — so another deployment on this Docker daemon later pulling the same tag can no
-longer silently change what THIS one runs next, while `./clawforge upgrade` (with no `--image`)
+longer silently change what THIS one runs next, while `./clawwright upgrade` (with no `--image`)
 still knows which tag to check for something newer; a deployment already pinned to a digest is
-left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from there (see
+left alone by `bootstrap`, and `./clawwright upgrade` is the way to move it from there (see
 [Upgrading the image](docs/guide/data-and-backups.md#upgrading-the-image-upgrade)).
 
-## Installing `clawforge` system-wide
+## Installing `clawwright` system-wide
 
 From this checkout, once `npm install` has run:
 
 ```bash
 npm run install:system        # packs tools/framework and installs it with npm install -g
 cd ~/my-openclaw              # any app folder
-clawforge init                # app.ts, config/, .env, ./clawforge — nothing installed into the folder
-clawforge bootstrap --check
-clawforge status
+clawwright init                # app.ts, config/, .env, ./clawwright — nothing installed into the folder
+clawwright bootstrap --check
+clawwright status
 ```
 
 The installed command is a copy, not a link to this working tree: run `npm run install:system`
 again to take later changes. It uses the deployment's own framework whenever there is one — a
-local `@clawforge/framework` dependency (the app's version pin), or, inside this checkout,
+local `clawwright` dependency (the app's version pin), or, inside this checkout,
 `apps/<name>` and the root go to the checkout's own gate — and runs on itself only in a folder
-with neither. The `./clawforge` script and the MCP launcher that `init` writes fall back to it
-the same way. Remove it with `npm uninstall -g @clawforge/framework`.
+with neither. The `./clawwright` script and the MCP launcher that `init` writes fall back to it
+the same way. Remove it with `npm uninstall -g clawwright`.
 
 The package is not on the npm registry yet (first release: [RELEASE.md](RELEASE.md)), so
 `npm run install:system` from a clone is the only way to get the system-wide command for now; for
 a per-project dependency, run `npm pack` in `tools/framework` and `npm install <path-to-tgz>` in
-the app. After the first release `npm install -g @clawforge/framework` does the same without a clone.
+the app. After the first release `npm install -g clawwright` does the same without a clone.
 
 ## I want to…
 
 | I want to… | Run | Notes |
 | --- | --- | --- |
-| Check whether a fresh host is actually ready to bootstrap | `./clawforge bootstrap --check` | read-only: docker, compose v2, the data/backup/snapshot directories, the gateway port, free disk space — no lock, nothing created |
-| Bring a fresh instance up | `./clawforge bootstrap` | idempotent — safe to run again on a live instance |
-| Check what's running right now | `./clawforge status` | containers, image, health probes, disk — a snapshot, not a verdict |
-| Get a pass/fail exit code for scripts | `./clawforge doctor` | the same inspection `inspect` computes, but exits non-zero on a blocking finding |
-| Understand what's wrong and why | `./clawforge inspect` | every declared-vs-running difference, each with a stable code and a remedy; read-only, never fails the process |
-| Prove the instance actually works, not just runs | `./clawforge smoke` | exercises it end to end — the agent answers, config drift self-heals, snapshots round-trip — `status`/`inspect`/`doctor` only observe |
-| Change the declared configuration | edit the declaration, then `./clawforge plan` → `./clawforge apply` | `apply-config` re-applies the current declaration as it stands, without planning first — the only path before the instance exists at all (bootstrap uses it) and, with `--dry-run`, the only one that actually validates against the target rather than just listing the plan; `configure-provider` only wires a model provider from a secret; `secrets --apply` only pushes secret values into force — none of the three touch `desired-state.json` itself |
-| Save or restore a point-in-time snapshot | `./clawforge backup` / `./clawforge restore` | one archive of this instance's data, by name, kept on the target (the server itself for SSH, not this machine) |
-| Run backups on a schedule | `./clawforge backup install` | crontab (or, on Windows, a printed/applyable Task Scheduler entry) that runs a plain `backup` on `--interval` (default 1d) — pairs with `OC_BACKUP_KEEP` |
-| Move or share an instance's state | `./clawforge pull` / `./clawforge push` | same archive format as backup, meant to travel instead — `migrate`/`share` profiles leave secrets out |
-| Update the OpenClaw image | `./clawforge upgrade` | resolves to a digest, backs up first, rolls back automatically on failure |
-| Reach a loopback-bound gateway from outside this host | `./clawforge expose` | an SSH tunnel, a tailnet-only `tailscale serve`, or a status report — narrowest scope first |
-| Get paged when the instance breaks | `./clawforge watch install` | a cron probe plus a webhook fired only on a state transition — on Windows it prints a ready Task Scheduler command (and, with `--apply`, can install it directly) instead of a crontab entry |
-| Respond to a suspected compromise | `./clawforge incident` | contain exposure → preserve evidence → rotate the gateway token → audit → collect |
-| Move a deployment onto a server | `./clawforge deploy user@host` | mirrors the framework and this deployment's config over SSH; credentials never leave this machine |
-| See every deployment in this checkout | `./clawforge list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |
-| Read the service log | `./clawforge logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
-| Get shell tab-completion | `eval "$(./clawforge completion bash)"` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
-| Undo a deployment | `./clawforge destroy` then `./clawforge remove-app <name>` | dry run by default; `destroy` removes the instance (containers always, data/backups/snapshots each behind its own flag), `remove-app` deletes `apps/<name>/` itself — see [Removing a deployment](docs/guide/operations.md#removing-a-deployment) |
-| Run something a recipe knows how to do | `./clawforge recipe run <name> <action> key=value` | actions a recipe's `recipe.json` declares, previewed with `--dry-run`; `recipe trial` proves a recipe against a throwaway copy of its data, `recipe pin` refreshes pinned release artifacts, `recipe check` runs its own `*.check.ts` files — see [Recipe actions](docs/guide/recipes.md#recipe-actions) and the [cookbook](docs/guide/recipes-cookbook.md#run-a-one-off-action-against-a-running-recipe) |
-| Move a recipe off its legacy stack when `recipe migrate` cannot | `./clawforge recipe retire-legacy <name>` | previews the proven-owned inventory; `--apply` stops, cold-backs-up and removes the legacy containers only, then `recipe install` proceeds — see [Existing-stack cutover](docs/guide/recipes.md#existing-stack-cutover) |
+| Check whether a fresh host is actually ready to bootstrap | `./clawwright bootstrap --check` | read-only: docker, compose v2, the data/backup/snapshot directories, the gateway port, free disk space — no lock, nothing created |
+| Bring a fresh instance up | `./clawwright bootstrap` | idempotent — safe to run again on a live instance |
+| Check what's running right now | `./clawwright status` | containers, image, health probes, disk — a snapshot, not a verdict |
+| Get a pass/fail exit code for scripts | `./clawwright doctor` | the same inspection `inspect` computes, but exits non-zero on a blocking finding |
+| Understand what's wrong and why | `./clawwright inspect` | every declared-vs-running difference, each with a stable code and a remedy; read-only, never fails the process |
+| Prove the instance actually works, not just runs | `./clawwright smoke` | exercises it end to end — the agent answers, config drift self-heals, snapshots round-trip — `status`/`inspect`/`doctor` only observe |
+| Change the declared configuration | edit the declaration, then `./clawwright plan` → `./clawwright apply` | `apply-config` re-applies the current declaration as it stands, without planning first — the only path before the instance exists at all (bootstrap uses it) and, with `--dry-run`, the only one that actually validates against the target rather than just listing the plan; `configure-provider` only wires a model provider from a secret; `secrets --apply` only pushes secret values into force — none of the three touch `desired-state.json` itself |
+| Save or restore a point-in-time snapshot | `./clawwright backup` / `./clawwright restore` | one archive of this instance's data, by name, kept on the target (the server itself for SSH, not this machine) |
+| Run backups on a schedule | `./clawwright backup install` | crontab (or, on Windows, a printed/applyable Task Scheduler entry) that runs a plain `backup` on `--interval` (default 1d) — pairs with `OC_BACKUP_KEEP` |
+| Move or share an instance's state | `./clawwright pull` / `./clawwright push` | same archive format as backup, meant to travel instead — `migrate`/`share` profiles leave secrets out |
+| Update the OpenClaw image | `./clawwright upgrade` | resolves to a digest, backs up first, rolls back automatically on failure |
+| Reach a loopback-bound gateway from outside this host | `./clawwright expose` | an SSH tunnel, a tailnet-only `tailscale serve`, or a status report — narrowest scope first |
+| Get paged when the instance breaks | `./clawwright watch install` | a cron probe plus a webhook fired only on a state transition — on Windows it prints a ready Task Scheduler command (and, with `--apply`, can install it directly) instead of a crontab entry |
+| Respond to a suspected compromise | `./clawwright incident` | contain exposure → preserve evidence → rotate the gateway token → audit → collect |
+| Move a deployment onto a server | `./clawwright deploy user@host` | mirrors the framework and this deployment's config over SSH; credentials never leave this machine |
+| See every deployment in this checkout | `./clawwright list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |
+| Read the service log | `./clawwright logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
+| Get shell tab-completion | `eval "$(./clawwright completion bash)"` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
+| Undo a deployment | `./clawwright destroy` then `./clawwright remove-app <name>` | dry run by default; `destroy` removes the instance (containers always, data/backups/snapshots each behind its own flag), `remove-app` deletes `apps/<name>/` itself — see [Removing a deployment](docs/guide/operations.md#removing-a-deployment) |
+| Run something a recipe knows how to do | `./clawwright recipe run <name> <action> key=value` | actions a recipe's `recipe.json` declares, previewed with `--dry-run`; `recipe trial` proves a recipe against a throwaway copy of its data, `recipe pin` refreshes pinned release artifacts, `recipe check` runs its own `*.check.ts` files — see [Recipe actions](docs/guide/recipes.md#recipe-actions) and the [cookbook](docs/guide/recipes-cookbook.md#run-a-one-off-action-against-a-running-recipe) |
+| Move a recipe off its legacy stack when `recipe migrate` cannot | `./clawwright recipe retire-legacy <name>` | previews the proven-owned inventory; `--apply` stops, cold-backs-up and removes the legacy containers only, then `recipe install` proceeds — see [Existing-stack cutover](docs/guide/recipes.md#existing-stack-cutover) |
 
 ## Commands
 
 ```bash
-./clawforge help               # the same list as below, current as of the moment you run it
-./clawforge help <command>     # full description of a command and its arguments
-./clawforge <command> --help   # the same thing, different syntax
+./clawwright help               # the same list as below, current as of the moment you run it
+./clawwright help <command>     # full description of a command and its arguments
+./clawwright <command> --help   # the same thing, different syntax
 ```
 
 Grouped by operator intent, one line each — full signatures and behavior in
@@ -199,10 +199,10 @@ Framework:
   new-app              Create a deployment under apps/
   remove-app           Delete apps/<name> *
   list                 List deployments under apps/
-  version              Print clawforge's own version (also: --version, -v)
+  version              Print clawwright's own version (also: --version, -v)
   completion           Print a shell completion script (bash, zsh or pwsh) to stdout
   --app <name>         Pick another deployment, before the command (default: the OC_APP one)
-  control-mcp          Expose clawforge's commands as MCP tools, for agents
+  control-mcp          Expose clawwright's commands as MCP tools, for agents
   help <command>       Same as: <command> --help
 
   ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
@@ -214,7 +214,7 @@ Framework:
 * [docs/guide/requirements.md](docs/guide/requirements.md) — which target (`local`/`wsl`/`ssh`)
   each host OS can run, what each combination means, how to test it
 * [docs/guide/commands.md](docs/guide/commands.md) — full command reference: every argument
-  and behavior, plus `./clawforge host`
+  and behavior, plus `./clawwright host`
 * [docs/guide/operations.md](docs/guide/operations.md) — changing the declared configuration
   (`inspect`/`plan`/`apply`), the instance lock, rollback, `accept`, instance settings as code
 * [docs/guide/data-and-backups.md](docs/guide/data-and-backups.md) — data layout, provider
@@ -238,7 +238,7 @@ Framework:
   side, installing as an npm dependency, deploying to a server, recovering a lost deployment
   folder, MCP setup for Claude Code and Codex
 * [docs/architecture.md](docs/architecture.md) — how the framework is put together, source
-  layout, design rationale, what `./clawforge check` covers
+  layout, design rationale, what `./clawwright check` covers
 * [docs/first-hour-acceptance.md](docs/first-hour-acceptance.md) — manual acceptance run for
   a fresh deployment
 
@@ -248,18 +248,18 @@ Framework:
 | --- | --- |
 | `node not found` / too old | Node 24+ is required. Inside WSL the Windows Node is visible through `/mnt/c` — it will not see `/srv` or Docker in WSL |
 | `permission denied` on `/home/node/.openclaw` | The bind mount is not owned by uid 1000: `sudo chown -R 1000:1000 /srv/openclaw/data` |
-| The gateway does not come up | `./clawforge logs`; the healthz/startupz/readyz probes and Docker's verdict are in `./clawforge status` |
+| The gateway does not come up | `./clawwright logs`; the healthz/startupz/readyz probes and Docker's verdict are in `./clawwright status` |
 | The container is forever `unhealthy` while the service answers | The healthcheck points at a file that does not exist; image 2026.6.34 needs `curl -fsS /healthz` |
 | `SecretRefResolutionError` and a crash loop | The config references a variable missing from `config/.env` |
 | `127.0.0.1` does not reach a service on the host | Inside the container that is the container itself — use `host.docker.internal` |
-| `... needs root and sudo asks for a password` | A directory this deployment needs is owned by root and there is nowhere to type a password. The refusal now names every directory the deployment will need, not just the one that failed first — usually one `sudo install -d -o 1000 -g 1000 <shared root>`, run once on the target. `./clawforge bootstrap --check` catches this before the first bootstrap ever runs, naming the exact command for each directory that needs it |
+| `... needs root and sudo asks for a password` | A directory this deployment needs is owned by root and there is nowhere to type a password. The refusal now names every directory the deployment will need, not just the one that failed first — usually one `sudo install -d -o 1000 -g 1000 <shared root>`, run once on the target. `./clawwright bootstrap --check` catches this before the first bootstrap ever runs, naming the exact command for each directory that needs it |
 | `port 18789 is already published by ...` / `... is already listening (...)` | The first is another deployment's Docker container; the second is a bare process Docker never published (`ss`/`netstat` on the target caught it, before pulling or preparing data). Either way: set your own `OPENCLAW_GATEWAY_PORT` in `.env`, or stop whatever is using this one |
-| `bootstrap` fails mid-mutation with an opaque `find`/`stat`/`readlink`/`tar` error | The target's userland is BusyBox (Alpine without `coreutils`/`findutils`/`tar`) or BSD (a macOS `ssh` target, a minimal container) — this framework's target-side commands are GNU-specific (see [docs/guide/requirements.md](docs/guide/requirements.md#target-userland)). `./clawforge bootstrap --check` catches this first and names the exact tool(s) missing (`TARGET_NOT_GNU`) |
+| `bootstrap` fails mid-mutation with an opaque `find`/`stat`/`readlink`/`tar` error | The target's userland is BusyBox (Alpine without `coreutils`/`findutils`/`tar`) or BSD (a macOS `ssh` target, a minimal container) — this framework's target-side commands are GNU-specific (see [docs/guide/requirements.md](docs/guide/requirements.md#target-userland)). `./clawwright bootstrap --check` catches this first and names the exact tool(s) missing (`TARGET_NOT_GNU`) |
 | The Control UI reports "Browser origin not allowed" | The gateway was never told this origin: declare it in `gateway.controlUi.allowedOrigins`, apply, and restart the gateway (`docker compose up` alone will not recreate a healthy container) |
 
 ## License
 
-ClawForge is dual-licensed under the MIT License or the Apache License, Version 2.0. See
+Clawwright is dual-licensed under the MIT License or the Apache License, Version 2.0. See
 `LICENSE-MIT`, `LICENSE-APACHE`, and `THIRD_PARTY_NOTICES.md`.
 
 ## Sources

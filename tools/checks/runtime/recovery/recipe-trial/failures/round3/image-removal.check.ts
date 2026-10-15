@@ -30,7 +30,7 @@ async function runCaptured(fixture: ReturnType<typeof trialFixture>): Promise<{ 
   return { output: chunks.join(""), thrown: result.thrown };
 }
 
-const root = await useRecipesRoot("clawforge-recipe-trial-image-rm");
+const root = await useRecipesRoot("clawwright-recipe-trial-image-rm");
 try {
   await root.write("subject", { description: "A recipe with two build services" });
 
@@ -113,17 +113,17 @@ try {
   const home = fixture.mkdirPrivateCalls[0] ?? "";
   const overrideDoc = fixture.files.get(`${home}/override.yml`) ?? "";
   const SP4 = String.fromCharCode(32, 32, 32, 32);
-  const imageLine = new RegExp("^" + SP4 + "image: (clawforge-recipe-trial-build-[0-9a-f]{12}-[0-9a-f]{8}--builder)$", "m").exec(overrideDoc);
-  checkTrue("the override sets image: for the build service to a trial build tag", imageLine !== null || fixture.docker.some((argv) => argv.at(-1)?.startsWith("clawforge-recipe-trial-build-") && argv.at(-1)?.endsWith("--builder")));
+  const imageLine = new RegExp("^" + SP4 + "image: (clawwright-recipe-trial-build-[0-9a-f]{12}-[0-9a-f]{8}--builder)$", "m").exec(overrideDoc);
+  checkTrue("the override sets image: for the build service to a trial build tag", imageLine !== null || fixture.docker.some((argv) => argv.at(-1)?.startsWith("clawwright-recipe-trial-build-") && argv.at(-1)?.endsWith("--builder")));
   let recordedTag = imageLine?.[1] ?? "";
   if (recordedTag === "") {
     for (const argv of fixture.docker) {
       const candidate = argv.at(-1) ?? "";
-      if (candidate.startsWith("clawforge-recipe-trial-build-") && candidate.endsWith("--builder")) recordedTag = candidate;
+      if (candidate.startsWith("clawwright-recipe-trial-build-") && candidate.endsWith("--builder")) recordedTag = candidate;
     }
   }
   checkTrue("the trial tag carries the recipe's hash prefix",
-    recordedTag.startsWith(`clawforge-recipe-trial-build-${trialHashFor("built")}-`));
+    recordedTag.startsWith(`clawwright-recipe-trial-build-${trialHashFor("built")}-`));
 
   checkTrue("no docker argv carries the base config's original image tag",
     fixture.docker.every((argv) => !argv.includes(LIVE_TAG)));
@@ -134,7 +134,7 @@ try {
   check("teardown removes exactly the recorded tags", removals.map((argv) => argv[3]), [recordedTag]);
   checkTrue("the down keeps --rmi local", fixture.docker.some((argv) => argv.includes("--rmi") && argv.includes("local")));
   checkTrue("the labelled-image check still ran for the trial project",
-    fixture.docker.some((argv) => argv.some((arg) => arg.startsWith("label=com.docker.compose.project=clawforge-recipe-trial-"))));
+    fixture.docker.some((argv) => argv.some((arg) => arg.startsWith("label=com.docker.compose.project=clawwright-recipe-trial-"))));
 }
 
 finish("recipe-trial-round3-image-removal");

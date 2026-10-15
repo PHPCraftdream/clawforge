@@ -1,14 +1,14 @@
 // check:exclusive — writes a scratch deployment into apps/ that the gate spawns it drives resolve under this checkout's apps/, which siblings' gate spawns and any apps/ enumeration must not see; exclusivity also keeps the runner's checkout guard from racing the fixture.
 // Checks that --help actually shows help for the framework-level pseudo-commands —
 // new-app, control-mcp, help itself — instead of running the real thing. Also checks that
-// `./clawforge help` works in a checkout with no deployments at all, before any app.ts exists to
+// `./clawwright help` works in a checkout with no deployments at all, before any app.ts exists to
 // load commands from.
 //
-// control-mcp is the sharp edge: before this was fixed, `./clawforge control-mcp --help` started
+// control-mcp is the sharp edge: before this was fixed, `./clawwright control-mcp --help` started
 // the real MCP server and waited on stdin forever, since --help was only checked for
 // commands looked up in app.commands, and control-mcp is dispatched before that lookup
 // ever runs. A hang can't be told apart from a slow process without a real timeout, so
-// this spawns the real gate (tools/clawforge.ts) with a bounded wait rather than asserting on a
+// this spawns the real gate (tools/clawwright.ts) with a bounded wait rather than asserting on a
 // direct function call.
 
 import { rm, readFile } from "node:fs/promises";
@@ -35,7 +35,7 @@ await mkdir(resolve(childSource.root, "apps"));
 async function runGate(args: string[], timeoutMs = CHILD_NODE_DEADLINE_MS): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
   const { code, output, timedOut } = await runProcess(
     process.execPath,
-    ["--experimental-strip-types", resolve(childSource.root, "tools", "clawforge.ts"), ...args],
+    ["--experimental-strip-types", resolve(childSource.root, "tools", "clawwright.ts"), ...args],
     { cwd: childSource.root, keepStdinOpen: true, timeoutMs },
   );
   return { code, stdout: output, timedOut };
@@ -99,7 +99,7 @@ try {
 
   const helpHelp = await runGate(["--app", deploymentName, "help", "--help"]);
   check("help --help exits cleanly", helpHelp.code, 0);
-  check("help --help falls back to the command list", helpHelp.stdout.includes(`Usage: ./clawforge --app ${deploymentName} <command>`), true);
+  check("help --help falls back to the command list", helpHelp.stdout.includes(`Usage: ./clawwright --app ${deploymentName} <command>`), true);
 
   // `help control-mcp` used to fail with "unknown command: control-mcp / did you mean:
   // control-mcp" — the general help and completion both offer it, but renderHelp knew only
@@ -129,7 +129,7 @@ try {
   check("help help exits cleanly", helpForHelp.code, 0);
   check("help help does not report itself as unknown", helpForHelp.stdout.includes("unknown command"), false);
   check("help help does not suggest itself", helpForHelp.stdout.includes("did you mean: help"), false);
-  check("help help falls back to the command list", helpForHelp.stdout.includes(`Usage: ./clawforge --app ${deploymentName} <command>`), true);
+  check("help help falls back to the command list", helpForHelp.stdout.includes(`Usage: ./clawwright --app ${deploymentName} <command>`), true);
 
   // `new-app a b` used to read args[0] directly, so "b" vanished silently instead of being
   // refused — the shared declaration parser refuses any token past the one declared positional.
@@ -138,15 +138,15 @@ try {
   check("new-app with an extra positional names the stray token", extraPositional.stdout.includes("unknown argument: b"), true);
 
   // The gate used to check the deployment exists before it ever looked at what command was
-  // asked for, so `./clawforge help` in a completely fresh checkout (no apps/<name> yet — exactly
+  // asked for, so `./clawwright help` in a completely fresh checkout (no apps/<name> yet — exactly
   // when someone reaches for help) failed with "deployment not found" instead of listing
   // commands. Deliberately never created, unlike deploymentName above.
   const neverCreated = `cli-help-check-missing-${randomBytes(4).toString("hex")}`;
   const helpBeforeSetup = await runGate(["--app", neverCreated, "help"]);
-  check("./clawforge help works before any deployment exists", helpBeforeSetup.code, 0);
+  check("./clawwright help works before any deployment exists", helpBeforeSetup.code, 0);
   check(
-    "./clawforge help before setup still lists real commands",
-    helpBeforeSetup.stdout.includes("bootstrap") && helpBeforeSetup.stdout.includes("Usage: ./clawforge <command>"),
+    "./clawwright help before setup still lists real commands",
+    helpBeforeSetup.stdout.includes("bootstrap") && helpBeforeSetup.stdout.includes("Usage: ./clawwright <command>"),
     true,
   );
 
@@ -160,9 +160,9 @@ try {
   // Before this fix, this branch always ended in process.exit(0) regardless of what runApp()
   // reported — a typo'd sub-argument printed "unknown command" yet still exited success.
   const helpTypoBeforeSetup = await runGate(["--app", neverCreated, "help", "lsit"]);
-  check("./clawforge help <typo> exits non-zero", helpTypoBeforeSetup.code === 0, false);
+  check("./clawwright help <typo> exits non-zero", helpTypoBeforeSetup.code === 0, false);
   check(
-    "./clawforge help <typo> still names the unknown command",
+    "./clawwright help <typo> still names the unknown command",
     helpTypoBeforeSetup.stdout.includes("unknown command: lsit"),
     true,
   );

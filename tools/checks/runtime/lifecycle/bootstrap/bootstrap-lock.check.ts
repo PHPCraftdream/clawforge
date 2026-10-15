@@ -1,4 +1,4 @@
-// `./clawforge bootstrap` must hold the instance lock across its ENTIRE mutating sequence,
+// `./clawwright bootstrap` must hold the instance lock across its ENTIRE mutating sequence,
 // not rely on the sub-commands it calls (applyConfig, configureProvider) to each take their
 // own separately.
 //
@@ -22,7 +22,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 
-const deployment = await mkdtemp(join(tmpdir(), "clawforge-bootstrap-lock-check-"));
+const deployment = await mkdtemp(join(tmpdir(), "clawwright-bootstrap-lock-check-"));
 try {
   await mkdir(resolve(deployment, "config"), { recursive: true });
   await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
@@ -295,7 +295,7 @@ try {
 
     check(
       "a fresh host does not die inside the lock claim telling the reader to run bootstrap",
-      freshError.includes("./clawforge bootstrap prepares it"),
+      freshError.includes("./clawwright bootstrap prepares it"),
       false,
     );
     const homeMkdirIndex = freshExecCalls.findIndex((call) => call[0] === "sudo" && call.includes("mkdir") && call.includes(home));
@@ -427,7 +427,7 @@ try {
       description: "stub",
       async exists(path: string): Promise<boolean> {
         // The root and its standard subdirectories are already there; the marker is not —
-        // nothing on this tree claims clawforge set it up.
+        // nothing on this tree claims clawwright set it up.
         if (path === `${dataDir}/${DATA_DIR_MARKER}`) return false;
         return path === dataDir || path === `${dataDir}/config` || path === `${dataDir}/workspace` || path === `${dataDir}/auth-secrets`;
       },

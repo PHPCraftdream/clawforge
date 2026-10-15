@@ -14,7 +14,7 @@ import { CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-app-recipes-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-app-recipes-"));
 const custom = join(root, "custom-recipes");
 const defaultRoot = join(root, "recipes");
 const sourceRoot = join(root, "source");

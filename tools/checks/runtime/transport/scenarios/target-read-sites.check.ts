@@ -27,10 +27,10 @@ const UNREACHABLE = new TransportUnreachableError(
   "check OC_WSL_DISTRO — list the real names with `wsl.exe -l -q`",
 );
 
-const LIVE = "/srv/clawforge/config/openclaw.json";
-const DESTINATION = "/srv/clawforge/clawforge-operations/apply-1.openclaw.json";
-const OPERATIONS_DIR = "/srv/clawforge/clawforge-operations";
-const RENDERED_ON = { program: "clawforge", mode: "installed", audience: "terminal" } as const;
+const LIVE = "/srv/clawwright/config/openclaw.json";
+const DESTINATION = "/srv/clawwright/clawwright-operations/apply-1.openclaw.json";
+const OPERATIONS_DIR = "/srv/clawwright/clawwright-operations";
+const RENDERED_ON = { program: "clawwright", mode: "installed", audience: "terminal" } as const;
 
 interface TransportDoubleOptions {
   exists?: (path: string) => Promise<boolean>;
@@ -42,7 +42,7 @@ interface TransportDoubleOptions {
 
 function contextWith(options: TransportDoubleOptions, writes?: string[]): Context {
   return {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       description: "wsl:Nope",
       async exists(path: string): Promise<boolean> {
@@ -184,7 +184,7 @@ const SITE_CASES: SiteCase[] = [
     name: "readOperation: an unreadable record is unknown, not not-recorded",
     transport: { exists: async () => true, readFile: async () => { throw new Error("EACCES"); } },
     run: (ctx) => readOperation(ctx, "20260101000000000-apply-ab12cd"),
-    expect: { kind: "unknown", errorType: TargetReadUnknownError, messageIncludes: "clawforge-operations", adviceNames: "status" },
+    expect: { kind: "unknown", errorType: TargetReadUnknownError, messageIncludes: "clawwright-operations", adviceNames: "status" },
   },
   // --- site: the pre-write live config read ---------------------------------------------------------
   {
@@ -219,7 +219,7 @@ const fixture = await createDeploymentFixture();
   // Drive snapshotConfig on the fixture's own recording transport.
   const recording = fixture.transport();
   const fixtureCtx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: recording,
   } as unknown as Context;
   try { await snapshotConfig(fixtureCtx, "apply-1"); } catch (error) { thrown = error; }

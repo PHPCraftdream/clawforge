@@ -15,7 +15,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 const backupInstall = (ctx: any, args: string[]) => openclawCommands.backup.run(ctx, ["install", ...args]);
 const backupUninstall = (ctx: any, args: string[]) => openclawCommands.backup.run(ctx, ["uninstall", ...args]);
 
-const parent = await mkdtemp(join(tmpdir(), "clawforge-scheduler-identity-"));
+const parent = await mkdtemp(join(tmpdir(), "clawwright-scheduler-identity-"));
 const roots = [join(parent, "team-a", "deployment"), join(parent, "team-b", "deployment")];
 const manual = "MAILTO=operator@example.invalid\n\n0 3 * * * /usr/bin/manual-backup\n# manual scheduler note\n";
 let table = manual;
@@ -23,7 +23,7 @@ const contexts: Context[] = [];
 try {
   for (const [index, root] of roots.entries()) {
     await mkdir(root, { recursive: true });
-    await writeFile(join(root, "clawforge"), "");
+    await writeFile(join(root, "clawwright"), "");
     await writeFile(join(root, ".env"), `OC_COMPOSE_PROJECT=team-${index}\nOC_DATA_DIR=${join(root, "data")}\n`);
     const fixture = stubContext();
     const baseExec = fixture.ctx.transport.exec.bind(fixture.ctx.transport);
@@ -37,7 +37,7 @@ try {
         description: "local",
         clientInvocation: (entry: string, args: string[]) => ({ command: entry, args }),
         async exec(command: string, args: string[]) {
-          if (command === "sh" && args[2] === "clawforge-crontab-update") {
+          if (command === "sh" && args[2] === "clawwright-crontab-update") {
             const mutation = stubCrontabTransaction(args, table);
             table = mutation.next;
             return mutation.result;
@@ -111,7 +111,7 @@ try {
   const tasks = new Map<string, string>();
   const calls: string[][] = [];
   // A pre-key task cannot safely establish root ownership: never overwrite/delete it.
-  tasks.set("clawforge-deployment-backup", "ambiguous old task action");
+  tasks.set("clawwright-deployment-backup", "ambiguous old task action");
   await withOutputSink(() => {}, () => withScheduleRunner(
     async (_command, args) => {
       calls.push([...args]);
@@ -147,7 +147,7 @@ try {
       }
     }, "win32",
   ));
-  check("ambiguous previous Windows task is never touched", tasks.get("clawforge-deployment-backup"), "ambiguous old task action");
+  check("ambiguous previous Windows task is never touched", tasks.get("clawwright-deployment-backup"), "ambiguous old task action");
 } finally {
   await rm(parent, { recursive: true, force: true });
 }

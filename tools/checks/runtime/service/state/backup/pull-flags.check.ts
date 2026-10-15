@@ -1,6 +1,6 @@
 // `backup` and `pull` must accept the same profile shorthand vocabulary
 // (--share/--with-secrets/--migrate, alongside --profile and --hot), only their DEFAULT
-// profile differs (backup: full, pull: migrate). Before this fix, `./clawforge backup --share`
+// profile differs (backup: full, pull: migrate). Before this fix, `./clawwright backup --share`
 // failed with "unknown argument: --share".
 //
 // Two tiers: an unrecognised flag or an invalid --profile value dies inside the parsing loop

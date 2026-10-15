@@ -262,7 +262,7 @@ async function upgradeLocked(
   info(`re-pin the deployment's own record of this: ${commandLine("lock")}`);
 }
 
-/** `clawforge upgrade` — pulls the target image by digest (never moving a shared local tag),
+/** `clawwright upgrade` — pulls the target image by digest (never moving a shared local tag),
  *  takes a consistent pre-upgrade backup, recreates the gateway on it, and rolls back to the
  *  digest it was running before on any failure — restoring that backup too when the failure
  *  was a migration (exit 78) that may already have changed the data.

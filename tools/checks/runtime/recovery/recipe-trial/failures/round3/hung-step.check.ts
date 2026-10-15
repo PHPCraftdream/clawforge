@@ -13,7 +13,7 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 // Test seam: the check needs the timeout BEHAVIOUR, not the 60 s wait; product default unchanged.
 process.env.OC_TRIAL_TEARDOWN_TIMEOUT_MS = "1000";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-hang");
+const root = await useRecipesRoot("clawwright-recipe-trial-hang");
 /** The check-side ceiling: above the product's own per-step teardown deadline, so the
  *  race wins and the check passes; below it, the old timer-only code would hang here. */
 const CHECK_BUDGET_MS = 180_000;
@@ -60,7 +60,7 @@ try {
   checkTrue("the labelled-image query still ran after the hung step",
     fixture.docker.some((argv) => argv[0] === "images" && argv.some((entry) => entry.includes("label="))));
   checkTrue("the scratch home was still removed after the hung step",
-    fixture.removed.some((path) => path.includes(".clawforge-recipe-trial-")));
+    fixture.removed.some((path) => path.includes(".clawwright-recipe-trial-")));
   checkTrue("the whole affair stayed bounded", Date.now() - started < CHECK_BUDGET_MS);
 } finally {
   await root.dispose();

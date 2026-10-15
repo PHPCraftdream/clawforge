@@ -1,4 +1,4 @@
-// `./clawforge rollback --previous-set` — reinstalling the previous set, and refusing honestly when it can't.
+// `./clawwright rollback --previous-set` — reinstalling the previous set, and refusing honestly when it can't.
 //
 // Two ways to have nothing to go back to: no previous set was ever recorded, or one was but
 // its artifact is gone from sets/. Both must refuse by name rather than fail deep inside
@@ -59,7 +59,7 @@ async function refusal(ctx: Context): Promise<string> {
   return message;
 }
 
-const deployment = await mkdtemp(join(tmpdir(), "clawforge-rollback-set-check-"));
+const deployment = await mkdtemp(join(tmpdir(), "clawwright-rollback-set-check-"));
 try {
   await mkdir(resolve(deployment, "sets"), { recursive: true });
   useDeployment(deployment);
@@ -67,7 +67,7 @@ try {
   // --- nothing recorded at all ---------------------------------------------------------------
 
   {
-    const { ctx } = stubContext("/srv/clawforge");
+    const { ctx } = stubContext("/srv/clawwright");
     const message = await refusal(ctx);
     check("with no set ever installed, it refuses", message !== "", true);
     check("naming that there is no previous on record", message.includes("no previous set is recorded"), true);
@@ -76,7 +76,7 @@ try {
   // --- a previous is recorded, but only one set has ever been installed ----------------------
 
   {
-    const { ctx } = stubContext("/srv/clawforge");
+    const { ctx } = stubContext("/srv/clawwright");
     const first = { name: "alpha", requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:aaa" } } as SetManifest;
     await recordInstalledSet(ctx, first, setManifestId(first));
 
@@ -87,7 +87,7 @@ try {
   // --- a previous is recorded, but its artifact is gone from sets/ ---------------------------
 
   {
-    const { ctx } = stubContext("/srv/clawforge");
+    const { ctx } = stubContext("/srv/clawwright");
     const first = { name: "alpha", requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:aaa" } } as SetManifest;
     await recordInstalledSet(ctx, first, setManifestId(first));
     const second = { name: "beta", requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:bbb" } } as SetManifest;
@@ -103,7 +103,7 @@ try {
   // --- the artifact IS there: the refusal this file is testing must not fire -----------------
 
   {
-    const { ctx } = stubContext("/srv/clawforge");
+    const { ctx } = stubContext("/srv/clawwright");
     const first = { name: "alpha", requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:aaa" } } as SetManifest;
     const firstId = setManifestId(first);
     await recordInstalledSet(ctx, first, firstId);
@@ -121,7 +121,7 @@ try {
   // --- --operation / --no-restart belong to the single-file path, not this one --------------
 
   {
-    const { ctx } = stubContext("/srv/clawforge");
+    const { ctx } = stubContext("/srv/clawwright");
     let message = "";
     await withOutputSink(
       () => {},

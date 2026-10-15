@@ -33,7 +33,7 @@ import type { AppCommand, AppDefinition } from "#framework/core/app.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function withFreshDeployment<T>(body: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(resolve(tmpdir(), "clawforge-env-prep-check-"));
+  const dir = await mkdtemp(resolve(tmpdir(), "clawwright-env-prep-check-"));
   const previous = (() => {
     try { return deploymentDir(); } catch { return undefined; }
   })();

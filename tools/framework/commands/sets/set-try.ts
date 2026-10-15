@@ -1,4 +1,4 @@
-// `clawforge set try --set <artifact>` — install a set into a throwaway instance, run its
+// `clawwright set try --set <artifact>` — install a set into a throwaway instance, run its
 // acceptance checks, tear it down: "does it actually work" without touching the real
 // deployment.
 //

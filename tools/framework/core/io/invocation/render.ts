@@ -1,4 +1,4 @@
-// The one renderer for advice: a clawforge command, a shell line or a manual step becomes
+// The one renderer for advice: a clawwright command, a shell line or a manual step becomes
 // the exact text a user pastes. The `--app` rule and argument quoting live here and only
 // here; advice.ts is data. The program is spelled by the frame (frame.ts): the installed
 // launch spells as handed, a checkout-root row spells from the root — by the KIND of
@@ -123,7 +123,7 @@ export function renderArguments(argv: readonly string[]): string {
 /** Programs that find their deployment from the cwd (entry/resolve.ts aliases the same
  *  list, which needs it for the cwd re-selection): the system-wide command, a deployment's
  *  own shim and npm's bin wrapper. A path spelling (the MCP launcher) never reads the cwd. */
-export const CWD_RESOLVING_PROGRAMS: readonly string[] = ["clawforge", SHIM_PROGRAM, WINDOWS_BIN_PROGRAM];
+export const CWD_RESOLVING_PROGRAMS: readonly string[] = ["clawwright", SHIM_PROGRAM, WINDOWS_BIN_PROGRAM];
 /** The note a paste-conflict row carries (rf6-fix33) — exported so the matrix check strips
  *  exactly what the renderer adds. */
 export const CWD_CONFLICT_NOTE = "from the checkout root";
@@ -350,7 +350,7 @@ export function renderAdviceParts(
   };
   const quote = (word: string): string => (posixOnly ? posixArgument(word) : shellArgument(word));
   // The program quotes by the same rule as an argument (review R9-A R9-4): a hand-set
-  // CLAWFORGE_INVOCATION whose program carries a space must still render a pasteable line.
+  // CLAWWRIGHT_INVOCATION whose program carries a space must still render a pasteable line.
   const parts = [SAFE_PROGRAM.test(program) ? program : quote(program)];
   if (projectRoot !== undefined) {
     // Decision O2: the selector reads --project-root as the first token; the path it names

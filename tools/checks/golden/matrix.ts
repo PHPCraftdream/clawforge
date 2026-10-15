@@ -28,18 +28,18 @@ import {
 
 /** The fake checkout root. Path-shaped so node's resolve/relative see a normal tree; the
  *  renderer strips whatever drive prefix this host's path module puts in front of it. */
-const ROOT = "/clawforge-checkout";
+const ROOT = "/clawwright-checkout";
 const APP = "/home/u/app";
 const APP_LOCAL = "/home/u/app-local";
 const EMPTY = "/home/u/empty";
 const STRAY = `${ROOT}/stray-sub`;
-const SELF = "/usr/local/lib/node_modules/@clawforge/framework/dist/entry/bin.js";
-const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@clawforge/framework/entry/bin.js`;
+const SELF = "/usr/local/lib/node_modules/clawwright/dist/entry/bin.js";
+const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/clawwright/entry/bin.js`;
 
-/** The frame the installed command builds its refusals as ("clawforge"): the golden's
+/** The frame the installed command builds its refusals as ("clawwright"): the golden's
  *  builders pin it, because the bash shim row's drop decision reads the frame at build
  *  time — the entries themselves build after bin.ts has installed the real one. */
-const INSTALLED_FRAME: Frame = frameFromInvocation({ program: "clawforge", mode: "installed", audience: "terminal" }, { host: "posix", msys: false });
+const INSTALLED_FRAME: Frame = frameFromInvocation({ program: "clawwright", mode: "installed", audience: "terminal" }, { host: "posix", msys: false });
 
 /** A tiny in-memory file system: exact paths plus a canonical-spelling map (Windows case).
  *  Lookups are normalised, because node's resolve spells fake paths with this host's drive
@@ -62,14 +62,14 @@ export function fakeFs(files: Record<string, string>, dirs: readonly string[], r
   };
 }
 
-const manifest = JSON.stringify({ name: "@clawforge/framework" });
+const manifest = JSON.stringify({ name: "clawwright" });
 const strayAppTs = 'import { defineApp } from "../../tools/framework/core/app.ts";\nexport default defineApp({});\n';
 
 /** Files/dirs shared by every layout, laid out once: the checkout with two deployments, the
  *  stray checkout-style app.ts outside apps/, the installed app, its local-package twin,
  *  and an empty directory. */
 const BASE_FILES: Record<string, string> = {
-  [`${ROOT}/tools/clawforge.ts`]: "// gate\n",
+  [`${ROOT}/tools/clawwright.ts`]: "// gate\n",
   [`${ROOT}/tools/framework/package.json`]: manifest,
   [`${ROOT}/apps/openclaw/app.ts`]: "export default {};\n",
   [`${ROOT}/apps/demo/app.ts`]: "export default {};\n",
@@ -99,14 +99,14 @@ interface CaseLayout {
 }
 
 /** The MCP launcher's program: its shim two levels up from the deployment. */
-const LAUNCHER_PROGRAM = "../../clawforge";
+const LAUNCHER_PROGRAM = "../../clawwright";
 
 const LAYOUTS: readonly CaseLayout[] = [
   { id: "checkout-root", gate: { cwd: ROOT, handedOver: false }, handover: { appRoot: ROOT }, installed: { cwd: ROOT } },
   { id: "apps-openclaw", gate: { cwd: `${ROOT}/apps/openclaw`, handedOver: true, program: SHIM_PROGRAM }, handover: { appRoot: `${ROOT}/apps/openclaw` } },
   // The bare program resolves its deployment from the cwd; the MCP launcher's program is a path
   // out of the deployment (the checkout gate), which never reads the cwd, so its advice keeps --app.
-  { id: "apps-demo-bare", gate: { cwd: `${ROOT}/apps/demo`, handedOver: true, program: "clawforge" }, handover: { appRoot: `${ROOT}/apps/demo` } },
+  { id: "apps-demo-bare", gate: { cwd: `${ROOT}/apps/demo`, handedOver: true, program: "clawwright" }, handover: { appRoot: `${ROOT}/apps/demo` } },
   { id: "apps-demo-launcher", gate: { cwd: `${ROOT}/apps/demo`, handedOver: true, program: LAUNCHER_PROGRAM }, handover: { appRoot: `${ROOT}/apps/demo` } },
   // APPS/<name> typed case: the hand-over's canonicalisation is decided here; whether the
   // handed-over gate process then sees its own cwd as inside is the host path module's case
@@ -176,7 +176,7 @@ const INSTALLED_GATE_COMMANDS = installedGate("<app-root>").map((command) => com
 /** The launch a hand-over program's spelling classifies as (renderArgument's rule). */
 const launchOfProgram = (program: string, cwd: string): Launch => {
   const fs = fakeFs(BASE_FILES, BASE_DIRS);
-  const on: Invocation = { program, mode: program === "clawforge" ? "installed" : "checkout", audience: "terminal" };
+  const on: Invocation = { program, mode: program === "clawwright" ? "installed" : "checkout", audience: "terminal" };
   const facts: HandoverFacts = { cwd, fs };
   return launchFromHandover(on, facts);
 };
@@ -189,7 +189,7 @@ function fakePath(text: string): string {
 
 /** Group 3 of the advice matrix (design 4.2): the refusals the pure entry decisions build,
  *  on the same fake layouts the matrix itself uses, as advice values — never rendered
- *  strings frozen at build time. A clawforge advice with an empty argv (the bare "run the
+ *  strings frozen at build time. A clawwright advice with an empty argv (the bare "run the
  *  gate" pointer) is left out: the matrix's P4 has no command word to check it against.
  *  The builders take the frame as an input (rf6-fix33), so no process-global pinning. */
 export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
@@ -197,7 +197,7 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
   const push = (label: string, error: UserError | undefined): void => {
     if (error === undefined) return;
     error.advice.forEach((advice, index) => {
-      if (advice.kind === "clawforge" && advice.argv.length === 0) return;
+      if (advice.kind === "clawwright" && advice.argv.length === 0) return;
       rows.push({ label: index === 0 ? label : `${label} (${index + 1})`, advice });
     });
   };
@@ -209,7 +209,7 @@ export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
   const fs = fakeFs(BASE_FILES, BASE_DIRS);
   // The installed entry: init inside the checkout, and the not-initialised refusal.
   const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs, frame: INSTALLED_FRAME });
-  if (inCheckout.kind === "refuse") inCheckout.refusals.forEach((refusal) => push("refusal: init inside a ClawForge checkout", refusal));
+  if (inCheckout.kind === "refuse") inCheckout.refusals.forEach((refusal) => push("refusal: init inside a Clawwright checkout", refusal));
   const outside = resolveInstalledEntry({ cwd: EMPTY, rawArgv: ["status"], platform: "linux", fs, frame: INSTALLED_FRAME });
   if (outside.kind === "run") {
     const missing = missingAppDecision({
@@ -418,7 +418,7 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
   const push = (label: string, error: UserError | undefined): void => {
     if (error === undefined) return;
     const shape = (advice: Advice): string =>
-      `${advice.kind}:${"argv" in advice ? advice.argv.join(" ") : ""}:${"text" in advice ? advice.text : ""}:${"note" in advice ? advice.note ?? "" : ""}:${advice.kind === "clawforge" ? advice.app ?? "" : ""}`;
+      `${advice.kind}:${"argv" in advice ? advice.argv.join(" ") : ""}:${"text" in advice ? advice.text : ""}:${"note" in advice ? advice.note ?? "" : ""}:${advice.kind === "clawwright" ? advice.app ?? "" : ""}`;
     const key = `${error.message}\n${error.advice.map(shape).join("|")}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -487,7 +487,7 @@ export function entryDecisionRefusals(): { label: string; error: UserError }[] {
  *  same rule entryRefusalAdvice applies). */
 export function gateInlineNoteAdvice(): { label: string; advice: Advice }[] {
   return checkoutInlineNotes()
-    .filter((advice) => advice.kind !== "clawforge" || advice.argv.length > 0)
+    .filter((advice) => advice.kind !== "clawwright" || advice.argv.length > 0)
     .map((advice, index) => ({ label: `gate inline note (${index + 1})`, advice }));
 }
 
@@ -500,7 +500,7 @@ export function placeNamingRefusals(frame: Frame): { label: string; error: UserE
   const rows: { label: string; error: UserError }[] = [];
   const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs, frame });
   if (inCheckout.kind === "refuse") {
-    inCheckout.refusals.forEach((refusal) => rows.push({ label: "init inside a ClawForge checkout", error: refusal }));
+    inCheckout.refusals.forEach((refusal) => rows.push({ label: "init inside a Clawwright checkout", error: refusal }));
   }
   const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs, frame });
   if (inSubfolder.kind === "run") {

@@ -12,7 +12,7 @@ import { resolveOnPath, shadowMessage } from "#tools/dev/resolve-on-path.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // Canonical, as classifyCopy reports it (macOS /var → /private/var, Windows 8.3 names).
-const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "clawforge-system-units-")));
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "clawwright-system-units-")));
 try {
   const fs: FsProbe = {
     exists: (path) => { try { accessSync(path); return true; } catch { return false; } },
@@ -41,17 +41,17 @@ try {
   check("the start itself counts with app.ts alone", findAppRootIn(join(app, "recipes"), fs), join(app, "recipes"));
 
   // --- the delegation flag covers one hand-over only --------------------------------------------
-  process.env.CLAWFORGE_DELEGATED = "1";
+  process.env.CLAWWRIGHT_DELEGATED = "1";
   check("the receiver reads the flag", takeDelegationFlag(), true);
-  check("and clears it, so its descendants never inherit it", process.env.CLAWFORGE_DELEGATED, undefined);
+  check("and clears it, so its descendants never inherit it", process.env.CLAWWRIGHT_DELEGATED, undefined);
   check("without the flag nothing is handed over", takeDelegationFlag(), false);
 
   // --- which copy runs ------------------------------------------------------------------------
   const checkout = join(scratch, "checkout");
   mkdirSync(join(checkout, "tools", "framework"), { recursive: true });
-  writeFileSync(join(checkout, "tools", "clawforge.ts"), "");
+  writeFileSync(join(checkout, "tools", "clawwright.ts"), "");
   check("a checkout's tools/framework is a checkout copy, path = the checkout root", classifyCopy(join(checkout, "tools", "framework")), { source: "checkout", path: checkout });
-  const local = join(app, "node_modules", "@clawforge", "framework");
+  const local = join(app, "node_modules", "clawwright");
   mkdirSync(local, { recursive: true });
   check("a package inside the app is local", classifyCopy(local, app).source, "local");
   check("the same package seen from another app is global", classifyCopy(local, join(scratch, "other")).source, "global");
@@ -62,18 +62,18 @@ try {
   const second = join(scratch, "second");
   mkdirSync(first);
   mkdirSync(second);
-  writeFileSync(join(first, "clawforge.cmd"), "");
-  writeFileSync(join(second, "clawforge"), "");
-  chmodSync(join(second, "clawforge"), 0o755);
+  writeFileSync(join(first, "clawwright.cmd"), "");
+  writeFileSync(join(second, "clawwright"), "");
+  chmodSync(join(second, "clawwright"), 0o755);
   const path = `${first}${delimiter}${second}`;
-  check("Windows: PATHEXT extensions are tried", resolveOnPath("clawforge", { Path: path, PATHEXT: ".exe;.cmd" }, true), join(first, "clawforge.cmd"));
-  check("POSIX: the bare name is found in the first directory holding it", resolveOnPath("clawforge", { PATH: path }, false), join(second, "clawforge"));
-  check("a missing command resolves to nothing", resolveOnPath("clawforge-nope", { PATH: path }, false), undefined);
-  const shim = join(scratch, "prefix", "clawforge");
+  check("Windows: PATHEXT extensions are tried", resolveOnPath("clawwright", { Path: path, PATHEXT: ".exe;.cmd" }, true), join(first, "clawwright.cmd"));
+  check("POSIX: the bare name is found in the first directory holding it", resolveOnPath("clawwright", { PATH: path }, false), join(second, "clawwright"));
+  check("a missing command resolves to nothing", resolveOnPath("clawwright-nope", { PATH: path }, false), undefined);
+  const shim = join(scratch, "prefix", "clawwright");
   check("the installed shim itself is not a shadow", shadowMessage(shim, shim, false), undefined);
-  check("no clawforge on PATH is not a shadow", shadowMessage(shim, undefined, false), undefined);
-  const shadow = shadowMessage(shim, join(second, "clawforge"), false) ?? "";
-  check("another clawforge on PATH is reported with both paths", shadow.includes(join(second, "clawforge")) && shadow.includes(shim), true);
+  check("no clawwright on PATH is not a shadow", shadowMessage(shim, undefined, false), undefined);
+  const shadow = shadowMessage(shim, join(second, "clawwright"), false) ?? "";
+  check("another clawwright on PATH is reported with both paths", shadow.includes(join(second, "clawwright")) && shadow.includes(shim), true);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

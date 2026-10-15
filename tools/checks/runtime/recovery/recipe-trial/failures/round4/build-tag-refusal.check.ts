@@ -9,7 +9,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { messageOf, ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-build-tag");
+const root = await useRecipesRoot("clawwright-recipe-trial-build-tag");
 try {
   await root.write("subject", { description: "A recipe whose build service keeps a foreign tag" });
   const base = { services: {

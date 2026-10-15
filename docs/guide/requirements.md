@@ -1,6 +1,6 @@
 # Requirements: hosts and targets
 
-Two machines can be in play: the **host**, where `./clawforge` itself runs, and the
+Two machines can be in play: the **host**, where `./clawwright` itself runs, and the
 **target**, where the instance (Docker, the data directory, `/srv`) actually lives. `local`
 means host and target are the same machine; `wsl` and `ssh` mean the host reaches a
 different one — a WSL2 distro, or a remote server — through a transport
@@ -90,7 +90,7 @@ installed) or a BSD userland (a macOS `ssh` target, a minimal/distroless contain
 `docker info`, `compose version` and `df` just fine and then fails `bootstrap` mid-mutation on
 the first `find -printf` or `stat -c`, with an error nowhere near that first command.
 
-`./clawforge bootstrap --check` catches this ahead of time: one read-only, harmless probe run
+`./clawwright bootstrap --check` catches this ahead of time: one read-only, harmless probe run
 through the target transport tests `find -printf`, `stat -c`, `readlink -f`, `sha256sum`,
 `tar --numeric-owner` and `/proc`, and reports `ok` when all are GNU, or a `FAIL` line naming
 the exact tool(s) missing and a concrete next step — installing `coreutils`/`findutils`/`tar`

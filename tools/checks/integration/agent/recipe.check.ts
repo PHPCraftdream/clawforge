@@ -38,7 +38,7 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
   const files = new Map<string, string>();
   const dirs = new Set<string>();
   const ctx = {
-    settings: { env, dataDir: "/srv/clawforge-recipe-check" },
+    settings: { env, dataDir: "/srv/clawwright-recipe-check" },
     transport: {
       description: "stub",
       async exec(command: string, args: string[]) {
@@ -137,7 +137,7 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
   return { ctx, calls, files, dirs };
 }
 
-const scratch = resolve(tmpdir(), `clawforge-recipe-check-${Date.now()}`);
+const scratch = resolve(tmpdir(), `clawwright-recipe-check-${Date.now()}`);
 
 async function writeRecipe(name: string, json: unknown): Promise<void> {
   const dir = resolve(scratch, name);
@@ -281,7 +281,7 @@ try {
   // A bundle-only recipes directory is not "no recipes yet": the bundles are named, the
   // missing kind is named, and neither is confused with the other.
   {
-    const bundleScratch = resolve(tmpdir(), `clawforge-recipe-bundles-${Date.now()}`);
+    const bundleScratch = resolve(tmpdir(), `clawwright-recipe-bundles-${Date.now()}`);
     try {
       await mkdir(resolve(bundleScratch, "onboarding", "agent"), { recursive: true });
       await writeFile(
@@ -498,7 +498,7 @@ try {
 
     // import is the one action that never gates: it copies into the repository's recipes/
     // directory and must go through while another operation is changing the target.
-    const importRoot = resolve(tmpdir(), `clawforge-recipe-import-${Date.now()}`);
+    const importRoot = resolve(tmpdir(), `clawwright-recipe-import-${Date.now()}`);
     const importedSource = resolve(importRoot, "source-recipe");
     try {
       await mkdir(importedSource, { recursive: true });
@@ -544,7 +544,7 @@ try {
   }
 
   {
-    const importedRoot = resolve(tmpdir(), `clawforge-recipe-import-${Date.now()}`);
+    const importedRoot = resolve(tmpdir(), `clawwright-recipe-import-${Date.now()}`);
     const importedSource = resolve(importedRoot, "source-recipe");
     try {
       await mkdir(importedSource, { recursive: true });
@@ -572,7 +572,7 @@ try {
   // declares them under privateFiles — the two names the dispatcher used to hardcode
   // included, so no name the old hardcoded blacklist excluded is copied now.
   {
-    const policyRoot = resolve(tmpdir(), `clawforge-recipe-import-policy-${Date.now()}`);
+    const policyRoot = resolve(tmpdir(), `clawwright-recipe-import-policy-${Date.now()}`);
     const source = resolve(policyRoot, "source-recipe");
     try {
       await mkdir(resolve(source, "secrets"), { recursive: true });
@@ -608,7 +608,7 @@ try {
   // framework's own conventions — and exactly those: an application file nobody declared is
   // copied, because silently covering it would be the framework pretending to know.
   {
-    const defaultRoot = resolve(tmpdir(), `clawforge-recipe-import-default-${Date.now()}`);
+    const defaultRoot = resolve(tmpdir(), `clawwright-recipe-import-default-${Date.now()}`);
     const source = resolve(defaultRoot, "source-recipe");
     try {
       await mkdir(resolve(source, "secrets"), { recursive: true });
@@ -643,7 +643,7 @@ try {
   // share archive — and a declaration trying to climb out of the recipe directory is
   // refused, the same strictness the target-side privatePaths policy gets.
   {
-    const brokenRoot = resolve(tmpdir(), `clawforge-recipe-import-broken-${Date.now()}`);
+    const brokenRoot = resolve(tmpdir(), `clawwright-recipe-import-broken-${Date.now()}`);
     const source = resolve(brokenRoot, "source-recipe");
     try {
       await mkdir(source, { recursive: true });

@@ -40,7 +40,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { CLI_HELPER_SERVICE } from "#framework/commands/interface/cli-helper.ts";
 import { REASON_NEVER_BOOTSTRAPPED } from "#framework/commands/management/lock.ts";
 
-useDeployment(resolve("/tmp", "clawforge-requires-bootstrapped-check"));
+useDeployment(resolve("/tmp", "clawwright-requires-bootstrapped-check"));
 
 const DATA_DIR = "/srv/rb-check/data";
 
@@ -134,7 +134,7 @@ async function expectGuardRefusal(kase: GuardCase): Promise<void> {
       check(`${kase.name}: the advice names the bootstrap command`, renderAdvice(thrown.advice[0]).endsWith("bootstrap"), true);
     }
   }
-  check(`${kase.name}: never queries scheduler ownership before bootstrap`, execCalls.some((call) => call.includes("clawforge-scheduler-root")), false);
+  check(`${kase.name}: never queries scheduler ownership before bootstrap`, execCalls.some((call) => call.includes("clawwright-scheduler-root")), false);
   check(`${kase.name}: never attempts the instance lock`, execCalls.some((call) => call.some((token) => token.includes("operation.lock"))), false);
 }
 

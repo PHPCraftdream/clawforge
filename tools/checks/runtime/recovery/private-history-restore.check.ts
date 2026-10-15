@@ -1,6 +1,6 @@
 // The privacy ledger (see docs/internal/review-2026-09-22-xa-round-3.md) lives operator-side at
 // <deployment>/config/private-paths.json, but a full backup publishes a copy into the data
-// root at <dataDir>/config/clawforge-private-paths.json (createArchive, profile "full"), and
+// root at <dataDir>/config/clawwright-private-paths.json (createArchive, profile "full"), and
 // restoreArchive imports it back into the deployment ledger after verifyRestoredLayout.
 //
 // The ledger describes the target while living on the operator side, so recording a private
@@ -112,12 +112,12 @@ const previousDeployment = (() => {
 // operator side the private write is really recorded in, B the fresh one the restore runs
 // through. The recipe roots are the set that declares the write (A) and an empty one (B).
 const tag = randomBytes(4).toString("hex");
-const deploymentA = await mkdtemp(join(tmpdir(), `clawforge-pp-history-deployment-a-${tag}-`));
+const deploymentA = await mkdtemp(join(tmpdir(), `clawwright-pp-history-deployment-a-${tag}-`));
 await mkdir(resolve(deploymentA, "config"), { recursive: true });
-const deploymentB = await mkdtemp(join(tmpdir(), `clawforge-pp-history-deployment-b-${tag}-`));
+const deploymentB = await mkdtemp(join(tmpdir(), `clawwright-pp-history-deployment-b-${tag}-`));
 await mkdir(resolve(deploymentB, "config"), { recursive: true });
-const recipesA = await mkdtemp(join(tmpdir(), `clawforge-pp-history-recipes-a-${tag}-`));
-const recipesB = await mkdtemp(join(tmpdir(), `clawforge-pp-history-recipes-b-${tag}-`));
+const recipesA = await mkdtemp(join(tmpdir(), `clawwright-pp-history-recipes-a-${tag}-`));
+const recipesB = await mkdtemp(join(tmpdir(), `clawwright-pp-history-recipes-b-${tag}-`));
 await mkdir(join(recipesA, "history-sidecar"), { recursive: true });
 await writeFile(
   join(recipesA, "history-sidecar", "recipe.json"),
@@ -142,12 +142,12 @@ try {
   check(
     "the history copy lives in the data root's config/",
     privatePathsHistoryFile("/srv/x/data"),
-    "/srv/x/data/config/clawforge-private-paths.json",
+    "/srv/x/data/config/clawwright-private-paths.json",
   );
   check(
     "a trailing slash on the data directory is tolerated",
     privatePathsHistoryFile("/srv/x/data/"),
-    "/srv/x/data/config/clawforge-private-paths.json",
+    "/srv/x/data/config/clawwright-private-paths.json",
   );
 
   // A real recorded write (the ledger itself, no target), then the publish unit: the copy is
@@ -170,7 +170,7 @@ try {
   } as unknown as Context;
   await publishPrivatePathsHistory(publishCtx);
   check("the copy is written exactly once", privateWrites.length + plainWrites.length, 1);
-  check("it went into the data root's config/", plainWrites[0]?.path, "/tgt/data/config/clawforge-private-paths.json");
+  check("it went into the data root's config/", plainWrites[0]?.path, "/tgt/data/config/clawwright-private-paths.json");
   check("and it was written owner-only through the atomic publish path", plainWrites.length === 1 && plainWrites[0]?.mode === "600", true);
   const published = JSON.parse(plainWrites[0]?.body ?? "null") as { privatePaths?: string[] } | null;
   check(
@@ -245,7 +245,7 @@ try {
   writes.length = 0;
   await publishPrivatePathsHistory(publishAgainstFakeTarget());
   check("an explicit forget removes the target copy on the next publish", removals.length, 1);
-  check("the removal names the published copy's path", removals[0], "/tgt/data/config/clawforge-private-paths.json");
+  check("the removal names the published copy's path", removals[0], "/tgt/data/config/clawwright-private-paths.json");
   check("and nothing was (re)written for the now-forgotten history", writes.length, 0);
   check("the target copy is gone after the forget propagates", fakeTarget.body, undefined);
 
@@ -301,7 +301,7 @@ try {
   if (transport === undefined) {
     skip("the private-history restore checks (no local POSIX filesystem and no WSL distribution with a shell)");
   } else {
-    PARENT = `/tmp/clawforge-pp-history-${tag}`;
+    PARENT = `/tmp/clawwright-pp-history-${tag}`;
     const DATA_NAME = "data";
     const DATA = `${PARENT}/${DATA_NAME}`;
     const ARCHIVES = `${PARENT}/archives`;
@@ -339,7 +339,7 @@ try {
     check("the full backup keeps the private file", fullEntries.includes("data/sidecar-private/credentials.env"), true);
     check(
       "the full backup carries the privacy history physically",
-      fullEntries.includes("data/config/clawforge-private-paths.json"),
+      fullEntries.includes("data/config/clawwright-private-paths.json"),
       true,
     );
 
@@ -389,7 +389,7 @@ try {
     );
     check(
       "and the history copy itself does not travel in share",
-      shareEntries.includes("data/config/clawforge-private-paths.json"),
+      shareEntries.includes("data/config/clawwright-private-paths.json"),
       false,
     );
 
@@ -409,7 +409,7 @@ try {
     );
     check(
       "and the history copy itself does not travel in migrate",
-      migrateEntries.includes("data/config/clawforge-private-paths.json"),
+      migrateEntries.includes("data/config/clawwright-private-paths.json"),
       false,
     );
 
@@ -443,7 +443,7 @@ try {
     await transport.mkdirp(`${PARENT}/corrupt-src/data/workspace`);
     await transport.writeFile(`${PARENT}/corrupt-src/data/config/openclaw.json`, JSON.stringify({ models: { providers: {} } }));
     await transport.writeFile(`${PARENT}/corrupt-src/data/workspace/from-archive.md`, "archive data\n");
-    await transport.writeFile(`${PARENT}/corrupt-src/data/config/clawforge-private-paths.json`, "{ not json");
+    await transport.writeFile(`${PARENT}/corrupt-src/data/config/clawwright-private-paths.json`, "{ not json");
     await transport.exec("tar", [
       "--numeric-owner",
       "-czf",
@@ -532,7 +532,7 @@ try {
             return {
               code: 0,
               stdout:
-                "data/\ndata/config/\ndata/config/openclaw.json\ndata/config/clawforge-private-paths.json\n" +
+                "data/\ndata/config/\ndata/config/openclaw.json\ndata/config/clawwright-private-paths.json\n" +
                 "data/workspace/\ndata/auth-secrets/\n",
               stderr: "",
             };

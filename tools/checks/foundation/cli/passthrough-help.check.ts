@@ -1,4 +1,4 @@
-// Checks that `./clawforge cli --help` shows this framework's own help, like every other
+// Checks that `./clawwright cli --help` shows this framework's own help, like every other
 // command, and that only a `--help` placed after a bare `--` reaches the wrapped tool.
 //
 // U7 (docs/internal/review-2026-09-29-round-13.md): `cli --help` used to always reach
@@ -32,7 +32,7 @@ const app = defineApp({ name: "passthrough-help-check", description: "fixture", 
 
 let output = "";
 await withOutputSink((chunk) => { output += chunk; }, () => runApp(app, ["cli", "--help"]));
-check("./clawforge cli --help prints our own summary, not OpenClaw's", output.includes(openclawCommands.cli.summary), true);
+check("./clawwright cli --help prints our own summary, not OpenClaw's", output.includes(openclawCommands.cli.summary), true);
 
 // Empty argv is refused by the parser — the verbatim variadic is declared required — so the
 // refusal is the parser's own voice on every path, not a hand-written usage branch in the
@@ -44,7 +44,7 @@ for (const name of ["cli", "exec"] as const) {
   } catch (error) {
     refused = error instanceof Error ? error.message : String(error);
   }
-  check(`./clawforge ${name} with no arguments is refused by the parser`,
+  check(`./clawwright ${name} with no arguments is refused by the parser`,
     refused.includes(missingArgumentMessage(name, "<args…>")), true);
 }
 

@@ -1,4 +1,4 @@
-// `clawforge verify <archive>` — checks a snapshot for credentials before it is shared.
+// `clawwright verify <archive>` — checks a snapshot for credentials before it is shared.
 //
 // Exclusion lists are a promise; this is a check.
 // The archive is unpacked into a temporary directory on the target and searched — binary
@@ -65,7 +65,7 @@ export interface VerifyFinding {
  *  `literals` — declared paths (recipe privatePaths, profile secrets/identity dirs), matched
  *  by exact path or '/' boundary — never bare prefix (would wrongly catch `vault-public` for
  *  `vault`).
- *  `prefixes` — the staging family `config/.env.clawforge-` (state.ts appends a random suffix),
+ *  `prefixes` — the staging family `config/.env.clawwright-` (state.ts appends a random suffix),
  *  matched by prefix since it names a family, not one path.
  *  `fragments` — temp-sibling staging markers (transport.ts) left by a crashed private write,
  *  matched as a substring since the marker sits mid-name. */
@@ -79,14 +79,14 @@ export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly st
   if (profile === "share") {
     return {
       literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"],
-      prefixes: ["config/.env.clawforge-", "config/clawforge-desired.dry-"],
+      prefixes: ["config/.env.clawwright-", "config/clawwright-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
   if (profile === "migrate") {
     return {
       literals: [...recipePrivatePaths, "config/.env"],
-      prefixes: ["config/.env.clawforge-", "config/clawforge-desired.dry-"],
+      prefixes: ["config/.env.clawwright-", "config/clawwright-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
@@ -398,7 +398,7 @@ async function contentScan(
   onFinding?: (finding: VerifyFinding) => void,
 ): Promise<number> {
   let failures = 0;
-  const session = `/tmp/clawforge-verify-${randomBytes(6).toString("hex")}`;
+  const session = `/tmp/clawwright-verify-${randomBytes(6).toString("hex")}`;
   const workdir = `${session}/tree`;
   const patternFile = `${session}/patterns`;
   // Resolved before the try so cleanup uses the same privilege: tar preserves ownership, so

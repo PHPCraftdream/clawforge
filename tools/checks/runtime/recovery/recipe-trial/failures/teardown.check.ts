@@ -8,9 +8,9 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { captured, ref, trialFixture, useRecipesRoot } from "../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-teardown");
+const root = await useRecipesRoot("clawwright-recipe-trial-teardown");
 /** The live project the recipe WOULD have — the string that must appear in no teardown argv. */
-const LIVE = `clawforge-recipe-${"a".repeat(0)}live-name-control`;
+const LIVE = `clawwright-recipe-${"a".repeat(0)}live-name-control`;
 
 async function outcome(fixture: ReturnType<typeof trialFixture>, name: string): Promise<{ error: string; output: string[] }> {
   const run = await captured(async () => {
@@ -26,7 +26,7 @@ function trialProject(fixture: ReturnType<typeof trialFixture>): string {
 
 function checkTeardown(name: string, fixture: ReturnType<typeof trialFixture>): void {
   const project = trialProject(fixture);
-  checkTrue(`${name}: the trial project was derived`, project.startsWith("clawforge-recipe-trial-"));
+  checkTrue(`${name}: the trial project was derived`, project.startsWith("clawwright-recipe-trial-"));
   const downs = fixture.docker.filter((argv) => argv[0] === "compose" && argv.includes("down"));
   check(`${name}: exactly one compose down ran`, downs.length, 1);
   const down = downs[0] ?? [];
@@ -36,9 +36,9 @@ function checkTeardown(name: string, fixture: ReturnType<typeof trialFixture>): 
     down.slice(down.indexOf("down")), ["down", "--volumes", "--remove-orphans", "--rmi", "local"]);
   checkTrue(`${name}: the images filter is labelled for the trial project`,
     fixture.docker.some((argv) => argv.includes(`label=com.docker.compose.project=${project}`)));
-  check(`${name}: the scratch home was removed`, fixture.removed.filter((p) => p.includes(".clawforge-recipe-trial-")).length, 1);
+  check(`${name}: the scratch home was removed`, fixture.removed.filter((p) => p.includes(".clawwright-recipe-trial-")).length, 1);
   checkTrue(`${name}: no teardown argv carries a live project name`,
-    fixture.docker.every((argv) => !argv.includes(LIVE) && !argv.some((arg) => arg.startsWith("clawforge-recipe-2") || arg === "clawforge-recipe-live")));
+    fixture.docker.every((argv) => !argv.includes(LIVE) && !argv.some((arg) => arg.startsWith("clawwright-recipe-2") || arg === "clawwright-recipe-live")));
 }
 
 try {

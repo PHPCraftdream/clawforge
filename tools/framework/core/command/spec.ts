@@ -229,7 +229,7 @@ export interface ActionSpec<A extends readonly ArgumentSpec[], P, N extends Need
 }
 
 /** The stamp on an erased body: the only way to read one back is through this module. */
-export const COMMAND_SPEC: unique symbol = Symbol("clawforge.command-spec");
+export const COMMAND_SPEC: unique symbol = Symbol("clawwright.command-spec");
 
 interface PhaseData {
   readonly prepare?: (call: PrepareCall<Record<string, unknown>>, local: LocalScope) => unknown;

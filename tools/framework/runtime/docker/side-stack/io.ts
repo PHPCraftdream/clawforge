@@ -58,8 +58,8 @@ export function remainingTimeout(deadline?: number, limit = 120_000): number {
 export function checkDeadline(deadline?: number): void {
   remainingTimeout(deadline);
 }
-export const definitionLabel = "io.clawforge.recipe.definition";
-export const digestLabel = "io.clawforge.recipe.document-sha256";
+export const definitionLabel = "io.clawwright.recipe.definition";
+export const digestLabel = "io.clawwright.recipe.document-sha256";
 function stagingPath(path: string): string {
   if (path.length > 4096 || !path.startsWith("/") || path === "/" || posix.normalize(path) !== path
     || Array.from(path).some((char) => char === "\\" || char === "," || char.charCodeAt(0) <= 31 || char.charCodeAt(0) === 127))
@@ -71,7 +71,7 @@ export function operationPrefix(settings: Pick<Settings, "dataDir">, project: st
   const data = stagingPath(settings.dataDir);
   stagingPath(definition);
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(project)) throw new RecipeReadError("malformed", "staging project");
-  return `${stagingPath(locksDir(data))}/.clawforge-operation-${createHash("sha256").update(`${data}\0${project}\0${definition}`).digest("hex")}-`;
+  return `${stagingPath(locksDir(data))}/.clawwright-operation-${createHash("sha256").update(`${data}\0${project}\0${definition}`).digest("hex")}-`;
 }
 export interface ComposeStaging {
   home: string;
@@ -292,7 +292,7 @@ export async function prepareComposeDocument(io: StackIO, document: Record<strin
   const labeled: Record<string, Record<string, unknown> & { labels: Record<string, unknown> }> = Object.fromEntries(Object.entries(object(document["services"])).map(([name, value]) => {
     const service = object(value);
     const labels = object(service["labels"] ?? {});
-    if (Object.keys(labels).some((key) => key.startsWith("com.docker.compose.") || key.startsWith("io.clawforge.recipe.")))
+    if (Object.keys(labels).some((key) => key.startsWith("com.docker.compose.") || key.startsWith("io.clawwright.recipe.")))
       throw new Error("recipe reserved provenance labels are not permitted");
     return [name, { ...service, labels: { ...labels, [definitionLabel]: file } }];
   }));

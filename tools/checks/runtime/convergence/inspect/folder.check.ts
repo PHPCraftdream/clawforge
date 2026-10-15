@@ -1,4 +1,4 @@
-// `./clawforge inspect` — the operator side of the deployment: the folder's .env against the
+// `./clawwright inspect` — the operator side of the deployment: the folder's .env against the
 // running container, the declaration a re-declare would read, and the local secret store
 // recovery would read back from. None of the three needs the instance up to be compared,
 // which is when they matter most — a stopped container is gone, and with it the values only
@@ -66,13 +66,13 @@ const TOKEN = "tok-folder-check-secret-value";
 
 // The container as the stub answers for it; the .env below matches it fact for fact.
 const CONTAINER_FACTS: ConnectionFacts = {
-  dataDir: "/srv/clawforge/data",
+  dataDir: "/srv/clawwright/data",
   port: "18790",
   composeProject: "folder-check",
   image: "ghcr.io/openclaw/openclaw:extended-stable",
 };
 const MATCHING_ENV = [
-  "OC_DATA_DIR=/srv/clawforge/data",
+  "OC_DATA_DIR=/srv/clawwright/data",
   "OPENCLAW_GATEWAY_PORT=18790",
   "OC_COMPOSE_PROJECT=folder-check",
   "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",
@@ -438,7 +438,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
 // the seam a hand-built Runtime stub (this file's own stubContext) cannot exercise, since the
 // bug lives inside #withEnvFile itself.
 {
-  const NOT_BOOTSTRAPPED_DATA_DIR = "/srv/clawforge/data";
+  const NOT_BOOTSTRAPPED_DATA_DIR = "/srv/clawwright/data";
 
   function preBootstrapTransport(options: { dataDirExists: boolean; mkdirDetail?: string }): { transport: Transport; execLog: string[][] } {
     const execLog: string[][] = [];
@@ -481,7 +481,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
   }
 
   const previousNotBootstrapped = (() => { try { return deploymentDir(); } catch { return undefined; } })();
-  const notBootstrappedDeployment = await mkdtemp(join(tmpdir(), "clawforge-not-bootstrapped-check-"));
+  const notBootstrappedDeployment = await mkdtemp(join(tmpdir(), "clawwright-not-bootstrapped-check-"));
   useDeployment(notBootstrappedDeployment);
   try {
     {
@@ -490,7 +490,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
       const inspection = await gatherInspection(ctx);
       check("the answer is a clean finding, not a thrown transport error", inspection.problems.map((entry) => entry.code), ["NOT_BOOTSTRAPPED"]);
       check("the finding is blocking", inspection.problems[0]?.severity, "blocking");
-      check("the remedy is bootstrap, not up", inspection.problems[0]?.nextAction, "./clawforge bootstrap");
+      check("the remedy is bootstrap, not up", inspection.problems[0]?.nextAction, "./clawwright bootstrap");
       check("GATEWAY_DOWN is not ALSO reported — up is not a working remedy pre-bootstrap", inspection.problems.some((entry) => entry.code === "GATEWAY_DOWN"), false);
       check("the raw transport error never reaches the finding's detail", inspection.problems[0]?.detail.includes("Permission denied"), false);
       check("the mkdir this bug is about really was attempted (proving the mechanism)", execLog.some((call) => call[0] === "mkdir" && call.includes("-p")), true);
@@ -564,7 +564,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
         async exec() {
           return {
             code: 0,
-            stdout: "12M\t/srv/clawforge/data/config\n34M\t/srv/clawforge/data/workspace\n1.0K\t/srv/clawforge/data/auth-secrets\n",
+            stdout: "12M\t/srv/clawwright/data/config\n34M\t/srv/clawwright/data/workspace\n1.0K\t/srv/clawwright/data/auth-secrets\n",
             stderr: "",
           };
         },
@@ -573,7 +573,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
         settings: {
           bindAddress: "127.0.0.1",
           gatewayPort: "18789",
-          dataDir: "/srv/clawforge/data",
+          dataDir: "/srv/clawwright/data",
           image: "ghcr.io/openclaw/openclaw:extended-stable",
           serviceUrl: "http://127.0.0.1:18789",
         },
@@ -595,9 +595,9 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
         bindAddress: "127.0.0.1", port: "18789", running: true, loopback: true, wildcard: false,
       });
       check("reports data usage parsed from du -sh, size and path split apart", payload.dataUsage, [
-        { size: "12M", path: "/srv/clawforge/data/config" },
-        { size: "34M", path: "/srv/clawforge/data/workspace" },
-        { size: "1.0K", path: "/srv/clawforge/data/auth-secrets" },
+        { size: "12M", path: "/srv/clawwright/data/config" },
+        { size: "34M", path: "/srv/clawwright/data/workspace" },
+        { size: "1.0K", path: "/srv/clawwright/data/auth-secrets" },
       ]);
     }
 
@@ -606,7 +606,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
       // behind NOT_BOOTSTRAPPED.
       const { transport } = preBootstrapTransport({
         dataDirExists: true,
-        mkdirDetail: "mkdir: cannot create directory '/srv/clawforge/data-locks': No space left on device",
+        mkdirDetail: "mkdir: cannot create directory '/srv/clawwright/data-locks': No space left on device",
       });
       const ctx = notBootstrappedContext(transport);
       let threw: unknown;

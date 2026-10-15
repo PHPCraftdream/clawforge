@@ -158,7 +158,7 @@ export async function hasGnuUserland(): Promise<boolean> {
  *  "absent" there instead of asserting a lie. */
 export async function hasPosixModes(): Promise<boolean> {
   return swallow(async () => {
-    const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-modes-"));
+    const dir = await mkdtemp(join(tmpdir(), "clawwright-cap-modes-"));
     try {
       const file = join(dir, "probe");
       await writeFile(file, "");
@@ -176,7 +176,7 @@ export async function hasPosixModes(): Promise<boolean> {
  *  "absent" there instead of failing. */
 export async function hasSymlink(): Promise<boolean> {
   return swallow(async () => {
-    const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-symlink-"));
+    const dir = await mkdtemp(join(tmpdir(), "clawwright-cap-symlink-"));
     try {
       symlinkSync("target", join(dir, "probe"), "file");
       return readlinkSync(join(dir, "probe")) === "target";

@@ -67,7 +67,7 @@ check("all-dropped count", allOwned.dropped, 2);
 
 // --- wired behavior on a disposable deployment -----------------------------------------
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-ownership-wiring-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-ownership-wiring-"));
 const recipes = join(root, "recipes");
 await mkdir(join(recipes, "alpha"), { recursive: true });
 await writeFile(join(recipes, "alpha", "recipe.json"), JSON.stringify({

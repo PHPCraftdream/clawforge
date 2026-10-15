@@ -162,7 +162,7 @@ export function completionCandidates(
   appNames: () => readonly string[],
 ): readonly string[] {
   // Only the words BEFORE the cursor pick the command — the partial word itself is not a
-  // typed command (R32-02: `clawforge sta<Tab>` used to see the command "sta").
+  // typed command (R32-02: `clawwright sta<Tab>` used to see the command "sta").
   const scan = words.slice(0, cword);
   const prev = scan.at(-1);
   // --app leads the command line and takes the next word as its own value: step over both.

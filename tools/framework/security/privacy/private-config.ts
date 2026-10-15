@@ -65,7 +65,7 @@ export async function ensurePrivateTargetDirectory(ctx: Context, path: string): 
 
 /** Atomically replaces a target file with mode 600, preserving the old file on a failed write.
  *  The staging sibling stays name-adjacent to the verified target: the whole
- *  `.clawforge-private-` family is excluded by the snapshot policy and refused by verify, so
+ *  `.clawwright-private-` family is excluded by the snapshot policy and refused by verify, so
  *  an interrupted mv still leaves protected bytes behind. */
 export async function replacePrivateTargetFile(ctx: Context, path: string, content: string): Promise<PrivateFileResult> {
   if (!path.startsWith("/")) throw new Error(`private target file must be absolute: ${path}`);

@@ -1,8 +1,19 @@
 # Changelog
 
-All notable changes to `@clawforge/framework` will be documented here.
+All notable changes to `clawwright` will be documented here.
 
 ## Unreleased
+
+### Renamed
+* The project is now **Clawwright** (was ClawForge): the npm scope `@clawforge` belongs to an unrelated package,
+  so the framework could never be published under it. Everything follows the new name, with no compatibility layer:
+  the package is the unscoped `clawwright` (`npm install -g clawwright`; exports `clawwright/app`,
+  `clawwright/mounts`, `clawwright/commands`, `clawwright/recipe-kit`, `clawwright/private-config`), the command and
+  the checkout launcher are `clawwright` / `./clawwright` (`tools/clawwright.ts`), the MCP servers are `clawwright`
+  and `clawwright-control`, environment variables are `CLAWWRIGHT_*`, and the names the framework writes on a target
+  (markers, cron entries, trial and recovery files) use the new name too. An existing deployment is moved over once by
+  hand: change its app.ts imports and dependency to `clawwright`, rerun `mcp-setup` (it rewrites the previous
+  launcher), and reinstall the `watch`/`backup` schedules.
 
 ### Added
 * `recipe retire-legacy <name> [--apply] [--helper-image <sha256>] [--shutdown-timeout <seconds>]` retires a recipe's
@@ -21,7 +32,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   hosts and probe failures are never proof.
 * A `.env` line that has no `=` (a typo like `OC_DATA_DIR /srv/x`) is refused by `parseEnv` with a structured
   `EnvSyntaxError` (`ENV_LINE_WITHOUT_EQUALS`) naming the file and the 1-based line; the message never quotes the line,
-  which may hold a secret. `./clawforge list` parses each deployment's `.env` strictly and reports a broken one as that
+  which may hold a secret. `./clawwright list` parses each deployment's `.env` strictly and reports a broken one as that
   deployment's error row (with the code and line) instead of failing the whole listing.
 * `recipe pin <name> --version <v> [--artifact <file>] [--apply]` refreshes a recipe's pinned release artifact: it reads the
   published `.sha256` (or `SHA256SUMS`) of the release asset over bounded HTTPS from GitHub hosts only, previews the two build-arg
@@ -32,7 +43,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   proven to publish nothing and to reference no live volume, network, bind mount or image before anything starts, and the
   scratch home and trial resources are removed in reverse order afterwards. Anything it cannot prove is refused; after a
   signal or a failed call over SSH it waits for the remote command to expire before cleaning up, and lists leftovers by name.
-* `@clawforge/framework/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
+* `clawwright/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
   single-batch apply that re-reads and verifies, redacted plan views (keyed pseudonyms, no raw values), intent/result journalling
   with two-phase provenance so a crash never loses ownership, operator entries are never removed, removals above a fixed bound need
   a dedicated consent token, and protected path segments (`owners`, `approvers`, `credentials`) are refused at any depth.
@@ -40,7 +51,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   (`read`, `change` or `destroy`) and typed arguments; `recipe run <recipe> <action> key=value [--dry-run] [--json]` runs
   it through one entry on the CLI and the MCP `recipe` tool. The declared effect drives confirmation and locking
   per call, results are size-bounded and secret-masked, and `recipe inspect` lists the declared actions.
-* `@clawforge/framework/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
+* `clawwright/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
   length-prefixed recipe, namespace and value, with a per-deployment key created once, exclusively, under a declared
   `privatePaths` directory and registered for redaction) and intent/result journal records with crash-gap detection
   (`appendPrivateIntent`, `appendPrivateResult`, `readPendingPrivateIntents`).
@@ -52,7 +63,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   `OC_CHECK_TIMINGS_OUT=<path>` also writes the run's durations for CI artifacts; `OC_CHECK_TIMINGS=off` disables the file.
 * Recipe hooks get schema-versioned private state (`readPrivateState` / `writePrivateState`) and a bounded,
   secret-refusing private journal (`appendPrivateJournal` / `readPrivateJournal`) in
-  `@clawforge/framework/private-config`. New ancestor directories are created owner-only from the start.
+  `clawwright/private-config`. New ancestor directories are created owner-only from the start.
 * Recipes can own application-config paths: `recipe.json` accepts an optional `owns` array (`value` or
   `list-member` mode, optional segment-wise prefixes). Owned paths are refused in `desired-state.json`, skipped
   by `apply-config` and never reported as drift, and `inspect` / `recipe inspect` show the owner; overlapping
@@ -64,7 +75,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `recipe.json` may declare `ephemeralPaths`: absolute container paths whose writable-layer contents are
   disposable. `recipe migrate` ignores changes at or under them, reports the ignored counts, and names the
   unsupported writable-layer paths (and this field) when it still refuses.
-* A public `@clawforge/framework/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
+* A public `clawwright/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
   application CLI with stdin-only input and guarded JSON results (`redacted` reports whether a registered
   secret was masked in the parsed output); `consumerFetch` makes one bounded HTTP
   request from the gateway container (its DNS and proxy), with the request on stdin and secrets redacted.
@@ -99,7 +110,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   selects the i-th of n disjoint round-robin slices of the declared controls, and CI runs the controls as three
   parallel Windows shards (`1/3`, `2/3`, `3/3`), which together hold every control exactly once.
 * Advice names the deployment's own launcher when the framework reaches it through an npm `file:` linked package
-  (a `node_modules/@clawforge/framework` symlink/junction into a framework checkout): the hint spells the app's local
+  (a `node_modules/clawwright` symlink/junction into a framework checkout): the hint spells the app's local
   package, not the checkout path the link resolves to.
 * `ci.yml` runs two tiers: a push fires only for `main`, and a push to `main` runs the fast tier (type check, lint,
   `check --related --base` against the merge-base with `origin/main`) — the full suite already gated its pull request;
@@ -111,7 +122,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   CLI help text are unchanged.
 * A checkout deployment warns on stderr when the framework sources are newer than `dist` (run `npm run build`
   from the checkout root); stdout and `--json` are untouched, `OC_NO_STALE_DIST_WARNING=1` silences it.
-* The bash completion install line is `eval "$(clawforge completion bash)"`: macOS ships bash 3.2,
+* The bash completion install line is `eval "$(clawwright completion bash)"`: macOS ships bash 3.2,
   whose `source <(...)` does not run. zsh and PowerShell lines are unchanged.
 * Memory setup validates the model source, revision, SHA256 and plugin version when the arguments
   are parsed, and plan/configure refuse `--env` together with local model options before any read;
@@ -159,7 +170,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   typed binding, effect/confirmation and refusal-boundary contract checks.
 * Legacy prose ratchets retain their original shapes and budgets while excluding fixture
   initializers.
-* Operator guidance prioritizes ClawForge CLI/MCP diagnostics and recovery, distinguishes
+* Operator guidance prioritizes Clawwright CLI/MCP diagnostics and recovery, distinguishes
   emergency live repairs from reproducible declaration/recipe fixes, and requires consumer
   verification rather than treating container health or API authentication as a working bot.
 * Normal inspection and doctor expose safe channel polling, memory index/provider capabilities,
@@ -177,10 +188,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `mcp-setup` works when the target location is unsupported or unreachable.
 * MCP no longer asks for confirm on `recipe import`/`recipe new`, which only add files.
 
-* Deploy prints the server's own `./clawforge` command lines whatever local launcher ran it.
+* Deploy prints the server's own `./clawwright` command lines whatever local launcher ran it.
 * Running the checkout gate from inside `apps/<name>` (or below it) now selects that deployment, as `--app <name>` does — previously it always ran the default `openclaw`. `--app` and `OC_APP` still win.
 * Gate-command prose (e.g. `check --help`) no longer names the default or `OC_APP` deployment; it carries the typed `--app`, or the flag-selected deployment an MCP-serving process was started with, so the console and the served process render hints over the same deployment.
-* Completion Install: lines are spelled from the target shell's own frame: a script generated from a checkout subdirectory stores `./clawforge`, never `../clawforge`, and the bash/zsh Install lines spell npm's wrapper with forward slashes even when the command ran under the Windows wrapper.
+* Completion Install: lines are spelled from the target shell's own frame: a script generated from a checkout subdirectory stores `./clawwright`, never `../clawwright`, and the bash/zsh Install lines spell npm's wrapper with forward slashes even when the command ran under the Windows wrapper.
 * The checkout-subfolder refusal prints a `cd` line each shell accepts.
 * Advice naming another deployment, printed inside a deployment by the system-wide command, runs there instead of being refused as an `--app` conflict.
 * Local facts of arguments — a missing artifact or recipe, an import source's derived name — are refused before the deployment's target is read.
@@ -195,8 +206,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `--break-foreign-lock` accepts any recorded host id and refuses only an empty value or control characters, so a foreign lock is never unsolvable because of its spelling.
 * `deploy --path` must be an absolute path, refused at parse (the remote-root boundary still applies in full).
 
-* Checkout refusals printed by npm's Windows bin wrapper no longer name `node_modules\.bin\clawforge` at the checkout root, where it does not exist — they spell the checkout's committed `./clawforge` shim, with an `(in bash)` note where only bash can run it.
-* Hints printed from a subfolder of the launch spell the entry relative to that folder (`../clawforge status` from `docs/`, `./clawforge status` at the checkout root); every production hint path renders against the frame's known launch root.
+* Checkout refusals printed by npm's Windows bin wrapper no longer name `node_modules\.bin\clawwright` at the checkout root, where it does not exist — they spell the checkout's committed `./clawwright` shim, with an `(in bash)` note where only bash can run it.
+* Hints printed from a subfolder of the launch spell the entry relative to that folder (`../clawwright status` from `docs/`, `./clawwright status` at the checkout root); every production hint path renders against the frame's known launch root.
 * An MCP tool call that names an unknown action is refused as an unknown action, in the console's own words and ahead of any argument problem — the console's own order — instead of reporting an argument problem first or silently running the default action.
 * A target that cannot be reached is reported as such instead of as empty (S3.4 target-read contract): reading and enumerating on the target distinguish present, absent and unknown (`readIfExists`/`probeExists`/`listIfExists` in runtime/transport — unknown answers always carry a runnable next step as Advice), and the operation history (list/read/latest) plus the configuration-snapshot read refuse an unknown target instead of answering an empty history or skipping the recovery point. A tokenizer-based hygiene ratchet fails a catch around a transport read (readFile/exists/listFiles, the read-contract helpers, or an allowFailure exec whose failure would become the answer) in service/ or commands/ unless the handler rethrows or ends the command; documented deliberate sites sit on a counted, shrink-only allow-list.
 * Unreachable-target failures retain structured remedies across console, JSON and MCP; operation history and rollback refuse unreachable targets rather than answering empty. Checkout-root advice uses a runnable shim, checkout refusals include shell-specific pasteable rows, and bootstrap reports the tag-preserving pinned image reference.
@@ -273,7 +284,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Refusals whose sentence names a place now spell every advice row from that place: the
   not-initialised refusal inside a checkout and the `--app` conflict refusal a checkout's
   `apps/<name>` deployment answers both carry rows that paste from the checkout root
-  (`./clawforge`), whatever spelling of the command the run started under. Lines that echo
+  (`./clawwright`), whatever spelling of the command the run started under. Lines that echo
   a command for the operator to paste back — `expose ssh`'s tunnel line, `expose tailscale`'s
   serve and undo lines, `incident`'s route-off lines, the `sudo install -d` preparation
   advice, the transport probe-failure refusal, and OpenClaw CLI failure lines — quote each
@@ -291,9 +302,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   read back as argv; plain words still echo bare.
 
 * The checkout's own entry run directly (`node tools/framework/entry/bin.ts …`, or an
-  npm-linked bin) hints the checkout's shim where it really is — `./clawforge` from the
-  checkout root, `../../clawforge` from `apps/<name>`, in checkout mode — instead of the
-  local-package spelling (`node_modules\.bin\clawforge` on Windows), which does not exist
+  npm-linked bin) hints the checkout's shim where it really is — `./clawwright` from the
+  checkout root, `../../clawwright` from `apps/<name>`, in checkout mode — instead of the
+  local-package spelling (`node_modules\.bin\clawwright` on Windows), which does not exist
   in a checkout. `host -- <command>` (and the captured `cli`/`exec`) print a successful
   command's stderr too: diagnostics live there, and a captured run used to drop them unless
   the command failed. `pull` on a never-bootstrapped deployment refuses up front with the
@@ -301,7 +312,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   lock it cannot take. A deployment whose `app.ts` declares a command named `help` or
   `control-mcp` is refused at declaration — it would otherwise pass and make every command
   of that deployment unreachable at dispatch.
-* A new deployment's committed shim (`init`) hands over a `CLAWFORGE_INVOCATION` the strict
+* A new deployment's committed shim (`init`) hands over a `CLAWWRIGHT_INVOCATION` the strict
   reader accepts (`"mode":"checkout"`, was the incoherent `"installed"`, which the reader
   discarded); hints no longer rely on the legacy variable fallback on Windows installed
   deployments. `lock` on a never-bootstrapped deployment refuses up front with the `bootstrap`
@@ -363,9 +374,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   tree and on an artifact alike), `set build` and `set try` refuse it, and `set try`'s throwaway
   `.env` carries the canonical form of the parsed reference.
 * When an `init` run through the package's own entry (npx or `node_modules/.bin`) is refused —
-  inside a ClawForge checkout, or nesting inside an existing deployment — the advice names the
-  invocation it runs as (`./clawforge`, on Windows npm's bin wrapper) instead of a global
-  `clawforge` command that does not exist.
+  inside a Clawwright checkout, or nesting inside an existing deployment — the advice names the
+  invocation it runs as (`./clawwright`, on Windows npm's bin wrapper) instead of a global
+  `clawwright` command that does not exist.
 * `secrets --print-template` is refused together with `--template`, `--init-store`, `--apply` and
   `--dump`: over MCP the read flag used to lower the call to read, skipping the confirmation of
   the destructive action that still ran. A command declaration that lets a read-effect flag meet a
@@ -384,11 +395,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   offers nothing more: what follows is the child's own text. After a bare `--` it offers nothing
   more either: everything from it on is the child's own text (previously the command's own flags
   were still offered). Regenerate a completion script saved to a
-  file. On Windows, `clawforge` run in a deployment folder whose directory name differs in case
+  file. On Windows, `clawwright` run in a deployment folder whose directory name differs in case
   from the name it is known by no longer fails with `invalid deployment name`.
-* On Windows, a deployment that depends on its own `@clawforge/framework` copy gets advice
-  lines prefixed with npm's `node_modules\.bin\clawforge` instead of the bash-only committed
-  `./clawforge` shim, which cmd.exe and PowerShell cannot run.
+* On Windows, a deployment that depends on its own `clawwright` copy gets advice
+  lines prefixed with npm's `node_modules\.bin\clawwright` instead of the bash-only committed
+  `./clawwright` shim, which cmd.exe and PowerShell cannot run.
 * `deploy`'s printed bootstrap lines quote the remote path (`cd '/srv/my app' && …`), so a
   path with a space pastes as one line instead of splitting; the `--app <name>` in advice
   lines and the `--app`-conflict refusal quote a deployment name the same way.
@@ -416,7 +427,7 @@ All notable changes to `@clawforge/framework` will be documented here.
     <archive>`, `set forget needs --kind <kind>` (and `--name`; a `--kind` outside agent,
     mcp-server, cron-job lists the choices). MCP `choices`/required errors and recover-env's
     argument refusals read exactly like the console's instead of schema-side ones. `recipe <action>`
-    without its <name> answers `usage: ./clawforge recipe <action> <name>`; host's unknown or
+    without its <name> answers `usage: ./clawwright recipe <action> <name>`; host's unknown or
     missing context and a missing command are named argument errors (`<context>` takes one of
     target, engine, local …); a missing deploy target, provision-agent recipe, or cli/exec
     command is reported as such instead of a usage line; `verify` without an archive is refused
@@ -448,15 +459,15 @@ All notable changes to `@clawforge/framework` will be documented here.
     the tool description, the `--help` note, and an optional "Confirm a destructive action"
     `confirm` in the MCP schema) instead of the flat always-destroys wording; the framework's
     own commands, which refine destruction with `readOnlyWhen`, are unaffected.
-* `./clawforge list` answers an unknown argument the standard way — the refusal plus a
+* `./clawwright list` answers an unknown argument the standard way — the refusal plus a
   pointer to `list --help` — instead of its own bare "unknown argument" line.
 * A set is loaded and validated by one pipeline for the working tree and an artifact alike
   (`set validate` with and without `--set`, `set build`'s collection): an artifact is verified
   and unpacked, then answered by the same validator the tree gets, so both paths report
   identical findings for identical content.
-* Deployments hand the invocation between processes as versioned JSON in `CLAWFORGE_INVOCATION`:
-  the committed `./clawforge` shim `init` and `new-app` write, and the monorepo MCP launcher,
-  now set it — alongside `CLAWFORGE_INVOKED_AS`, which they keep exporting so the shim and
+* Deployments hand the invocation between processes as versioned JSON in `CLAWWRIGHT_INVOCATION`:
+  the committed `./clawwright` shim `init` and `new-app` write, and the monorepo MCP launcher,
+  now set it — alongside `CLAWWRIGHT_INVOKED_AS`, which they keep exporting so the shim and
   launcher keep spelling the hints right for older frameworks (pinned local or older global
   installs) that read only the old variable; a framework that reads both prefers the JSON
   and clears both. Shims and launchers already committed in your repository keep working, and
@@ -468,7 +479,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   * Advice for a gate command (`new-app`, `list`, `check` …) carries no `--app <name>`:
     those commands run before a deployment is resolved, so the suggested command is now runnable
     as printed under every invocation. The same holds for the `--app must come before the
-    command` refusal, whose suggested command line now uses the program as typed (`clawforge`,
+    command` refusal, whose suggested command line now uses the program as typed (`clawwright`,
     not the checkout spelling that does not run in cmd.exe or PowerShell).
   * Entry refusals print their advice as an indented `→` line under the message instead of an
     `error:` line per sentence, and the bash spelling of a suggested command is offered as a
@@ -484,7 +495,7 @@ All notable changes to `@clawforge/framework` will be documented here.
     `--app <name>`.
   * `watch test`'s notification names this deployment's command.
   * The help text of the framework's own commands renders a command from the invocation, the
-    same for humans wherever it is printed, and an application's own `./clawforge` written in
+    same for humans wherever it is printed, and an application's own `./clawwright` written in
     its `details` is no longer rewritten — what the declaration says is what prints.
   * The `exec` entry in the command list and its MCP tool description names `cli` without the
     program.
@@ -494,7 +505,7 @@ All notable changes to `@clawforge/framework` will be documented here.
     to on backup, expose, watch, recipe and set.
   * Shell completion scripts are now a fixed interpreter plus a table generated from the command
     declarations, identical in behaviour for bash, zsh and PowerShell; after `help <command>`
-    only `--help` is offered. A script saved to a file (`> "${fpath[1]}/_clawforge"`) needs to be
+    only `--help` is offered. A script saved to a file (`> "${fpath[1]}/_clawwright"`) needs to be
     generated again; the `source <(…)` and `| Invoke-Expression` forms update themselves.
 * Cross-field refusals of `apply-config`, `rollback`, `host`, `set diff` and `set receipts` now
   happen at the parse stage, before any contact with the target, in the parser's wording (an
@@ -519,7 +530,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   exclusive and its cleanup retries and fails loudly instead of leaking into the checkout.
 * A refusal whose sentence names the checkout root answers with a row that runs in the reader's
   own shell: the command is spelled from the checkout root for the invocation that got the
-  refusal (the system-wide `clawforge` for an installed run, the checkout's `./clawforge` for a
+  refusal (the system-wide `clawwright` for an installed run, the checkout's `./clawwright` for a
   checkout copy), with the bash-shim row beside it only where it says something different — a
   cmd or PowerShell user of the installed command gets a row they can run again. The gate's
   sibling sentences about the checkout root (`help` at the root, the not-initialised and
@@ -554,7 +565,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 * Advice printed after a hand-over from the MCP launcher keeps `--app`: the launcher's program is the
   checkout gate, which reads `--app` and `OC_APP` and never the working directory, so the pasted
-  `../../clawforge bootstrap` no longer targets the default deployment. A flagged `--app openclaw` is
+  `../../clawwright bootstrap` no longer targets the default deployment. A flagged `--app openclaw` is
   kept too while `OC_APP` may be set, because `OC_APP=staging` makes `openclaw` the exception. `set
   validate` judges a recipe's required files (`server.ts`, `agent/config.json`) by the files the set
   carries, so a file listed under `privateFiles` is reported missing on the tree as it is on the
@@ -574,7 +585,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   coherent set that declares nothing: the same answer an artifact carrying the same bytes
   gets. `set build` still refuses to pack such a tree.
 * The `--json` failure contract fires only for a command's own declared `--json` flag:
-  `cli`/`exec`/`host` pass their whole tail to a child, so a failing `clawforge cli … --json`
+  `cli`/`exec`/`host` pass their whole tail to a child, so a failing `clawwright cli … --json`
   no longer appends a second `{"error":…}` document after the child's own streamed output
   (streamed stdout counts as already-printed output). `help control-mcp` (and the MCP `help`
   tool) now prints control-mcp's help from the same declaration `control-mcp --help` uses,
@@ -616,7 +627,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   evaluator in the check and compared scenario-by-scenario against the model and a real
   sourced bash script, so a body mutation like the R32-02 regression fails the check instead
   of passing substring pins.
-* PowerShell completion answers again with a typed prefix (`clawforge sta<Tab>`, `--ap<Tab>`,
+* PowerShell completion answers again with a typed prefix (`clawwright sta<Tab>`, `--ap<Tab>`,
   `backup l<Tab>`, `watch in<Tab>`), which the previous script lost by scanning the word being
   completed as a typed command; `--app <name> backup <Tab>` offers the default action's flags
   again, and `backup --hot <Tab>` no longer offers action words backup would reject. The
@@ -666,7 +677,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   action given" help line appears only on commands that have actions; and the target-side
   `readlink -f` helper is one shared `physicalPath`, not three copies.
 * The checks now distinguish the fixes they cover: a scratch checkout deployment's `app.ts` importing
-  `@clawforge/framework/app` must load through the gate, the watch cycle lock's start-time tolerance
+  `clawwright/app` must load through the gate, the watch cycle lock's start-time tolerance
   is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health
   gate (the stub's post-backup restart succeeds and the failure names health after recreation), and
   each module of the two known import cycles loads as a first import. Hygiene: the package-export
@@ -690,12 +701,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   `1440` reads as `1d`, `90` as `1h, 2h`, `0` as `1m` (previously `1440m`/`1440h`, which backup
   then refuses), and its general refusal no longer opens with "a number of minutes" — backup
   requires an explicit unit. `watch install` still accepts bare minutes.
-* `set build`'s no-digest refusal names the remedy for both states — `./clawforge bootstrap`
-  before the first bootstrap, `./clawforge lock` on a running instance — instead of always
+* `set build`'s no-digest refusal names the remedy for both states — `./clawwright bootstrap`
+  before the first bootstrap, `./clawwright lock` on a running instance — instead of always
   advising `bootstrap`, which on a live instance re-resolves the tag and recreates the gateway
   with no backup, lint gate or rollback; the lock-mismatch refusal (which only exists on a
   deployed instance) advises `upgrade --image`/`lock` and never `bootstrap`. `SET_IMAGE_UNPINNED`
-  picks its remedy the same way: `./clawforge lock` once a lock is recorded, `./clawforge
+  picks its remedy the same way: `./clawwright lock` once a lock is recorded, `./clawwright
   bootstrap` before. Artifact validation now runs the same recipe-completeness checks
   the working-tree validation runs (the artifact is unpacked when verified), so a tree with
   blocking findings can no longer build into an artifact that `set validate --set` calls coherent —
@@ -720,7 +731,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   and `set receipts` parse with the same action scope as the other actions, so a flag of another
   action is refused naming that action, not as unknown.
 * Shell completion offers a default-action command's own flags on the first position too, in
-  bash/zsh (`clawforge backup --h` completes `--hot`, not only `--help`) and in PowerShell,
+  bash/zsh (`clawwright backup --h` completes `--hot`, not only `--help`) and in PowerShell,
   where a trailing space is now treated as starting a new token instead of extending the last.
 * MCP schema descriptions are shortened per action: a composed description keeps each part's
   own action list (`set --json` in `tools/list` names all five actions' texts, `set --name`
@@ -746,10 +757,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `set validate` on a working tree whose image is not pinned yet builds the manifest with the
   tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
   everything else it found — in `--json` too — instead of dying inside the manifest build with
-  no findings at all. Its advice follows the deployment's state — `./clawforge lock` once a
-  lock is recorded, `./clawforge bootstrap` before (where `lock` refuses). The hard
+  no findings at all. Its advice follows the deployment's state — `./clawwright lock` once a
+  lock is recorded, `./clawwright bootstrap` before (where `lock` refuses). The hard
   refusal stays on `set build`.
-* Recipe hooks and a checkout deployment's `app.ts` can import `@clawforge/framework/private-config`
+* Recipe hooks and a checkout deployment's `app.ts` can import `clawwright/private-config`
   (and the package's other public exports) the way the guide and the `--with-hooks` stub say: in a
   checkout there is no dist build and no install to resolve the specifier against, so the hook
   loader and the checkout gate map the exports onto the checkout's own framework sources, while an
@@ -782,9 +793,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   at the cost of holding a stale lock a little longer. Seen as a flake in `compose-sweep.check.ts`.
 * The global command refuses an `app.ts` inside a checkout by what it imports, not where it sits:
   only a relative import of the checkout's `tools/framework/` (the `new-app` declaration) outside
-  `apps/<name>` is refused; an installed-style `app.ts` (`@clawforge/framework`) under a checkout
+  `apps/<name>` is refused; an installed-style `app.ts` (`clawwright`) under a checkout
   path runs as before, including `version` and `--project-root`.
-* Checkout advice: the `(in bash also ./clawforge new-app <name>)` form is printed literally instead
+* Checkout advice: the `(in bash also ./clawwright new-app <name>)` form is printed literally instead
   of being localized away; "new-app <name> takes over this empty directory" is said only for an
   empty `apps/<name>`; `help <typo>` in a checkout never suggests `init`; a mistyped command
   outside an app is `unknown command` with a did-you-mean, not "no app.ts"; `--app <name>` on an
@@ -812,14 +823,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   what its own parser accepts, so a new flag cannot drift. A `backup` create flag under another
   action is refused naming the create parser ("--hot applies to `create`, not `list`"), not as
   "unknown argument".
-* System-wide `clawforge` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
+* System-wide `clawwright` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
   `apps` directory is matched by its real spelling), so the global package no longer loads the
   checkout's `app.ts` next to its own framework. An `app.ts` inside a checkout that the gate cannot
   take over is refused with the checkout entry named, instead of loading a second framework copy.
-* Help without an app: a bare `clawforge` lists the gate commands (exit 0); `help <unknown>` says
+* Help without an app: a bare `clawwright` lists the gate commands (exit 0); `help <unknown>` says
   `unknown command: <x>` with a did-you-mean over the deployment and gate commands, while a real
   deployment command keeps "needs an app folder"; inside a checkout the list no longer offers
-  `init` and says `./clawforge help` at the checkout root lists the commands. `init --local` from a
+  `init` and says `./clawwright help` at the checkout root lists the commands. `init --local` from a
   subfolder of an initialised app prints the editor-types line instead of refusing (it writes
   nothing); plain `init` there still refuses.
 * `init` help no longer breaks a sentence mid-line. A dry-run `destroy` shows an absent directory as
@@ -842,28 +853,28 @@ All notable changes to `@clawforge/framework` will be documented here.
   attempts on an unenterable parent.
 * Only a subdirectory of `apps/` with `app.ts` and a valid name is a deployment, for the gate, the
   sole-deployment fallback, `list` and completion: an empty `apps/<name>` (left by a refused `init`)
-  no longer breaks `./clawforge help`/`status`, and a hidden `apps/.x` is ignored. `list` shows
+  no longer breaks `./clawwright help`/`status`, and a hidden `apps/.x` is ignored. `list` shows
   other visible folders as `not a deployment: no app.ts`. `new-app` accepts an existing empty
   directory (a non-empty one is still refused).
 * The MCP launcher of a checkout deployment (`apps/<name>/mcp-launch.mjs`) sets the invocation to
-  `../../clawforge --app <name>`, so hints resolve from `apps/<name>`; `mcp-setup` rewrites the
+  `../../clawwright --app <name>`, so hints resolve from `apps/<name>`; `mcp-setup` rewrites the
   previous launcher.
-* `init` refused inside a checkout advises `clawforge new-app <name>` from the checkout root
-  (`./clawforge` as the bash form) instead of a quoted `'./clawforge'` that fails in cmd and
+* `init` refused inside a checkout advises `clawwright new-app <name>` from the checkout root
+  (`./clawwright` as the bash form) instead of a quoted `'./clawwright'` that fails in cmd and
   PowerShell, and says an empty folder can be reused by `new-app`.
 * A privileged command (backup, restore, secrets …) no longer asks for sudo on a path it can write
   when the target's existence probe fails once: `sudoFor` asks the probe up to three times before
   treating a refusal as a directory this user cannot enter. Seen as "needs root and sudo asks for
   a password" on a `/tmp` backup under load.
-* System-wide `clawforge` in `apps/<name>` of a checkout no longer doubles `--app`: the same name is
+* System-wide `clawwright` in `apps/<name>` of a checkout no longer doubles `--app`: the same name is
   passed on once, another one is a clear error. On a hand-over, hints for a non-default deployment
-  now read `<invoked-as> --app <name>` (`clawforge --app foo bootstrap` from the checkout root),
+  now read `<invoked-as> --app <name>` (`clawwright --app foo bootstrap` from the checkout root),
   plain only when the cwd is inside that deployment.
-* System-wide `clawforge` inside a checkout no longer advises `init` in a non-app subfolder (it
-  says `./clawforge` in the checkout root is the entry), and `init` there is refused with
-  `./clawforge new-app <name>` instead of writing an `app.ts` the checkout gate cannot load.
-* Without `CLAWFORGE_INVOKED_AS` (MCP launcher, `npx`, `node_modules/.bin`) hints say `./clawforge`
-  for the app's own package copy and `clawforge` only for the system-wide one.
+* System-wide `clawwright` inside a checkout no longer advises `init` in a non-app subfolder (it
+  says `./clawwright` in the checkout root is the entry), and `init` there is refused with
+  `./clawwright new-app <name>` instead of writing an `app.ts` the checkout gate cannot load.
+* Without `CLAWWRIGHT_INVOKED_AS` (MCP launcher, `npx`, `node_modules/.bin`) hints say `./clawwright`
+  for the app's own package copy and `clawwright` only for the system-wide one.
 * `destroy` without `--yes` no longer asks for sudo for directories that do not exist: an absent
   target is reported absent (present ones are verified as before), `du` uses read access instead
   of write access, and when nothing exists to remove it says so instead of inviting `--yes`.
@@ -875,33 +886,33 @@ All notable changes to `@clawforge/framework` will be documented here.
   headline again. On a never-bootstrapped instance they are reported as `NOT_BOOTSTRAPPED` (not
   `GATEWAY_DOWN`) with `bootstrap` as the next action, since `up` refuses there. The exit code and the
   JSON document shape are unchanged.
-* Shell completion of `--app` values calls the command as typed (`clawforge` or `./clawforge`, from
+* Shell completion of `--app` values calls the command as typed (`clawwright` or `./clawwright`, from
   any folder) with `list --json --no-status` — no per-Tab polling of every deployment's target — and
   skips hidden directories; PowerShell completes `--app` values too.
 * Lines copied into another shell or host are printed verbatim, not rewritten to this terminal's
   invocation: the cron line of `backup install` / `watch install` (what is shown is what `--apply`
   installs), the Task Scheduler command lines, and the server bring-up hints of `deploy` (the
-  server's mirrored checkout runs `./clawforge`). Fixed the cut-off sentence in the `init`
+  server's mirrored checkout runs `./clawwright`). Fixed the cut-off sentence in the `init`
   next-steps text ("…if one is needed"); the `Install:` comments of the generated completion
   scripts name the real invocation, script bodies unchanged.
-* `clawforge init --local` in an already initialised directory now prints the
+* `clawwright init --local` in an already initialised directory now prints the
   `npm install --no-save "<package directory>"` line and exits 0 without writing anything, so the
   editor-types advice `init` gives is reachable; plain `init` there still refuses, and a fresh
   `init --local` is unchanged.
-* Outside a deployment, `clawforge help`, `--help` and `-h` list the gate commands (`init`,
+* Outside a deployment, `clawwright help`, `--help` and `-h` list the gate commands (`init`,
   `version`, `completion`) and say the full list appears inside an initialised app folder, exit 0;
   `help <gate command>` prints its help. `help <app command>` says it needs an app folder. Every
-  other command keeps the `no app.ts … run: clawforge init` error.
-* `clawforge init` writes the directory's name into `app.ts` (`name:`), as `new-app` does, instead of
+  other command keeps the `no app.ts … run: clawwright init` error.
+* `clawwright init` writes the directory's name into `app.ts` (`name:`), as `new-app` does, instead of
   a hardcoded `openclaw`: the help heading and the MCP `serverInfo` (`<name>-control`) now differ
   per deployment.
-* System-wide `clawforge` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
+* System-wide `clawwright` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
   by walking up to the nearest `app.ts` instead of reporting `no app.ts` and advising `init`; the
   found root is what delegation uses. `init` still initialises the current directory only and
   refuses, naming the ancestor, when an ancestor already holds `app.ts`. Outside any app the
-  `run: clawforge init` advice is unchanged; `--project-root <abs>` never walks.
-* The hand-over flag (`CLAWFORGE_DELEGATED`) now covers only the immediate hand-over: the receiving
-  entry clears it at startup, and a checkout gate is never given it, so a `clawforge` run by a hook
+  `run: clawwright init` advice is unchanged; `--project-root <abs>` never walks.
+* The hand-over flag (`CLAWWRIGHT_DELEGATED`) now covers only the immediate hand-over: the receiving
+  entry clears it at startup, and a checkout gate is never given it, so a `clawwright` run by a hook
   or `host` command in another app delegates to that app's own framework. A hand-over target that
   cannot be started now prints the error instead of exiting silently.
 * Stale texts: `docs/guide/commands.md` now lists `backup install|uninstall` and `--interval`,
@@ -918,7 +929,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   `set`; the system-install check no longer writes into the tracked `docs/` folder; the entry's
   re-exports that only the gate used are gone.
 * `rollback --previous-set` with `--operation` or `--no-restart` now names the current invocation
-  (`clawforge --app prod apply` for an installed or named app) instead of always `./clawforge apply`;
+  (`clawwright --app prod apply` for an installed or named app) instead of always `./clawwright apply`;
   `list` and `inspect` treat a malformed image digest (`repo@sha256:zz`, an uppercase digest) as
   unpinned; `set validate` and `set build` name the recipe and file for a malformed `agent/config.json`
   or `acceptance.json` instead of printing a bare JSON error, and a self-consistent artifact carrying
@@ -928,15 +939,15 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 * `version --verbose` prints which copy runs and where; `version --json` gains `source`
   (`global` | `local` | `checkout`) and `path` (package directory, checkout root for a checkout).
-  Plain `clawforge <version>` is unchanged. `npm run install:system` (npm's global prefix) now
-  warns, with both paths, when the `clawforge` PATH resolves to is not the shim it just installed.
+  Plain `clawwright <version>` is unchanged. `npm run install:system` (npm's global prefix) now
+  warns, with both paths, when the `clawwright` PATH resolves to is not the shim it just installed.
 
 * System-wide install: `npm run install:system` packs `tools/framework` and installs it with
   `npm install -g` (`-- --prefix <dir>` for another prefix), then runs the installed command and
-  says when its directory is not on PATH. The global `clawforge` works in any app folder: a local
-  `@clawforge/framework` dependency still wins (the global command hands over to it), `apps/<name>`
-  and the root of a ClawForge checkout go to that checkout's gate, and a folder with neither runs on
-  the global package, whose `@clawforge/framework` imports then resolve to it. The `./clawforge`
+  says when its directory is not on PATH. The global `clawwright` works in any app folder: a local
+  `clawwright` dependency still wins (the global command hands over to it), `apps/<name>`
+  and the root of a Clawwright checkout go to that checkout's gate, and a folder with neither runs on
+  the global package, whose `clawwright` imports then resolve to it. The `./clawwright`
   script and the MCP launcher `init` writes fall back to the global command; an unchanged launcher
   from before is still rewritten, not reported as a local edit. Covered by `system-install.check.ts`
   on every CI platform, plus a real global install used from PATH (bash, and PowerShell on Windows).
@@ -1002,18 +1013,18 @@ All notable changes to `@clawforge/framework` will be documented here.
   agent asks before acting, structured like `inspect`/`doctor`/`plan` already are.
   `secrets --json` and `verify --json` carry names/locations/kinds only, never a credential
   value; a captured MCP call answers in JSON on all five even without the flag.
-* `control-mcp` — the entry point agents use — is now listed in `./clawforge help` alongside
+* `control-mcp` — the entry point agents use — is now listed in `./clawwright help` alongside
   `check`/`new-app`/`list`, with a one-line summary.
 * `CommandArgument.valueName`: every declared option now names its value (`--tail <n>`,
   `--break-foreign-lock <hostId>`, `--since <duration|timestamp>`, …) instead of the generic
   `--name <value>` every option rendered as before; shown in `--help` and folded into the
   MCP tool description. A check fails the build if a declared option omits it.
 * `check [<filter…>] [--list]`: one or more substrings narrow the suite to checks whose
-  relative path contains at least one of them (`./clawforge check gate`, `npm run check --
+  relative path contains at least one of them (`./clawwright check gate`, `npm run check --
   foundation runtime`); `--list` prints the matching paths without running them. An unknown
   flag is refused, and a filter matching nothing exits non-zero instead of silently running
   the whole suite.
-* `--version`/`-v`/`version` (also `--json`): `clawforge <version>`, read from the framework's
+* `--version`/`-v`/`version` (also `--json`): `clawwright <version>`, read from the framework's
   own `package.json` the same way `inspect`/`set build` already do. Answers with no deployment
   resolved, no `.env` read and no lock touched, in both installed and monorepo mode — where
   before it answered `unknown command`.
@@ -1058,12 +1069,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 ### Changed
 
 * Command hints (log lines, errors, `Usage:`, the `help` footer, `nextActions` in JSON and MCP
-  envelopes) now name the command the way it was invoked: `./clawforge` from the monorepo gate
-  (plus `--app <name>` for a non-default deployment) and from the committed shim, `clawforge` from
-  the system-wide command, where `./clawforge` does not run in cmd.exe or PowerShell. The shim
-  exports `CLAWFORGE_INVOKED_AS=./clawforge`; the entry reads and removes it, and a hand-over to
+  envelopes) now name the command the way it was invoked: `./clawwright` from the monorepo gate
+  (plus `--app <name>` for a non-default deployment) and from the committed shim, `clawwright` from
+  the system-wide command, where `./clawwright` does not run in cmd.exe or PowerShell. The shim
+  exports `CLAWWRIGHT_INVOKED_AS=./clawwright`; the entry reads and removes it, and a hand-over to
   another copy passes it on explicitly. An already committed older shim does not set it, so hints
-  from the installed entry say `clawforge` until it is regenerated.
+  from the installed entry say `clawwright` until it is regenerated.
 * `help`: the per-line "(destructive for some actions)" suffix is replaced by a short marker
   (`*` for some actions, `!` for always) with one legend line; the gate and built-in commands
   sit under a "Framework:" heading and share the command column; long summaries (`recipe`,
@@ -1104,7 +1115,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 ### Fixed
 
 * `destroy` on a deployment that was never bootstrapped no longer answers "never been
-  bootstrapped — run `./clawforge bootstrap`": it reports there is nothing to destroy and exits
+  bootstrapped — run `./clawwright bootstrap`": it reports there is nothing to destroy and exits
   0 (dry run and `--yes --confirm-name` alike), takes no lock and creates no directory. Present
   `--backups`/`--snapshots` directories are still removed; a bootstrapped deployment is unchanged.
 * Docs no longer send users to an unpublished package: the npm install sections in
@@ -1116,17 +1127,17 @@ All notable changes to `@clawforge/framework` will be documented here.
   running the plugin/skill inventory is reported as `GATEWAY_DOWN` ("not running — start it or
   bootstrap first") instead of `CLI_READ_FAILED` "batch transport failed"; a running instance whose
   read failed keeps `CLI_READ_FAILED`.
-* Scheduled jobs of a system-wide (global-mode) deployment start. The `./clawforge` shim's
+* Scheduled jobs of a system-wide (global-mode) deployment start. The `./clawwright` shim's
   no-local-package fallback runs the global package's `dist/entry/bin.js` with the node it already
   found instead of exec'ing npm's shim (which failed with `exec: node: not found` under WSL and
   cron), and the Windows Task Scheduler line records the running package's entry instead of a
-  non-existent `node_modules/@clawforge/framework/...` path.
-* `init` names what is meant to be committed accurately (`./clawforge`, `mcp-launch.mjs`, `app.ts`,
+  non-existent `node_modules/clawwright/...` path.
+* `init` names what is meant to be committed accurately (`./clawwright`, `mcp-launch.mjs`, `app.ts`,
   `package.json`, `config/`, `recipes/`), the `.env` header is true for both `new-app` and `init`,
   and messages that pointed at repository-relative `docs/...` paths (WSL boundary, instance lock,
   recipe cutover) now print absolute GitHub URLs from one helper (`core/io/docs-url.ts`).
-* `clawforge init --local` (system-wide install: `app.ts` was unresolved in editors) prints the
-  `npm install --no-save` command that gives the app its own `@clawforge/framework` for types; init
+* `clawwright init --local` (system-wide install: `app.ts` was unresolved in editors) prints the
+  `npm install --no-save` command that gives the app its own `clawwright` for types; init
   does not run npm. Without the flag, init hints at it.
 * A command deadline now ends the command's whole process tree, not only its top process: the
   ssh watchdog used on targets without `timeout` (macOS) signals a process group (`setsid`, else
@@ -1250,7 +1261,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   `restart`, `down`, `logs`, `upgrade`, `secrets --apply`, `provision-agent`,
   `expose tailscale --apply` and `watch install --apply` died on a raw
   `could not take the instance lock … mkdir …/operation.lock: No such file or directory`
-  instead of the same "never been bootstrapped — run `./clawforge bootstrap`" answer
+  instead of the same "never been bootstrapped — run `./clawwright bootstrap`" answer
   `doctor`/`plan`/`status`/`mcp-creds` already gave. A shared `requireBootstrapped()` now
   refuses first, before the lock or any target write; `bootstrap`, `restore` and `push`
   (the commands that create the instance) are unaffected.
@@ -1270,7 +1281,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `expose tailscale`/`expose status` and `recipe` (every action) reject an undeclared flag or
   an extra positional instead of silently accepting it; `recipe list --bogus extra` and
   `recipe <action> <name> <stray>` are now refused, naming which flags the action actually
-  takes. `logs` is parsed against its own declaration too, so a stray token (`./clawforge logs
+  takes. `logs` is parsed against its own declaration too, so a stray token (`./clawwright logs
   extra`) is refused instead of reaching `docker compose logs` as another service name —
   only the validated `--since` still travels to the runtime.
 * An unknown `--flag` close to one the command declares now says "did you mean --<name>";
@@ -1319,7 +1330,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `control-mcp`'s `tools/list` carried every tool's whole `--help` text as its `description` —
   88 KB across 42 tools, roughly 22k tokens of context before an agent's first real call.
   Each description is now the command's one-line summary plus a pointer to the new `help`
-  tool (input: `command`, optional), which returns exactly what `./clawforge help <command>`
+  tool (input: `command`, optional), which returns exactly what `./clawwright help <command>`
   prints — or the command list when called without one. A check keeps `tools/list` under a
   byte budget and every description under 400 characters.
 * `tools/list`'s `inputSchema` still carried every argument's full `--help` description —
@@ -1366,7 +1377,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   default data directory lands under `/srv` and typically needs `sudo install -d` on a fresh
   host — that fact lived only in README's troubleshooting table. The final output now names
   the actual data directory the `.env` it just wrote chose, and when it is under `/srv` points
-  at `./clawforge bootstrap --check` as the next step, before `bootstrap` itself.
+  at `./clawwright bootstrap --check` as the next step, before `bootstrap` itself.
 * The instance lock judged staleness from when it was taken, never refreshed while the holder
   stayed alive — so `recipe install`, which holds the lock across a whole build, could outlive
   the 30-minute threshold and get refused with "longer than any operation should take … may be
@@ -1391,7 +1402,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   are still reachable through `help`.
 * README's Quick start named a fixed `http://127.0.0.1:18789` web interface; `new-app` writes
   `OPENCLAW_GATEWAY_PORT` from 20000-32767, so following it opened the wrong address on
-  anything but the default. It now points at `./clawforge status`/`mcp-creds` for the real
+  anything but the default. It now points at `./clawwright status`/`mcp-creds` for the real
   port, and gains a note that `bootstrap --check` names the exact `sudo install -d` line on a
   fresh, root-owned `/srv`.
 * `new-app`/`init` printed the Windows-ACL/WSL-boundary warning — two ~700-character lines —
@@ -1439,11 +1450,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   command's own code (`CommandFailedError`, clamped to 1..255 — a signal-derived negative or
   an out-of-range value can no longer read as success); the text is unchanged, and over MCP it
   still carries the exit code in the `isError` result's text.
-* `./clawforge cli --help` went to the container instead of printing this framework's own help
+* `./clawwright cli --help` went to the container instead of printing this framework's own help
   (`passesThroughHelp`), which meant a fresh, never-bootstrapped deployment answered "never
   been bootstrapped" instead of a help screen — `exec --help` and `help cli` were unaffected.
   `cli --help` now behaves like every other command; put `--help` after a bare `--`
-  (`./clawforge cli -- --help`) to reach OpenClaw's own instead — the same before-the-first-`--`
+  (`./clawwright cli -- --help`) to reach OpenClaw's own instead — the same before-the-first-`--`
   boundary `host`'s own parser already drew (`requestsHelp`, `entry/cli.ts`).
 * `mcp-creds` printed the gateway URL and token, then failed with "never been bootstrapped" —
   the secret was already on the screen by the time the command gave up. It now runs the same
@@ -1457,7 +1468,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * MCP `tools/list` budget headroom: 80 bytes to about 1.6 KB free (32688 to 31166 of 32768)
   without raising the budget. Shorter shared argument descriptions (`break-lock`,
   `break-foreign-lock`, `confirm`), an empty `required` is not sent, and shorter command
-  summaries; the full text stays reachable through the `help` tool and `./clawforge help <command>`.
+  summaries; the full text stays reachable through the `help` tool and `./clawwright help <command>`.
 * checks: new `gnu-userland` capability (GNU-compatible `mkdir`/`mv` and GNU `tar` on this
   process's PATH). Checks that drive the local transport skip on macOS and on a Windows runner
   without them, instead of failing on BSD `tar`/`mv` or a missing `mkdir`; the Linux CI job
@@ -1472,7 +1483,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * checks: `runProcess` in `tools/checks/kit/spawn.ts` is the one child-process helper (cwd, env,
   stdin input or an open pipe, timeout with SIGKILL and `timedOut`, stdout/stderr apart and
   interleaved, Windows `.cmd` through a shell). The per-file spawn helpers in nine check files use
-  it; `system-install.check.ts` picks the control MCP entry by `CLAWFORGE_CONTROL_MCP_NAME`, not by
+  it; `system-install.check.ts` picks the control MCP entry by `CLAWWRIGHT_CONTROL_MCP_NAME`, not by
   position.
 * checks: the nine check files at 675-700 lines (`runtime-image-identity`, `watch/check`,
   `backup`, `recipe-hook-freshness`, `checkout-policy`, `inspect/drift`, `set-build`, `state`,

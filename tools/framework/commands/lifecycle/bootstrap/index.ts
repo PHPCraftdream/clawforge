@@ -1,6 +1,6 @@
-// `clawforge bootstrap` — brings an instance up from nothing. Idempotent: re-running it on
+// `clawwright bootstrap` — brings an instance up from nothing. Idempotent: re-running it on
 // a live instance re-pulls the image (a digest pin is left alone) and rewrites desired-state,
-// but does not restart the running gateway — changed settings need clawforge restart.
+// but does not restart the running gateway — changed settings need clawwright restart.
 //
 // Order matters:
 //   1. .env and the gateway token — compose interpolates them
@@ -42,7 +42,7 @@ export const BOOTSTRAP_ARGUMENTS = [
 /** After a fresh pull, repoints this deployment's OWN OPENCLAW_IMAGE from the moving tag to
  *  the exact digest just pulled — so a later pull of the same shared tag by another
  *  deployment can no longer silently switch what THIS one recreates onto next. Already-pinned
- *  deployments (`image` carries "@sha256:") are left alone: only clawforge upgrade moves
+ *  deployments (`image` carries "@sha256:") are left alone: only clawwright upgrade moves
  *  those.
  *
  *  Best effort: a runtime that cannot resolve the digest just pulled leaves it a tag rather
@@ -202,7 +202,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
   log("OpenClaw is up");
   info(`gateway: ${fresh.serviceUrl}`);
   // Named, not printed: control-mcp hands this output back to an agent, so a token printed
-  // here would land in a transcript. `clawforge mcp-creds --token` prints it on request.
+  // here would land in a transcript. `clawwright mcp-creds --token` prints it on request.
   info(`token:   ${token === "" ? "(not generated)" : `in .env — print it with ${commandLine(["mcp-creds", "--token"])}`}`);
   info(`data:    ${fresh.dataDir}`);
 

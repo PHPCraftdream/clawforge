@@ -125,13 +125,13 @@ for (const [name, argv, argument] of [
 // always read the default checkout spelling.
 
 {
-  setInvocation({ program: "clawforge", mode: "installed", audience: "terminal", app: { name: "prod", selectedBy: "flag" } });
+  setInvocation({ program: "clawwright", mode: "installed", audience: "terminal", app: { name: "prod", selectedBy: "flag" } });
   try {
     const { error } = await refusal("rollback", ["--previous-set", "--operation", "apply-1"]);
     check(
       "rollback's conflict refusal names the current invocation's apply line",
       (error as Error).message,
-      "--previous-set cannot be combined with --operation — rolls back the whole set through clawforge --app prod apply — --operation and --no-restart belong to the single-file path only",
+      "--previous-set cannot be combined with --operation — rolls back the whole set through clawwright --app prod apply — --operation and --no-restart belong to the single-file path only",
     );
     let printed = "";
     await withOutputSink((chunk) => {
@@ -139,10 +139,10 @@ for (const [name, argv, argument] of [
     }, async () => {
       renderCommandHelp("rollback", orchestrationCommands.rollback);
     });
-    checkTrue("rollback's help names the current invocation's apply --set", printed.includes("through clawforge --app prod apply --set,"));
-    checkTrue("rollback's help never names the default spelling", !printed.includes("./clawforge"));
+    checkTrue("rollback's help names the current invocation's apply --set", printed.includes("through clawwright --app prod apply --set,"));
+    checkTrue("rollback's help never names the default spelling", !printed.includes("./clawwright"));
   } finally {
-    setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+    setInvocation({ program: "./clawwright", mode: "checkout", audience: "terminal" });
   }
 }
 

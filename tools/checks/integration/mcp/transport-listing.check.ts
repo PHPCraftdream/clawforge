@@ -21,7 +21,7 @@ import { check, finish, requires } from "#checks/kit/harness.ts";
 // --- local: a real directory tree -----------------------------------------------------
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-listing-check-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-listing-check-"));
   try {
     const local = new LocalTransport();
 
@@ -88,7 +88,7 @@ import { check, finish, requires } from "#checks/kit/harness.ts";
 // the argument vector while retaining the normal env wrapper used by the transport.
 await requires("wsl", "wsl --exec preserves the argument vector", async () => {
   await requires("windows-host", "wsl --exec preserves the argument vector (a windows host)", async () => {
-  const integrationDistro = process.env.CLAWFORGE_TEST_WSL_DISTRO;
+  const integrationDistro = process.env.CLAWWRIGHT_TEST_WSL_DISTRO;
   if (integrationDistro === undefined) return;
   {
     const wsl = new WslTransport(integrationDistro);
@@ -96,9 +96,9 @@ await requires("wsl", "wsl --exec preserves the argument vector", async () => {
     const result = await wsl.exec("printf", ["%s", literal], { allowFailure: true });
     check("wsl preserves shell metacharacters in literal argv", result.code, 0);
     check("wsl does not evaluate shell metacharacters", result.stdout, literal);
-    const envResult = await wsl.exec("sh", ["-c", "printf '%s' \"$CLAWFORGE_ARG\""], {
+    const envResult = await wsl.exec("sh", ["-c", "printf '%s' \"$CLAWWRIGHT_ARG\""], {
       allowFailure: true,
-      env: { CLAWFORGE_ARG: literal },
+      env: { CLAWWRIGHT_ARG: literal },
     });
     check("wsl still passes target environment through argv", envResult.code, 0);
     check("wsl environment values remain literal", envResult.stdout, literal);
@@ -120,31 +120,31 @@ function execReturning(result: ExecResult) {
 {
   const stub = execReturning({
     code: 0,
-    stdout: "/srv/clawforge/mirror/server.ts\n/srv/clawforge/mirror/data/page.md\n/srv/clawforge/mirror/data/sub/nested.md\n",
+    stdout: "/srv/clawwright/mirror/server.ts\n/srv/clawwright/mirror/data/page.md\n/srv/clawwright/mirror/data/sub/nested.md\n",
     stderr: "",
   });
-  const found = await listFilesVia(stub.exec, "/srv/clawforge/mirror");
+  const found = await listFilesVia(stub.exec, "/srv/clawwright/mirror");
   check("absolute find output comes back relative", found, ["server.ts", "data/page.md", "data/sub/nested.md"]);
-  check("only regular files are asked for", stub.calls[0], { command: "find", args: ["/srv/clawforge/mirror", "-type", "f"] });
+  check("only regular files are asked for", stub.calls[0], { command: "find", args: ["/srv/clawwright/mirror", "-type", "f"] });
 }
 
 {
   // A missing directory: find exits non-zero and says so. This is the first-run case — the
   // mirror has never been written — and it must read as "nothing there yet", not as an error
   // that aborts provisioning before it starts.
-  const stub = execReturning({ code: 1, stdout: "", stderr: "find: '/srv/clawforge/mirror': No such file or directory" });
-  check("a missing listing root lists nothing", await listFilesVia(stub.exec, "/srv/clawforge/mirror"), []);
+  const stub = execReturning({ code: 1, stdout: "", stderr: "find: '/srv/clawwright/mirror': No such file or directory" });
+  check("a missing listing root lists nothing", await listFilesVia(stub.exec, "/srv/clawwright/mirror"), []);
 }
 
 {
   const stub = execReturning({
     code: 1,
-    stdout: "/srv/clawforge/mirror/server.ts\n",
-    stderr: "find: '/srv/clawforge/mirror/private': Permission denied",
+    stdout: "/srv/clawwright/mirror/server.ts\n",
+    stderr: "find: '/srv/clawwright/mirror/private': Permission denied",
   });
   let message = "";
   try {
-    await listFilesVia(stub.exec, "/srv/clawforge/mirror");
+    await listFilesVia(stub.exec, "/srv/clawwright/mirror");
   } catch (error) {
     message = (error as Error).message;
   }
@@ -152,10 +152,10 @@ function execReturning(result: ExecResult) {
 }
 
 {
-  const stub = execReturning({ code: 1, stdout: "", stderr: "find: '/srv/clawforge/mirror': Permission denied" });
+  const stub = execReturning({ code: 1, stdout: "", stderr: "find: '/srv/clawwright/mirror': Permission denied" });
   let rejected = false;
   try {
-    await listFilesVia(stub.exec, "/srv/clawforge/mirror");
+    await listFilesVia(stub.exec, "/srv/clawwright/mirror");
   } catch {
     rejected = true;
   }
@@ -165,14 +165,14 @@ function execReturning(result: ExecResult) {
 {
   // A trailing slash on the directory would otherwise leave every result prefixed with one,
   // and those paths get compared against the recipe's own relative paths.
-  const stub = execReturning({ code: 0, stdout: "/srv/clawforge/mirror/server.ts\n", stderr: "" });
-  check("a trailing slash on the directory does not survive into the results", await listFilesVia(stub.exec, "/srv/clawforge/mirror/"), ["server.ts"]);
+  const stub = execReturning({ code: 0, stdout: "/srv/clawwright/mirror/server.ts\n", stderr: "" });
+  check("a trailing slash on the directory does not survive into the results", await listFilesVia(stub.exec, "/srv/clawwright/mirror/"), ["server.ts"]);
 }
 
 {
   // find prints a trailing newline, and an empty line is not a file named "".
   const stub = execReturning({ code: 0, stdout: "\n\n", stderr: "" });
-  check("blank lines are not mistaken for files", await listFilesVia(stub.exec, "/srv/clawforge/mirror"), []);
+  check("blank lines are not mistaken for files", await listFilesVia(stub.exec, "/srv/clawwright/mirror"), []);
 }
 
 // --- exists: "not there" is an answer, "could not ask" is not ---------------------------
@@ -185,7 +185,7 @@ function execReturning(result: ExecResult) {
 // that is what it reports for an existing file it was not allowed to look at.
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-exists-check-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-exists-check-"));
   try {
     const local = new LocalTransport();
     await writeFile(resolve(dir, "here.txt"), "x");
@@ -216,7 +216,7 @@ function execReturning(result: ExecResult) {
 
   async function refusal(result: ExecResult): Promise<string> {
     try {
-      await sshWith(result).exists("/srv/clawforge/data/config/openclaw.json");
+      await sshWith(result).exists("/srv/clawwright/data/config/openclaw.json");
       return "";
     } catch (error) {
       return (error as Error).message;
@@ -240,21 +240,21 @@ function execReturning(result: ExecResult) {
   // The verdict this whole probe exists for: the path may well be there, and the check was
   // simply not allowed to look. Answering "absent" here is what makes restore skip moving
   // the live data aside and then unpack the archive over it.
-  const blocked = await refusal({ code: 0, stdout: "blocked /srv/clawforge/data\n", stderr: "" });
-  const probe = "/srv/clawforge/data/config/openclaw.json";
+  const blocked = await refusal({ code: 0, stdout: "blocked /srv/clawwright/data\n", stderr: "" });
+  const probe = "/srv/clawwright/data/config/openclaw.json";
   check("remote: a directory that cannot be entered is not an absent path", blocked.includes(cannotCheckMessage(probe)), true);
-  check("remote: the refusal names the directory that blocked the walk", blocked.includes(cannotSearchMessage(probe, "/srv/clawforge/data")), true);
+  check("remote: the refusal names the directory that blocked the walk", blocked.includes(cannotSearchMessage(probe, "/srv/clawwright/data")), true);
 
   const unreachable = await refusal({ code: 255, stdout: "", stderr: "ssh: connect to host example.invalid port 22: Network is unreachable" });
-  check("remote: a connection failure is not an answer", unreachable.includes(cannotCheckMessage("/srv/clawforge/data/config/openclaw.json")), true);
-  check("remote: the refusal names the path it could not check", unreachable.includes("/srv/clawforge/data/config/openclaw.json"), true);
+  check("remote: a connection failure is not an answer", unreachable.includes(cannotCheckMessage("/srv/clawwright/data/config/openclaw.json")), true);
+  check("remote: the refusal names the path it could not check", unreachable.includes("/srv/clawwright/data/config/openclaw.json"), true);
   check("remote: and carries what the transport actually said", unreachable.includes("Network is unreachable"), true);
 
   const brokenDistro = await refusal({ code: 1, stdout: "", stderr: "There is no distribution with the supplied name." });
-  check("remote: a transport failure is the check failing, not an absent path", brokenDistro.includes(cannotCheckMessage("/srv/clawforge/data/config/openclaw.json")), true);
+  check("remote: a transport failure is the check failing, not an absent path", brokenDistro.includes(cannotCheckMessage("/srv/clawwright/data/config/openclaw.json")), true);
 
   const silent = await refusal({ code: 0, stdout: "", stderr: "" });
-  check("remote: a probe that ran but said nothing is not a present path", silent.includes(cannotCheckMessage("/srv/clawforge/data/config/openclaw.json")), true);
+  check("remote: a probe that ran but said nothing is not a present path", silent.includes(cannotCheckMessage("/srv/clawwright/data/config/openclaw.json")), true);
 }
 
 // --- exists: the same question asked of a real shell and a real directory ----------------
@@ -272,7 +272,7 @@ await requires("linux-host", "local-shell exists checks", async () => {
     return;
   }
   {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-exists-shell-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-exists-shell-"));
   const blockedDir = resolve(dir, "blocked");
   try {
     await mkdir(resolve(blockedDir, "inner"), { recursive: true });
@@ -338,14 +338,14 @@ await requires("linux-host", "local-shell exists checks", async () => {
 // An env file supplies deployment values to compose; inherited host values for the same
 // names must be removed at every transport boundary.
 {
-  const name = "CLAWFORGE_UNSET_ENV_PROBE";
+  const name = "CLAWWRIGHT_UNSET_ENV_PROBE";
   const result = await spawnLocal(
     process.execPath,
     ["-e", `process.stdout.write(process.env.${name} ?? "missing")`],
     { env: { [name]: "configured" }, unsetEnv: [name] },
   );
   check("local: unsetEnv wins over env", result.stdout, "missing");
-  const mixedName = "ClawForge_Unset_Env_Probe";
+  const mixedName = "Clawwright_Unset_Env_Probe";
   const previousMixed = process.env[mixedName];
   process.env[mixedName] = "host-value";
   try {
@@ -431,7 +431,7 @@ await requires("linux-host", "local-shell exists checks", async () => {
 
   let finallyRan = false;
   try {
-    await spawnLocal("clawforge-command-that-does-not-exist", [], { input });
+    await spawnLocal("clawwright-command-that-does-not-exist", [], { input });
   } catch {
     // The caller gets the genuine launch failure.
   } finally {
@@ -441,7 +441,7 @@ await requires("linux-host", "local-shell exists checks", async () => {
 }
 
 // Streaming with no sink and no input used to inherit stdio whenever the caller merely
-// asked for `stream: true` — the exact shape `./clawforge status | cat` produces (no MCP
+// asked for `stream: true` — the exact shape `./clawwright status | cat` produces (no MCP
 // sink, no input). On Windows that inherits onto an MSYS pipe, and the wsl.exe child this
 // wraps (itself relaying Docker Compose) kills the parent Node with exit 139 the moment it
 // writes. `streamToTerminal` must also require both descriptors to be a real terminal, so a
@@ -539,10 +539,10 @@ check(
     "-d", "Ubuntu-24.04", "--exec",
     "env", "-u", "OPENCLAW_IMAGE", "-u", "OPENCLAW_TAG",
     "docker", "compose",
-    "--env-file", "/srv/clawforge/data/compose-9f2a/compose.env",
-    "--project-name", "clawforge-demo",
-    "--file", "/srv/clawforge/tools/framework/docker-compose.yml",
-    "--project-directory", "/srv/clawforge/apps/demo",
+    "--env-file", "/srv/clawwright/data/compose-9f2a/compose.env",
+    "--project-name", "clawwright-demo",
+    "--file", "/srv/clawwright/tools/framework/docker-compose.yml",
+    "--project-directory", "/srv/clawwright/apps/demo",
     "stop", "gateway",
   ]),
   "docker compose stop gateway",
@@ -570,17 +570,17 @@ check(
 const PUBLISH_SCRIPT = "temporary=$1; target=$2; trap 'rm -f -- \"$temporary\"' EXIT; cat > \"$temporary\" && mv -f -- \"$temporary\" \"$target\"; status=$?; exit $status";
 check(
   "concise action: a local/WSL sh -c script collapses instead of pasting its body",
-  describeInvocation("sh", ["-c", PUBLISH_SCRIPT, "sh", "/srv/clawforge/data/config/x.json.clawforge-publish-abcd", "/srv/clawforge/data/config/x.json"]),
+  describeInvocation("sh", ["-c", PUBLISH_SCRIPT, "sh", "/srv/clawwright/data/config/x.json.clawwright-publish-abcd", "/srv/clawwright/data/config/x.json"]),
   "sh -c …",
 );
 check(
   "concise action: the same script wrapped in wsl.exe --exec collapses the same way",
-  describeInvocation("wsl.exe", ["-d", "Ubuntu-24.04", "--exec", "sh", "-c", PUBLISH_SCRIPT, "sh", "/x.clawforge-publish-abcd", "/x"]),
+  describeInvocation("wsl.exe", ["-d", "Ubuntu-24.04", "--exec", "sh", "-c", PUBLISH_SCRIPT, "sh", "/x.clawwright-publish-abcd", "/x"]),
   "sh -c …",
 );
 check(
   "concise action: SSH's pre-quoted single-string form collapses too",
-  describeInvocation("ssh", ["user@host", `'sh' '-c' '${PUBLISH_SCRIPT}' 'sh' '/x.clawforge-publish-abcd' '/x'`]),
+  describeInvocation("ssh", ["user@host", `'sh' '-c' '${PUBLISH_SCRIPT}' 'sh' '/x.clawwright-publish-abcd' '/x'`]),
   "ssh user@host sh -c …",
 );
 

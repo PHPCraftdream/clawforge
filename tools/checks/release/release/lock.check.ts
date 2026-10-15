@@ -1,6 +1,6 @@
 // The lock comparison, branch by branch.
 //
-// The integration path through `./clawforge inspect` covers "no lock" and "a recipe changed";
+// The integration path through `./clawwright inspect` covers "no lock" and "a recipe changed";
 // these are the differences a lock exists to notice and that nothing else would: an image
 // tag that stayed the same while the image behind it moved, a framework version bump, a
 // declaration replaced wholesale, a secret the instance did not use to need.
@@ -234,7 +234,7 @@ check(
     check("a plugin removed since the lock is drift", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
     check("saying it is no longer installed", found[0].detail.includes(NO_LONGER_INSTALLED), true);
     // Independent token expectation: single-word tokens, no counted prose pin.
-    const PLUGIN_REINSTALL = ["./clawforge", "cli", "plugins", "install", "@acme/tool@1.0.0", "--force"];
+    const PLUGIN_REINSTALL = ["./clawwright", "cli", "plugins", "install", "@acme/tool@1.0.0", "--force"];
     check("and naming the reinstall command", PLUGIN_REINSTALL.every((token) => found[0].detail.includes(token)), true);
   }
 
@@ -254,7 +254,7 @@ check(
     const found = compareLock(withExtensions([], [lockedSkill]), withExtensions([], []));
     check("a skill removed since the lock is drift", found.map((entry) => entry.code), ["SKILL_DRIFT"]);
     // Independent token expectation: single-word tokens, no counted prose pin.
-    const SKILL_REINSTALL = ["./clawforge", "cli", "skills", "install", "acme-skill", "--force"];
+    const SKILL_REINSTALL = ["./clawwright", "cli", "skills", "install", "acme-skill", "--force"];
     check("naming the reinstall command", SKILL_REINSTALL.every((token) => found[0].detail.includes(token)), true);
   }
 
@@ -315,7 +315,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
 // accept now do.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-lock-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-lock-check-"));
   await writeFile(resolve(deployment, "recipes"), "not a directory");
   useDeployment(deployment);
   try {
@@ -335,7 +335,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
 
 // Exercise the durable writer and check command, not just the normalization helpers.
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-lock-inventory-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-lock-inventory-"));
   useDeployment(deployment);
   await mkdir(resolve(deployment, "config"));
   const lockTarget = resolve(deployment, "config", "deployment.lock.json");
@@ -362,7 +362,7 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
         return {
           code: 0, stderr: "",
           stdout: slots.slice(0, wholeBatch === "incomplete" ? 1 : 2).map((slot, index) =>
-            `__clawforge_cli_batch__${index}:begin\n${slot.stdout}\n__clawforge_cli_batch__${index}:exit:${slot.code}`).join("\n"),
+            `__clawwright_cli_batch__${index}:begin\n${slot.stdout}\n__clawwright_cli_batch__${index}:exit:${slot.code}`).join("\n"),
         };
       },
     },
@@ -453,9 +453,9 @@ check("and spells no path out of the checkout root", lockCommand.includes("../")
       check(`${name} instance: unreadable inventory is classified`, codes, isRunning ? ["CLI_READ_FAILED", "CLI_READ_FAILED"] : [unreadCode, unreadCode]);
       check(`${name} instance: not-running detail`, down.output.includes(NOT_RUNNING_HINT), state === false);
       check(`${name} instance: never-bootstrapped detail`, down.output.includes(NEVER_BOOTSTRAPPED_HINT), state === "never");
-      check(`${name} instance: nextActions`, doc.next.some((entry) => entry.kind === "clawforge" && entry.argv[0] === "bootstrap"), state === "never");
+      check(`${name} instance: nextActions`, doc.next.some((entry) => entry.kind === "clawwright" && entry.argv[0] === "bootstrap"), state === "never");
       check(`${name} instance: nextActions never offer up for a never-bootstrapped one`,
-        doc.next.some((entry) => entry.kind === "clawforge" && entry.argv[0] === "up"), state === false);
+        doc.next.some((entry) => entry.kind === "clawwright" && entry.argv[0] === "up"), state === false);
       // Unread is not a difference, in json/MCP as in text: the lock is present here, so nothing differs.
       check(`${name} instance: json failure wording`, down.failure, isRunning ? "2 inventory read(s) could not be compared (inventory not read)" : `2 inventory read(s) could not be compared (${state === "never" ? "instance never bootstrapped" : "instance is not running"})`);
     }

@@ -48,14 +48,14 @@ export function toolArguments(command: Declared, argv: readonly string[]): Recor
   }
 }
 
-/** The only advice a step can be built from: a clawforge one for this deployment. A
+/** The only advice a step can be built from: a clawwright one for this deployment. A
  *  shell or manual step, and an advice naming another deployment explicitly, are not. */
 function localAdvice(advice: Advice): CommandAdvice | undefined {
-  if (advice.kind !== "clawforge" || advice.app !== undefined) return undefined;
+  if (advice.kind !== "clawwright" || advice.app !== undefined) return undefined;
   return advice;
 }
 
-/** The envelope's nextSteps: the clawforge advices a document carries, matched against the
+/** The envelope's nextSteps: the clawwright advices a document carries, matched against the
  *  tools this server serves. A shell or manual step, an advice naming another deployment
  *  explicitly, and anything without a matching tool are skipped — not guessed. */
 export function toolSteps(next: readonly Advice[], lookup: (name: string) => Declared | undefined): ToolStep[] {
@@ -80,7 +80,7 @@ function adviceList(value: unknown): Advice[] {
   return value.filter((entry): entry is Advice => {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
     const advice = entry as { kind?: unknown; argv?: unknown; text?: unknown; shell?: unknown };
-    if (advice.kind === "clawforge") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === "string");
+    if (advice.kind === "clawwright") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === "string");
     if (advice.kind === "manual") return typeof advice.text === "string";
     if (advice.kind === "shell") return typeof advice.text === "string" && (advice.shell === "posix" || advice.shell === "cmd" || advice.shell === "pwsh");
     return false;

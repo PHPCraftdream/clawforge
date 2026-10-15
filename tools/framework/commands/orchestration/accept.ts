@@ -1,6 +1,6 @@
-// `clawforge accept [<recipe>]` — does this deployment's own work actually work.
+// `clawwright accept [<recipe>]` — does this deployment's own work actually work.
 //
-// `clawforge smoke` proves the instance is healthy, but not whether a recipe's wiki is
+// `clawwright smoke` proves the instance is healthy, but not whether a recipe's wiki is
 // reachable, its agent has the tools it was given, or its cron job matches the recipe —
 // properties of this deployment, not the framework's business to know.
 //

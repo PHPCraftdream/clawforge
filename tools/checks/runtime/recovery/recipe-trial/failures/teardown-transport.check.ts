@@ -9,7 +9,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { captured, ref, trialFixture, useRecipesRoot } from "../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-teardown-transport");
+const root = await useRecipesRoot("clawwright-recipe-trial-teardown-transport");
 try {
   await root.write("subject", { description: "A recipe whose scratch removal fails" });
 
@@ -30,10 +30,10 @@ try {
     });
     checkTrue("a thrown remove leaves the run non-zero", /teardown.left.resources.behind/.test(outcome.result ?? ""));
     checkTrue("the leftover report names the scratch home path shape",
-      /\.clawforge-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}/.test(outcome.result ?? ""));
+      /\.clawwright-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}/.test(outcome.result ?? ""));
     checkTrue("the attempted removal was recorded against the named path",
       (outcome.result ?? "").includes(fixture.removed[0] ?? ""));
-    checkTrue("the leftover report names the trial project", /project."clawforge-recipe-trial-/.test(outcome.result ?? ""));
+    checkTrue("the leftover report names the trial project", /project."clawwright-recipe-trial-/.test(outcome.result ?? ""));
     checkTrue("the thrown error is reported in the output", outcome.chunks.some((chunk) => /fixture.remove.transport.error/.test(chunk)));
     checkTrue("compose down still ran", fixture.docker.some((argv) => argv.includes("down")));
     checkTrue("the labelled-image check still ran", fixture.docker.some((argv) => argv.includes("images")));

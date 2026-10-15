@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { warnIfDistStale, warnForEntry } from "#framework/entry/root.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const root = realpathSync.native(mkdtempSync(resolve(realpathSync.native(tmpdir()), "clawforge-stale-dist-")));
+const root = realpathSync.native(mkdtempSync(resolve(realpathSync.native(tmpdir()), "clawwright-stale-dist-")));
 const moduleUrl = new URL("../../../framework/entry/root.ts", import.meta.url).href;
 const old = new Date("2020-01-01T00:00:00Z");
 const newer = new Date("2020-01-02T00:00:00Z");
@@ -27,7 +27,7 @@ function checkWarning(name: string, captured: string[]): void {
   const tokens = text.trim().split(/\s+/);
   const words = tokens.map((token) => token.replace(/^\W+|\W+$/g, ""));
   const facts = [captured.length, text.split("\n").length - 1, text.endsWith("\n"),
-    tokens[0] === "clawforge:" && tokens[1] === "warning:",
+    tokens[0] === "clawwright:" && tokens[1] === "warning:",
     tokens.some((token, index) => token === "npm" && tokens[index + 1] === "run" && tokens[index + 2] === "build"),
     words.includes("dist") && words.includes("sources"),
     words.includes("newer") || words.includes("older"),

@@ -179,7 +179,7 @@ try {
 
 check("a verifier that fails outright still propagates as a failure", threw, true);
 check("verification fails before pull creates a share copy", removed.length, 0);
-check("the failed verification removes the backup staging tree", [...present].some((path) => path.includes(".clawforge-backup-")), false);
+check("the failed verification removes the backup staging tree", [...present].some((path) => path.includes(".clawwright-backup-")), false);
 check("the failed verification publishes no backup", [...present].some((path) => path.startsWith("/srv/openclaw/backups/") && path.endsWith(".tar.gz")), false);
 
 finish("state");

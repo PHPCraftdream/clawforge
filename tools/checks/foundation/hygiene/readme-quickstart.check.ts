@@ -1,7 +1,7 @@
 // README's Quick start must not claim a fixed web interface port: new-app writes
 // OPENCLAW_GATEWAY_PORT from 20000-32767, so a hardcoded 18789 sends an operator to the
 // wrong address (docs/internal/review-2026-09-29-round-13.md, U8). It must still point at
-// how to find the real one (./clawforge status).
+// how to find the real one (./clawwright status).
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -16,6 +16,6 @@ const nextHeading = readme.indexOf("\n## ", start + 1);
 const quickStart = readme.slice(start, nextHeading === -1 ? readme.length : nextHeading);
 
 check("the Quick start section names no fixed gateway port", quickStart.includes("18789"), false);
-checkTrue("...and instead points at status to find the real one", quickStart.includes("./clawforge status") || quickStart.includes("`status`"));
+checkTrue("...and instead points at status to find the real one", quickStart.includes("./clawwright status") || quickStart.includes("`status`"));
 
 finish("readme-quickstart");

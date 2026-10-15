@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { resolvePackageImport } from "#framework/commands/management/recipe/hook-graph.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-hook-link-")));
+const root = await realpath(await mkdtemp(join(tmpdir(), "clawwright-hook-link-")));
 try {
   const real = join(root, "real");
   const linked = join(root, "linked");

@@ -63,7 +63,7 @@ function stubContext(options: StubOptions = {}): Context {
 }
 
 async function withDeployment<T>(body: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(resolve(tmpdir(), "clawforge-security-audit-check-"));
+  const dir = await mkdtemp(resolve(tmpdir(), "clawwright-security-audit-check-"));
   await mkdir(resolve(dir, "config"), { recursive: true });
   await mkdir(resolve(dir, "secrets"), { recursive: true });
   useDeployment(dir);
@@ -142,7 +142,7 @@ await withDeployment(async () => {
   checkTrue("error secrets-audit finding maps to blocking too", report.problems.some((p) => p.code === "SECURITY_AUDIT_CRITICAL" && p.detail.includes("REF_UNRESOLVED")));
   checkTrue("warn secrets-audit finding carries its jsonPath, never a value", report.problems.some((p) => p.detail.includes("models.providers.zai.apiKey") && !p.detail.includes("sk-")));
   check("a security-audit finding's own remediation becomes its nextAction", report.problems.find((p) => p.detail.includes("gateway.loopback_no_auth"))?.nextAction, "Set gateway.auth (token recommended).");
-  check("a secrets-audit finding has no remediation, so nextAction points at the CLI", report.problems.find((p) => p.detail.includes("PLAINTEXT_FOUND"))?.nextAction, "./clawforge cli secrets audit --json");
+  check("a secrets-audit finding has no remediation, so nextAction points at the CLI", report.problems.find((p) => p.detail.includes("PLAINTEXT_FOUND"))?.nextAction, "./clawwright cli secrets audit --json");
 });
 
 // --- not running: no in-instance findings at all --------------------------------------------

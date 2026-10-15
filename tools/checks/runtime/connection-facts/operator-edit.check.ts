@@ -1,4 +1,4 @@
-// `./clawforge apply` must not undo an operator's .env edit.
+// `./clawwright apply` must not undo an operator's .env edit.
 //
 // The operator changes OPENCLAW_GATEWAY_PORT in .env and runs apply WITHOUT any recovery
 // step. The container still answers with the old port, so the inspection reports ENV_STALE —
@@ -35,7 +35,7 @@ function setAtPath(target: Record<string, unknown>, path: string, value: unknown
   try {
     // The operator's deliberate edit: the port moved and the container has not caught up.
     const operatorEnv = [
-      "OC_DATA_DIR=/srv/clawforge/data",
+      "OC_DATA_DIR=/srv/clawwright/data",
       "OPENCLAW_GATEWAY_PORT=18789",
       "OC_COMPOSE_PROJECT=refresh-check",
       "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",
@@ -65,7 +65,7 @@ function setAtPath(target: Record<string, unknown>, path: string, value: unknown
       facts: {
         Image: "sha256:fixture-image",
         State: { Running: true },
-        Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/clawforge/data/config" }],
+        Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/clawwright/data/config" }],
         NetworkSettings: { Ports: { "18789/tcp": [{ HostPort: "18790" }] } },
         Config: { Labels: { "com.docker.compose.project": "refresh-check", Image: "ghcr.io/openclaw/openclaw:extended-stable" } },
       },

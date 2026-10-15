@@ -26,7 +26,7 @@ import { packArtifact } from "#checks/sets/pack.ts";
 
 useLinuxHost();
 // The root is made here, so the declaration writes below are provably under the temp dir.
-const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-sweep-"));
+const sweepRoot = await mkdtemp(join(tmpdir(), "clawwright-sweep-"));
 export const fixture = await createDeploymentFixture({ root: sweepRoot });
 await writeFile(join(sweepRoot, "recipes", "local", "control.check.ts"), "process.exit(0);\n");
 

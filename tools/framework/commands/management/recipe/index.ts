@@ -1,4 +1,4 @@
-// `clawforge recipe` — deploying third-party services next to the instance.
+// `clawwright recipe` — deploying third-party services next to the instance.
 //
 // Each recipe runs as its own compose project, so nothing here can disturb the gateway.
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the

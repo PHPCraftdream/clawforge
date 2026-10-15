@@ -140,7 +140,7 @@ export interface BatchedCliResult {
 
 /** Delimits one command's output from the next inside the batch script below. Distinctive
  *  enough that no CLI output (a version string, `--json` output) plausibly collides with it. */
-const BATCH_MARKER = "__clawforge_cli_batch__";
+const BATCH_MARKER = "__clawwright_cli_batch__";
 
 /** Slot failure when the batch could not run because the instance is not running. */
 export const BATCH_NOT_RUNNING = "instance not running";

@@ -6,7 +6,7 @@ import type { StackContainerEvidence, StackMigrateOptions, StackMigratePlan, Sta
 import { array, execResult, json, object, text, preflightStaging, type StackIO } from "./io.ts";
 import { tryParseLocalImageId } from "../image-ref.ts";
 import { requireOwned, records } from "./inspection.ts";
-import { assertEffectiveConfig, pinnedService, readinessSeconds } from "./recovery.ts";
+import { assertEffectiveConfig, pinnedService, readinessSeconds } from "./recovery/index.ts";
 
 // The shared worker API is a prerequisite; never substitute a weaker local check.
 export const assertMigrationConfig = assertEffectiveConfig;
@@ -38,7 +38,7 @@ export interface MigrationPrepared {
   seconds: number;
 }
 export const safePath = (path: string): boolean => /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path) && !path.split("/").some((part) => part === "." || part === "..");
-const overlaps = (left: string, right: string): boolean => left === right || left.startsWith(right + "/") || right.startsWith(left + "/");
+export const overlaps = (left: string, right: string): boolean => left === right || left.startsWith(right + "/") || right.startsWith(left + "/");
 
 /** Capture initially; supply identity to fail closed on executor revalidation. */
 export async function verifyReadonlyBind(io: Pick<StackIO, "transport">,
@@ -242,7 +242,7 @@ export async function createBackupRoot(io: Pick<StackIO, "transport">, root: str
   await t.mkdirPrivate(root);
 }
 
-const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable)
+export const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable)
   : value !== null && typeof value === "object"
     ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, stable(item)])) : value;
 

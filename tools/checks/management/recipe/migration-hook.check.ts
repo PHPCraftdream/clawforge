@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { parseMigrationBackup, type Recipe } from "#framework/service/recipe.ts";
 import type { Context } from "#framework/core/context.ts";
-import { migrationVerifier } from "#framework/commands/management/recipe/recovery/migration-verifier.ts";
+import { migrationVerifier } from "#framework/commands/management/recipe/recovery/migrate/migration-verifier.ts";
 import type { MigrationBackupEvidence } from "#framework/runtime/runtime.ts";
 
 const declaration = { consistency: "application-verified-cold", persistentState: "all-in-declared-named-volumes-and-bind-mounts",

@@ -6,7 +6,8 @@ import type { ExecResult, Transport } from "../../transport/transport.ts";
 import type { Stack, StackServiceState } from "../../runtime.ts";
 import { createIO, readCompose, json, object, array, ids, RecipeReadError, type StackIO } from "./io.ts";
 import { inspectStack, requireOwned } from "./inspection.ts";
-import { recoveryAPI } from "./recovery.ts";
+import { recoveryAPI } from "./recovery/index.ts";
+import { retireAPI } from "./recovery/retire.ts";
 import { migrationAPI } from "./migration.ts";
 
 function parsePs(stdout: string): Record<string, unknown>[] {
@@ -48,7 +49,7 @@ export function buildStack(transport: Transport, paths: PathBridge, getSettings:
   const voidly = async (args: string[]): Promise<void> => { await compose(args); };
   return {
     inspect: (options) => inspectStack(io, options),
-    ...recoveryAPI(io), ...migrationAPI(io),
+    ...recoveryAPI(io), ...retireAPI(io), ...migrationAPI(io),
     build: () => voidly(["build"]),
     up: (options) => voidly(["up", "--detach", ...(options?.wait ? ["--wait", "--wait-timeout", String(options.timeoutSeconds ?? 60)] : [])]),
     down: (removeVolumes = false) => voidly(["down", ...(removeVolumes ? ["--volumes"] : [])]),

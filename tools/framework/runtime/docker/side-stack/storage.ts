@@ -2,6 +2,10 @@ import { array, json, object, execResult, type StackIO } from "./io.ts";
 import { volumeNames, verifyWriters } from "./migration-plan.ts";
 import type { MigrationPrepared, Storage } from "./migration-plan.ts";
 
+/** Structural slice the storage-backup helpers need; migration's full prepared context
+ *  satisfies it, and so does the retire-legacy executor. */
+export type BackupContext = Pick<MigrationPrepared, "helperImage"> & { plan: Pick<MigrationPrepared["plan"], "backupRoot"> };
+
 // GNU tar compare checks bytes, ownership, modes, links and timestamps against cold data.
 // ACLs/xattrs are refused below rather than claiming tar's compare proves those metadata.
 const capability = `set -eu
@@ -41,7 +45,7 @@ sha256sum /proc/self/mountinfo`, "recipe-topology", storage.source], { allowFail
   if (capture) storage.topology = result.stdout;
   else if (!storage.topology || storage.topology !== result.stdout) throw new Error("recipe migration bind filesystem identity or topology changed");
 }
-export async function checkHelper(io: StackIO, prepared: MigrationPrepared): Promise<void> {
+export async function checkHelper(io: StackIO, prepared: Pick<MigrationPrepared, "helperImage" | "storage">): Promise<void> {
   try {
     await io.run(["run", "--rm", "--pull", "never", "--network", "none", "--read-only", "--user", "0:0",
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--entrypoint", "/bin/sh", prepared.helperImage, "-c", capability]);
@@ -57,14 +61,14 @@ function mount(storage: Storage, source: string, readonly: boolean, destination 
   if (Array.from(source).some((char) => char === "," || [0, 10, 13].includes(char.charCodeAt(0)))) throw new Error("recipe migration mount path cannot be represented safely");
   return `type=${storage.type},${storage.type === "volume" ? "volume-nocopy," : ""}src=${source},dst=${destination}${readonly ? ",readonly" : ""}`;
 }
-async function helper(io: StackIO, p: MigrationPrepared, storage: Storage, readonly: boolean, script: string,
+async function helper(io: StackIO, p: BackupContext | { helperImage: string }, storage: Storage, readonly: boolean, script: string,
   backup = true, target = false): Promise<void> {
   const filesystem = storage.type === "bind" ? storage.topology?.split("\n")[0] : undefined;
   if (storage.type === "bind" && (!filesystem || !/^\d+:\d+$/.test(filesystem))) throw new Error("recipe migration bind filesystem proof missing");
   const identityCheck = filesystem ? `test "$(stat -c '%d:%i' /data)" = '${filesystem}'\n` : "";
   await io.run(["run", "--rm", "--pull", "never", "--network", "none", "--read-only", "--user", "0:0",
     "--security-opt", "no-new-privileges", "--mount", mount(storage, target ? storage.target : storage.source, readonly),
-    ...(backup ? ["--mount", `type=bind,src=${p.plan.backupRoot},dst=/backup`] : []),
+    ...(backup && "plan" in p ? ["--mount", `type=bind,src=${p.plan.backupRoot},dst=/backup`] : []),
     "--entrypoint", "/bin/sh", p.helperImage, "-c", `set -eu\n${identityCheck}${script}`, "sh", storage.key]);
 }
 // Backup parents are operator-owned and verified by migration-plan; helper-created
@@ -110,7 +114,7 @@ tar --numeric-owner --compare -f "$1.tar" -C /data`;
   // Never expose tar filenames, checksum contents or raw helper diagnostics.
   return `set -eu\n(\n${body}\n) >/dev/null 2>&1`;
 }
-export async function backupStorage(io: StackIO, p: MigrationPrepared, storage: Storage): Promise<void> {
+export async function backupStorage(io: StackIO, p: BackupContext, storage: Storage): Promise<void> {
   await verifyTopology(io, storage);
   await helper(io, p, storage, true, storageHelperScript("backup"));
 }

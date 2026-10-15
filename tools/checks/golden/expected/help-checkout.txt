@@ -813,17 +813,17 @@
 
 === recipe --help ===
 ==> recipe — Deploy service recipes beside the instance
-    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--version <version>] [--artifact <basename>] [--apply]
-      <action>               Recipe action [list|import|new|check|verify|onboard|diagnose|install|trial|remove|inspect|recover|migrate|status|logs|pin|run]
-      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, status, logs, pin, run); Untrusted code: operator rights, not sandboxed (check)
+    Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--apply] [--version <version>] [--artifact <basename>]
+      <action>               Recipe action [list|import|new|check|verify|onboard|diagnose|install|trial|remove|inspect|recover|migrate|retire-legacy|status|logs|pin|run]
+      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, retire-legacy, status, logs, pin, run); Untrusted code: operator rights, not sandboxed (check)
       <new-name>             import under this name instead of the source directory's own name (import)
       <recipe-action>        the action declared in the recipe's manifest (recipe inspect lists them) (run)
       <arg…>                 action argument as key=value (run)
       --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list); With inspect: emit inspection evidence as JSON (inspect); With run: emit the action's result as JSON (run)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
       --dry-run              list files without executing recipe code (check); With install/remove/recover/migrate: show what would happen (install, remove); With trial: show what would be copied, the project name and the override (trial); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate); With run: pass dryRun to the action; treated as read-only (run)
-      --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, trial, remove, pin, run); Take over the instance lock held by another operation (recover, migrate)
-      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, trial, remove, pin, run); Confirm <hostId> for a recorded remote lock owner (recover, migrate)
+      --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, trial, remove, pin, run); Take over the instance lock held by another operation (recover, migrate, retire-legacy)
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, trial, remove, pin, run); Confirm <hostId> for a recorded remote lock owner (recover, migrate, retire-legacy)
       --tail <n>             lines to return per service (diagnose, inspect, logs)
       --force-disabled       build a recipe marked disabled (install)
       --volumes              delete its volumes too (remove)
@@ -831,11 +831,11 @@
       --build                build the selected service (recover)
       --pull                 pull the selected service image (recover)
       --reconcile-consumer   May mutate consumer configuration and the gateway through afterStart (recover)
-      --helper-image <sha256> Trusted local sha256 image ID for storage tools; never built or pulled (migrate)
-      --shutdown-timeout <seconds> Finite 1..3600 seconds, default 180; never escalates to forced kill (migrate)
+      --helper-image <sha256> Trusted local sha256 image ID for storage tools; never built or pulled (migrate, retire-legacy)
+      --shutdown-timeout <seconds> Finite 1..3600 seconds, default 180; never escalates to forced kill (migrate); Finite 1..3600 seconds, default 180; never escalates to forced kill (retire-legacy)
+      --apply                stop, back up and remove the legacy containers; previews by default (retire-legacy); With pin: confirm and atomically update the Dockerfile (pin)
       --version <version>    new plain-token release version (pin)
       --artifact <basename>  select a declaration by its expanded asset basename (version placeholders use the current version) (pin)
-      --apply                confirm and atomically update the Dockerfile (pin)
     
     A recipe is a third-party service living beside the instance — its own directory under the deployment's recipes/, its own compose project, its own lifecycle.
     It cannot take the gateway down with it and a snapshot never picks up its images or volumes.

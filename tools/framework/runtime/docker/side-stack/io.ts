@@ -13,6 +13,16 @@ export class RecipeReadError extends Error {
     this.causeKind = causeKind;
   }
 }
+/** Structured refusal: `code` is the assertable contract, the message is prose for humans.
+ *  migrationFailure preserves it, so command-level refusals stay machine-checkable. */
+export class RefusalError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "RefusalError";
+    this.code = code;
+  }
+}
 export function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new RecipeReadError("malformed", "record");
   return value as Record<string, unknown>;

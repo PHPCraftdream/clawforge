@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { StackLock, StackRecoverOptions, StackRecoverPlan } from "../../runtime.ts";
-import { sleep } from "../../runtime.ts";
-import { composeDocument, preflightStaging, object, array, json, text, checkDeadline, type StackIO } from "./io.ts";
-import { requireOwned, records } from "./inspection.ts";
+import type { StackLock, StackRecoverOptions, StackRecoverPlan } from "../../../runtime.ts";
+import { sleep } from "../../../runtime.ts";
+import { composeDocument, preflightStaging, object, array, json, text, checkDeadline, type StackIO } from "../io.ts";
+import { requireOwned, records } from "../inspection.ts";
 
 export function pinnedService(value: unknown, image: string): Record<string, unknown> {
   const service = { ...object(value), image, pull_policy: "never" };

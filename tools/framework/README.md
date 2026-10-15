@@ -1,4 +1,4 @@
-# clawwright
+# @phpcraftdream/clawwright
 
 Clawwright is a Node.js framework and CLI for operating self-hosted
 [OpenClaw](https://github.com/openclaw/openclaw) deployments. It provides transport-aware
@@ -12,7 +12,7 @@ Source, issues and the full guides: https://github.com/PHPCraftdream/clawwright
 System-wide, then one folder per deployment:
 
 ```bash
-npm install -g clawwright
+npm install -g @phpcraftdream/clawwright
 mkdir my-openclaw && cd my-openclaw
 clawwright init
 clawwright bootstrap --check
@@ -22,7 +22,7 @@ clawwright bootstrap
 Or pinned per app, as a local dependency:
 
 ```bash
-npm install clawwright
+npm install @phpcraftdream/clawwright
 npx clawwright init
 ./clawwright bootstrap
 ```
@@ -38,7 +38,7 @@ declaration it writes is ESM, so the directory's `package.json` has to say `"typ
 holds CommonJS of its own.
 
 Installed globally instead (`npm install -g`), `clawwright` works in any app folder: `clawwright
-init` there, then `clawwright <command>`. A folder with its own local `clawwright`
+init` there, then `clawwright <command>`. A folder with its own local `@phpcraftdream/clawwright`
 still runs that one — the global command hands over to it — so a version pin per app keeps working.
 
 The gateway image, Docker, WSL, SSH, and provider credentials belong to the deployment. The
@@ -82,7 +82,7 @@ recipe-repair contract.
 A recipe's `recipe.json` can declare two private-file fields, in two different coordinate
 systems. `privatePaths` lists data-relative paths where the recipe keeps generated
 credentials on the target: `migrate` and `share` snapshots exclude them, `full` keeps them,
-and the `clawwright/private-config` target-write helpers refuse writes anywhere else.
+and the `@phpcraftdream/clawwright/private-config` target-write helpers refuse writes anywhere else.
 `privateFiles` lists recipe-relative files that `recipe import` leaves out of the copy — a
 filter over file names, not a guarantee. Both are literal paths, validated strictly. The
 repository's [Recipes guide](https://github.com/PHPCraftdream/clawwright/blob/main/docs/guide/recipes.md) documents both contracts,

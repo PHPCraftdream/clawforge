@@ -12,7 +12,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 import { scratchDeployment, stubContext } from "./fixture.ts";
 const { outerRecipes } = scratchDeployment();
 // Bare imports: the documented hook shape imports
-// `clawwright/private-config`, a package specifier resolved from the recipe's
+// `@phpcraftdream/clawwright/private-config`, a package specifier resolved from the recipe's
 // own node_modules. The loader this replaces executed rewritten copies from a scratch
 // cache directory whose package scope had no node_modules, so even an unmodified first
 // run broke every hook importing a dependency; hooks now execute from their real path,
@@ -21,21 +21,21 @@ const { outerRecipes } = scratchDeployment();
 {
   const bareRoot = resolve(tmpdir(), `clawwright-recipe-hook-bare-${Date.now()}`);
   try {
-    await mkdir(resolve(bareRoot, "bare", "node_modules", "clawwright"), { recursive: true });
+    await mkdir(resolve(bareRoot, "bare", "node_modules", "@phpcraftdream", "clawwright"), { recursive: true });
     await writeFile(resolve(bareRoot, "bare", "recipe.json"), JSON.stringify({ description: "Bare import probe" }), "utf8");
     await writeFile(
-      resolve(bareRoot, "bare", "node_modules", "clawwright", "package.json"),
-      JSON.stringify({ name: "clawwright", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
+      resolve(bareRoot, "bare", "node_modules", "@phpcraftdream", "clawwright", "package.json"),
+      JSON.stringify({ name: "@phpcraftdream/clawwright", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
       "utf8",
     );
     await writeFile(
-      resolve(bareRoot, "bare", "node_modules", "clawwright", "private-config.js"),
+      resolve(bareRoot, "bare", "node_modules", "@phpcraftdream", "clawwright", "private-config.js"),
       "export function stubRevision() { return 42; }\n",
       "utf8",
     );
     await writeFile(
       resolve(bareRoot, "bare", "verify.ts"),
-      "import { stubRevision } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
+      "import { stubRevision } from \"@phpcraftdream/clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
       "utf8",
     );
     useRecipesDir(bareRoot);
@@ -46,10 +46,10 @@ const { outerRecipes } = scratchDeployment();
       return JSON.parse(output) as { revision?: number };
     };
 
-    check("bare: a hook importing clawwright/private-config resolves it from the recipe's own node_modules", (await verifyOnce()).revision, 42);
+    check("bare: a hook importing @phpcraftdream/clawwright/private-config resolves it from the recipe's own node_modules", (await verifyOnce()).revision, 42);
     await writeFile(
       resolve(bareRoot, "bare", "verify.ts"),
-      "import { stubRevision } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() + 8 }; }\n",
+      "import { stubRevision } from \"@phpcraftdream/clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() + 8 }; }\n",
       "utf8",
     );
     check("bare: the package import still resolves after an edit re-imports the hook", (await verifyOnce()).revision, 50);

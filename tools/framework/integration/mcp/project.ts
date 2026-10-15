@@ -48,9 +48,9 @@ process.argv = [process.argv[0], entry, "--app", basename(root), action];
 await import(pathToFileURL(entry).href);
 `;
 
-/** Runs the deployment's own clawwright package, else the system-wide command. */
+/** Runs the deployment's own @phpcraftdream/clawwright package, else the system-wide command. */
 const INSTALLED_LAUNCHER = `// Clawwright MCP launcher: committed next to app.ts. Runs this deployment's own
-// clawwright package (invariant: resolved through node's own package resolution,
+// @phpcraftdream/clawwright package (invariant: resolved through node's own package resolution,
 // never a hardcoded path), or the system-wide clawwright command when it has none. Written by
 // init / mcp-setup; the bootstrap in the client config finds this file and sets
 // CLAWWRIGHT_DEPLOYMENT_ROOT before importing it.
@@ -66,7 +66,7 @@ if (!["mcp-serve", "control-mcp"].includes(action)) throw new Error("invalid MCP
 
 let entry;
 try {
-  entry = resolve(dirname(createRequire(resolve(root, "package.json")).resolve("clawwright/app")), "..", "entry", "bin.js");
+  entry = resolve(dirname(createRequire(resolve(root, "package.json")).resolve("@phpcraftdream/clawwright/app")), "..", "entry", "bin.js");
 } catch {
   entry = undefined;
 }
@@ -75,7 +75,7 @@ if (entry === undefined) {
   // Same stdio, so the MCP session runs straight through the system-wide command.
   const child = spawn("clawwright", [action], { stdio: "inherit", shell: process.platform === "win32" });
   child.on("error", (error) => {
-    process.stderr.write("clawwright: " + error.message + " — install it system-wide or add clawwright to this deployment\\n");
+    process.stderr.write("clawwright: " + error.message + " — install it system-wide or add @phpcraftdream/clawwright to this deployment\\n");
     process.exit(1);
   });
   child.on("exit", (code) => process.exit(code ?? 1));

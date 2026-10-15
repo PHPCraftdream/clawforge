@@ -40,9 +40,9 @@ const data = completionData(surfaceRegistry(), true);
 
 // --- HEAD literals (captured once from a detached HEAD worktree, no normalization) -------
 
-const HEAD_SHIM_SHA256 = "fa71a67cf94572a84f81f07afbe3730957781d20f227dd34838962f8840718c3";
+const HEAD_SHIM_SHA256 = "532092b9807cad5f9ff6557dcbd1b60761c5f8406abc89eab8f1b811cfe03730";
 const HEAD_LAUNCHER_MONOREPO_SHA256 = "c6432c1a51f1fce08169fbeb213e7a164e686526e87d950662b4a3674cb395c8";
-const HEAD_LAUNCHER_INSTALLED_SHA256 = "b3a9dbad48246177b20d06bb6d235dd02b4c34396eabafa2ca0a0881e213438f";
+const HEAD_LAUNCHER_INSTALLED_SHA256 = "6b97e1202a3510ed22bde9bf98f363f4698fb432b56056a57e2d2ae0eff494cf";
 const HEAD_INIT_STORED = [
   "// This deployment.",
   "//",
@@ -51,9 +51,9 @@ const HEAD_INIT_STORED = [
   "//",
   "// Run it with: ./clawwright status",
   "",
-  "import { defineApp } from \"clawwright/app\";",
-  "import { mountPoints } from \"clawwright/mounts\";",
-  "import { openclawCommands } from \"clawwright/commands\";",
+  "import { defineApp } from \"@phpcraftdream/clawwright/app\";",
+  "import { mountPoints } from \"@phpcraftdream/clawwright/mounts\";",
+  "import { openclawCommands } from \"@phpcraftdream/clawwright/commands\";",
   "",
   "export default defineApp({",
   "  name: \"demo\",",

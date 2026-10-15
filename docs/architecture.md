@@ -170,7 +170,7 @@ is nowhere for neighbours to come from there. Both entry points share one dispat
 different: `tools/clawwright.ts` resolves `apps/<name>` from the monorepo root (`monorepoRoot`,
 `core/env.ts`), `entry/bin.ts` resolves the single deployment from its own `cwd`; `new-app`
 (integration/deployment/scaffold.ts) generates a declaration with a relative import into `tools/framework/`,
-`init` (integration/deployment/init.ts) with a package-specifier import (`clawwright/app`), because
+`init` (integration/deployment/init.ts) with a package-specifier import (`@phpcraftdream/clawwright/app`), because
 outside the monorepo the relative path does not exist.
 
 The practical flow, and why packaging raw `.ts` does not work, are in

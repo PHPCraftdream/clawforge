@@ -321,7 +321,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
 
 // --- the installed command: which framework copy runs --------------------------------------------
 
-const PACKAGE = "clawwright";
+const PACKAGE = "@phpcraftdream/clawwright";
 
 /** The checkout's own gate, purely: `root` holds tools/clawwright.ts next to the framework sources. */
 export function checkoutGateIn(root: string, fs: FsProbe): string | undefined {

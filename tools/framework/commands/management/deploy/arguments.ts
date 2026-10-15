@@ -56,7 +56,7 @@ export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<
     die(
       "deploy mirrors a Clawwright checkout to the server with rsync, and there is no " +
         `checkout here — ${INSTALLED_PACKAGE_MODE}\n` +
-        "Deploying in this mode means installing clawwright on the server and " +
+        "Deploying in this mode means installing @phpcraftdream/clawwright on the server and " +
         "sending only this deployment's own files, which is a different command and does " +
         "not exist yet. Deploy from a checkout, or copy this deployment's directory across " +
         "and run the bootstrap there:",

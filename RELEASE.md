@@ -1,6 +1,6 @@
 # Release checklist
 
-This repository publishes `clawwright` from `tools/framework/`.
+This repository publishes `@phpcraftdream/clawwright` from `tools/framework/`.
 
 ## First token-based release through CI
 
@@ -45,8 +45,8 @@ Before the first release:
 
 1. Decide the version: `tools/framework/package.json` and CHANGELOG.md must agree — fold
    `## Unreleased` into the section of the version being tagged (done for 0.1.0).
-2. Confirm the unscoped `clawwright` npm name is still free (or already owned by the release
-   account); the package publishes with public access.
+2. The package is `@phpcraftdream/clawwright`, in the release account's own scope (npm refuses the
+   bare `clawwright` as too close to `playwright`); it publishes with public access.
 3. The copyright holder is PHPCraftdream (LICENSE-MIT, NOTICE, package `author`); the project
    is dual-licensed MIT OR Apache-2.0, and CONTRIBUTING.md accepts contributions under both.
 4. `THIRD_PARTY_NOTICES.md` (repository and package copies are identical) carries OpenClaw's MIT
@@ -56,9 +56,9 @@ Before the first release:
    resulting tarball in a fresh consumer and run `clawwright init` before tagging.
 6. Tag the release and publish from the tag. After the package is on the registry, put the npm
    badge back into README.md
-   (`[![npm package](https://img.shields.io/npm/v/clawwright?logo=npm)](https://www.npmjs.com/package/clawwright)`)
+   (`[![npm package](https://img.shields.io/npm/v/%40phpcraftdream%2Fclawwright?logo=npm)](https://www.npmjs.com/package/@phpcraftdream/clawwright)`)
    in place of the pre-release status badge, and rewrite README.md's "Installing `clawwright`
-   system-wide" section around `npm install -g clawwright` (it still describes the clone-only
+   system-wide" section around `npm install -g @phpcraftdream/clawwright` (it still describes the clone-only
    path). Do not publish a working tree containing
    deployment data, `.env`, MCP client settings, archives, snapshots, or generated `dist/`
    output.

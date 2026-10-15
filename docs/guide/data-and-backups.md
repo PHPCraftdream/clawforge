@@ -374,7 +374,7 @@ cannot undo plaintext exposure.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { protectPrivateDirectory, createPrivateBinaryFile } from "clawwright/private-config";
+import { protectPrivateDirectory, createPrivateBinaryFile } from "@phpcraftdream/clawwright/private-config";
 
 export default defineApp({
   // ...

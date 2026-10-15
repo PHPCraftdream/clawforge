@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `clawwright` will be documented here.
+All notable changes to `@phpcraftdream/clawwright` will be documented here.
 
 ## Unreleased
 
@@ -19,13 +19,14 @@ Known limitations of this release:
 
 ### Renamed
 * The project is now **Clawwright** (was ClawForge): the npm scope `@clawforge` belongs to an unrelated package,
-  so the framework could never be published under it. Everything follows the new name, with no compatibility layer:
-  the package is the unscoped `clawwright` (`npm install -g clawwright`; exports `clawwright/app`,
-  `clawwright/mounts`, `clawwright/commands`, `clawwright/recipe-kit`, `clawwright/private-config`), the command and
+  so the framework could never be published under it, and npm refuses the bare name `clawwright` as too close to
+  `playwright`. Everything follows the new name, with no compatibility layer:
+  the package is `@phpcraftdream/clawwright` (`npm install -g @phpcraftdream/clawwright`; exports
+  `@phpcraftdream/clawwright/app`, `/mounts`, `/commands`, `/recipe-kit`, `/private-config`), the command and
   the checkout launcher are `clawwright` / `./clawwright` (`tools/clawwright.ts`), the MCP servers are `clawwright`
   and `clawwright-control`, environment variables are `CLAWWRIGHT_*`, and the names the framework writes on a target
   (markers, cron entries, trial and recovery files) use the new name too. An existing deployment is moved over once by
-  hand: change its app.ts imports and dependency to `clawwright`, rerun `mcp-setup` (it rewrites the previous
+  hand: change its app.ts imports and dependency to `@phpcraftdream/clawwright`, rerun `mcp-setup` (it rewrites the previous
   launcher), and reinstall the `watch`/`backup` schedules.
 
 ### Added
@@ -56,7 +57,7 @@ Known limitations of this release:
   proven to publish nothing and to reference no live volume, network, bind mount or image before anything starts, and the
   scratch home and trial resources are removed in reverse order afterwards. Anything it cannot prove is refused; after a
   signal or a failed call over SSH it waits for the remote command to expire before cleaning up, and lists leftovers by name.
-* `clawwright/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
+* `@phpcraftdream/clawwright/recipe-kit` adds a reconcile primitive for config an application's recipe owns: a pure planner, a guarded
   single-batch apply that re-reads and verifies, redacted plan views (keyed pseudonyms, no raw values), intent/result journalling
   with two-phase provenance so a crash never loses ownership, operator entries are never removed, removals above a fixed bound need
   a dedicated consent token, and protected path segments (`owners`, `approvers`, `credentials`) are refused at any depth.
@@ -64,7 +65,7 @@ Known limitations of this release:
   (`read`, `change` or `destroy`) and typed arguments; `recipe run <recipe> <action> key=value [--dry-run] [--json]` runs
   it through one entry on the CLI and the MCP `recipe` tool. The declared effect drives confirmation and locking
   per call, results are size-bounded and secret-masked, and `recipe inspect` lists the declared actions.
-* `clawwright/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
+* `@phpcraftdream/clawwright/private-config` adds keyed pseudonyms (`privatePseudonym`, `privatePseudonymLookup`: HMAC-SHA-256 over
   length-prefixed recipe, namespace and value, with a per-deployment key created once, exclusively, under a declared
   `privatePaths` directory and registered for redaction) and intent/result journal records with crash-gap detection
   (`appendPrivateIntent`, `appendPrivateResult`, `readPendingPrivateIntents`).
@@ -76,7 +77,7 @@ Known limitations of this release:
   `OC_CHECK_TIMINGS_OUT=<path>` also writes the run's durations for CI artifacts; `OC_CHECK_TIMINGS=off` disables the file.
 * Recipe hooks get schema-versioned private state (`readPrivateState` / `writePrivateState`) and a bounded,
   secret-refusing private journal (`appendPrivateJournal` / `readPrivateJournal`) in
-  `clawwright/private-config`. New ancestor directories are created owner-only from the start.
+  `@phpcraftdream/clawwright/private-config`. New ancestor directories are created owner-only from the start.
 * Recipes can own application-config paths: `recipe.json` accepts an optional `owns` array (`value` or
   `list-member` mode, optional segment-wise prefixes). Owned paths are refused in `desired-state.json`, skipped
   by `apply-config` and never reported as drift, and `inspect` / `recipe inspect` show the owner; overlapping
@@ -88,7 +89,7 @@ Known limitations of this release:
 * `recipe.json` may declare `ephemeralPaths`: absolute container paths whose writable-layer contents are
   disposable. `recipe migrate` ignores changes at or under them, reports the ignored counts, and names the
   unsupported writable-layer paths (and this field) when it still refuses.
-* A public `clawwright/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
+* A public `@phpcraftdream/clawwright/recipe-kit` entry for recipe hooks: `appCli` and `appConfigPatch` call the
   application CLI with stdin-only input and guarded JSON results (`redacted` reports whether a registered
   secret was masked in the parsed output); `consumerFetch` makes one bounded HTTP
   request from the gateway container (its DNS and proxy), with the request on stdin and secrets redacted.
@@ -123,7 +124,7 @@ Known limitations of this release:
   selects the i-th of n disjoint round-robin slices of the declared controls, and CI runs the controls as three
   parallel Windows shards (`1/3`, `2/3`, `3/3`), which together hold every control exactly once.
 * Advice names the deployment's own launcher when the framework reaches it through an npm `file:` linked package
-  (a `node_modules/clawwright` symlink/junction into a framework checkout): the hint spells the app's local
+  (a `node_modules/@phpcraftdream/clawwright` symlink/junction into a framework checkout): the hint spells the app's local
   package, not the checkout path the link resolves to.
 * `ci.yml` runs two tiers: a push fires only for `main`, and a push to `main` runs the fast tier (type check, lint,
   `check --related --base` against the merge-base with `origin/main`) — the full suite already gated its pull request;
@@ -410,7 +411,7 @@ Known limitations of this release:
   were still offered). Regenerate a completion script saved to a
   file. On Windows, `clawwright` run in a deployment folder whose directory name differs in case
   from the name it is known by no longer fails with `invalid deployment name`.
-* On Windows, a deployment that depends on its own `clawwright` copy gets advice
+* On Windows, a deployment that depends on its own `@phpcraftdream/clawwright` copy gets advice
   lines prefixed with npm's `node_modules\.bin\clawwright` instead of the bash-only committed
   `./clawwright` shim, which cmd.exe and PowerShell cannot run.
 * `deploy`'s printed bootstrap lines quote the remote path (`cd '/srv/my app' && …`), so a
@@ -690,7 +691,7 @@ Known limitations of this release:
   action given" help line appears only on commands that have actions; and the target-side
   `readlink -f` helper is one shared `physicalPath`, not three copies.
 * The checks now distinguish the fixes they cover: a scratch checkout deployment's `app.ts` importing
-  `clawwright/app` must load through the gate, the watch cycle lock's start-time tolerance
+  `@phpcraftdream/clawwright/app` must load through the gate, the watch cycle lock's start-time tolerance
   is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health
   gate (the stub's post-backup restart succeeds and the failure names health after recreation), and
   each module of the two known import cycles loads as a first import. Hygiene: the package-export
@@ -773,7 +774,7 @@ Known limitations of this release:
   no findings at all. Its advice follows the deployment's state — `./clawwright lock` once a
   lock is recorded, `./clawwright bootstrap` before (where `lock` refuses). The hard
   refusal stays on `set build`.
-* Recipe hooks and a checkout deployment's `app.ts` can import `clawwright/private-config`
+* Recipe hooks and a checkout deployment's `app.ts` can import `@phpcraftdream/clawwright/private-config`
   (and the package's other public exports) the way the guide and the `--with-hooks` stub say: in a
   checkout there is no dist build and no install to resolve the specifier against, so the hook
   loader and the checkout gate map the exports onto the checkout's own framework sources, while an
@@ -806,7 +807,7 @@ Known limitations of this release:
   at the cost of holding a stale lock a little longer. Seen as a flake in `compose-sweep.check.ts`.
 * The global command refuses an `app.ts` inside a checkout by what it imports, not where it sits:
   only a relative import of the checkout's `tools/framework/` (the `new-app` declaration) outside
-  `apps/<name>` is refused; an installed-style `app.ts` (`clawwright`) under a checkout
+  `apps/<name>` is refused; an installed-style `app.ts` (`@phpcraftdream/clawwright`) under a checkout
   path runs as before, including `version` and `--project-root`.
 * Checkout advice: the `(in bash also ./clawwright new-app <name>)` form is printed literally instead
   of being localized away; "new-app <name> takes over this empty directory" is said only for an
@@ -958,9 +959,9 @@ Known limitations of this release:
 * System-wide install: `npm run install:system` packs `tools/framework` and installs it with
   `npm install -g` (`-- --prefix <dir>` for another prefix), then runs the installed command and
   says when its directory is not on PATH. The global `clawwright` works in any app folder: a local
-  `clawwright` dependency still wins (the global command hands over to it), `apps/<name>`
+  `@phpcraftdream/clawwright` dependency still wins (the global command hands over to it), `apps/<name>`
   and the root of a Clawwright checkout go to that checkout's gate, and a folder with neither runs on
-  the global package, whose `clawwright` imports then resolve to it. The `./clawwright`
+  the global package, whose `@phpcraftdream/clawwright` imports then resolve to it. The `./clawwright`
   script and the MCP launcher `init` writes fall back to the global command; an unchanged launcher
   from before is still rewritten, not reported as a local edit. Covered by `system-install.check.ts`
   on every CI platform, plus a real global install used from PATH (bash, and PowerShell on Windows).
@@ -1144,13 +1145,13 @@ Known limitations of this release:
   no-local-package fallback runs the global package's `dist/entry/bin.js` with the node it already
   found instead of exec'ing npm's shim (which failed with `exec: node: not found` under WSL and
   cron), and the Windows Task Scheduler line records the running package's entry instead of a
-  non-existent `node_modules/clawwright/...` path.
+  non-existent `node_modules/@phpcraftdream/clawwright/...` path.
 * `init` names what is meant to be committed accurately (`./clawwright`, `mcp-launch.mjs`, `app.ts`,
   `package.json`, `config/`, `recipes/`), the `.env` header is true for both `new-app` and `init`,
   and messages that pointed at repository-relative `docs/...` paths (WSL boundary, instance lock,
   recipe cutover) now print absolute GitHub URLs from one helper (`core/io/docs-url.ts`).
 * `clawwright init --local` (system-wide install: `app.ts` was unresolved in editors) prints the
-  `npm install --no-save` command that gives the app its own `clawwright` for types; init
+  `npm install --no-save` command that gives the app its own `@phpcraftdream/clawwright` for types; init
   does not run npm. Without the flag, init hints at it.
 * A command deadline now ends the command's whole process tree, not only its top process: the
   ssh watchdog used on targets without `timeout` (macOS) signals a process group (`setsid`, else

@@ -94,7 +94,7 @@ try {
   const verifyText = await readFile(resolve(hookedDir, "verify.ts"), "utf8");
   check(
     "prepare.ts's commented example imports from the published private-config entry point",
-    prepareText.includes('from "clawwright/private-config"'),
+    prepareText.includes('from "@phpcraftdream/clawwright/private-config"'),
     true,
   );
   check("prepare.ts states hooks run with the operator's rights", prepareText.includes("the operator's rights"), true);

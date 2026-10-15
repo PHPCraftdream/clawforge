@@ -66,7 +66,7 @@ Updating pins does not restart an already-running service. After applying, rebui
 A secret is never a command-line argument: argv is readable by any process on the target.
 Two supported stdin paths exist for recipe hooks.
 
-The `clawwright/recipe-kit` helpers are stdin-only by construction:
+The `@phpcraftdream/clawwright/recipe-kit` helpers are stdin-only by construction:
 
 - `appConfigPatch(ctx, patch)` sends a config-shaped JSON object to the application's own
   CLI as `config patch --stdin` on stdin (adding `--dry-run` in dry-run mode). The patch
@@ -80,7 +80,7 @@ The `clawwright/recipe-kit` helpers are stdin-only by construction:
   responses are capped, sanitized and optionally header-filtered.
 
 For converging an owned config path onto a desired set, the `reconcile` module of
-`clawwright/recipe-kit` provides four more helpers, covered in
+`@phpcraftdream/clawwright/recipe-kit` provides four more helpers, covered in
 [Reconcile an owned set](#reconcile-an-owned-set):
 
 - `reconcilePlanView(plan, options?)` is a read-only redacted view of a plan: entry keys
@@ -101,7 +101,7 @@ For converging an owned config path onto a desired set, the `reconcile` module o
   hook can surface it before deciding to apply.
 
 For arbitrary commands, `execWithSecrets(ctx, command, args, { env })` from
-`clawwright/private-config` runs a target command with secret environment values
+`@phpcraftdream/clawwright/private-config` runs a target command with secret environment values
 that never appear in any process's argv: the values are written once to an owner-only
 temporary file (mode 700 directory, mode 600 file; a sealed ACL on local Windows targets),
 a shell sources it and `exec`s the command, and the directory is removed afterwards. Values
@@ -148,7 +148,7 @@ whatever the domain — use the reconcile primitive instead of a hand-rolled rea
 The generic shape:
 
 ```ts
-import { reconcileApply } from "clawwright/recipe-kit";
+import { reconcileApply } from "@phpcraftdream/clawwright/recipe-kit";
 
 const OWNED_PATH = "plugins.widget.entries";
 
@@ -350,7 +350,7 @@ own import step:
 import { randomUUID } from "node:crypto";
 import {
   privatePseudonym, appendPrivateIntent, appendPrivateResult,
-} from "clawwright/private-config";
+} from "@phpcraftdream/clawwright/private-config";
 
 async function importAccount(accountId: string): Promise<void> {
   // The recipe's own import step.

@@ -1,5 +1,5 @@
 {
-  "name": "clawwright",
+  "name": "@phpcraftdream/clawwright",
   "version": "0.1.0",
   "description": "Clawwright framework and CLI for operating self-hosted OpenClaw deployments.",
   "keywords": [

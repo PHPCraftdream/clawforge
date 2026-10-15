@@ -43,5 +43,5 @@ SOFTWARE.
 ## App-owned recipe sources
 
 Recipes are application-owned and may clone or build their own upstream sources at build time.
-They are not part of the `clawwright` npm package; review each recipe's source,
+They are not part of the `@phpcraftdream/clawwright` npm package; review each recipe's source,
 license and pin before enabling or redistributing it.

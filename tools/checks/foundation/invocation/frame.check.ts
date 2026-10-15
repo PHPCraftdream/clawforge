@@ -63,7 +63,7 @@ const existsIn = (paths: readonly string[]): ((path: string) => boolean) => (pat
 const FS = {
   exists: (path: string): boolean => existsIn(GATE_FILES)(path) || existsIn(APP_FILES)(path),
   readFile: (path: string): string | undefined =>
-    key(path).endsWith("package.json") && existsIn(GATE_FILES)(path) ? '{"name":"clawwright"}' : undefined,
+    key(path).endsWith("package.json") && existsIn(GATE_FILES)(path) ? '{"name":"@phpcraftdream/clawwright"}' : undefined,
 };
 const facts = (cwd: string, checkoutRoot: string | undefined = ROOT): HandoverFacts =>
   checkoutRoot === undefined ? { cwd, fs: FS } : { cwd, fs: FS, checkoutRoot };

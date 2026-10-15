@@ -56,8 +56,8 @@ import { stageTally } from "#checks/kit/deployment-fixture.ts";
 const ROOT = "/clawwright-checkout";
 const quoteRoot = "/law literal $ quote'";
 const APP_LOCAL = "/home/u/app-local";
-const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/clawwright/entry/bin.js`;
-const SELF = "/usr/local/lib/node_modules/clawwright/dist/entry/bin.js";
+const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@phpcraftdream/clawwright/entry/bin.js`;
+const SELF = "/usr/local/lib/node_modules/@phpcraftdream/clawwright/dist/entry/bin.js";
 const BIN_SUFFIX = "/node_modules/.bin/clawwright";
 const DEPLOYMENT_COMMANDS: readonly string[] = ["status", "bootstrap"];
 const EXPANDING_SHELLS: readonly Shell[] = ["posix", "cmd", "pwsh"];
@@ -70,7 +70,7 @@ const FILES: Record<string, string> = {
   ["/usr/local/bin/cw"]: "#!/bin/sh\n",
   [`${ROOT}/clawwright`]: "#!/bin/sh\n",
   [`${ROOT}/tools/clawwright.ts`]: "// gate\n",
-  [`${ROOT}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
+  [`${ROOT}/tools/framework/package.json`]: JSON.stringify({ name: "@phpcraftdream/clawwright" }),
   [`${ROOT}/apps/openclaw/app.ts`]: "export default {};\n",
   [`${ROOT}/apps/demo/app.ts`]: "export default {};\n",
   // The case-4 target deployment exists on the law's layout, like demo and openclaw: rows
@@ -88,7 +88,7 @@ const FILES: Record<string, string> = {
   [LOCAL_ENTRY]: "// local package entry\n",
   [`${quoteRoot}/clawwright`]: "#!/bin/sh\n",
   [`${quoteRoot}/tools/clawwright.ts`]: "// gate\n",
-  [`${quoteRoot}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
+  [`${quoteRoot}/tools/framework/package.json`]: JSON.stringify({ name: "@phpcraftdream/clawwright" }),
   [`${quoteRoot}/apps/demo/app.ts`]: "export default {}",
   [`${quoteRoot}/apps/x/app.ts`]: "export default {}",
 };
@@ -96,8 +96,8 @@ const DIRS: readonly string[] = [
   `${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/x`, `${ROOT}/apps/staging`, `${ROOT}/docs`,
   `${ROOT}/tools`, `${ROOT}/tools/framework`, `${APP_LOCAL}/config`,
   `${APP_LOCAL}/node_modules`, `${APP_LOCAL}/node_modules/.bin`,
-  `${APP_LOCAL}/node_modules/clawwright`,
-  `${APP_LOCAL}/node_modules/clawwright/entry`,
+  `${APP_LOCAL}/node_modules/@phpcraftdream`, `${APP_LOCAL}/node_modules/@phpcraftdream/clawwright`,
+  `${APP_LOCAL}/node_modules/@phpcraftdream/clawwright/entry`,
 ];
 /** Host-independent refusal TEXT: paths inside a recorded reason normalize exactly like
  *  the layout's paths (drive letter and separators stripped), so a baseline reason written
@@ -196,7 +196,7 @@ function resolveProgram(program: string, pasteDir: string, launch: string, decla
   }
   if (at.endsWith(BIN_SUFFIX)) {
     const appRoot = at.slice(0, at.length - BIN_SUFFIX.length);
-    return fs.exists(`${appRoot}/node_modules/clawwright/entry/bin.js`)
+    return fs.exists(`${appRoot}/node_modules/@phpcraftdream/clawwright/entry/bin.js`)
       ? { kind: "installed" }
       : { problem: `${at} has no clawwright package entry on the layout` };
   }

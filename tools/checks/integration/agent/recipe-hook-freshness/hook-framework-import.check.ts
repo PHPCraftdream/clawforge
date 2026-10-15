@@ -1,5 +1,5 @@
 // check:exclusive — drops a scratch deployment into apps/ for the gate, which other checks that enumerate deployments must not see.
-// The documented hook import — `clawwright/private-config` — loads in both kinds of
+// The documented hook import — `@phpcraftdream/clawwright/private-config` — loads in both kinds of
 // deployment: a checkout one (no dist build; the hook loader maps the package's public exports
 // onto the checkout's own framework sources) and an installed one (the recipe's own node_modules
 // answers first, and the checkout mapping never shadows it).
@@ -35,11 +35,11 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
     await writeFile(resolve(root, "sources", "recipe.json"), JSON.stringify({ description: "Framework sources probe" }), "utf8");
     await writeFile(
       resolve(root, "sources", "verify.ts"),
-      "import { generatePrivateSecret } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: generatePrivateSecret().length }; }\n",
+      "import { generatePrivateSecret } from \"@phpcraftdream/clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: generatePrivateSecret().length }; }\n",
       "utf8",
     );
     useRecipesDir(root);
-    check("sources: the documented clawwright/private-config import loads from the checkout's framework sources", Number((await verifyRevision("sources")).revision) > 0, true);
+    check("sources: the documented @phpcraftdream/clawwright/private-config import loads from the checkout's framework sources", Number((await verifyRevision("sources")).revision) > 0, true);
   } finally {
     useRecipesDir(outerRecipes);
     await rm(root, { recursive: true, force: true });
@@ -50,25 +50,25 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 {
   const root = resolve(tmpdir(), `clawwright-recipe-hook-installed-${Date.now()}`);
   try {
-    await mkdir(resolve(root, "installed", "node_modules", "clawwright"), { recursive: true });
+    await mkdir(resolve(root, "installed", "node_modules", "@phpcraftdream", "clawwright"), { recursive: true });
     await writeFile(resolve(root, "installed", "recipe.json"), JSON.stringify({ description: "Installed package probe" }), "utf8");
     await writeFile(
-      resolve(root, "installed", "node_modules", "clawwright", "package.json"),
-      JSON.stringify({ name: "clawwright", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
+      resolve(root, "installed", "node_modules", "@phpcraftdream", "clawwright", "package.json"),
+      JSON.stringify({ name: "@phpcraftdream/clawwright", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
       "utf8",
     );
     await writeFile(
-      resolve(root, "installed", "node_modules", "clawwright", "private-config.js"),
+      resolve(root, "installed", "node_modules", "@phpcraftdream", "clawwright", "private-config.js"),
       "export function stubRevision() { return 42; }\n",
       "utf8",
     );
     await writeFile(
       resolve(root, "installed", "verify.ts"),
-      "import { stubRevision } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
+      "import { stubRevision } from \"@phpcraftdream/clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
       "utf8",
     );
     useRecipesDir(root);
-    check("installed: the recipe's own clawwright package answers before any checkout mapping", (await verifyRevision("installed")).revision, 42);
+    check("installed: the recipe's own @phpcraftdream/clawwright package answers before any checkout mapping", (await verifyRevision("installed")).revision, 42);
   } finally {
     useRecipesDir(outerRecipes);
     await rm(root, { recursive: true, force: true });
@@ -81,10 +81,10 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   const manifest = JSON.parse(await readFile(resolve(monorepoRoot, "tools", "framework", "package.json"), "utf8")) as { exports: Record<string, { default: string }> };
   for (const [key, target] of Object.entries(manifest.exports)) {
     const expected = target.default.replace("./dist/", "").replace(/\.js$/, ".ts");
-    const mapped = checkoutFrameworkSource(`clawwright/${key.slice(2)}`);
+    const mapped = checkoutFrameworkSource(`@phpcraftdream/clawwright/${key.slice(2)}`);
     check(`export ${key} maps to its source file`, mapped !== undefined && mapped.replaceAll("\\", "/").endsWith(`/tools/framework/${expected}`), true);
   }
-  check("an unknown subpath maps to nothing", checkoutFrameworkSource("clawwright/not-an-export"), undefined);
+  check("an unknown subpath maps to nothing", checkoutFrameworkSource("@phpcraftdream/clawwright/not-an-export"), undefined);
   check("a foreign package maps to nothing", checkoutFrameworkSource("json5"), undefined);
   check("the mapping table covers no more than the package's exports", Object.keys(FRAMEWORK_EXPORT_SOURCES).sort(), Object.keys(manifest.exports).sort());
 }
@@ -96,7 +96,7 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 }
 
 // The gate itself: a checkout deployment whose app.ts imports the public
-// `clawwright/app` specifier loads only while tools/clawwright.ts registers
+// `@phpcraftdream/clawwright/app` specifier loads only while tools/clawwright.ts registers
 // resolveFrameworkFromSources() — a probe of the loader's own functions cannot tell.
 {
   // Unique per run: a fixed name would overwrite and delete a directory someone else owns,
@@ -141,7 +141,7 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   await writeFile(
     resolve(appDir, "app.ts"),
     [
-      "import { defineApp } from \"clawwright/app\";",
+      "import { defineApp } from \"@phpcraftdream/clawwright/app\";",
       "export default defineApp({ name: \"gateprobe\", description: \"checkout gate probe\", commands: { ping: { summary: \"probe\" } } });",
       "",
     ].join("\n"),
@@ -157,8 +157,8 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
     // failure, a timeout or an otherwise empty output must fail here, not pass vacuously.
     const loaded = result.output.includes("unknown command: status");
     check(
-      "a checkout deployment's app.ts importing clawwright/app loads through the gate",
-      loaded && !result.output.includes("cannot load deployment") && !result.output.includes("Cannot find package 'clawwright'"),
+      "a checkout deployment's app.ts importing @phpcraftdream/clawwright/app loads through the gate",
+      loaded && !result.output.includes("cannot load deployment") && !result.output.includes("Cannot find package '@phpcraftdream/clawwright'"),
       true,
     );
     if (!loaded) process.stderr.write(`    ${result.output.split("\n").filter((line) => /unknown command|cannot load|Cannot find|Error/.test(line)).slice(0, 4).join("\n    ")}\n`);

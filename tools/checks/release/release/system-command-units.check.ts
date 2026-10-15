@@ -51,7 +51,7 @@ try {
   mkdirSync(join(checkout, "tools", "framework"), { recursive: true });
   writeFileSync(join(checkout, "tools", "clawwright.ts"), "");
   check("a checkout's tools/framework is a checkout copy, path = the checkout root", classifyCopy(join(checkout, "tools", "framework")), { source: "checkout", path: checkout });
-  const local = join(app, "node_modules", "clawwright");
+  const local = join(app, "node_modules", "@phpcraftdream", "clawwright");
   mkdirSync(local, { recursive: true });
   check("a package inside the app is local", classifyCopy(local, app).source, "local");
   check("the same package seen from another app is global", classifyCopy(local, join(scratch, "other")).source, "global");

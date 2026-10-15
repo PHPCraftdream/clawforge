@@ -55,7 +55,7 @@ export function gitignoreLines(nodeModules: boolean): string[] {
     ...(nodeModules
       ? [
           "",
-          "# clawwright: installed, not vendored — the whole point of installing it as a",
+          "# @phpcraftdream/clawwright: installed, not vendored — the whole point of installing it as a",
           "# dependency instead of copying it in is that it never has to be committed.",
           "node_modules/",
         ]

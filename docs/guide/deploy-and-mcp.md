@@ -89,22 +89,22 @@ the service starts if the host refuses the bind.
 ### Installing in a separate repository (npm)
 
 The second way to get the framework: instead of cloning this repository, install the
-`clawwright` package in your own project. The consumer's repository
+`@phpcraftdream/clawwright` package in your own project. The consumer's repository
 holds only application configuration, while the framework itself lives in `node_modules/`
 and is never committed.
 
-**The package is not published to npm yet** (`npm view clawwright` → 404; the first
+**The package is not published to npm yet** (`npm view @phpcraftdream/clawwright` → 404; the first
 release is described in [RELEASE.md](../../RELEASE.md)). Until then, take it from a clone of this
 repository: pack it once and install the tarball in the app.
 
 ```bash
 # in a clone of this repository
-cd tools/framework && npm pack               # writes clawwright-<version>.tgz here
+cd tools/framework && npm pack               # writes phpcraftdream-clawwright-<version>.tgz here
 # in your own project
-npm install <path-to-clawwright-tgz>
+npm install <path-to-phpcraftdream-clawwright-tgz>
 ```
 
-After the first release the tarball step is replaced by `npm install clawwright`.
+After the first release the tarball step is replaced by `npm install @phpcraftdream/clawwright`.
 Either way the rest is the same:
 
 ```bash
@@ -116,16 +116,16 @@ node_modules/.bin/clawwright init             # app.ts, config/, .env, .gitignor
 Or with no dependency in the repository at all: a system-wide `clawwright` runs `clawwright
 init` and every later command there, and both `./clawwright` and the MCP launcher fall back to it.
 Until the first release, install it with `npm run install:system` from a Clawwright checkout; after
-it, `npm install -g clawwright` works too. A local dependency, when present, always wins
+it, `npm install -g @phpcraftdream/clawwright` works too. A local dependency, when present, always wins
 over the system-wide command.
 
-With the system-wide install the app has no `node_modules/clawwright`, so `app.ts` runs but
-editors cannot resolve its `clawwright/...` imports (the file shows as unresolved). Opt in
+With the system-wide install the app has no `node_modules/@phpcraftdream/clawwright`, so `app.ts` runs but
+editors cannot resolve its `@phpcraftdream/clawwright/...` imports (the file shows as unresolved). Opt in
 with `clawwright init --local`: it prints the exact `npm install --no-save <package directory>`
 command (init never runs npm; it works at any time: in an already initialised folder it only prints
 the command and writes nothing, while plain `init` there still refuses; `--no-save` keeps a machine path out of `package.json`, and a later
 plain `npm install` removes the link again). The package is not on the registry yet, hence the
-directory of the running copy; once published, `npm install --save-dev clawwright`.
+directory of the running copy; once published, `npm install --save-dev @phpcraftdream/clawwright`.
 
 What lands in the consumer's repository and is meant to be committed: `app.ts`, `package.json`,
 `config/`, `recipes/`, `mcp-launch.mjs` (the MCP launcher), and `clawwright` — a thin committed script

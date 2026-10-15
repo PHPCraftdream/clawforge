@@ -44,7 +44,7 @@ release:
 Before the first release:
 
 1. Decide the version: `tools/framework/package.json` and CHANGELOG.md must agree — fold
-   `## Unreleased` into the section of the version being tagged.
+   `## Unreleased` into the section of the version being tagged (done for 0.1.0).
 2. Confirm the unscoped `clawwright` npm name is still free (or already owned by the release
    account); the package publishes with public access.
 3. Confirm the copyright holder for `Clawwright contributors`, including the right to
@@ -56,7 +56,9 @@ Before the first release:
 6. Tag the release and publish from the tag. After the package is on the registry, put the npm
    badge back into README.md
    (`[![npm package](https://img.shields.io/npm/v/clawwright?logo=npm)](https://www.npmjs.com/package/clawwright)`)
-   in place of the pre-release status badge. Do not publish a working tree containing
+   in place of the pre-release status badge, and rewrite README.md's "Installing `clawwright`
+   system-wide" section around `npm install -g clawwright` (it still describes the clone-only
+   path). Do not publish a working tree containing
    deployment data, `.env`, MCP client settings, archives, snapshots, or generated `dist/`
    output.
 

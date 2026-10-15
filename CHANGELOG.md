@@ -4,6 +4,19 @@ All notable changes to `clawwright` will be documented here.
 
 ## Unreleased
 
+## 0.1.0
+
+The initial development release, under the dual MIT or Apache-2.0 license. It provides
+transport-aware lifecycle commands, reproducible set artifacts, archive verification, and
+project-local MCP configuration for Claude Code and Codex. SSH deployment and model-backed
+acceptance remain explicitly experimental.
+
+Known limitations of this release:
+
+* The SSH transport and the native local (non-WSL) transport are covered by checks but have
+  not been exercised against a live server.
+* `set try` supports local Linux and Windows-to-WSL targets only; over SSH it refuses.
+
 ### Renamed
 * The project is now **Clawwright** (was ClawForge): the npm scope `@clawforge` belongs to an unrelated package,
   so the framework could never be published under it. Everything follows the new name, with no compatibility layer:
@@ -1491,16 +1504,3 @@ All notable changes to `clawwright` will be documented here.
   new subdirectory named after the subject (shared stubs in a sibling `fixture.ts` /
   `mutation-guard.ts`). No assertion added, removed or weakened; each part keeps its own
   `check:exclusive` marker where it needs one.
-
-## 0.1.0
-
-The initial development release, under the dual MIT or Apache-2.0 license. It provides
-transport-aware lifecycle commands, reproducible set artifacts, archive verification, and
-project-local MCP configuration for Claude Code and Codex. SSH deployment and model-backed
-acceptance remain explicitly experimental.
-
-Known limitations of this release:
-
-* The SSH transport and the native local (non-WSL) transport are covered by checks but have
-  not been exercised against a live server.
-* `set try` supports local Linux and Windows-to-WSL targets only; over SSH it refuses.

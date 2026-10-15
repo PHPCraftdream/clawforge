@@ -391,6 +391,17 @@ const EXPECTED_PINS: readonly string[] = [
 ];
 check("sorted list of action pins across ci.yml", [...allUses].sort(), EXPECTED_PINS);
 
+// --- windows-controls: the controls run in parallel shards, full tier only -------------------
+
+const controlsJob = asRecord(jobs["windows-controls"]);
+checkTrue("windows-controls job exists", jobs["windows-controls"] !== undefined);
+check("windows-controls runs exactly when the full tier does", unwrapExpression(asText(controlsJob.if)), fullTierExpression);
+check("windows-controls splits the controls into three shards", asRecord(asRecord(controlsJob.strategy).matrix).shard, ["1/3", "2/3", "3/3"]);
+checkTrue("windows-controls is a gate, not advisory", controlsJob["continue-on-error"] === undefined);
+const controlsRun = stepsOf(jobs["windows-controls"]).find((step) => containsText(asText(step.run), "check:controls"));
+checkTrue("windows-controls passes its shard to check:controls", containsText(asText(controlsRun?.run), "--shard"));
+checkTrue("no other job runs check:controls", EXPECTED_JOBS.every((job) => !stepsOf(jobs[job]).some((step) => containsText(asText(step.run), "check:controls"))));
+
 // --- windows-wsl provisioning guard --------------------------------------------------------------
 
 const wslSteps = stepsOf(jobs["windows-wsl"]);

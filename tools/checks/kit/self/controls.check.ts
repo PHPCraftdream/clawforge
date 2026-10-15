@@ -13,7 +13,8 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { runProcess } from "../spawn.ts";
 import { check, checkTrue, finish } from "../harness.ts";
-import { copyRepo, runControls, controlVerdict, FAIL_MARKER } from "../../controls/run-controls.ts";
+import { copyRepo, runControls, controlVerdict, FAIL_MARKER, parseShard, selectShard } from "../../controls/run-controls.ts";
+import { CONTROLS } from "../../controls/controls.ts";
 import type { CapabilityProbe } from "../capabilities/capabilities.ts";
 import type { ControlDecl } from "../../controls/controls.ts";
 
@@ -215,7 +216,21 @@ await writeFile(fileURLToPath(new URL("./executed.marker", import.meta.url)), "r
   const beforeEntries = [...before.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
   const afterEntries = [...after.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
   check("the source tree and the junction target are byte-identical after every run", afterEntries, beforeEntries);
-  finish("kit self: controls runner — every control outcome is honest and the copy never leaks");
+  // Sharding: the n slices are disjoint, their union is every control, none is empty.
+{
+  const ids = CONTROLS.map((control) => control.id);
+  const slices = [1, 2, 3].map((index) => selectShard(ids, parseShard(`${index}/3`)));
+  check("three shards together hold every control exactly once", slices.flat().slice().sort(), ids.slice().sort());
+  checkTrue("no shard is empty", slices.every((slice) => slice.length > 0));
+  check("a single shard is the whole list", selectShard(ids, parseShard("1/1")), ids);
+  for (const bad of ["0/3", "4/3", "1/0", "x/3", "1-3", ""]) {
+    let refused = false;
+    try { parseShard(bad); } catch { refused = true; }
+    checkTrue(`invalid shard spec "${bad}" refuses`, refused);
+  }
+}
+
+finish("kit self: controls runner — every control outcome is honest and the copy never leaks");
 } finally {
   await rm(root, { recursive: true, force: true });
 }

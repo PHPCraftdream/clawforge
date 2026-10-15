@@ -313,7 +313,7 @@ edit to the copy, and demands: the unedited copy passes the check, the edited co
 naming the declared assertion, and the copy is restored (proven by hash). The gate fails if
 any control fails. A control whose edit no longer matches the product is itself a failure of
 `check:controls` — a stale control is a finding, never a skip. CI runs it in the full tier on
-the Windows (WSL2) job: several controls guard Windows-only behaviour. A control whose target
+a Windows job with WSL, split into three parallel shards (`npm run check:controls -- --shard 1/3`): several controls guard Windows-only behaviour. A control whose target
 check declares a `check:requires` header — or that names host-specific capabilities itself in
 `requires` — is reported as `skipped (needs <cap>)` and counted separately in the summary,
 never held and never a failure. To add a control: append a

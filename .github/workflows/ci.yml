@@ -410,17 +410,55 @@ jobs:
           OC_CHECK_REQUIRE: wsl
         run: npm run check
 
-      # Each control breaks guarded code in a copy and requires its check to fail, proving the
-      # checks still bite. Several controls guard Windows behaviour (cmd/pwsh quoting, drive
-      # changes, tar path normalization) and their checks need a Windows host, so they run here.
-      - name: Negative controls
-        if: env.FULL_TIER == 'true'
-        shell: pwsh
-        env:
-          OC_WSL_DISTRO: Ubuntu-24.04
-        run: npm run check:controls
-
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.
         run: node --experimental-strip-types tools/clawforge.ts check --timings
+
+  windows-controls:
+    # Each control breaks guarded code in a copy and requires its check to fail, proving the
+    # checks still bite. Several controls guard Windows behaviour (cmd/pwsh quoting, drive
+    # changes, tar path normalization), so they run on a Windows host with WSL, split into
+    # three disjoint round-robin shards that run in parallel. Full tier only: the job-level
+    # condition repeats FULL_TIER because the env context is not available in jobs.<id>.if.
+    name: "Negative controls (${{ matrix.shard }})"
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - "1/3"
+          - "2/3"
+          - "3/3"
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install development dependencies
+        run: npm ci --include=dev
+
+      - name: Provision a real WSL2 distro (best-effort)
+        # Controls whose checks need WSL are reported as skipped when this fails.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          wsl.exe --install -d Ubuntu-24.04 --no-launch
+          if ($LASTEXITCODE -ne 0) { throw 'wsl --install could not provision Ubuntu-24.04' }
+          wsl.exe -d Ubuntu-24.04 -- true
+          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu-24.04 could not start' }
+
+      - name: Negative controls
+        shell: pwsh
+        env:
+          OC_WSL_DISTRO: Ubuntu-24.04
+        run: npm run check:controls -- --shard ${{ matrix.shard }}

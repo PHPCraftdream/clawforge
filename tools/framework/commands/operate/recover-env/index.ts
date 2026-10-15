@@ -121,7 +121,7 @@ async function mergeRecoveredFacts(
   adoptRuntime: boolean,
   jsonOnly = false,
 ): Promise<void> {
-  const current = parseEnv(raw);
+  const current = parseEnv(raw, path);
 
   const diffs = connectionFactDiffs(facts, current);
   const diverged = diffs.filter((entry) => entry.kind === "diverged");
@@ -262,7 +262,7 @@ export const RECOVER_ENV = commandBody({
     const { dryRun, adoptRuntime, jsonOnly } = plan as RecoveryPlan;
     const path = envFile();
     const raw = await readEnvFileText();
-    const env = parseEnv(raw);
+    const env = parseEnv(raw, path);
 
     let facts: ConnectionFacts | undefined;
     try {

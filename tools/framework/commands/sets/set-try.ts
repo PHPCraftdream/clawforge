@@ -14,7 +14,7 @@ import { log, info, warn, die, maskSecrets, registerSecret, UserError } from "#s
 import { format, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine, frameworkRoot, readEnvFileText } from "#src/core/env.ts";
-import { useDeployment, deploymentDir, composeProjectOverride, useComposeProjectOverride, composeProjectName } from "#src/runtime/deployment.ts";
+import { useDeployment, deploymentDir, composeProjectOverride, useComposeProjectOverride, composeProjectName, envFile } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
 import { readIfExists } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
@@ -187,7 +187,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   // The throwaway's createContext() clears this too (its .env has no OC_COMPOSE_PROJECT),
   // so it's restored in the same finally block a caller reusing the original Context needs.
   const previousComposeProject = composeProjectOverride();
-  const realEnv = parseEnv(await readEnvFileText().catch(() => ""));
+  const realEnv = parseEnv(await readEnvFileText().catch(() => ""), envFile());
   const targetLocation = (realEnv.OC_TARGET_LOCATION ?? "auto").toLowerCase();
   const targetProblem = tryTargetProblem(targetLocation);
   if (targetProblem !== undefined) die(targetProblem);
@@ -221,7 +221,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   // Registered so a transport error that echoes one of these values is masked when the
   // failure is reported — including the read failure right below.
   if (liveSecrets !== undefined) {
-    Object.assign(secretValues, parseEnv(liveSecrets));
+    Object.assign(secretValues, parseEnv(liveSecrets, liveSecretsPath));
     for (const value of Object.values(secretValues)) registerSecret(value);
   }
 

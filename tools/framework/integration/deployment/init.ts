@@ -407,7 +407,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
 
   log(`initialised ${root} as an OpenClaw deployment`);
   info("next:");
-  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", commandLine(["bootstrap"]))) info(line);
+  for (const line of nextStepsLines(envFile, parseEnv(env, envFile).OC_DATA_DIR ?? "", commandLine(["bootstrap"]))) info(line);
   info("Claude Code and Codex project MCP settings are ready; trust the project and reconnect the clients.");
   info(`secrets stay inside this directory (snapshots go to the snapshot directory, OC_SNAPSHOT_DIR); commit ${SHIM_PROGRAM}, mcp-launch.mjs, app.ts,`);
   info("package.json, config/ and recipes/ — .gitignore keeps .env, secrets/, state/ and sets/ out");

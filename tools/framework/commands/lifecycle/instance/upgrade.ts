@@ -287,7 +287,7 @@ export const UPGRADE = commandBody({
   // The one string both the recreate and the .env write use, and every report names.
   const pinnedReference = target.pin ?? target.targetDigest;
   const preparedEnv = await readEnvFileText();
-  const previousReference = parseEnv(preparedEnv).OPENCLAW_IMAGE ?? ctx.settings.image;
+  const previousReference = parseEnv(preparedEnv, envFile()).OPENCLAW_IMAGE ?? ctx.settings.image;
 
   const identity = await ctx.runtime.runningImageIdentity?.();
   if (identity === undefined || identity.digests.length === 0) {

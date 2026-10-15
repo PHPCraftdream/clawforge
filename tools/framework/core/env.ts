@@ -12,7 +12,7 @@ import { readFile, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomInt } from "node:crypto";
-import { die, log, warn } from "./io/log.ts";
+import { UserError, die, log, warn } from "./io/log.ts";
 import { durationMs } from "./values/durations.ts";
 import { envFile } from "../runtime/deployment.ts";
 
@@ -128,24 +128,61 @@ const EXPORT_PREFIX = /^export\s+/;
 
 /** The key and raw (unparsed) value half of one line, so every reader that needs "which
  *  variable does this line assign" (parseEnv, upsertEnvLine) agrees on the same parse.
- *  undefined for a blank line, a comment, or one with no `=`. */
-function splitEnvLine(rawLine: string): { key: string; valueRaw: string } | undefined {
+ *  undefined for a blank line, a comment, or one whose key would be empty (leading `=`);
+ *  { malformed: true } for a non-blank non-comment line with no `=` at all. */
+function splitEnvLine(rawLine: string): { key: string; valueRaw: string } | { malformed: true } | undefined {
   const line = rawLine.trim();
   if (line === "" || line.startsWith("#")) return undefined;
   const stripped = line.replace(EXPORT_PREFIX, "");
   const eq = stripped.indexOf("=");
-  if (eq <= 0) return undefined;
+  if (eq === 0) return undefined;
+  if (eq < 0) return { malformed: true };
   return { key: stripped.slice(0, eq).trim(), valueRaw: stripped.slice(eq + 1) };
+}
+
+/** The structured shape of parseEnv's refusal: a non-blank non-comment line without `=`.
+ *  Carries the 1-based line and the file (when the caller named one) so checks and callers
+ *  can assert on fields instead of message prose. The message never quotes the offending
+ *  line, which may hold a secret. */
+export class EnvSyntaxError extends UserError {
+  readonly code = "ENV_LINE_WITHOUT_EQUALS";
+  readonly line: number;
+  readonly file: string | undefined;
+  constructor(line: number, file?: string) {
+    super(`${file === undefined ? "" : `${file}: `}line ${line}: expected a KEY=value line, found one without "="`);
+    this.name = "EnvSyntaxError";
+    this.line = line;
+    this.file = file;
+  }
 }
 
 /** Parses dotenv basics, the level compose reads the same file at: leading `export ` is
  *  stripped, `#` starts a comment (whole line, or partway through an UNQUOTED value after
- *  whitespace), one outer quote pair is stripped literally. No interpolation; ignored otherwise. */
-export function parseEnv(text: string): Env {
+ *  whitespace), one outer quote pair is stripped literally. No interpolation. Throws a
+ *  UserError on a non-blank non-comment line without `=` — a typo like "OC_DATA_DIR /srv/x"
+ *  must surface, not be silently dropped. The message never quotes the offending line,
+ *  which may hold a secret. */
+export function parseEnv(text: string, file?: string): Env {
+  const env: Env = {};
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const split = splitEnvLine(lines[i]);
+    if (split === undefined) continue;
+    if ("malformed" in split) {
+      throw new EnvSyntaxError(i + 1, file);
+    }
+    env[split.key] = parseEnvValue(split.valueRaw);
+  }
+  return env;
+}
+
+/** parseEnv without the refusal: skips a line with no `=`. For scanning content where one
+ *  broken file must not break the whole listing (e.g. listing sibling deployments). */
+export function parseEnvLenient(text: string): Env {
   const env: Env = {};
   for (const rawLine of text.split("\n")) {
     const split = splitEnvLine(rawLine);
-    if (split === undefined) continue;
+    if (split === undefined || "malformed" in split) continue;
     env[split.key] = parseEnvValue(split.valueRaw);
   }
   return env;
@@ -153,8 +190,8 @@ export function parseEnv(text: string): Env {
 
 /** NAME's value the way parseEnv would hand it to loadEnv's caller: export-aware,
  *  quote-aware, last line wins on a duplicate key. undefined when NAME is not assigned. */
-export function readEnvValue(text: string, name: string): string | undefined {
-  return parseEnv(text)[name];
+export function readEnvValue(text: string, name: string, file?: string): string | undefined {
+  return parseEnv(text, file)[name];
 }
 
 /** Replaces NAME's assignment in place, recognizing `export NAME=` and spacing round `=`
@@ -167,7 +204,8 @@ export function upsertEnvLine(text: string, name: string, value: string): string
   while (lines.at(-1) === "") lines.pop();
   let replaced = false;
   const next = lines.map((existing) => {
-    if (splitEnvLine(existing)?.key !== name) return existing;
+    const split = splitEnvLine(existing);
+    if (split === undefined || "malformed" in split || split.key !== name) return existing;
     replaced = true;
     return line;
   });
@@ -358,7 +396,7 @@ export async function loadEnv(): Promise<Env> {
   } catch {
     die(`${file} not found. Run ${commandLine(["bootstrap"])} first.`);
   }
-  const env = parseEnv(await readEnvFileText());
+  const env = parseEnv(await readEnvFileText(), file);
   if (!shellOnlyEnvWarned) {
     const warning = shellOnlyEnvWarning(env, process.env, file);
     if (warning !== undefined) {

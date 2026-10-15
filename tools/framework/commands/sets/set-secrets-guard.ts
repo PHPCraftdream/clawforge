@@ -95,7 +95,7 @@ export async function localSecretValues(): Promise<{ name: string; value: string
  *  has none yet); any other read error would silently shrink the scan, so it stops instead. */
 async function readSecretSource(source: string, read: () => Promise<string> = () => readFile(source, "utf8")): Promise<Record<string, string> | undefined> {
   try {
-    return parseEnv(await read());
+    return parseEnv(await read(), source);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     die(

@@ -470,7 +470,7 @@ export function localScope(): LocalScope {
     env: async () => {
       // counted by readText above
       const text = await readText(envFile());
-      return text === undefined ? undefined : parseEnv(text);
+      return text === undefined ? undefined : parseEnv(text, envFile());
     },
     readText,
     exists: async (path) => access(path).then(() => true, () => false),

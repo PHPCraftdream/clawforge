@@ -5,10 +5,12 @@
 // historical name `aux` (I14 compat) must still load and validate identically on both paths,
 // and the declaration findings must stay the historic full texts on both paths.
 
-import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { loadSet, validateLoadedSet } from "#framework/set/load.ts";
+import { EnvSyntaxError } from "#framework/core/env.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { DESIRED_STATE_PATH } from "#framework/set/artifacts/model.ts";
 import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
@@ -540,6 +542,33 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
     }
   } finally {
     await removeBuildDeployment(deployment);
+  }
+}
+
+// A malformed secrets.template.env must refuse the set load with the structured
+// EnvSyntaxError (file + 1-based line), never be swallowed by the absent-template path.
+{
+  const source = await createBuildDeployment();
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-env-template-"));
+  await cp(source, deployment, { recursive: true });
+  useDeployment(deployment);
+  try {
+    const templatePath = resolve(deployment, "config", "secrets.template.env");
+    await writeFile(templatePath, "GOOD_NAME=value\nBROKEN LINE\n");
+    let thrown: unknown;
+    try {
+      await loadSet({ kind: "tree" }, { name: "demo-set", declaredImage: buildCtx.settings.image });
+    } catch (error) {
+      thrown = error;
+    }
+    const error = thrown instanceof EnvSyntaxError ? thrown : undefined;
+    check("a malformed secrets template refuses the set load as an EnvSyntaxError", error instanceof EnvSyntaxError, true);
+    check("that refusal carries the structured code", error?.code, "ENV_LINE_WITHOUT_EQUALS");
+    check("that refusal names the 1-based line as a number", error?.line, 2);
+    check("that refusal names the template file", error?.file, templatePath);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    await removeBuildDeployment(source);
   }
 }
 

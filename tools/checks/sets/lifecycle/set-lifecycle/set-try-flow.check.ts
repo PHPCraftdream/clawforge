@@ -12,7 +12,7 @@ import { runSetTry } from "#framework/commands/sets/set-try.ts";
 import { deploymentDir, envFile, composeProjectName, useDeployment } from "#framework/runtime/deployment.ts";
 import { setSourceDir } from "#framework/set/artifacts/source.ts";
 import { listReceipts } from "#framework/set/artifacts/receipt.ts";
-import { parseEnv, serializeEnvLine } from "#framework/core/env.ts";
+import { parseEnv, parseEnvLenient, serializeEnvLine } from "#framework/core/env.ts";
 import { createFixture } from "./fixture.ts";
 import { packArtifact } from "#checks/sets/pack.ts";
 import { targetSiblingRoot } from "#framework/commands/sets/set-try-env.ts";
@@ -211,8 +211,9 @@ try {
     ],
     JSON.stringify({ retainedLines, retainedDir, composeProject, dataRoot }),
   );
+  // Recorded writes include JSON and application source, not just env files.
   assert.ok(
-    [...writeContents].some(([, content]) => parseEnv(content).WIKI_TOKEN === staleValue),
+    [...writeContents].some(([, content]) => parseEnvLenient(content).WIKI_TOKEN === staleValue),
     "only a proven missing live file permits the local-store fallback",
   );
   assert.equal(report(kept.output).torndown, false);

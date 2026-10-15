@@ -139,7 +139,7 @@ export async function createApp(name: DeploymentName): Promise<void> {
 
   log(`created ${directory}`);
   info("next:");
-  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", commandLine(["bootstrap"], { app: name }))) info(line);
+  for (const line of nextStepsLines(envFile, parseEnv(env, envFile).OC_DATA_DIR ?? "", commandLine(["bootstrap"], { app: name }))) info(line);
   info(
     `if ${name} is the only deployment under apps/, later commands pick it automatically; ` +
       `alongside others, select it with --app ${name} or export OC_APP=${name}`,

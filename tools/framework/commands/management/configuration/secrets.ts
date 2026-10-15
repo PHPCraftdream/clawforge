@@ -92,7 +92,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     warn(`${path} ${NOT_OWNER_ONLY} (${exposure}) — anyone this machine's ACLs allow can read the keys in it`);
   }
 
-  const values = parseEnv(raw);
+  const values = parseEnv(raw, path);
   // Asked of the PROSPECTIVE config (live + declared overlay), not live alone: a secret a
   // not-yet-applied desired-state.json is about to need is a real requirement here too —
   // otherwise a newly declared provider key computed an empty `needed` and loadSecrets()
@@ -131,7 +131,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   const current = targetSupplied.length > 0 ? await dumpSecrets(ctx) : undefined;
   if (current !== undefined) {
     const keep = new Set(targetSupplied.map((entry) => entry.name));
-    const dropped = Object.keys(parseEnv(current)).filter((name) => !keep.has(name));
+    const dropped = Object.keys(parseEnv(current, secretsFileOnTarget(ctx))).filter((name) => !keep.has(name));
     if (dropped.length > 0) {
       warn(`${secretsFileOnTarget(ctx)} also holds ${dropped.length} variable(s) not supplied by ${path}, which this replaces:`);
       for (const name of dropped) info(name);
@@ -263,7 +263,7 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
   const repoEntries = needed.filter((entry) => entry.location === "repo-env");
 
   const targetRaw = targetEntries.length > 0 ? await dumpSecrets(ctx) : undefined;
-  const targetValues = targetRaw !== undefined ? parseEnv(targetRaw) : {};
+  const targetValues = targetRaw !== undefined ? parseEnv(targetRaw, secretsFileOnTarget(ctx)) : {};
 
   const runningEnvironmentMethod = ctx.runtime.runningEnvironment?.bind(ctx.runtime);
   const canReadRunningEnvironment = runningEnvironmentMethod !== undefined;

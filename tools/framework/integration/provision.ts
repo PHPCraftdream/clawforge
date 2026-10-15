@@ -48,7 +48,7 @@ async function ensureEnvFile(): Promise<boolean> {
  *  that already stored it. */
 async function ensureToken(): Promise<{ token: string; wrote: boolean }> {
   const content = await readEnvFileText();
-  const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN");
+  const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN", envFile());
   if (current !== undefined && current.trim() !== "") return { token: current.trim(), wrote: false };
 
   log("generating a gateway token");
@@ -58,7 +58,7 @@ async function ensureToken(): Promise<{ token: string; wrote: boolean }> {
   } catch (error) {
     let persisted = false;
     try {
-      persisted = readEnvValue(await readEnvFileText(), "OPENCLAW_GATEWAY_TOKEN")?.trim() === token;
+      persisted = readEnvValue(await readEnvFileText(), "OPENCLAW_GATEWAY_TOKEN", envFile())?.trim() === token;
     } catch { /* retain the original persistence error */ }
     if (persisted && error !== null && typeof error === "object") provisioningWrites.set(error, true);
     throw error;

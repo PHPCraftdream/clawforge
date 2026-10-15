@@ -82,7 +82,7 @@ async function configureProviderLocked(ctx: Context, options: ProviderOptions): 
     return;
   }
 
-  const secrets = parseEnv(await ctx.transport.readFile(secretsPath));
+  const secrets = parseEnv(await ctx.transport.readFile(secretsPath), secretsPath);
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
   // JSON5, not JSON: the live config is OpenClaw's JSON5 gateway format, where a comment or
   // trailing comma is legitimate.

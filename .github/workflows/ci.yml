@@ -124,12 +124,6 @@ jobs:
         if: env.FULL_TIER == 'true'
         run: npm run pack:check
 
-      # Each control breaks guarded code in a copy and requires its check to fail, proving the
-      # checks still bite. One job is enough: the controls are host-independent edits.
-      - name: Negative controls
-        if: env.FULL_TIER == 'true'
-        run: npm run check:controls
-
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.
@@ -402,6 +396,16 @@ jobs:
           OC_WSL_DISTRO: Ubuntu-24.04
           OC_CHECK_REQUIRE: wsl
         run: npm run check
+
+      # Each control breaks guarded code in a copy and requires its check to fail, proving the
+      # checks still bite. Several controls guard Windows behaviour (cmd/pwsh quoting, drive
+      # changes, tar path normalization) and their checks need a Windows host, so they run here.
+      - name: Negative controls
+        if: env.FULL_TIER == 'true'
+        shell: pwsh
+        env:
+          OC_WSL_DISTRO: Ubuntu-24.04
+        run: npm run check:controls
 
       - name: Check timing summary
         if: always()

@@ -310,7 +310,7 @@ edit to the copy, and demands: the unedited copy passes the check, the edited co
 naming the declared assertion, and the copy is restored (proven by hash). The gate fails if
 any control fails. A control whose edit no longer matches the product is itself a failure of
 `check:controls` — a stale control is a finding, never a skip. CI runs it in the full tier on
-the Linux job. To add a control: append a
+the Windows (WSL2) job: several controls guard Windows-only behaviour. To add a control: append a
 declaration to `CONTROLS`, run the command, and land it only once it holds against the
 unchanged product.
 

@@ -49,8 +49,9 @@ Before the first release:
    account); the package publishes with public access.
 3. The copyright holder is PHPCraftdream (LICENSE-MIT, NOTICE, package `author`); the project
    is dual-licensed MIT OR Apache-2.0, and CONTRIBUTING.md accepts contributions under both.
-4. Review `THIRD_PARTY_NOTICES.md` against the exact OpenClaw source revision used by the
-   adapted Compose definition and review the optional recipe sources separately.
+4. `THIRD_PARTY_NOTICES.md` (repository and package copies are identical) carries OpenClaw's MIT
+   notice for the adapted Compose file; re-check it when that file is re-synced from upstream, and
+   review the optional recipe sources separately.
 5. Run `npm test`, `npm run build`, and `npm run pack:check` on a clean checkout. Install the
    resulting tarball in a fresh consumer and run `clawwright init` before tagging.
 6. Tag the release and publish from the tag. After the package is on the registry, put the npm

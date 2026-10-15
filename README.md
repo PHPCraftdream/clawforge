@@ -19,6 +19,11 @@ roll back the same instance directly, with the same arguments and the same findi
 operator would see on a terminal. See
 [Deploying and MCP](docs/guide/deploy-and-mcp.md#mcp-clawforge-in-claude-code-and-codex).
 
+Side services run next to the instance as recipes: `recipe install` builds and starts one,
+`recipe run` executes its declared actions, `recipe trial` rehearses it on a throwaway copy of
+its data, `recipe pin` refreshes a pinned release artifact, and `recipe check` runs its own
+checks — see [Recipes](docs/guide/recipes.md) and the [cookbook](docs/guide/recipes-cookbook.md).
+
 ## Requirements
 
 * **Docker Engine + Compose v2** — on the machine where the instance lives
@@ -115,6 +120,8 @@ the app. After the first release `npm install -g @clawforge/framework` does the 
 | Read the service log | `./clawforge logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
 | Get shell tab-completion | `eval "$(./clawforge completion bash)"` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
 | Undo a deployment | `./clawforge destroy` then `./clawforge remove-app <name>` | dry run by default; `destroy` removes the instance (containers always, data/backups/snapshots each behind its own flag), `remove-app` deletes `apps/<name>/` itself — see [Removing a deployment](docs/guide/operations.md#removing-a-deployment) |
+| Run something a recipe knows how to do | `./clawforge recipe run <name> <action> key=value` | actions a recipe's `recipe.json` declares, previewed with `--dry-run`; `recipe trial` proves a recipe against a throwaway copy of its data, `recipe pin` refreshes pinned release artifacts, `recipe check` runs its own `*.check.ts` files — see [Recipe actions](docs/guide/recipes.md#recipe-actions) and the [cookbook](docs/guide/recipes-cookbook.md#run-a-one-off-action-against-a-running-recipe) |
+| Move a recipe off its legacy stack when `recipe migrate` cannot | `./clawforge recipe retire-legacy <name>` | previews the proven-owned inventory; `--apply` stops, cold-backs-up and removes the legacy containers only, then `recipe install` proceeds — see [Existing-stack cutover](docs/guide/recipes.md#existing-stack-cutover) |
 
 ## Commands
 
@@ -153,7 +160,7 @@ Change:
   apply-config         Apply the deployment's desired-state.json
   configure-provider   Configure model providers from target-side environment variables
   secrets              Show required secrets and whether they are in place *
-  recipe               Deploy services next to the instance: install, verify, list, and more *
+  recipe               Side services: install, verify, run actions, trial, pin, check, retire-legacy *
   provision-agent      Wire a recipe's MCP server to its own OpenClaw agent, with optional cron
   set                  Build or validate the set: what a deployment installs, as one artifact *
 
@@ -210,7 +217,8 @@ Framework:
   upgrading the image
 * [docs/guide/monitoring-and-access.md](docs/guide/monitoring-and-access.md) — `expose`,
   `watch`, `incident`, the security gate and suppressions
-* [docs/guide/recipes.md](docs/guide/recipes.md) — recipes, `provision-agent`, the
+* [docs/guide/recipes.md](docs/guide/recipes.md) — recipes, recipe-declared actions (`recipe run`),
+  `recipe trial`/`pin`/`check`/`retire-legacy`, `provision-agent`, the
   `privatePaths`/`privateFiles` contract
 * [docs/internal/recipe-migration-executor.md](docs/internal/recipe-migration-executor.md) —
   implementation notes behind `recipe migrate`/`recover`: journal phases, storage and

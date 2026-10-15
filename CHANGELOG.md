@@ -5,6 +5,24 @@ All notable changes to `@clawforge/framework` will be documented here.
 ## Unreleased
 
 ### Added
+* `recipe retire-legacy <name> [--apply] [--helper-image <sha256>] [--shutdown-timeout <seconds>]` retires a recipe's
+  legacy-namespace stack: it previews by default the proven-owned inventory (containers with their provenance, mounts
+  and planned operations) and, with `--apply`, stops the legacy containers (no kill or force; an unsupported stop
+  signal refuses before anything is stopped), re-checks writer isolation, takes a cold backup of their writable binds
+  and named volumes into a private recovery directory with a trusted local helper image (never built or pulled), records
+  the removed containers' full `docker inspect` JSON and a restore manifest, then removes the containers only — no
+  volume or image is ever removed.
+* An instance lock whose owner is provably dead on this host is taken over automatically — the acquiring command
+  reports `taking over the lock held by … — owner proven dead (…); no --break-lock required`. A live or unknown local
+  owner still refuses takeover regardless of the lock's age; only a human with `--break-lock` decides about what the
+  process record cannot prove. A claim records the machine's boot identity and the owner's native process start
+  identity; death is proven only on the same host and PID namespace, by a changed boot identity, a vanished pid, or a
+  differing native start key (two explicitly approximate start times keep a 15 s tolerance). Legacy records, foreign
+  hosts and probe failures are never proof.
+* A `.env` line that has no `=` (a typo like `OC_DATA_DIR /srv/x`) is refused by `parseEnv` with a structured
+  `EnvSyntaxError` (`ENV_LINE_WITHOUT_EQUALS`) naming the file and the 1-based line; the message never quotes the line,
+  which may hold a secret. `./clawforge list` parses each deployment's `.env` strictly and reports a broken one as that
+  deployment's error row (with the code and line) instead of failing the whole listing.
 * `recipe pin <name> --version <v> [--artifact <file>] [--apply]` refreshes a recipe's pinned release artifact: it reads the
   published `.sha256` (or `SHA256SUMS`) of the release asset over bounded HTTPS from GitHub hosts only, previews the two build-arg
   changes with the checksum's source, and with `--apply` rewrites exactly those two `ARG` lines under the instance lock. It
@@ -65,9 +83,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   being swallowed.
 
 ### Changed
-* `ci.yml` runs two tiers: pushes to non-main branches run the type check, lint and `check --related` against the
-  merge-base with `origin/main`; the full suite gates pushes to `main`, pull requests, the nightly schedule and
-  `workflow_dispatch` with `full: true`. Concurrent runs on a branch cancel the older one.
+* The negative controls (`npm run check:controls`) skip host-aware: a control's target check can name the host
+  capabilities it needs with a `// check:requires <cap>[, <cap>...]` header, and a control can declare its own
+  `requires`, so on a host lacking a capability the control is reported as skipped — never silently. `--shard <i>/<n>`
+  selects the i-th of n disjoint round-robin slices of the declared controls, and CI runs the controls as three
+  parallel Windows shards (`1/3`, `2/3`, `3/3`), which together hold every control exactly once.
+* Advice names the deployment's own launcher when the framework reaches it through an npm `file:` linked package
+  (a `node_modules/@clawforge/framework` symlink/junction into a framework checkout): the hint spells the app's local
+  package, not the checkout path the link resolves to.
+* `ci.yml` runs two tiers: a push fires only for `main`, and a push to `main` runs the fast tier (type check, lint,
+  `check --related --base` against the merge-base with `origin/main`) — the full suite already gated its pull request;
+  the full tier gates pull requests, the nightly schedule and `workflow_dispatch` with `full: true`. Concurrency is one
+  group per event and ref (`ci-<workflow>-<event>-<ref>`), so a newer run supersedes an older one of the same kind and
+  a push never cancels the nightly run; every job's `setup-node` step caches npm.
 * MCP `tools/list` wording is shorter (command and argument summaries, the help pointer, the confirmation marker,
   repeated dry-run clauses): 35190 to 31556 bytes against the 35840 budget. Safety-relevant phrases and the full
   CLI help text are unchanged.

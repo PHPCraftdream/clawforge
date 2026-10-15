@@ -17,6 +17,11 @@ comes in two flavours, and a recipe may be either or both.
 ./clawforge recipe run <name> <recipe-action> [<key>=<value> ...] [--dry-run]
 ./clawforge recipe onboard <name>
 ./clawforge recipe remove <name> [--volumes]
+./clawforge recipe inspect <name> [--json]
+./clawforge recipe pin <name> --version <v> [--apply]
+./clawforge recipe trial <name> [--dry-run]
+./clawforge recipe check <name> [--dry-run]
+./clawforge recipe retire-legacy <name> [--apply]
 ```
 
 Every recipe is its **own compose project**, not a service in our file. That is why

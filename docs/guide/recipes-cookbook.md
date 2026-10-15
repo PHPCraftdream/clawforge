@@ -310,11 +310,11 @@ will not do: it never touches the live stack (its own project name and build tag
 that), never runs hooks (it does not import the hook runtime), and the live recipe
 directory is only ever shared read-only.
 
-## Retire a legacy recipe stack whose data is disposable
+## Retire a legacy recipe stack that migrate cannot move
 
 `recipe migrate` needs the legacy stack to still match the definition, service set for
-service. When it does not — the old compose file grew services the recipe dropped, or the
-data is regenerable — retire the legacy stack instead of hand-running `docker stop`/`rm`:
+service. When it does not — the old compose file had services the recipe has since dropped —
+retire the legacy stack instead of hand-running `docker stop`/`rm`:
 `recipe retire-legacy <name>` previews the proven-owned inventory (containers with their
 provenance, mounts, planned operations), and `recipe retire-legacy <name> --apply` stops the
 legacy containers gracefully (an unsupported stop signal — anything but SIGTERM/SIGINT —

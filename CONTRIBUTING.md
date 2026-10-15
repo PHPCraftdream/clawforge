@@ -42,11 +42,14 @@ before a release.
 
 ### CI tiers
 
-CI runs two tiers. The fast tier — typecheck, lint, and `check --related` against
-`origin/main`, which includes the always-run fast tier of checks — runs on pushes to non-main
-branches. The full suite gates everything else: pull requests, pushes to `main`, the nightly
-`schedule`, and `workflow_dispatch` runs with the `full` input; a dispatch without it runs the
-fast tier. Because `--related` needs the merge-base, CI checks out with full depth, computes
+CI runs two tiers. The full suite gates pull requests, the nightly `schedule` on `main`, and
+`workflow_dispatch` runs with the `full` input. The fast tier — typecheck, lint, and
+`check --related` against `origin/main`, which includes the always-run fast tier of checks —
+runs on pushes to `main` and on a dispatch without `full`. A branch gets CI through its pull
+request only: a push run beside the pull-request run would just repeat it. A merge to `main`
+already passed the full tier in its pull request; anything two merged pull requests break only
+together is caught by the nightly full run. A newer run of the same event and ref cancels the
+older one. Because `--related` needs the merge-base, CI checks out with full depth, computes
 the merge-base with `origin/main` explicitly, and passes it as `--base`. Each job prints the check timing summary (`check --timings`)
 at the end of its log, also on failure.
 
@@ -193,7 +196,7 @@ Pick the run by the moment, not by habit:
 | A task is done, before committing | `npm run check:fast` | type check, lint, the always-run structural checks (layout, architecture ratchets, static hygiene, needs) and the checks related to the diff |
 | A change touches a command declaration, the MCP surface, goldens, docs or packaging | add the family explicitly: `./clawforge check mcp golden completion flags property binder help docs packaging` | whole-surface checks are reached by rules, not by imports |
 | A stage or sprint ends, before a push to `main` or a release | the full suite: `npm test` | the gate; invisible dependencies are only covered here |
-| A push to a feature branch | nothing extra: CI runs the fast tier; the full tier runs on pull requests, `main` and nightly | see "CI tiers" |
+| A push to a feature branch | open a pull request: CI runs the full tier on it (a branch without a pull request gets no CI run) | see "CI tiers" |
 
 Read the exit code of the run itself, not the tail of its output: a pipeline reports the last
 command's status, and the summary line of a long log hides a failed file above it.
@@ -228,7 +231,7 @@ as JSON for upload as an artifact; `OC_CHECK_TIMINGS=off` disables the repositor
 
 ## CI jobs and the host × target matrix
 
-`.github/workflows/ci.yml` runs four jobs on every push/PR (fast tier on non-main pushes — see "CI tiers" above), one per named cell of the
+`.github/workflows/ci.yml` runs four jobs on every pull request, `main` push and nightly run (see "CI tiers" above), one per named cell of the
 host × target matrix in `docs/guide/requirements.md` ("Windows, `local`" is refused by the
 framework itself, so it has no job); `.github/workflows/windows-full.yml` is a fifth,
 manual (`workflow_dispatch`) job on a self-hosted runner with a real WSL2 distro and Docker.

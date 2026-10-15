@@ -1,7 +1,12 @@
 name: CI
 
 on:
+  # Branches are checked through their pull request (full tier); a push run on a branch
+  # with an open PR would only duplicate it. main gets the fast tier on push and the
+  # full tier nightly.
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
     inputs:
@@ -15,11 +20,15 @@ on:
 
 # The tier is expressed once here: every job's steps key off FULL_TIER.
 env:
-  FULL_TIER: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full) }}
+  # A merge to main already passed the full tier in its pull request: main pushes run the
+  # fast tier, the nightly schedule runs the full tier on main.
+  FULL_TIER: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) }}
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # One group per event and ref: a newer run supersedes an older one of the same kind, and a
+  # push never cancels the nightly run.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -44,6 +53,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
 
       - name: Install development dependencies
         run: npm ci --include=dev
@@ -151,6 +161,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
 
       - name: Install development dependencies
         run: npm ci --include=dev
@@ -249,6 +260,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
 
       - name: Install development dependencies
         run: npm ci --include=dev
@@ -352,6 +364,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+          cache: npm
 
       - name: Install development dependencies
         run: npm ci --include=dev

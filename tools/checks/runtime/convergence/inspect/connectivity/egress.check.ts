@@ -422,6 +422,14 @@ const BOTH_OK = [
     }
 
     {
+      // A credentialed HTTP proxy URL (channels.telegram.proxy): fetch refuses userinfo
+      // outright, so the probe must ask without it — and still answer with the URL it got.
+      const url = `http://probe-user:probe-pass@127.0.0.1:${httpPort}/proxy`;
+      const run = await runProbeScript(1500, [url]);
+      check("a credentialed proxy URL is probed, not refused for its userinfo", run.answers, [{ url, state: "ok" }]);
+    }
+
+    {
       const url = `http://127.0.0.1:${silentPort}/silent`;
       const run = await runProbeScript(1500, [url]);
       check("a server that never answers does not hang the probe child either", run.code, 0);

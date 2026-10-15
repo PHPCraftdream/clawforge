@@ -8,7 +8,7 @@
 // that tarball with `npm install -g`: a copy, not a link to this working tree, so the command
 // does not change under later edits. Then runs the installed command itself.
 //
-// Remove it with: npm uninstall -g clawwright
+// Remove it with: npm uninstall -g @phpcraftdream/clawwright
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -78,7 +78,7 @@ if (!existsSync(resolve(repoRoot, "node_modules", "@typescript", "native-preview
 
 const scratch = mkdtempSync(join(tmpdir(), "clawwright-install-"));
 try {
-  process.stderr.write(`==> packing clawwright ${version} (builds dist/)\n`);
+  process.stderr.write(`==> packing @phpcraftdream/clawwright ${version} (builds dist/)\n`);
   const packed = npm(["pack", "--pack-destination", scratch], packageDir);
   const tarball = readdirSync(scratch).find((entry) => entry.endsWith(".tgz"));
   if (packed.status !== 0 || tarball === undefined) failed("npm pack", packed);

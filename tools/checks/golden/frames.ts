@@ -50,13 +50,13 @@ const LAYOUT = [
   `${ROOT}/clawwright`,
   `${DEMO}/app.ts`,
   `${APP_LOCAL}/app.ts`,
-  `${APP_LOCAL}/node_modules/clawwright/entry/bin.js`,
+  `${APP_LOCAL}/node_modules/@phpcraftdream/clawwright/entry/bin.js`,
   `${APP_LOCAL}/node_modules/.bin/clawwright`,
 ].map((path) => resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, ""));
 const FS = {
   exists: (path: string): boolean => LAYOUT.includes(resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, "")),
   readFile: (path: string): string | undefined =>
-    resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, "") === LAYOUT[1] ? '{"name":"clawwright"}' : undefined,
+    resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, "") === LAYOUT[1] ? '{"name":"@phpcraftdream/clawwright"}' : undefined,
 };
 
 export interface FrameProducer {

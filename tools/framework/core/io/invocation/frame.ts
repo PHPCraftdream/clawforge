@@ -328,7 +328,7 @@ export interface HandoverFacts {
   readonly checkoutRoot?: string;
 }
 
-const FRAMEWORK_PACKAGE = "clawwright";
+const FRAMEWORK_PACKAGE = "@phpcraftdream/clawwright";
 
 /** The checkout-gate test, the same shape as the resolver's checkoutGateIn: a directory is
  *  a checkout when tools/framework/package.json names the framework and tools/clawwright.ts

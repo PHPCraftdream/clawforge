@@ -20,14 +20,14 @@ export async function defaultInvocation(appRoot: string, platform: string = proc
 }
 
 /** True when the app's own node_modules reaches the running package: npm's file:... install
- *  spells node_modules/clawwright as a symlink/junction to the framework checkout,
+ *  spells node_modules/@phpcraftdream/clawwright as a symlink/junction to the framework checkout,
  *  and the deployment then runs its own local package — the launch must not name the checkout
  *  the link resolves to. The probe is package identity, not link detection: an ordinary
  *  (non-linked) install whose package directory IS this directory matches too, and its
  *  launch is the same local-package answer classifyCopy would give it. */
 function linkedThroughApp(pkgDir: string, appRoot: string): boolean {
   try {
-    const link = realpathSync.native(resolve(appRoot, "node_modules", "clawwright"));
+    const link = realpathSync.native(resolve(appRoot, "node_modules", "@phpcraftdream", "clawwright"));
     const real = realpathSync.native(pkgDir);
     return process.platform === "win32" ? link.toLowerCase() === real.toLowerCase() : link === real;
   } catch {

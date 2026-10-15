@@ -50,7 +50,7 @@ export async function resolve(specifier: string, context: ResolveContext, nextRe
   }
 
   if (!specifier.startsWith("./") && !specifier.startsWith("../") && !specifier.startsWith("#")) {
-    if (specifier === "clawwright" || specifier.startsWith("clawwright/")) {
+    if (specifier === "@phpcraftdream/clawwright" || specifier.startsWith("@phpcraftdream/clawwright/")) {
       try {
         return await nextResolve(specifier, context);
       } catch (error) {

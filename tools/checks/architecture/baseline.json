@@ -119,7 +119,7 @@
       "tools/framework/integration/deployment/init.ts": {
         "reason": "the committed shim names itself: its own comments and the two invocation variables",
         "lines": {
-          "# Delegates to the installed clawwright CLI. Committed so ./clawwright <command> works": 1,
+          "# Delegates to the installed @phpcraftdream/clawwright CLI. Committed so ./clawwright <command> works": 1,
           "# Hints in the CLI say \"./clawwright\" for this entry, \"clawwright\" for the system-wide command.": 1
         }
       },

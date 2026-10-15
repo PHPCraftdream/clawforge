@@ -76,7 +76,7 @@ const scApps = join(sc, "apps");
 let packRoot: string | undefined;
 const realGate = resolve(monorepoRoot, "tools", "clawwright.ts");
 await mkdir(join(sc, "tools", "framework"), { recursive: true });
-await writeFile(join(sc, "tools", "framework", "package.json"), JSON.stringify({ name: "clawwright" }), "utf8");
+await writeFile(join(sc, "tools", "framework", "package.json"), JSON.stringify({ name: "@phpcraftdream/clawwright" }), "utf8");
 await writeFile(
   join(sc, "tools", "clawwright.ts"),
   `// Check-only shim: stands in for the real gate at this synthetic checkout's root.\n` +
@@ -91,7 +91,7 @@ process.env["CLAWWRIGHT_REAL_GATE"] = realGate;
 process.env["CLAWWRIGHT_CHECKS_APPS_DIR"] = scApps;
 const bin = windows ? prefix : join(prefix, "bin");
 const env = withOnPath(bin);
-const globalPackage = join(prefix, ...(windows ? [] : ["lib"]), "node_modules", "clawwright");
+const globalPackage = join(prefix, ...(windows ? [] : ["lib"]), "node_modules", "@phpcraftdream", "clawwright");
 
 /** The last line of a run's output, parsed as JSON. */
 function lastJson(result: Run): Record<string, unknown> {
@@ -198,7 +198,7 @@ try {
   check("and installs nothing into the folder", existsSync(join(fresh, "node_modules")), false);
   const helped = await clawwright(["help"], fresh);
   tail(helped);
-  check("app.ts's clawwright imports resolve to the system-wide package", helped.code, 0);
+  check("app.ts's @phpcraftdream/clawwright imports resolve to the system-wide package", helped.code, 0);
   check("so the deployment's own commands are listed", helped.output.includes("bootstrap"), true);
   check("the global command's help footer says clawwright help <command>", helped.output.includes(usageFooterHint(installedHint)), true);
   check("and never advises ./clawwright, which does not run in every shell", helped.output.includes(usageTopLine(shimHint)) || helped.output.includes(usageFooterHint(shimHint)), false);
@@ -252,7 +252,7 @@ try {
     for (const [label, packageRoot] of [["windows layout", "bin"], ["posix layout", "."]] as const) {
       const fake = join(outside, `cf-fake-${label.split(" ")[0]}`);
       const fakeBin = join(fake, "bin");
-      const entryDir = join(fake, packageRoot, ...(packageRoot === "." ? ["lib"] : []), "node_modules", "clawwright", "dist", "entry");
+      const entryDir = join(fake, packageRoot, ...(packageRoot === "." ? ["lib"] : []), "node_modules", "@phpcraftdream", "clawwright", "dist", "entry");
       await mkdir(entryDir, { recursive: true });
       await writeFile(join(entryDir, "bin.js"), stub, "utf8");
       await mkdir(fakeBin, { recursive: true });
@@ -267,7 +267,7 @@ try {
   const pinned = join(outside, "cf-pinned");
   await mkdir(pinned);
   check("init in a second folder succeeds", (await clawwright(["init"], pinned)).code, 0);
-  const localPackage = join(pinned, "node_modules", "clawwright");
+  const localPackage = join(pinned, "node_modules", "@phpcraftdream", "clawwright");
   await cp(globalPackage, localPackage, { recursive: true });
   const manifestPath = join(localPackage, "package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { version: string };
@@ -296,12 +296,12 @@ try {
   const other = join(outside, "cf-other");
   await mkdir(other);
   check("init in a third folder succeeds", (await clawwright(["init"], other)).code, 0);
-  const otherPackage = join(other, "node_modules", "clawwright");
+  const otherPackage = join(other, "node_modules", "@phpcraftdream", "clawwright");
   await cp(globalPackage, otherPackage, { recursive: true });
   await writeFile(join(otherPackage, "package.json"), JSON.stringify({ ...manifest, version: `${expected}-other` }), "utf8");
   const probeApp = [
-    `import { defineApp } from "clawwright/app";`,
-    `import { mountPoints } from "clawwright/mounts";`,
+    `import { defineApp } from "@phpcraftdream/clawwright/app";`,
+    `import { mountPoints } from "@phpcraftdream/clawwright/mounts";`,
     `import { spawnSync } from "node:child_process";`,
     `const run = async () => {`,
     `  const result = spawnSync(process.execPath, [${JSON.stringify(join(globalPackage, "dist", "entry", "bin.js"))}, "version"], { cwd: ${JSON.stringify(other)}, encoding: "utf8", env: process.env });`,
@@ -381,7 +381,7 @@ try {
     const strayVersion = await clawwright(["version"], strayDir);
     check("version answers there anyway — it does not need the app", strayVersion.code === 0 && strayVersion.output.includes("clawwright"), true);
     // Decided by content: the package specifier needs no second copy of the sources.
-    await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "clawwright/app";\nexport default defineApp({});\n', "utf8");
+    await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "@phpcraftdream/clawwright/app";\nexport default defineApp({});\n', "utf8");
     const installedStyle = await clawwright(["version", "--json"], strayDir);
     check("an installed-style app.ts inside a checkout still runs under the global command", installedStyle.code === 0, true);
     const scheduledStyle = await clawwright(["--project-root", strayDir, "version"], strayDir);

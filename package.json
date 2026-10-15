@@ -2,7 +2,7 @@
   "name": "clawwright-repository",
   "version": "0.1.0",
   "private": true,
-  "description": "Development repository for the clawwright package.",
+  "description": "Development repository for the @phpcraftdream/clawwright package.",
   "license": "(MIT OR Apache-2.0)",
   "type": "module",
   "imports": {

@@ -73,7 +73,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-tarball
-          path: tools/framework/clawwright-*.tgz
+          path: tools/framework/phpcraftdream-clawwright-*.tgz
           if-no-files-found: error
 
   publish-token:
@@ -103,7 +103,7 @@ jobs:
         working-directory: release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public clawwright-*.tgz
+        run: npm publish --provenance --access public phpcraftdream-clawwright-*.tgz
 
   publish-trusted-publisher:
     needs: verify
@@ -128,4 +128,4 @@ jobs:
 
       - name: Publish with npm Trusted Publisher
         working-directory: release
-        run: npm publish --provenance --access public clawwright-*.tgz
+        run: npm publish --provenance --access public phpcraftdream-clawwright-*.tgz

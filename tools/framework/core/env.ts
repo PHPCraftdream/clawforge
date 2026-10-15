@@ -47,7 +47,7 @@ export async function frameworkPackage(): Promise<{ version: string | undefined;
   for (const dir of [frameworkRoot, resolve(frameworkRoot, "..")]) {
     try {
       const parsed = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")) as { name?: string; version?: string };
-      if (parsed.name === "clawwright") return { version: parsed.version, dir };
+      if (parsed.name === "@phpcraftdream/clawwright") return { version: parsed.version, dir };
     } catch {
       // Try the next candidate.
     }
@@ -73,11 +73,11 @@ export async function isMonorepoCheckout(root: string = monorepoRoot): Promise<b
 export const composeFile = resolve(frameworkRoot, "docker-compose.yml");
 
 /** The package's public exports, mapped onto this checkout's sources: a hook (or a
- *  deployment's app.ts) importing `clawwright/<export>` in a checkout has no
+ *  deployment's app.ts) importing `@phpcraftdream/clawwright/<export>` in a checkout has no
  *  dist build and no install to resolve against, so the loaders fall back to this table —
  *  keyed off the package's own root (frameworkRoot), which in an installed package points
  *  inside it and matches no source file, leaving normal resolution in charge. */
-const FRAMEWORK_PACKAGE = "clawwright";
+const FRAMEWORK_PACKAGE = "@phpcraftdream/clawwright";
 /** Exported for checks only: the table must mirror package.json's exports in both
  *  directions, and an extra entry here is exactly what a one-way check cannot see. */
 export const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
@@ -88,7 +88,7 @@ export const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
   "./recipe-kit": "recipe-kit/index.ts",
 };
 
-/** The checkout source file a `clawwright` specifier maps to, or undefined when
+/** The checkout source file a `@phpcraftdream/clawwright` specifier maps to, or undefined when
  *  this code does not run from the checkout sources or the specifier is not a public export. */
 export function checkoutFrameworkSource(specifier: string): string | undefined {
   if (specifier !== FRAMEWORK_PACKAGE && !specifier.startsWith(`${FRAMEWORK_PACKAGE}/`)) return undefined;

@@ -71,8 +71,8 @@ try {
   await writeFile(join(app,".codex/config.toml"),codexText);
 
   // A small installed package proves actual resolution without Docker or either client.
-  const pkg = join(app,"node_modules/clawwright"); await mkdir(join(pkg,"dist"),{recursive:true});
-  await writeFile(join(pkg,"package.json"),JSON.stringify({name:"clawwright",type:"module",exports:{"./app":"./dist/core/app.js"}}));
+  const pkg = join(app,"node_modules/@phpcraftdream/clawwright"); await mkdir(join(pkg,"dist"),{recursive:true});
+  await writeFile(join(pkg,"package.json"),JSON.stringify({name:"@phpcraftdream/clawwright",type:"module",exports:{"./app":"./dist/core/app.js"}}));
   await mkdir(join(pkg,"dist/core"),{recursive:true});
   await writeFile(join(pkg,"dist/core/app.js"),"export const marker=true;\n");
   await mkdir(join(pkg,"dist/entry"),{recursive:true});

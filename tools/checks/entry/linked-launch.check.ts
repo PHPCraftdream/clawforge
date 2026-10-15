@@ -1,5 +1,5 @@
 // End-to-end proof of the linked-package launch decision (tools/framework/entry/root.ts):
-// when the app's node_modules/clawwright is a link to the running package, the
+// when the app's node_modules/@phpcraftdream/clawwright is a link to the running package, the
 // entry's advice must name the DEPLOYMENT's launcher, not the framework checkout the link
 // resolves to. The child process resolves its main module through the link to its real
 // path, so frameworkPackage() inside it returns the real package — that is the mechanism
@@ -36,13 +36,13 @@ if (pkg !== undefined) {
   const linked = await mkdtemp(join(tmpdir(), "clawwright-linked-"));
   const plain = await mkdtemp(join(tmpdir(), "clawwright-plain-"));
   try {
-    // --- the linked layout: node_modules/clawwright is a link to this checkout ---
-    await mkdir(join(linked, "node_modules"), { recursive: true });
-    await writeFile(join(linked, "package.json"), JSON.stringify({ dependencies: { "clawwright": "file:linked" } }) + "\n");
+    // --- the linked layout: node_modules/@phpcraftdream/clawwright is a link to this checkout ---
+    await mkdir(join(linked, "node_modules", "@phpcraftdream"), { recursive: true });
+    await writeFile(join(linked, "package.json"), JSON.stringify({ dependencies: { "@phpcraftdream/clawwright": "file:linked" } }) + "\n");
     const pkgDir = await realpath(pkg.dir);
-    await symlink(pkgDir, join(linked, "node_modules", "clawwright"), WINDOWS ? "junction" : "dir");
+    await symlink(pkgDir, join(linked, "node_modules", "@phpcraftdream", "clawwright"), WINDOWS ? "junction" : "dir");
 
-    const linkedRun = spawnSync(process.execPath, ["--experimental-strip-types", join(linked, "node_modules", "clawwright", "entry", "bin.ts"), "help"], { cwd: linked, encoding: "utf8" });
+    const linkedRun = spawnSync(process.execPath, ["--experimental-strip-types", join(linked, "node_modules", "@phpcraftdream", "clawwright", "entry", "bin.ts"), "help"], { cwd: linked, encoding: "utf8" });
     checkTrue("linked: the child launcher run exits 0", linkedRun.status === 0);
     const text = `${linkedRun.stdout ?? ""}${linkedRun.stderr ?? ""}`;
     checkTrue(`linked: help advises init through the deployment's launcher (${WINDOWS ? "cmd/pwsh npm wrapper" : "bash shim"})`, advisesInit(text));
@@ -57,14 +57,14 @@ if (pkg !== undefined) {
     // Node refuses --experimental-strip-types for any file whose real path is under a real
     // node_modules directory (the linked run above only works because its entry resolves to
     // this checkout), so the deployment's node_modules itself is a junction to a plain store
-    // directory. That is fixture plumbing only: node_modules/clawwright inside it
+    // directory. That is fixture plumbing only: node_modules/@phpcraftdream/clawwright inside it
     // is still a REAL copy of the running package, not a link to it, which is what the probe
     // must not disturb.
     const store = join(plain, "store");
-    await mkdir(store, { recursive: true });
+    await mkdir(join(store, "@phpcraftdream"), { recursive: true });
     await symlink(store, join(plain, "node_modules"), WINDOWS ? "junction" : "dir");
-    await writeFile(join(plain, "package.json"), JSON.stringify({ dependencies: { "clawwright": "file:plain" } }) + "\n");
-    await cp(pkg.dir, join(plain, "node_modules", "clawwright"), {
+    await writeFile(join(plain, "package.json"), JSON.stringify({ dependencies: { "@phpcraftdream/clawwright": "file:plain" } }) + "\n");
+    await cp(pkg.dir, join(plain, "node_modules", "@phpcraftdream", "clawwright"), {
       recursive: true,
       filter: (source) => {
         const base = source.replaceAll("\\", "/").split("/").pop() ?? "";
@@ -72,10 +72,10 @@ if (pkg !== undefined) {
       },
     });
     // Dependency plumbing, as npm itself would install it: the copy's own node_modules is a
-    // link to the checkout's, so its runtime imports resolve; clawwright itself
+    // link to the checkout's, so its runtime imports resolve; @phpcraftdream/clawwright itself
     // stays a REAL copy of the running package — the thing the probe must not disturb.
-    await symlink(join(pkg.dir, "..", "..", "node_modules"), join(plain, "node_modules", "clawwright", "node_modules"), WINDOWS ? "junction" : "dir");
-    const plainPkg = join(plain, "node_modules", "clawwright");
+    await symlink(join(pkg.dir, "..", "..", "node_modules"), join(plain, "node_modules", "@phpcraftdream", "clawwright", "node_modules"), WINDOWS ? "junction" : "dir");
+    const plainPkg = join(plain, "node_modules", "@phpcraftdream", "clawwright");
     const plainRun = spawnSync(process.execPath, ["--experimental-strip-types", join(plainPkg, "entry", "bin.ts"), "help"], { cwd: plain, encoding: "utf8" });
     checkTrue("non-linked: the child launcher run exits 0", plainRun.status === 0);
     const plainText = `${plainRun.stdout ?? ""}${plainRun.stderr ?? ""}`;

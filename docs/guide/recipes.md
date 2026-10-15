@@ -49,7 +49,7 @@ instead of refusing itself.
 service, `restart: unless-stopped` already set) — no hooks by default. Refuses an existing
 directory, the same way `import` does, and validates `<name>` with the same rules every
 other recipe name follows. `--with-hooks` also writes commented `prepare.ts`/`verify.ts`
-stubs using the `clawwright/private-config` helpers shown below, ready to
+stubs using the `@phpcraftdream/clawwright/private-config` helpers shown below, ready to
 uncomment, with a one-line reminder that hooks run with the operator's own rights.
 
 A recipe can sit in the repository switched off — `"enabled": false` in `recipe.json`.
@@ -72,7 +72,7 @@ real recipe directory. Only package-internal (`#specifier`) imports are validate
 inside the recipe directory; a plain relative import is resolved, checksummed and re-stamped,
 not containment-checked — hooks already run with the operator's full rights, so reading what
 they import is the real boundary. Use the public
-`clawwright/private-config` helpers for generated credentials, atomic owner-only files,
+`@phpcraftdream/clawwright/private-config` helpers for generated credentials, atomic owner-only files,
 env updates and checksums; the framework never prints the values. The specifier works in both
 kinds of deployment: an installed one resolves it from the framework package, a checkout
 deployment (`./clawwright new-app`) resolves it against the checkout's own framework sources. A secret is never a
@@ -145,7 +145,7 @@ declaration equal to or above a declared mount destination refuses migration. Se
 [executor notes](../internal/recipe-migration-executor.md#writable-layer-inspection-and-ephemeralpaths)
 for the matching and refusal rules.
 
-### Reconcile helpers (`clawwright/recipe-kit`)
+### Reconcile helpers (`@phpcraftdream/clawwright/recipe-kit`)
 
 For converging an owned path onto a desired set of members, the recipe-kit `reconcile`
 module exposes four helpers (worked example in the
@@ -347,7 +347,7 @@ rejected at load instead of silently excluding nothing:
   `<data>/sidecar-credentials/../escape.env` is refused even though the string carries a
   declared prefix, and `//` and `.` fold away before the comparison.
 
-The `clawwright/private-config` helpers enforce the same declaration from the
+The `@phpcraftdream/clawwright/private-config` helpers enforce the same declaration from the
 writing side: `ensurePrivateTargetDirectory` and `replacePrivateTargetFile` only proceed inside
 a declared path, files land mode 600 and directories 700, and a symlink between the data
 directory and the declared root is refused (the data root itself may be a link, and a link at
@@ -356,7 +356,7 @@ author's path-assembly mistake, not isolation from hostile code — the hook alr
 full context. A prepare hook that uses them:
 
 ```ts
-import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "clawwright/private-config";
+import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@phpcraftdream/clawwright/private-config";
 
 export async function prepare(ctx, recipe): Promise<void> {
   const dataDir = ctx.settings.dataDir;
@@ -384,7 +384,7 @@ name is copied. The enforced promise about a recipe's private files is the targe
 
 **Keyed pseudonyms and intent journals.** When a journal must remember *that* an identifier
 was seen without remembering the identifier, use the keyed-pseudonym helpers from
-`clawwright/private-config`. `privatePseudonymKey` creates the deployment's HMAC key
+`@phpcraftdream/clawwright/private-config`. `privatePseudonymKey` creates the deployment's HMAC key
 exactly once under a declared private path (exclusive create — an existing key is only ever
 read and validated, never rewritten, and concurrent first-callers converge on one key). The key is versioned, registered for redaction, and never returned to output:
 a tampered, truncated or wrong-version key file refuses with a content-free error.
@@ -400,7 +400,7 @@ and "finished", journal the intent with `appendPrivateIntent`, journal the outco
 over the pending set:
 
 ```ts
-import { privatePseudonym, appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents } from "clawwright/private-config";
+import { privatePseudonym, appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents } from "@phpcraftdream/clawwright/private-config";
 
 const token = await privatePseudonym(ctx, `${dataDir}/vault/pseudonym-key.json`, { recipe: recipe.name, namespace: "user-id", value: rawUserId });
 await appendPrivateIntent(ctx, `${dataDir}/vault/journal.jsonl`, { id: orderId, kind: "sync" });
@@ -418,7 +418,7 @@ never echo the content. None of them knows about `--dry-run`: a hook skips the w
 `ctx.dryRun` is set.
 
 ```ts
-import { readPrivateState, writePrivateState, appendPrivateJournal, readPrivateJournal } from "clawwright/private-config";
+import { readPrivateState, writePrivateState, appendPrivateJournal, readPrivateJournal } from "@phpcraftdream/clawwright/private-config";
 
 const isCursor = (value: unknown): value is { cursor: number } =>
   typeof value === "object" && value !== null && typeof (value as { cursor?: unknown }).cursor === "number";

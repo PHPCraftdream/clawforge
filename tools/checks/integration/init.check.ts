@@ -34,7 +34,7 @@ function renderAdviceAtOwnRoot(): string {
   const on: Invocation = { program: "./clawwright", mode: "checkout", audience: "terminal" };
   const files: Record<string, string> = {
     [`${root}/tools/clawwright.ts`]: "// gate",
-    [`${root}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
+    [`${root}/tools/framework/package.json`]: JSON.stringify({ name: "@phpcraftdream/clawwright" }),
   };
   const dirs = [`${root}/tools`, `${root}/tools/framework`];
   const normalize = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");
@@ -222,7 +222,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
     // the exact idempotency bug init.ts's own includes() heuristic had.
     const legacy = join(base, "legacy");
     await mkdir(legacy, { recursive: true });
-    const oldBlock = "\n# clawwright: installed, not vendored — the whole point of installing it as a\n# dependency instead of copying it in is that it never has to be committed.\nnode_modules/\n\n# OpenClaw deployment state — host paths, the gateway token, secrets and snapshots.\n.env\nsecrets/\n";
+    const oldBlock = "\n# @phpcraftdream/clawwright: installed, not vendored — the whole point of installing it as a\n# dependency instead of copying it in is that it never has to be committed.\nnode_modules/\n\n# OpenClaw deployment state — host paths, the gateway token, secrets and snapshots.\n.env\nsecrets/\n";
     await writeFile(resolve(legacy, ".gitignore"), oldBlock, "utf8");
     await updateGitignore(legacy, lines);
     const upgraded = (await readFile(resolve(legacy, ".gitignore"), "utf8")).split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#"));
@@ -317,7 +317,7 @@ async function runNode(_root: string, file: string): Promise<{ code: number | nu
 
 // --- the deployment must be loadable as ESM afterwards -------------------------------------
 //
-// app.ts imports clawwright, and Node decides how to read a .ts file from the
+// app.ts imports @phpcraftdream/clawwright, and Node decides how to read a .ts file from the
 // nearest package.json's "type". Init must provide ESM for the generated declaration without
 // changing how source files already in the directory are interpreted.
 
@@ -400,18 +400,18 @@ async function gatewayPortOf(root: string): Promise<number> {
 {
   const { base, root } = await freshRoot("deployment-typeless");
   try {
-    // What `npm install clawwright` leaves behind in a repository that had a
+    // What `npm install @phpcraftdream/clawwright` leaves behind in a repository that had a
     // package.json before the framework was added.
     await writeFile(
       resolve(root, "package.json"),
-      `${JSON.stringify({ name: "consumer", version: "1.2.3", dependencies: { "clawwright": "^0.1.0" } }, undefined, 2)}\n`,
+      `${JSON.stringify({ name: "consumer", version: "1.2.3", dependencies: { "@phpcraftdream/clawwright": "^0.1.0" } }, undefined, 2)}\n`,
       "utf8",
     );
 
     check("a package.json without a type initialises", await run(root), undefined);
     const parsed = await packageJsonOf(root);
     check("the type is filled in", parsed.type, "module");
-    check("and nothing else in the file is lost", JSON.stringify([parsed.name, parsed.version, parsed.dependencies]), JSON.stringify(["consumer", "1.2.3", { "clawwright": "^0.1.0" }]));
+    check("and nothing else in the file is lost", JSON.stringify([parsed.name, parsed.version, parsed.dependencies]), JSON.stringify(["consumer", "1.2.3", { "@phpcraftdream/clawwright": "^0.1.0" }]));
   } finally {
     await rm(base, { recursive: true, force: true });
   }
@@ -539,7 +539,7 @@ async function gatewayPortOf(root: string): Promise<number> {
   const newDep = join(fake, "apps", "newdep");
   await mkdir(newDep, { recursive: true });
   await mkdir(resolve(fake, "tools", "framework"), { recursive: true });
-  await writeFile(resolve(fake, "tools", "framework", "package.json"), JSON.stringify({ name: "clawwright" }), "utf8");
+  await writeFile(resolve(fake, "tools", "framework", "package.json"), JSON.stringify({ name: "@phpcraftdream/clawwright" }), "utf8");
   await writeFile(resolve(fake, "tools", "clawwright.ts"), "// gate", "utf8");
   try {
     const refused = await new Promise<string>((resolvePromise) => {
@@ -586,7 +586,7 @@ async function gatewayPortOf(root: string): Promise<number> {
   const nested = `${fakeRoot}/deep/nested/sub`;
   const files: Record<string, string> = {
     [`${fakeRoot}/tools/clawwright.ts`]: "// gate",
-    [`${fakeRoot}/tools/framework/package.json`]: JSON.stringify({ name: "clawwright" }),
+    [`${fakeRoot}/tools/framework/package.json`]: JSON.stringify({ name: "@phpcraftdream/clawwright" }),
   };
   const dirs = [`${fakeRoot}/tools`, `${fakeRoot}/tools/framework`, nested];
   const normalize = (path: string): string => path.replaceAll("\\", "/").replace(/^[A-Za-z]:/, "");

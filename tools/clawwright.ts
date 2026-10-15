@@ -42,7 +42,7 @@ import { checkoutGate } from "./framework/entry/registry.ts";
 import { pathToFileURL } from "node:url";
 import { resolve as pathResolve } from "node:path";
 
-// A deployment's app.ts importing clawwright resolves onto this checkout's
+// A deployment's app.ts importing @phpcraftdream/clawwright resolves onto this checkout's
 // sources — there is no dist build here (recipe hooks map the same table in the hook loader).
 resolveFrameworkFromSources();
 

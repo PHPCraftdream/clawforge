@@ -33,8 +33,8 @@ const APP = "/home/u/app";
 const APP_LOCAL = "/home/u/app-local";
 const EMPTY = "/home/u/empty";
 const STRAY = `${ROOT}/stray-sub`;
-const SELF = "/usr/local/lib/node_modules/clawwright/dist/entry/bin.js";
-const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/clawwright/entry/bin.js`;
+const SELF = "/usr/local/lib/node_modules/@phpcraftdream/clawwright/dist/entry/bin.js";
+const LOCAL_ENTRY = `${APP_LOCAL}/node_modules/@phpcraftdream/clawwright/entry/bin.js`;
 
 /** The frame the installed command builds its refusals as ("clawwright"): the golden's
  *  builders pin it, because the bash shim row's drop decision reads the frame at build
@@ -62,7 +62,7 @@ export function fakeFs(files: Record<string, string>, dirs: readonly string[], r
   };
 }
 
-const manifest = JSON.stringify({ name: "clawwright" });
+const manifest = JSON.stringify({ name: "@phpcraftdream/clawwright" });
 const strayAppTs = 'import { defineApp } from "../../tools/framework/core/app.ts";\nexport default defineApp({});\n';
 
 /** Files/dirs shared by every layout, laid out once: the checkout with two deployments, the

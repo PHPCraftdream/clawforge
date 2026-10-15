@@ -89,15 +89,15 @@ clawwright status
 
 The installed command is a copy, not a link to this working tree: run `npm run install:system`
 again to take later changes. It uses the deployment's own framework whenever there is one — a
-local `clawwright` dependency (the app's version pin), or, inside this checkout,
+local `@phpcraftdream/clawwright` dependency (the app's version pin), or, inside this checkout,
 `apps/<name>` and the root go to the checkout's own gate — and runs on itself only in a folder
 with neither. The `./clawwright` script and the MCP launcher that `init` writes fall back to it
-the same way. Remove it with `npm uninstall -g clawwright`.
+the same way. Remove it with `npm uninstall -g @phpcraftdream/clawwright`.
 
 The package is not on the npm registry yet (first release: [RELEASE.md](RELEASE.md)), so
 `npm run install:system` from a clone is the only way to get the system-wide command for now; for
 a per-project dependency, run `npm pack` in `tools/framework` and `npm install <path-to-tgz>` in
-the app. After the first release `npm install -g clawwright` does the same without a clone.
+the app. After the first release `npm install -g @phpcraftdream/clawwright` does the same without a clone.
 
 ## I want to…
 

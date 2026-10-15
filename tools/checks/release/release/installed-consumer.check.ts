@@ -85,12 +85,12 @@ try {
 
     // --- a consumer directory exactly as npm leaves it --------------------------------------
     const consumer = join(base, "consumer");
-    await mkdir(join(consumer, "node_modules"), { recursive: true });
+    await mkdir(join(consumer, "node_modules", "@phpcraftdream"), { recursive: true });
     await writeFile(resolve(consumer, "package.json"), `${JSON.stringify(DEFAULT_CONSUMER_PACKAGE, undefined, 2)}\n`, "utf8");
-    await cp(join(extracted, "package"), join(consumer, "node_modules", "clawwright"), { recursive: true });
+    await cp(join(extracted, "package"), join(consumer, "node_modules", "@phpcraftdream", "clawwright"), { recursive: true });
     await cp(resolve(monorepoRoot, "node_modules", "json5"), join(consumer, "node_modules", "json5"), { recursive: true });
 
-    const entry = join(consumer, "node_modules", "clawwright", "dist", "entry", "bin.js");
+    const entry = join(consumer, "node_modules", "@phpcraftdream", "clawwright", "dist", "entry", "bin.js");
     check("the packed entry point is where the bin field says it is", await access(entry).then(() => true, () => false), true);
 
     // --- init, then a command, both through the installed entry point -----------------------
@@ -106,7 +106,7 @@ try {
     // The generated declaration is also the public API's compile-time contract. Assert a
     // concrete callback type and reject `any`, so a present-but-empty declaration cannot pass.
     await writeFile(resolve(consumer, "typecheck.ts"), `import app from "./app.ts";
-import { defineApp, type AppDefinition } from "clawwright/app";
+import { defineApp, type AppDefinition } from "@phpcraftdream/clawwright/app";
 
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 type AssertFalse<T extends false> = T;
@@ -168,7 +168,7 @@ void summaryTypeGuard;
     await writeFile(join(consumer, "hook-check.mjs"), `import { strict as assert } from "node:assert";
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { importHookModule } from "./node_modules/clawwright/dist/commands/management/recipe/hook-runtime.js";
+import { importHookModule } from "./node_modules/@phpcraftdream/clawwright/dist/commands/management/recipe/hook-runtime.js";
 const hook = fileURLToPath(new URL("./recipes/hook-check/verify.ts", import.meta.url));
 assert.equal((await importHookModule(hook)).verify(), "first");
 await writeFile(new URL("./recipes/hook-check/helper.ts", import.meta.url), 'export const value: string = "second";\\n');

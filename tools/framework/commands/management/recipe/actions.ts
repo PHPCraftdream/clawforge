@@ -140,7 +140,7 @@ function newRecipePrepareStub(): string {
 // Uncomment to write private target files — see recipe.json's privatePaths and
 // ${docsUrl("guide/recipes.md")} ("Private files: privatePaths and privateFiles").
 //
-// import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "clawwright/private-config";
+// import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@phpcraftdream/clawwright/private-config";
 //
 // export async function prepare(ctx, recipe) {
 //   const dir = \`\${ctx.settings.dataDir}/\${recipe.name}-credentials\`;

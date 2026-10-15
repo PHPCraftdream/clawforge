@@ -1,9 +1,9 @@
 // Which framework runs a deployment when `clawwright` is the system-wide command.
 //
 // The deployment's own framework wins, so one global install serves every app without
-// changing any of them: a local clawwright dependency (the app's version pin),
+// changing any of them: a local @phpcraftdream/clawwright dependency (the app's version pin),
 // or — for apps/<name> and the root of a Clawwright checkout — that checkout's own gate.
-// Only an app with neither runs on the global package itself, whose clawwright
+// Only an app with neither runs on the global package itself, whose @phpcraftdream/clawwright
 // imports then resolve to that package. Two framework copies in one process would split
 // module state (the selected deployment, registered secrets), so it is always one or the other.
 
@@ -19,7 +19,7 @@ import { renderArgument, renderFrameAdvice } from "../core/io/invocation/render.
 import { handoverOf, IN_BASH_NOTE, rootedLaunch, shimFrame, type Frame } from "../core/io/invocation/frame.ts";
 import { nodeFs, frameworkOwner, strayCheckoutApp } from "./resolve.ts";
 
-const PACKAGE = "clawwright";
+const PACKAGE = "@phpcraftdream/clawwright";
 const DELEGATED = "CLAWWRIGHT_DELEGATED";
 
 /** Fixed parts of the hand-over refusals, exported for the system-install check. */
@@ -108,11 +108,11 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
 export function refuseStrayCheckoutApp(self: string, appRoot: string, frame: Frame): void {
   const stray = strayCheckoutApp({ self, appRoot, fs: nodeFs });
   if (stray === undefined) return;
-  reportError(`${appRoot} ${FOREIGN_SOURCES_NOTE} of the Clawwright checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to clawwright`, frame);
+  reportError(`${appRoot} ${FOREIGN_SOURCES_NOTE} of the Clawwright checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @phpcraftdream/clawwright`, frame);
   process.exit(1);
 }
 
-/** Lets the deployment's app.ts import clawwright from this very package when it
+/** Lets the deployment's app.ts import @phpcraftdream/clawwright from this very package when it
  *  has no install of its own (the system-wide case): resolved as a self-reference. */
 export function resolveFrameworkFromSelf(): void {
   registerHooks({
@@ -129,7 +129,7 @@ export function resolveFrameworkFromSelf(): void {
 }
 
 /** The checkout gate: the package has no dist build here, so a deployment's app.ts importing
- *  `clawwright/<export>` resolves onto the sibling sources (the recipe hook loader
+ *  `@phpcraftdream/clawwright/<export>` resolves onto the sibling sources (the recipe hook loader
  *  maps the same table for hook imports on its own loader thread). */
 export function resolveFrameworkFromSources(): void {
   registerHooks({

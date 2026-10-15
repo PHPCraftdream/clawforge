@@ -3,7 +3,7 @@
 // scaffold.ts creates one of several deployments under a monorepo's apps/, named by
 // argument. This creates the one and only deployment a consumer repo has, in its own root
 // — no name argument, no apps/<name> nesting. The declaration below imports from the
-// package specifier ("clawwright/app"), which only makes sense once the
+// package specifier ("@phpcraftdream/clawwright/app"), which only makes sense once the
 // framework is installed as a dependency, never inside this monorepo.
 //
 // Same measure of usable as scaffold.ts: the generated deployment must run immediately
@@ -35,9 +35,9 @@ export function declarationFor(name: string): string {
 //
 // Run it with: ${renderAdvice(command(["status"]), SHIM_TARGET)}
 
-import { defineApp } from "clawwright/app";
-import { mountPoints } from "clawwright/mounts";
-import { openclawCommands } from "clawwright/commands";
+import { defineApp } from "@phpcraftdream/clawwright/app";
+import { mountPoints } from "@phpcraftdream/clawwright/mounts";
+import { openclawCommands } from "@phpcraftdream/clawwright/commands";
 
 export default defineApp({
   name: "${name}",
@@ -73,7 +73,7 @@ const SHIM_HANDOVER = serializeInvocation(handoverOf(SHIM_TARGET));
 const SHIM_SPELLING = handoverOf(SHIM_TARGET).program;
 
 export const SHIM = `#!/usr/bin/env bash
-# Delegates to the installed clawwright CLI. Committed so ./clawwright <command> works
+# Delegates to the installed @phpcraftdream/clawwright CLI. Committed so ./clawwright <command> works
 # without typing a package path or npx by hand.
 set -Eeuo pipefail
 # Hints in the CLI say "./clawwright" for this entry, "clawwright" for the system-wide command.
@@ -92,11 +92,11 @@ if [[ -z "$node_bin" ]]; then
   echo "error: Node not found — install Node 24 or newer first" >&2
   exit 1
 fi
-script_path="$DIR/node_modules/clawwright/dist/entry/bin.js"
+script_path="$DIR/node_modules/@phpcraftdream/clawwright/dist/entry/bin.js"
 if [[ ! -f "$script_path" ]]; then
   # No install of its own: run the system-wide package with the node found above (npm's own
   # shim needs node on PATH, which cron and WSL-with-Windows-node lack). Never this file again.
-  entry_rel="node_modules/clawwright/dist/entry/bin.js"
+  entry_rel="node_modules/@phpcraftdream/clawwright/dist/entry/bin.js"
   global=""
   search=()
   if global="$(command -v clawwright)" && [[ "$(cd "$(dirname "$global")" && pwd)" != "$DIR" ]]; then
@@ -338,16 +338,16 @@ export function makeInitGateCommand(
   });
 }
 
-/** `--local`: editors resolve `clawwright` only from a node_modules the app has.
+/** `--local`: editors resolve `@phpcraftdream/clawwright` only from a node_modules the app has.
  *  The package is unpublished, so a registry spec would fail; the running copy's own directory
  *  works today. --no-save: `--save-dev <dir>` would commit a machine path (file:…) into
  *  package.json. Printed, never run — init does not run npm. */
 export async function localTypesLines(): Promise<string[]> {
   const directory = (await frameworkPackage())?.dir;
-  const spec = directory === undefined ? "clawwright" : `"${directory}"`;
+  const spec = directory === undefined ? "@phpcraftdream/clawwright" : `"${directory}"`;
   return [
     `editor types: run  ${noSaveInstall(spec)}`,
-    "  (not on the registry yet; once it is: npm install --save-dev clawwright)",
+    "  (not on the registry yet; once it is: npm install --save-dev @phpcraftdream/clawwright)",
   ];
 }
 
@@ -414,7 +414,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   // Types resolve already when this CLI runs from the app's own node_modules.
   const ownInstall = frameworkRoot.startsWith(resolve(root, "node_modules"));
   if (!ownInstall && options.local === true) for (const line of await localTypesLines()) info(line);
-  else if (!ownInstall) info(`editors cannot resolve clawwright types without a local install: ${commandLine(["init", "--local"])}`);
+  else if (!ownInstall) info(`editors cannot resolve @phpcraftdream/clawwright types without a local install: ${commandLine(["init", "--local"])}`);
 
   const boundaryNote = await wslBoundaryNote(envFile);
   if (boundaryNote !== undefined) info(boundaryNote);

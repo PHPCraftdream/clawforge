@@ -315,12 +315,30 @@ export function controlVerdict(result: ControlResult): string {
   return result.ok ? `held (edited exit ${result.editedExit})` : `FAIL — ${result.kind}: ${result.reason}`;
 }
 
+/** `--shard <i>/<n>`: the i-th of n disjoint round-robin slices (1-based) of the declared
+ *  order, so CI can run the controls in parallel jobs whose union is every control. */
+export function parseShard(spec: string): { readonly index: number; readonly total: number } {
+  const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(spec);
+  const index = match === null ? NaN : Number(match[1]);
+  const total = match === null ? NaN : Number(match[2]);
+  if (!(index >= 1 && index <= total)) throw new Error(`invalid --shard "${spec}": expected <i>/<n> with 1 <= i <= n`);
+  return { index, total };
+}
+
+export function selectShard<T>(controls: readonly T[], shard: { readonly index: number; readonly total: number }): T[] {
+  return controls.filter((_, position) => position % shard.total === shard.index - 1);
+}
+
 async function main(): Promise<number> {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-  const selected = process.argv.slice(2);
-  const controls = selected.length === 0
+  const args = process.argv.slice(2);
+  const shardAt = args.indexOf("--shard");
+  const shard = shardAt < 0 ? undefined : parseShard(args[shardAt + 1] ?? "");
+  const selected = shardAt < 0 ? args : args.filter((_, position) => position !== shardAt && position !== shardAt + 1);
+  const chosen = selected.length === 0
     ? CONTROLS
     : CONTROLS.filter((control) => selected.includes(control.id));
+  const controls = shard === undefined ? chosen : selectShard(chosen, shard);
   if (controls.length === 0) {
     process.stderr.write(`no control matches: ${selected.join(", ")}\n`);
     return 1;

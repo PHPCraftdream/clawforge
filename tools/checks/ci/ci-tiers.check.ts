@@ -37,8 +37,7 @@ const on = asRecord(record.on);
 const UNNAMED = spaced("(unnamed", "step)");
 const FULL_GUARD = spaced("env.FULL_TIER", "==", "'true'");
 const FAST_GUARD = spaced("env.FULL_TIER", "!=", "'true'");
-const GROUP_EXPRESSION = spaced("ci-${{", "github.workflow", "}}-${{", "github.ref", "}}");
-const CANCEL_EXPRESSION = spaced("${{", "github.ref", "!=", "'refs/heads/main'", "}}");
+const GROUP_EXPRESSION = spaced("ci-${{", "github.workflow", "}}-${{", "github.event_name", "}}-${{", "github.ref", "}}");
 const MERGE_BASE_COMMAND = spaced("check", "--related", "--base", '"$(git', "merge-base", "origin/main", 'HEAD)"');
 // Windows jobs keep a PowerShell step: under bash the MSYS mkdir leads PATH and breaks the instance lock.
 const WINDOWS_JOBS = new Set(["windows-checks", "windows-wsl"]);
@@ -148,7 +147,7 @@ check(
 );
 const fullTierExpression = unwrapExpression(asText(env.FULL_TIER));
 checkTrue("FULL_TIER line carries an ${{ ... }} expression", fullTierExpression !== "");
-for (const part of ["pull_request", "schedule", "refs/heads/main", "workflow_dispatch"]) {
+for (const part of ["pull_request", "schedule", "workflow_dispatch"]) {
   checkTrue(`FULL_TIER expression mentions ${part}`, containsText(fullTierExpression, part));
 }
 
@@ -256,11 +255,12 @@ function evaluateFullTier(expression: string, event: { eventName: string; ref: s
   return result;
 }
 
-// Cases: [event_name, ref, inputs.full, expected]. Fast tier on any workflow_dispatch without
-// `full`, full tier for pull_request/schedule/main pushes/dispatch with full=true.
+// Cases: [event_name, ref, inputs.full, expected]. Fast tier on pushes (main included: its PR
+// already ran the full tier) and on workflow_dispatch without `full`; full tier for
+// pull_request, schedule and dispatch with full=true.
 const FULL_TIER_CASES: readonly (readonly [string, string, boolean, boolean])[] = [
   ["push", "refs/heads/topic", false, false],
-  ["push", "refs/heads/main", false, true],
+  ["push", "refs/heads/main", false, false],
   ["pull_request", "refs/pull/1/merge", false, true],
   ["schedule", "refs/heads/main", false, true],
   ["workflow_dispatch", "refs/heads/main", false, false],
@@ -283,10 +283,9 @@ check(
 
 const concurrency = asRecord(record.concurrency);
 checkTrue("concurrency group pins workflow + ref", asText(concurrency.group) === GROUP_EXPRESSION);
-checkTrue(
-  "cancel-in-progress is false exactly for refs/heads/main",
-  asText(concurrency["cancel-in-progress"]) === CANCEL_EXPRESSION,
-);
+check("a newer run of the same event and ref cancels the older one", concurrency["cancel-in-progress"], true);
+const push = asRecord(on.push);
+check("push runs only for main (branches are checked through their pull request)", push.branches, ["main"]);
 
 // --- Per-job step classification ---------------------------------------------------------------
 
@@ -391,6 +390,17 @@ const EXPECTED_PINS: readonly string[] = [
   "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
 ];
 check("sorted list of action pins across ci.yml", [...allUses].sort(), EXPECTED_PINS);
+
+// --- windows-controls: the controls run in parallel shards, full tier only -------------------
+
+const controlsJob = asRecord(jobs["windows-controls"]);
+checkTrue("windows-controls job exists", jobs["windows-controls"] !== undefined);
+check("windows-controls runs exactly when the full tier does", unwrapExpression(asText(controlsJob.if)), fullTierExpression);
+check("windows-controls splits the controls into three shards", asRecord(asRecord(controlsJob.strategy).matrix).shard, ["1/3", "2/3", "3/3"]);
+checkTrue("windows-controls is a gate, not advisory", controlsJob["continue-on-error"] === undefined);
+const controlsRun = stepsOf(jobs["windows-controls"]).find((step) => containsText(asText(step.run), "check:controls"));
+checkTrue("windows-controls passes its shard to check:controls", containsText(asText(controlsRun?.run), "--shard"));
+checkTrue("no other job runs check:controls", EXPECTED_JOBS.every((job) => !stepsOf(jobs[job]).some((step) => containsText(asText(step.run), "check:controls"))));
 
 // --- windows-wsl provisioning guard --------------------------------------------------------------
 

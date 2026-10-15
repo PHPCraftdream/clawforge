@@ -181,9 +181,9 @@ try {
   for (const unit of localUnits) {
     // the counter is per local unit: each row must prove its own zero, never inherit one
     const declarationBefore = unit.command === "memory" ? await readFile(memoryDeclarationPath, "utf8") : undefined;
-    resetEnvReads();
     const row = localInputs[unit.label];
     if (row === undefined) throw new Error(`Missing local fixture input: ${unit.label}`);
+    resetEnvReads();
     const result = await runArgv(unit.command, row(fixture.root));
     tally.case(unit.label, result.execution.stage, result.execution.error);
     checkTrue(`${unit.label}: the local action reaches run with a broken .env, zero .env reads and zero target contacts`,
@@ -293,9 +293,12 @@ try {
   await sweep(join(monorepoRoot, "tools", "framework"));
   check("no product file reads envFile() past the counted reader", offenders, []);
 
+  await writeFile(memoryDeclarationPath, memoryDeclaration, "utf8");
+  // Before the target sweep, use syntactically valid but Settings-invalid content. Its
+  // strict parse lets bootstrap provision, then context refuses for missing OC_DATA_DIR.
+  await writeFile(join(fixtureRoot, ".env"), "SOME_KEY=value\n", "utf8");
   const impossible: string[] = [];
 
-  await writeFile(memoryDeclarationPath, memoryDeclaration, "utf8");
   for (const unit of units.filter((candidate) => needsOf(candidate) !== "local")) {
     const setup = unit.command === "memory" && unit.action === "setup";
     if (setup) await writeFile(memoryDeclarationPath, JSON.stringify([

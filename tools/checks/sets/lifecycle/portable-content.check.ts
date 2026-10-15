@@ -5,9 +5,10 @@
 // historical name `aux` (I14 compat) must still load and validate identically on both paths,
 // and the declaration findings must stay the historic full texts on both paths.
 
-import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { loadSet, validateLoadedSet } from "#framework/set/load.ts";
 import { EnvSyntaxError } from "#framework/core/env.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";
@@ -547,7 +548,10 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
 // A malformed secrets.template.env must refuse the set load with the structured
 // EnvSyntaxError (file + 1-based line), never be swallowed by the absent-template path.
 {
-  const deployment = await createBuildDeployment();
+  const source = await createBuildDeployment();
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-env-template-"));
+  await cp(source, deployment, { recursive: true });
+  useDeployment(deployment);
   try {
     const templatePath = resolve(deployment, "config", "secrets.template.env");
     await writeFile(templatePath, "GOOD_NAME=value\nBROKEN LINE\n");
@@ -563,7 +567,8 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
     check("that refusal names the 1-based line as a number", error?.line, 2);
     check("that refusal names the template file", error?.file, templatePath);
   } finally {
-    await removeBuildDeployment(deployment);
+    await rm(deployment, { recursive: true, force: true });
+    await removeBuildDeployment(source);
   }
 }
 

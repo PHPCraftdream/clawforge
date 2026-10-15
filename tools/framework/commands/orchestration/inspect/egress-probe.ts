@@ -45,11 +45,17 @@ async function probe(url) {
   let host;
   let port;
   let isHttp;
+  let target;
   try {
     const parsed = new URL(url);
     host = parsed.hostname;
     port = parsed.port;
     isHttp = parsed.protocol === "http:" || parsed.protocol === "https:";
+    // fetch refuses a URL carrying userinfo (a credentialed proxy URL) before any request;
+    // reachability needs no credentials, so they never leave the URL they came in.
+    parsed.username = "";
+    parsed.password = "";
+    target = parsed.href;
   } catch (error) {
     return { url, state: "invalid" };
   }
@@ -85,7 +91,7 @@ async function probe(url) {
       return { url, state: "unreachable", detail: "this node has no fetch to probe with" };
     }
     try {
-      const response = await fetch(url, { signal: controller.signal, redirect: "manual" });
+      const response = await fetch(target, { signal: controller.signal, redirect: "manual" });
       if (atDeadline) return timeoutAnswer();
       // fetch settles on the headers, and the body is not wanted: cancel it while the
       // deadline is still armed, so a server that sends headers and then never ends the

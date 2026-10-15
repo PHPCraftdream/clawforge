@@ -21,7 +21,13 @@ import { PROVISION_AGENT } from "#src/commands/management/provision-agent/index.
 
 export const managementCommands: Record<string, AppCommand> = materializeCommands({
   memory: { summary: "Declare, set up, inspect, index, verify memory", group: "change", ...MEMORY, structured: true,
-    details: "Actions: plan, configure, setup, status, index, verify. Plan/configure operate locally on canonical owned leaf declarations; explicitly apply-config and restart separately. Status is safe/read-only unless deep is consented. Setup/index/verify require confirmation, cli-start and serialized instance locking. Keyword expects no embeddings. Setup requires local embeddings, immutable model source/version/checksum, exact plugin version, model byte limit and both allow-install/allow-download consents before target contact; delivery and installation are never automatic. Verify creates an exclusive uid1000 witness and removes only its owned inode before explicit cleanup reindex." },
+    details:
+      "Declares and runs OpenClaw's agent memory search. Three modes: embeddings (vector search through an embedding provider, plus keyword search), keyword (full-text search only, no embeddings) and disabled.\n" +
+      "plan and configure work on this machine only: plan previews the memory settings a mode implies, configure writes them into config/desired-state.json, keeping memory options and SecretRefs it does not own. Neither touches the instance — run apply-config and restart afterwards to put them in force.\n" +
+      "status reads each agent's memory state and is read-only. {--deep} also asks the embedding provider whether it is ready, which may cost money or download a model, so it needs {--allow-spend} and {--allow-download}.\n" +
+      "setup prepares local embeddings: it installs the exact approved plugin version and downloads the GGUF model from an immutable source, checked against its SHA256 and a byte limit. Nothing is installed or downloaded without {--allow-install} and {--allow-download}, and every approval is checked before the target is contacted.\n" +
+      "index rebuilds the memory index of the selected agents ({--agent} <id> or {--all-agents}). verify proves search works end to end: it writes a uniquely named test note into the agent's workspace memory, indexes, searches for it, then removes only that note and reindexes.\n" +
+      "setup, index and verify change the instance: they take the instance lock, need confirmation over MCP, and run inside the CLI helper — start it first with the cli-start command. See docs/guide/data-and-backups.md: Declared memory." },
   status: {
     summary: "Show containers, image, health, data usage",
     group: "start-stop",
@@ -260,8 +266,6 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     group: "change",
     ...PROVISION_AGENT,
     details:
-      "A scope upgrade never starts a model turn implicitly; use accept or set try with " +
-      "--with-model when you explicitly authorize the exact request.\n" +
       "Idempotent, re-runnable: creates the isolated agent declared by " +
       "recipes/<recipe>/agent/config.json if missing, mirrors the recipe's files into its " +
       "data mount so the container can spawn its server.ts, registers it as an MCP " +
@@ -272,7 +276,8 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "workspace afterward (e.g. under memory/) is never touched by this command.\n" +
       "A cron job needing a scope this deployment's \"cli\" client does not have yet " +
       "is reported for manual approval through a trusted admin session or the Control UI; " +
-      "only accept and set try offer --with-model for explicit model approval.\n" +
+      "only accept and set try offer --with-model for explicit model approval. A scope " +
+      "upgrade never starts a model turn implicitly.\n" +
       "Requires the gateway to be running ({clawforge up}).",
   },
   deploy: {

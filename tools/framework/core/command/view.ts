@@ -64,6 +64,16 @@ export function argumentScopes(command: { readonly run?: unknown }, name: string
   return argumentParts(slices, name);
 }
 
+/** A multi-action command's actions with their declared summaries, in declaration order;
+ *  undefined for a single-action command or one without a body. */
+export function actionSummaries(command: { readonly run?: unknown }): readonly { readonly name: string; readonly summary: string }[] | undefined {
+  const entry = specOf(command);
+  if (entry === undefined) return undefined;
+  const data = specData(entry);
+  if (data.kind === "single") return undefined;
+  return Object.entries(data.actions).map(([name, slice]) => ({ name, summary: slice.summary }));
+}
+
 /** One unit of a body that declares argument rules: the command itself, or one action. */
 export interface ArgumentRulesView {
   readonly action?: string;

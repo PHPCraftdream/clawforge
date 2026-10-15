@@ -16,11 +16,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -37,11 +37,11 @@
         "properties": {
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           }
         }
       }
@@ -54,11 +54,11 @@
         "properties": {
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           }
         }
       }
@@ -71,11 +71,11 @@
         "properties": {
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           }
         }
       }
@@ -108,11 +108,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "confirm": {
             "type": "boolean",
@@ -174,7 +174,7 @@
           },
           "native": {
             "type": "boolean",
-            "description": "Snapshot; gateway runs (create)"
+            "description": "Live consistent snapshot (full only) (create)"
           },
           "share": {
             "type": "boolean",
@@ -194,7 +194,7 @@
           },
           "json": {
             "type": "boolean",
-            "description": "Diff JSON (list, prune-replaced)"
+            "description": "Emit as JSON (list, prune-replaced)"
           },
           "apply": {
             "type": "boolean",
@@ -206,11 +206,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (prune-replaced, install, uninstall)"
+            "description": "Take over the lock (prune-replaced, install, uninstall)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (prune-replaced, install, uninstall)"
+            "description": "Lock owner's host id (prune-replaced, install, uninstall)"
           },
           "interval": {
             "type": "string",
@@ -239,11 +239,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "fresh-identity": {
             "type": "boolean",
@@ -301,11 +301,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -330,11 +330,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "fresh-identity": {
             "type": "boolean",
@@ -404,11 +404,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "confirm": {
             "type": "boolean",
@@ -614,11 +614,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -754,11 +754,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -834,11 +834,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "confirmed": {
             "type": "boolean",
@@ -914,11 +914,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take the instance lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -960,11 +960,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (tailscale)"
+            "description": "Take over the lock (tailscale)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (tailscale)"
+            "description": "Lock owner's host id (tailscale)"
           },
           "json": {
             "type": "boolean",
@@ -1011,11 +1011,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (install, uninstall)"
+            "description": "Take over the lock (install, uninstall)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (install, uninstall)"
+            "description": "Lock owner's host id (install, uninstall)"
           },
           "confirm": {
             "type": "boolean",
@@ -1051,11 +1051,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "confirm": {
             "type": "boolean",
@@ -1466,11 +1466,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -1515,7 +1515,7 @@
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -1591,11 +1591,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (verify, onboard, diagnose, install, trial, remove, pin, run); Instance lock (recover, migrate, retire-legacy)"
+            "description": "Take over the lock (verify, onboard, diagnose, install, trial, remove, pin, run); Take over the instance lock (recover, migrate, retire-legacy)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (verify, onboard, diagnose, install, trial, remove, pin, run); Remote lock host (recover, migrate, retire-legacy)"
+            "description": "Lock owner's host id (verify, onboard, diagnose, install, trial, remove, pin, run); Remote lock owner's host id (recover, migrate, retire-legacy)"
           },
           "tail": {
             "type": "string",
@@ -1631,7 +1631,7 @@
           },
           "shutdown-timeout": {
             "type": "string",
-            "description": "Shutdown grace (seconds) (migrate); Stop grace (seconds) (retire-legacy)"
+            "description": "Shutdown grace (seconds) (migrate, retire-legacy)"
           },
           "apply": {
             "type": "boolean",
@@ -1703,11 +1703,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock"
+            "description": "Take over the lock"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host"
+            "description": "Lock owner's host id"
           },
           "json": {
             "type": "boolean",
@@ -1849,7 +1849,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "Sets action",
+            "description": "Set action",
             "enum": [
               "build",
               "validate",
@@ -1913,11 +1913,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (forget)"
+            "description": "Take over the lock (forget)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (forget)"
+            "description": "Lock owner's host id (forget)"
           },
           "confirm": {
             "type": "boolean",

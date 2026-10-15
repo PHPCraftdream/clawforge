@@ -30,7 +30,7 @@ export const EXPOSE_TAILSCALE_ARGUMENTS = [
     kind: "flag",
     effect: "destroy",
   },
-  ...LOCK_TAKEOVER_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Take lock" : "Orphan host" })),
+  ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
 /** The probe's refusal when the target has no tailscale, exported so checks assert the same

@@ -218,7 +218,7 @@ async function buildAction(ctx: Context, plan: BuildPlan): Promise<void> {
 
 export const SET = multiActionBody({
   effect: "change",
-  action: { description: "Sets action" },
+  action: { description: "Set action" },
   actions: {
     build: defineAction({
       summary: "Build the set artifact from the working tree",

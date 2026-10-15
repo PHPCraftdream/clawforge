@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/PHPCraftdream/clawforge/security/policy
+    about: Undisclosed vulnerabilities are reported privately, as SECURITY.md describes.
+  - name: OpenClaw itself
+    url: https://github.com/openclaw/openclaw/issues
+    about: Bugs in the OpenClaw gateway, its channels or its CLI belong to the OpenClaw project.

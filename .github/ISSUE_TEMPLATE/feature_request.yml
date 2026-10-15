@@ -1,0 +1,20 @@
+name: Feature request
+description: A command, flag, recipe capability or MCP behaviour you need
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do as an operator or an agent, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would solve it
+      description: The command or behaviour you have in mind. Rough is fine.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you use now

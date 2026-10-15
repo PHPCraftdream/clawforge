@@ -13,8 +13,9 @@ archive before sharing it.
 
 ## Reporting a vulnerability
 
-Do not open a public issue for an undisclosed vulnerability. Send a private report to
-phpcraftdream@gmail.com with:
+Do not open a public issue for an undisclosed vulnerability. Report it privately through
+GitHub (**Security → Report a vulnerability** on the repository page) or by email to
+phpcraftdream@gmail.com, with:
 
 * the affected version or commit;
 * a minimal reproduction and impact;

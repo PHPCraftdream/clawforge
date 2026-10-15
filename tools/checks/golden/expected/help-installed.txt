@@ -63,8 +63,8 @@
       init                 Initialise this directory as an OpenClaw deployment
       version              Print clawforge's own version (also: --version, -v)
       completion           Print a shell completion script (bash, zsh or pwsh) to stdout
-      control-mcp          expose clawforge's commands as MCP tools, for agents
-      help <command>       same as: <command> --help
+      control-mcp          Expose clawforge's commands as MCP tools, for agents
+      help <command>       Same as: <command> --help
     
       ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
     

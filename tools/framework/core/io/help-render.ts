@@ -5,7 +5,7 @@
 import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 import type { EffectDeclaration } from "../command/index.ts";
-import { effectProfile, argumentScopes, argumentRules, ruleText } from "../command/index.ts";
+import { effectProfile, actionSummaries, argumentScopes, argumentRules, ruleText } from "../command/index.ts";
 import { renderAdvice } from "./invocation/render.ts";
 import { command as commandAdvice } from "./invocation/advice.ts";
 import { frameOf, type Invocation } from "./invocation/index.ts";
@@ -72,7 +72,7 @@ export function renderCommandHelp(name: string, command: HelpDeclaration, source
     // describe it differently carries its own action list in each part of the composed
     // description, so the whole-command list must not be added again (R32-04).
     const scopes = argumentScopes(command, argument.name);
-    const description = argument.description.replace(/^With [\w/-]+: /, "");
+    const description = argument.description.replace(/(^|; )With [\w/-]+: /g, "$1");
     const scope = argument.actions === undefined || scopes !== undefined ? "" : ` (${argument.actions.join(", ")})`;
     info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${description}${scope}${choices}${required}`);
   }
@@ -82,6 +82,12 @@ export function renderCommandHelp(name: string, command: HelpDeclaration, source
       const marker = rule.rule === "oneOf" && rule.required === true ? " (one required)" : "";
       info(`  ${prefix}${ruleText(rule, unit.arguments, { action: unit.action }, { mode: "help" })}${marker}`);
     }
+  }
+  const actions = actionSummaries(command);
+  if (actions !== undefined) {
+    info("");
+    info("Actions:");
+    for (const action of actions) info(`  ${action.name.padEnd(USAGE_COLUMN)} ${action.summary}`);
   }
   if (command.details !== undefined) {
     info("");
@@ -139,6 +145,12 @@ export function helpEntryLine(name: string, summary: string): string {
   return `  ${name.padEnd(HELP_NAME_WIDTH)} ${summary}`;
 }
 
+/** The command list's legend for the destructive markers. */
+export const HELP_LEGEND = "  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)";
+
+/** The checkout gate's `--app <name>` line: not a command, but listed with them. */
+export const APP_FLAG_SUMMARY = "Pick another deployment, before the command (default: the OC_APP one)";
+
 /** The usage screen's own line and the full-description hint under it — exported so the
  *  gate's bare screen and the checks assert the same text the renderer prints. */
 export function usageTopLine(on?: Invocation): string {
@@ -188,7 +200,7 @@ export function renderUsage(app: AppDefinition, footer: readonly string[], on?: 
   info("Framework:");
   for (const line of footer) info(line);
   info("");
-  info("  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)");
+  info(HELP_LEGEND);
   info("");
   info(usageFooterHint(on));
 }

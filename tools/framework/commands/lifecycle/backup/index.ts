@@ -63,7 +63,7 @@ export const BACKUP_ARGUMENTS = [
   },
   {
     name: "native",
-    summary: "Snapshot; gateway runs",
+    summary: "Live consistent snapshot (full only)",
     description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot",
     kind: "flag",
   },
@@ -116,8 +116,8 @@ export const BACKUP = multiActionBody({
   action: { description: "Omit to create a backup; an action word lists or manages backups instead", summary: "Omit to create a backup" },
   defaultAction: "create",
   actions: {
-    list: defineAction({ summary: "List archives and replaced copies", effect: "read", arguments: BACKUP_LIST_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Diff JSON" } : argument), run: backupList }),
-    "prune-replaced": defineAction({ summary: "Delete copies restore left aside", effect: "read", arguments: BACKUP_PRUNE_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Diff JSON" } : argument), run: backupPruneReplaced }),
+    list: defineAction({ summary: "List archives and replaced copies", effect: "read", arguments: BACKUP_LIST_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Emit as JSON" } : argument), run: backupList }),
+    "prune-replaced": defineAction({ summary: "Delete copies restore left aside", effect: "read", arguments: BACKUP_PRUNE_ARGUMENTS.map((argument) => argument.name === "json" ? { ...argument, summary: "Emit as JSON" } : argument), run: backupPruneReplaced }),
     install: defineAction({ summary: "Schedule a plain backup", effect: "read", arguments: BACKUP_INSTALL_ARGUMENTS, run: backupInstall }),
     uninstall: defineAction({ summary: "Remove the backup schedule", effect: "read", arguments: BACKUP_UNINSTALL_ARGUMENTS, run: backupUninstall }),
     create: defineAction({

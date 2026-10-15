@@ -23,7 +23,7 @@ import {
   APP_ORDER,
   type GateCommand,
 } from "./framework/integration/gate.ts";
-import { helpEntryLine } from "./framework/core/io/help-render.ts";
+import { APP_FLAG_SUMMARY, helpEntryLine } from "./framework/core/io/help-render.ts";
 import type { ArgumentSpec } from "./framework/core/command/spec.ts";
 import { reportError, info, UserError } from "./framework/core/io/log.ts";
 import { command } from "./framework/core/io/invocation/advice.ts";
@@ -97,7 +97,7 @@ installFrame(frame);
 // not a command at all.
 const monorepoGateHelp = [
   ...gateHelpLines(gateCommands),
-  helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
+  helpEntryLine("--app <name>", APP_FLAG_SUMMARY),
 ];
 
 switch (decision.kind) {
@@ -158,7 +158,7 @@ switch (decision.kind) {
     // not a command at all.
     const monorepoGateHelp = [
       ...gateHelpLines(gateCommands),
-      helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
+      helpEntryLine("--app <name>", APP_FLAG_SUMMARY),
     ];
 
     await main(app, [...decision.argv], monorepoGateHelp, gateCommands);

@@ -214,7 +214,7 @@ function appFactMaybe(name: string, selectedBy: InvocationApp["selectedBy"], lau
  *  answer without one (O3), and so does a bare invocation (help with no command). */
 function needsDeployment(rest: readonly string[], deploymentCommands: readonly string[]): boolean {
   const first = rest[0];
-  if (first === undefined || first === "help" || first === "--help" || first === "-h" || isDeploymentHelpRequest(rest, deploymentCommands)) return false;
+  if (first === undefined || first === "help" || first === "--help" || first === "-h" || isDeploymentHelpRequest(rest, [...deploymentCommands, "control-mcp"])) return false;
   return !((DISPATCHER_COMMANDS as readonly string[]).includes(first));
 }
 
@@ -301,7 +301,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
       const soleName = readName("deployment", sole);
       return { kind: "run", deploymentDir: resolve(appsRootFor(root), soleName), appName: soleName, argv: rest, app: appFact(soleName, "sole", launch, handedProgram, resolve(appsRootFor(root), soleName), cwd), soleNote: sole };
     }
-    if (rest.length === 0 || rest[0] === "help" || rest[0] === "--help" || rest[0] === "-h" || isDeploymentHelpRequest(rest, deploymentCommands)) {
+    if (rest.length === 0 || rest[0] === "help" || rest[0] === "--help" || rest[0] === "-h" || isDeploymentHelpRequest(rest, [...deploymentCommands, "control-mcp"])) {
       const pick = available.length === 0
         ? "this checkout has no deployments yet"
         : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;

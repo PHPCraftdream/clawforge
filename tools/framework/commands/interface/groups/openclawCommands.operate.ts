@@ -44,15 +44,15 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded " +
       "forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real " +
       "but not about whether the instance is serving),\n" +
-      "then layers on two findings of its own: CHANNEL_UNHEALTHY (degraded) for a " +
+      "then adds findings of its own: CHANNEL_UNHEALTHY (degraded) for a " +
       "configured, enabled channel account that `openclaw channels status --json` reports " +
-      "not running, erroring or not connected\n" +
-      "A requested channel read that fails or returns malformed or incomplete telemetry " +
-      "produces CHANNEL_UNKNOWN (degraded), preventing healthy recovery and heartbeat pings; " +
-      "an unrequested read adds no finding.\n" +
+      "not running, erroring or not connected " +
       "(skipped while the gateway itself is down — nothing to exec a CLI call into; " +
       "verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure " +
       "signal, only connection/auth trouble, so that is all this reports),\n" +
+      "CHANNEL_UNKNOWN (degraded) when a requested channel read fails or returns malformed or " +
+      "incomplete telemetry — it holds back a healthy recovery and the heartbeat ping; an " +
+      "unrequested read adds no finding,\n" +
       "and DISK_LOW/DISK_UNKNOWN for the data directory's free space against " +
       "OC_WATCH_DISK_MIN_MB (default 1024 MB; degraded below it, down below 10% of it or " +
       "100 MB, whichever is higher; DISK_UNKNOWN — always degraded, never a silent ok — " +

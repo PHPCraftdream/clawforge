@@ -120,7 +120,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     finding: "R19-18",
     note: "the schema-summary pin in view.check fails when the shared argument table's summary changes",
     product: "tools/framework/commands/interface/groups/shared-arguments.ts",
-    search: `  summary: "Take lock",`,
+    search: `  summary: "Take over the lock",`,
     replace: `  summary: "Take the lock",`,
     check: "tools/checks/foundation/core/command/spec/view.check.ts",
     fragment: "break-lock's schema line is the declared summary",

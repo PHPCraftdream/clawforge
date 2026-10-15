@@ -66,9 +66,9 @@
       list                 List deployments under apps/
       version              Print clawforge's own version (also: --version, -v)
       completion           Print a shell completion script (bash, zsh or pwsh) to stdout
-      --app <name>         pick another deployment, before the command (default: the OC_APP one)
-      control-mcp          expose golden-fixture's commands as MCP tools, for agents
-      help <command>       same as: <command> --help
+      --app <name>         Pick another deployment, before the command (default: the OC_APP one)
+      control-mcp          Expose golden-fixture's commands as MCP tools, for agents
+      help <command>       Same as: <command> --help
     
       ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
     
@@ -237,6 +237,13 @@
       --break-lock           Take over the instance lock held by another operation (prune-replaced, install, uninstall)
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (prune-replaced, install, uninstall)
       --interval <interval>  how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day (install)
+    
+    Actions:
+      list                   List archives and replaced copies
+      prune-replaced         Delete copies restore left aside
+      install                Schedule a plain backup
+      uninstall              Remove the backup schedule
+      create                 Create an archive
     
     With no action: stops the gateway for the duration by default — OpenClaw keeps state in SQLite with a multi-megabyte -wal sibling, and a copy taken mid-write is not restorable.
     --hot skips the stop for those who accept that risk.
@@ -542,6 +549,11 @@
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (tailscale)
       --json                 Exposure report as JSON (status)
     
+    Actions:
+      ssh                    Print the SSH tunnel to a loopback-bound remote gateway
+      tailscale              Tailnet-only HTTPS via `tailscale serve` — never funnel
+      status                 What is published right now, and whether it is loopback-only
+    
     Three actions, narrowest scope first.
     ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> <OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; --run runs it in the foreground through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C.
     wsl/local targets are told no tunnel is needed: Docker Desktop's WSL2 integration already forwards the published port to this machine's own loopback.
@@ -562,11 +574,17 @@
       --break-lock           Take over the instance lock held by another operation (install, uninstall)
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (install, uninstall)
     
+    Actions:
+      check                  One probe cycle; alerts and records on a state change
+      install                Print or install the watch cron entry
+      uninstall              Print or remove the watch cron entry
+      status                 The persisted last state, delivery errors and schedule staleness
+      test                   Send one test webhook message and heartbeat ping
+    
     Five actions.
     check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real but not about whether the instance is serving),
-    then layers on two findings of its own: CHANNEL_UNHEALTHY (degraded) for a configured, enabled channel account that `openclaw channels status --json` reports not running, erroring or not connected
-    A requested channel read that fails or returns malformed or incomplete telemetry produces CHANNEL_UNKNOWN (degraded), preventing healthy recovery and heartbeat pings; an unrequested read adds no finding.
-    (skipped while the gateway itself is down — nothing to exec a CLI call into; verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure signal, only connection/auth trouble, so that is all this reports),
+    then adds findings of its own: CHANNEL_UNHEALTHY (degraded) for a configured, enabled channel account that `openclaw channels status --json` reports not running, erroring or not connected (skipped while the gateway itself is down — nothing to exec a CLI call into; verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure signal, only connection/auth trouble, so that is all this reports),
+    CHANNEL_UNKNOWN (degraded) when a requested channel read fails or returns malformed or incomplete telemetry — it holds back a healthy recovery and the heartbeat ping; an unrequested read adds no finding,
     and DISK_LOW/DISK_UNKNOWN for the data directory's free space against OC_WATCH_DISK_MIN_MB (default 1024 MB; degraded below it, down below 10% of it or 100 MB, whichever is higher; DISK_UNKNOWN — always degraded, never a silent ok — when `df` itself fails or cannot be parsed).
     All of this collapses into ok / degraded / down.
     If gathering the base findings itself fails outright — the Docker daemon down, an SSH host refusing the connection, wsl.exe never answering — that reads as down too, reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record anything (channel/disk are skipped in that case, and also while NOT_BOOTSTRAPPED — no data directory yet to measure).
@@ -677,7 +695,20 @@
       verify: --allow-download requires --allow-spend
       verify: --agent or --all-agents (one required)
     
-    Actions: plan, configure, setup, status, index, verify. Plan/configure operate locally on canonical owned leaf declarations; explicitly apply-config and restart separately. Status is safe/read-only unless deep is consented. Setup/index/verify require confirmation, cli-start and serialized instance locking. Keyword expects no embeddings. Setup requires local embeddings, immutable model source/version/checksum, exact plugin version, model byte limit and both allow-install/allow-download consents before target contact; delivery and installation are never automatic. Verify creates an exclusive uid1000 witness and removes only its owned inode before explicit cleanup reindex.
+    Actions:
+      plan                   Preview the memory settings a mode implies (local)
+      configure              Write the memory settings into desired-state.json
+      setup                  Install the approved local embedding plugin and model
+      status                 Each agent's memory state; --deep probes the provider
+      index                  Rebuild the memory index of the selected agents
+      verify                 Prove memory search finds a fresh test note
+    
+    Declares and runs OpenClaw's agent memory search. Three modes: embeddings (vector search through an embedding provider, plus keyword search), keyword (full-text search only, no embeddings) and disabled.
+    plan and configure work on this machine only: plan previews the memory settings a mode implies, configure writes them into config/desired-state.json, keeping memory options and SecretRefs it does not own. Neither touches the instance — run apply-config and restart afterwards to put them in force.
+    status reads each agent's memory state and is read-only. --deep also asks the embedding provider whether it is ready, which may cost money or download a model, so it needs --allow-spend and --allow-download.
+    setup prepares local embeddings: it installs the exact approved plugin version and downloads the GGUF model from an immutable source, checked against its SHA256 and a byte limit. Nothing is installed or downloaded without --allow-install and --allow-download, and every approval is checked before the target is contacted.
+    index rebuilds the memory index of the selected agents (--agent <id> or --all-agents). verify proves search works end to end: it writes a uniquely named test note into the agent's workspace memory, indexes, searches for it, then removes only that note and reindexes.
+    setup, index and verify change the instance: they take the instance lock, need confirmation over MCP, and run inside the CLI helper — start it first with the cli-start command. See docs/guide/data-and-backups.md: Declared memory.
     
     This command can replace or destroy state, depending on the action given.
     
@@ -815,13 +846,13 @@
 ==> recipe — Deploy service recipes beside the instance
     Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--apply] [--version <version>] [--artifact <basename>]
       <action>               Recipe action [list|import|new|check|verify|onboard|diagnose|install|trial|remove|inspect|recover|migrate|retire-legacy|status|logs|pin|run]
-      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, retire-legacy, status, logs, pin, run); Untrusted code: operator rights, not sandboxed (check)
+      <name>                 Directory to copy the recipe from (import); Recipe name (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, retire-legacy, status, logs, pin, run); Recipe whose *.check.ts files to run — they run with your rights, not sandboxed (check)
       <new-name>             import under this name instead of the source directory's own name (import)
       <recipe-action>        the action declared in the recipe's manifest (recipe inspect lists them) (run)
       <arg…>                 action argument as key=value (run)
-      --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list); With inspect: emit inspection evidence as JSON (inspect); With run: emit the action's result as JSON (run)
+      --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list); emit inspection evidence as JSON (inspect); emit the action's result as JSON (run)
       --with-hooks           add commented prepare.ts/verify.ts stubs (new)
-      --dry-run              list files without executing recipe code (check); With install/remove/recover/migrate: show what would happen (install, remove); With trial: show what would be copied, the project name and the override (trial); With recover: preview without locks or hooks (recover); With migrate: preview without locks, hooks or target writes (migrate); With run: pass dryRun to the action; treated as read-only (run)
+      --dry-run              list files without executing recipe code (check); show what would happen (install, remove); show what would be copied, the project name and the override (trial); preview without locks or hooks (recover); preview without locks, hooks or target writes (migrate); pass dryRun to the action; treated as read-only (run)
       --break-lock           Take over the instance lock held by another operation (verify, onboard, diagnose, install, trial, remove, pin, run); Take over the instance lock held by another operation (recover, migrate, retire-legacy)
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (verify, onboard, diagnose, install, trial, remove, pin, run); Confirm <hostId> for a recorded remote lock owner (recover, migrate, retire-legacy)
       --tail <n>             lines to return per service (diagnose, inspect, logs)
@@ -832,10 +863,30 @@
       --pull                 pull the selected service image (recover)
       --reconcile-consumer   May mutate consumer configuration and the gateway through afterStart (recover)
       --helper-image <sha256> Trusted local sha256 image ID for storage tools; never built or pulled (migrate, retire-legacy)
-      --shutdown-timeout <seconds> Finite 1..3600 seconds, default 180; never escalates to forced kill (migrate); Finite 1..3600 seconds, default 180; never escalates to forced kill (retire-legacy)
-      --apply                stop, back up and remove the legacy containers; previews by default (retire-legacy); With pin: confirm and atomically update the Dockerfile (pin)
+      --shutdown-timeout <seconds> Finite 1..3600 seconds, default 180; never escalates to forced kill (migrate, retire-legacy)
+      --apply                stop, back up and remove the legacy containers; previews by default (retire-legacy); confirm and atomically update the Dockerfile (pin)
       --version <version>    new plain-token release version (pin)
       --artifact <basename>  select a declaration by its expanded asset basename (version placeholders use the current version) (pin)
+    
+    Actions:
+      list                   List recipes, bundles and broken manifests
+      import                 Copy a recipe directory into recipes/
+      new                    Scaffold a recipes/<name>/ skeleton
+      check                  Run untrusted local checks; no instance/Docker/lock
+      verify                 Run the recipe's verify.ts hook
+      onboard                Run the recipe's onboard.ts hook
+      diagnose               Bundle stack, logs and verify hook into a report
+      install                Build a recipe from source and start it
+      trial                  Build and run a recipe against a copy of its data (no hooks run)
+      remove                 Stop and remove a recipe's stack
+      inspect                Inspect recipe containers without locks or hooks
+      recover                Recreate exactly one recipe service
+      migrate                Migrate a proven owned legacy recipe stack with retained backups
+      retire-legacy          Retire a proven owned legacy stack: cold backup, remove containers only
+      status                 Show the recipe stack's compose status
+      logs                   Read a recipe stack's logs
+      pin                    Update a recipe Dockerfile artifact version and checksum
+      run                    Run a recipe-declared action from its manifest
     
     A recipe is a third-party service living beside the instance — its own directory under the deployment's recipes/, its own compose project, its own lifecycle.
     It cannot take the gateway down with it and a snapshot never picks up its images or volumes.
@@ -867,10 +918,9 @@
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
       --json                 Outcome as JSON
     
-    A scope upgrade never starts a model turn implicitly; use accept or set try with --with-model when you explicitly authorize the exact request.
     Idempotent, re-runnable: creates the isolated agent declared by recipes/<recipe>/agent/config.json if missing, mirrors the recipe's files into its data mount so the container can spawn its server.ts, registers it as an MCP server, and — if agent/cron-message.txt is present — adds a cron job that sends the agent that message on a schedule.
     Workspace prompt files (recipes/<recipe>/agent/*.md) are declared state and get rewritten every run, same as apply-config; anything the agent writes to its own workspace afterward (e.g. under memory/) is never touched by this command.
-    A cron job needing a scope this deployment's "cli" client does not have yet is reported for manual approval through a trusted admin session or the Control UI; only accept and set try offer --with-model for explicit model approval.
+    A cron job needing a scope this deployment's "cli" client does not have yet is reported for manual approval through a trusted admin session or the Control UI; only accept and set try offer --with-model for explicit model approval. A scope upgrade never starts a model turn implicitly.
     Requires the gateway to be running (./clawforge up).
 
 === deploy --help ===
@@ -928,7 +978,7 @@
 === set --help ===
 ==> set — Build or validate the set artifact
     Usage: ./clawforge set <action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]
-      <action>               Sets action [build|validate|diff|receipts|try|forget] (required)
+      <action>               Set action [build|validate|diff|receipts|try|forget] (required)
       <artifacts…>           Two positional artifacts (diff)
       --name <name>          Set name (default: the deployment's name) (build, validate); Object name (forget)
       --json                 Emit the manifest and its id as JSON (build); Emit the findings as JSON (validate); Emit JSON (diff); Emit the receipts as JSON (receipts); Emit the trial report as JSON (try)
@@ -944,6 +994,14 @@
       --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner (forget)
       diff: <artifacts…> or --from and --to (one required)
       receipts: --receipt requires --set-id
+    
+    Actions:
+      build                  Build the set artifact from the working tree
+      validate               Check a set without a running instance
+      diff                   Compare two verified artifacts
+      receipts               List saved acceptance receipts
+      try                    Try a set in a throwaway instance
+      forget                 Remove an object this framework created
     
     Collects every recipe (served content and agent bundle, each file checksummed), config/desired-state.json, the required framework version and image digest, and the NAMES of the secrets the set needs — into sets/<name>-<id>.tar.gz inside the deployment directory.
     The id is over the manifest, not the archive bytes: two builds of an unchanged tree give the same id, so it can be compared, committed and installed against.

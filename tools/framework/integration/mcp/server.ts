@@ -54,7 +54,7 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
 
 /** Exported so checks pin the `help` tool's summary to the declaration rather than a copy.
  *  Deliberately not the registry `help` entry's summary (integration/gate.ts's
- *  HELP_ENTRY_SUMMARY, "same as: <command> --help"): that sentence refers to the console
+ *  HELP_ENTRY_SUMMARY, "Same as: <command> --help"): that sentence refers to the console
  *  form; this one describes the tool. */
 export const HELP_TOOL_SUMMARY = "Full help for one command, or the command list";
 

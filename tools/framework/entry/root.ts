@@ -1,6 +1,6 @@
 // Where the deployment is when `clawforge` runs in one of its subfolders, and the startup diagnostic for a checkout whose dist is older than its sources (the entry directory is at its entry cap, so both live here).
 
-import { lstatSync, opendirSync } from "node:fs";
+import { lstatSync, opendirSync, realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { frameworkPackage } from "../core/env.ts";
@@ -19,9 +19,26 @@ export async function defaultInvocation(appRoot: string, platform: string = proc
   };
 }
 
+/** True when the app's own node_modules reaches the running package: npm's file:... install
+ *  spells node_modules/@clawforge/framework as a symlink/junction to the framework checkout,
+ *  and the deployment then runs its own local package — the launch must not name the checkout
+ *  the link resolves to. The probe is package identity, not link detection: an ordinary
+ *  (non-linked) install whose package directory IS this directory matches too, and its
+ *  launch is the same local-package answer classifyCopy would give it. */
+function linkedThroughApp(pkgDir: string, appRoot: string): boolean {
+  try {
+    const link = realpathSync.native(resolve(appRoot, "node_modules", "@clawforge", "framework"));
+    const real = realpathSync.native(pkgDir);
+    return process.platform === "win32" ? link.toLowerCase() === real.toLowerCase() : link === real;
+  } catch {
+    return false;
+  }
+}
+
 // The launch decision shared by the default Invocation and the default frame: which copy runs.
 async function decideLaunch(appRoot: string, facts: { host: HostPlatform; checkout?: string }): Promise<Launch> {
   const pkg = await frameworkPackage();
+  if (pkg !== undefined && linkedThroughApp(pkg.dir, appRoot)) return defaultLaunch({ source: "local-package", appRoot, host: facts.host });
   const copy = pkg === undefined ? undefined : classifyCopy(pkg.dir, appRoot);
   return pkg === undefined || copy === undefined || copy.source === "global"
     ? defaultLaunch({ source: "global" })

@@ -1,5 +1,5 @@
 Clawwright
-Copyright (c) 2026 Clawwright contributors.
+Copyright (c) 2026 PHPCraftdream.
 
 This distribution includes an adapted OpenClaw Docker Compose definition in
 `dist/docker-compose.yml`. OpenClaw is a separate project; its source and license are

@@ -107,6 +107,6 @@ with access to the deployment and its target.
 
 ## License
 
-Copyright (c) 2026 Clawwright contributors. This package is dual-licensed under the MIT
+Copyright (c) 2026 PHPCraftdream. This package is dual-licensed under the MIT
 License or the Apache License, Version 2.0. See `LICENSE-MIT`, `LICENSE-APACHE`, and
 `THIRD_PARTY_NOTICES.md`.

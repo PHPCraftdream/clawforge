@@ -47,8 +47,8 @@ Before the first release:
    `## Unreleased` into the section of the version being tagged (done for 0.1.0).
 2. Confirm the unscoped `clawwright` npm name is still free (or already owned by the release
    account); the package publishes with public access.
-3. Confirm the copyright holder for `Clawwright contributors`, including the right to
-   relicense every contribution under MIT or Apache-2.0.
+3. The copyright holder is PHPCraftdream (LICENSE-MIT, NOTICE, package `author`); the project
+   is dual-licensed MIT OR Apache-2.0, and CONTRIBUTING.md accepts contributions under both.
 4. Review `THIRD_PARTY_NOTICES.md` against the exact OpenClaw source revision used by the
    adapted Compose definition and review the optional recipe sources separately.
 5. Run `npm test`, `npm run build`, and `npm run pack:check` on a clean checkout. Install the

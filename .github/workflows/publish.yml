@@ -83,6 +83,7 @@ jobs:
     environment: release
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Download the tarball verify built
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -102,7 +103,7 @@ jobs:
         working-directory: release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public clawwright-*.tgz
+        run: npm publish --provenance --access public clawwright-*.tgz
 
   publish-trusted-publisher:
     needs: verify

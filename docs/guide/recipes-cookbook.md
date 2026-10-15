@@ -310,6 +310,25 @@ will not do: it never touches the live stack (its own project name and build tag
 that), never runs hooks (it does not import the hook runtime), and the live recipe
 directory is only ever shared read-only.
 
+## Retire a legacy recipe stack whose data is disposable
+
+`recipe migrate` needs the legacy stack to still match the definition, service set for
+service. When it does not — the old compose file grew services the recipe dropped, or the
+data is regenerable — retire the legacy stack instead of hand-running `docker stop`/`rm`:
+`recipe retire-legacy <name>` previews the proven-owned inventory (containers with their
+provenance, mounts, planned operations), and `recipe retire-legacy <name> --apply` stops the
+legacy containers gracefully (an unsupported stop signal — anything but SIGTERM/SIGINT —
+refuses before anything is stopped), verifies they stopped, re-checks that no other container
+writes the same storage (a conflict aborts with the stopped containers and `docker start <ids>`
+to bring them back), takes a cold backup of their writable binds and named volumes into a
+private recovery directory, then removes the containers only. Images are retained (they are
+the rollback anchor, reported with the backup path and journal, plus each container's full
+recorded `docker inspect` JSON, ports, mounts and environment NAMES, and per-archive restore
+commands for storage that changed after retirement); no volume or image is ever removed, and
+afterwards `recipe install <name>` proceeds normally because the legacy namespace no longer
+holds containers. Review the preview first: apply is a
+destructive effect and owes the usual MCP confirmation.
+
 ## Keep a journal that does not leak identifiers
 
 When a hook must record that an identifier was seen — an account synced, an order

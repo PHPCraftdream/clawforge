@@ -10,7 +10,7 @@ import { loadRecipe, recipeStack } from "#src/service/recipe.ts";
 import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 
 /** Target-side coordinates only; preview never creates the private recovery directory. */
-function backupRoot(dataDir: string): string {
+export function backupRoot(dataDir: string): string {
   if (!/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)*\/?$/.test(dataDir)
     || dataDir.split("/").some((part) => part === "." || part === "..")) {
     throw new Error("recipe migration requires a safe absolute target data directory");

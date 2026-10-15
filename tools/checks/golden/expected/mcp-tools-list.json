@@ -1551,6 +1551,7 @@
               "inspect",
               "recover",
               "migrate",
+              "retire-legacy",
               "status",
               "logs",
               "pin",
@@ -1559,7 +1560,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, status, logs, pin, run); recipe whose checks you trust (check)"
+            "description": "Source directory (import); recipe (new, verify, onboard, diagnose, install, trial, remove, inspect, recover, migrate, retire-legacy, status, logs, pin, run); recipe whose checks you trust (check)"
           },
           "new-name": {
             "type": "string",
@@ -1590,11 +1591,11 @@
           },
           "break-lock": {
             "type": "boolean",
-            "description": "Take lock (verify, onboard, diagnose, install, trial, remove, pin, run); Instance lock (recover, migrate)"
+            "description": "Take lock (verify, onboard, diagnose, install, trial, remove, pin, run); Instance lock (recover, migrate, retire-legacy)"
           },
           "break-foreign-lock": {
             "type": "string",
-            "description": "Orphan host (verify, onboard, diagnose, install, trial, remove, pin, run); Remote lock host (recover, migrate)"
+            "description": "Orphan host (verify, onboard, diagnose, install, trial, remove, pin, run); Remote lock host (recover, migrate, retire-legacy)"
           },
           "tail": {
             "type": "string",
@@ -1626,11 +1627,15 @@
           },
           "helper-image": {
             "type": "string",
-            "description": "Local helper image ID (migrate)"
+            "description": "Local helper image ID (migrate, retire-legacy)"
           },
           "shutdown-timeout": {
             "type": "string",
-            "description": "Shutdown grace (seconds) (migrate)"
+            "description": "Shutdown grace (seconds) (migrate); Stop grace (seconds) (retire-legacy)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "Run the retirement (retire-legacy); Write the pin (pin)"
           },
           "version": {
             "type": "string",
@@ -1639,10 +1644,6 @@
           "artifact": {
             "type": "string",
             "description": "Artifact basename (pin)"
-          },
-          "apply": {
-            "type": "boolean",
-            "description": "Write the pin (pin)"
           },
           "confirm": {
             "type": "boolean",

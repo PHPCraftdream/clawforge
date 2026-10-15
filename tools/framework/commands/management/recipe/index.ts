@@ -51,7 +51,8 @@ import {
 import { runInspectAction } from "./recovery/inspect.ts";
 import { runTrialAction, runTrialDryRun } from "./recovery/trial/index.ts";
 import { runRecoverAction } from "./recovery/recover.ts";
-import { runMigrateAction } from "./recovery/migrate.ts";
+import { runMigrateAction } from "./recovery/migrate/index.ts";
+import { resolveRetireLegacyEffectOf, runRetireLegacyAction } from "./recovery/retire.ts";
 import { INVALID_MANIFEST } from "./run/lifecycle.ts";
 import { prepareRecipeRun } from "./run/arguments.ts";
 import { runRecipeActionCommand } from "./run/invocation.ts";
@@ -391,6 +392,29 @@ export const RECIPE = multiActionBody({
         takeover: takeoverOf(call.values),
       }),
       run: (ctx, plan) => runMigrateAction(ctx, plan.name, plan.dryRun, plan.takeover, plan.options),
+    }),
+    "retire-legacy": defineAction({
+      summary: "Retire a proven owned legacy stack: cold backup, remove containers only",
+      effect: "destroy",
+      effectOf: resolveRetireLegacyEffectOf,
+      arguments: [NAME_ARGUMENT, {
+        name: "apply", summary: "Run the retirement", description: "With retire-legacy: stop, back up and remove the legacy containers; previews by default",
+        kind: "flag",
+      }, {
+        name: "helper-image", summary: "Local helper image ID", description: "Trusted local sha256 image ID for storage tools; never built or pulled",
+        kind: "option", valueName: "sha256", value: kinds.text("an immutable local image ID"),
+      }, {
+        name: "shutdown-timeout", summary: "Stop grace (seconds)", description: "Finite 1..3600 seconds, default 180; never escalates to forced kill",
+        kind: "option", valueName: "seconds", value: kinds.text("finite shutdown seconds"),
+      }, ...RECIPE_LOCK_ARGUMENTS.map((argument) => ({ ...argument, summary: argument.name === "break-lock" ? "Instance lock" : "Remote lock host" }))],
+      prepare: async (call) => ({
+        name: call.values.name,
+        apply: call.values.apply === true,
+        options: { helperImage: call.values["helper-image"],
+          shutdownTimeoutSeconds: call.values["shutdown-timeout"] === undefined ? undefined : Number(call.values["shutdown-timeout"]) },
+        takeover: takeoverOf(call.values),
+      }),
+      run: (ctx, plan) => runRetireLegacyAction(ctx, plan.name, plan.apply, plan.takeover, plan.options),
     }),
     status: defineAction({
       summary: "Show the recipe stack's compose status",

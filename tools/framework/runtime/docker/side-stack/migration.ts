@@ -2,16 +2,23 @@ import { migrationPathSanitizer, type SideStackMigrateOptions, type SideStackMig
 import { sleep } from "../../runtime.ts";
 import type { MigrationBackupEvidence, MigrationBackupVerification } from "../../runtime.ts";
 import type { StackLock, StackMigratePlan, StackMigrationEvidence, MigrationObservedState } from "../../runtime.ts";
-import { prepareComposeDocument, executePreparedDocument, execResult, object, text, definitionLabel, digestLabel, documentDigest, remainingTimeout, checkDeadline, type StackIO } from "./io.ts";
+import { prepareComposeDocument, executePreparedDocument, execResult, object, text, definitionLabel, digestLabel, documentDigest, remainingTimeout, checkDeadline, RefusalError, type StackIO } from "./io.ts";
 import { records, type ContainerRecord } from "./inspection.ts";
 import { prepareMigration, createBackupRoot, verifyWriters, verifyReadonlyBind, assertMigrationConfig, assertRestartPolicy, assertWritableLayerMetadata, rawMounts, gentleSignal, shutdownSeconds, type MigrationPrepared, type ReadonlyBindProof } from "./migration-plan.ts";
 import { backupStorage, checkHelper, restoreBind, transferStorage, verifyTopology, verifyTargetVolume } from "./storage.ts";
-import { waitReady } from "./recovery.ts";
+import { waitReady } from "./recovery/index.ts";
 
 // Never retain raw exceptions (including AggregateError children or causes).
 export function migrationFailure(io: StackIO, error: unknown): Error {
+  const wrap = (message: string, source: unknown): Error => source instanceof RefusalError
+    ? new RefusalError(message, source.code) : new Error(message);
   if (error instanceof AggregateError) return new AggregateError(Array.from(error.errors, (child) => migrationFailure(io, child)), io.sanitize(error.message));
-  return new Error(io.sanitize(error instanceof Error ? error.message : "recipe migration operation failed"));
+  const result = wrap(io.sanitize(error instanceof Error ? error.message : "recipe migration operation failed"), error);
+  if (result instanceof RefusalError) {
+    for (const key of ["stoppedContainers", "restartArgv", "restartCommand"] as const)
+      if (key in (error as object)) Object.assign(result, { [key]: key === "restartCommand" ? io.sanitize(String((error as unknown as Record<string, unknown>)[key])) : (error as unknown as Record<string, unknown>)[key] });
+  }
+  return result;
 }
 const identity = (raw: Record<string, unknown>): string => JSON.stringify({
   Id: raw["Id"], Image: raw["Image"], Config: raw["Config"], HostConfig: raw["HostConfig"], Mounts: raw["Mounts"],

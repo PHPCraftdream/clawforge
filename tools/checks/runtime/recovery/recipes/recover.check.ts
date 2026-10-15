@@ -1,5 +1,5 @@
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { waitReady } from "#framework/runtime/docker/side-stack/recovery.ts";
+import { waitReady } from "#framework/runtime/docker/side-stack/recovery/index.ts";
 import { fixture, image, container, type RecipeRecoveryFixture } from "./fixture.ts";
 
 function refusalEvidence(f: RecipeRecoveryFixture) {

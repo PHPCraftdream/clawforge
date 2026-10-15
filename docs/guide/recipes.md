@@ -691,7 +691,32 @@ Use the framework inspection and bounded recovery/migration path instead of raw
 # Proven owned legacy namespace: preview the whole migration
 ./clawforge recipe migrate <name> --dry-run
 ./clawforge recipe migrate <name>
+# Proven owned legacy namespace whose data is disposable: preview the retirement
+./clawforge recipe retire-legacy <name>
+./clawforge recipe retire-legacy <name> --apply
 ```
+
+Choose the cutover path by what the legacy stack still is. `recipe migrate` is for a legacy
+stack that still matches the recipe definition's service set and whose data must move into
+the new stack; it transfers named volumes and preserves bind paths. `recipe retire-legacy`
+is for a legacy stack that no longer matches the definition, or whose writable data is
+disposable: it previews by default, and with `--apply` it stops the legacy containers (a
+container that will not stop refuses; there is no kill or force; an image or container
+configured with an unsupported stop signal — anything but SIGTERM/SIGINT — refuses before
+anything is stopped), verifies they stopped, re-checks writer isolation (no other container,
+in any project, may still write the storage; a conflict after the stop aborts without backup
+or removal and reports the stopped containers and `docker start <ids>` to bring them back),
+takes a cold backup of their writable binds and named volumes into a private recovery
+directory (using a trusted local helper image: the legacy stack's first image by default, or
+`--helper-image <sha256 image ID>`; its read-only temporary helper probe runs during preview and does not write target storage; missing helper tools refuse before the stop), records the
+full `docker inspect` JSON of every removed container plus a storage-to-archive restore
+manifest, then removes the containers only — images are retained, no volume or image is ever
+removed, and the recipe's data directory is untouched. Afterwards
+`recipe install <name>` proceeds normally. Preview and apply share the same ownership proof
+and refusal rules as inspection; the journal and the rollback steps (retained image IDs, the
+recorded inspect JSON files as the authoritative reconstruction source, per-container ports,
+mounts and environment names, and per-archive restore commands) are part of the reported
+result.
 
 Review the preview before approving execution. Recover and migrate are destructive effects
 requiring `confirm: true` through the MCP framework pipeline; `--dry-run` is a read effect.

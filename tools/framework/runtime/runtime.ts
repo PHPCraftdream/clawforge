@@ -289,6 +289,51 @@ export interface StackMigrationResult {
   readonly journalPath: string;
   readonly retainedSource: true;
 }
+export interface StackRetireLegacyOptions {
+  /** Fresh, absolute target-side private backup directory; retained on every outcome. */
+  readonly backupRoot: string;
+  /** Trusted local sha256 image ID for storage tools; default is the legacy stack's first image. */
+  readonly helperImage?: string;
+  /** Gentle stop grace, bounded 1..3600 (default 180); a container that will not stop refuses. */
+  readonly shutdownTimeoutSeconds?: number;
+}
+export interface StackRetireLegacyPlan {
+  readonly token: string;
+  /** The recipe's current (empty) namespace, which must stay untouched. */
+  readonly project: string;
+  /** The single populated legacy namespace the plan retires. */
+  readonly legacyProject: string;
+  readonly containers: readonly StackContainerEvidence[];
+  /** Writable storage observed on the legacy containers; backed up cold, never deleted. */
+  readonly storage: readonly { type: "bind" | "volume"; source: string; destination: string; writable: boolean; name?: string }[];
+  /** Images stay retained after the containers are removed; exact rollback anchors. */
+  readonly retainedImages: readonly { service?: string; imageId: string }[];
+  /** Immutable local helper image used for the capability probe and cold backups. */
+  readonly helperImage: string;
+  readonly backupRoot: string;
+  readonly shutdownTimeoutSeconds: number;
+  readonly operations: readonly string[];
+  readonly impacts: readonly string[];
+}
+export interface StackRetireLegacyFailureRecovery {
+  readonly stoppedContainers: readonly string[];
+  readonly restartArgv: readonly string[];
+  readonly restartCommand: string;
+}
+export interface StackRetireLegacyResult {
+  readonly legacyProject: string;
+  readonly backupRoot: string;
+  readonly journalPath: string;
+  readonly removedContainers: readonly { id: string; service?: string; imageId?: string }[];
+  readonly retainedImages: readonly { service?: string; imageId: string }[];
+  /** Everything the recorded rollback needs; inspect JSON files in backupRoot are authoritative. */
+  readonly rollback: {
+    readonly inspectRecorded: true;
+    readonly archives: readonly { key: string; type: "bind" | "volume"; source: string; archive: string; helperImage: string; restoreArgv: readonly string[]; restore: string }[];
+    readonly containers: readonly { id: string; service?: string; imageId: string; ports: readonly { containerPort: string; hostIp?: string; hostPort: string }[];
+      mounts: readonly { type: string; source: string; destination: string; name?: string }[]; envNames: readonly string[] }[];
+  };
+}
 /** Executor owns neither deployment locks nor hooks. Caller supplies its lock scope. */
 export type StackLock = <T>(action: () => Promise<T>) => Promise<T>;
 
@@ -298,6 +343,8 @@ export interface Stack {
   recover?(plan: StackRecoverPlan, withLock: StackLock): Promise<void>;
   planMigrate?(options: StackMigrateOptions): Promise<StackMigratePlan>;
   migrate?(plan: StackMigratePlan, withLock: StackLock): Promise<StackMigrationResult>;
+  planRetireLegacy?(options: StackRetireLegacyOptions): Promise<StackRetireLegacyPlan>;
+  retireLegacy?(plan: StackRetireLegacyPlan, withLock: StackLock): Promise<StackRetireLegacyResult>;
   /** Builds images defined by the stack. */
   build(): Promise<void>;
   /** Starts it in the background. `wait` asks compose to block until every service is

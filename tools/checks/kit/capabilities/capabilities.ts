@@ -28,6 +28,10 @@ export function isCapability(value: string): value is Capability {
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
+// PowerShell's cold start (runtime JIT, profile load) alone can take several seconds on a
+// busy runner; a probe that times out reports the capability absent, which fails every
+// check that requires it. The probe still answers in well under a second when warm.
+const PWSH_PROBE_TIMEOUT_MS = 30_000;
 
 async function swallow(probe: () => Promise<boolean>): Promise<boolean> {
   try {
@@ -70,7 +74,7 @@ export async function hasRsync(): Promise<boolean> {
 const PWSH_PROBE_ARGS = ["-NoProfile", "-NonInteractive", "-Command", "exit 0"];
 
 async function pwshAnswers(binary: string): Promise<boolean> {
-  return swallow(async () => (await spawnLocal(binary, PWSH_PROBE_ARGS, { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
+  return swallow(async () => (await spawnLocal(binary, PWSH_PROBE_ARGS, { allowFailure: true, timeoutMs: PWSH_PROBE_TIMEOUT_MS })).code === 0);
 }
 
 /** The PowerShell this host actually runs, undefined when it has none: `pwsh`, or on Windows

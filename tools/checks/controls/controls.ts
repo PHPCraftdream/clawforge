@@ -206,7 +206,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     replace: `const first = await localTarRunner("tar", [...forceLocal, ...args], { allowFailure: true, timeoutMs });`,
     check: "tools/checks/sets/tar/local-tar-owner.check.ts",
     fragment: "backslash:",
-    requires: ["windows-host"], // the exercised -C assertions only bite where join() spells paths with backslashes
+    requires: ["windows-host", "gnu-userland"], // the -C assertions run only with GNU tar and bite only where join() spells backslashes
   },
   {
     id: "C17",

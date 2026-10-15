@@ -1,21 +1,31 @@
 # clawwright
 
-Clawwright is a Node.js framework and CLI for operating self-hosted OpenClaw deployments.
-It provides transport-aware lifecycle commands, reproducible set artifacts, archive safety
-checks, and two MCP surfaces for the deployment and the OpenClaw gateway.
+Clawwright is a Node.js framework and CLI for operating self-hosted
+[OpenClaw](https://github.com/openclaw/openclaw) deployments. It provides transport-aware
+lifecycle commands, reproducible set artifacts, archive safety checks, and two MCP surfaces for
+the deployment and the OpenClaw gateway.
+
+Source, issues and the full guides: https://github.com/PHPCraftdream/clawwright
 
 ## Install
+
+System-wide, then one folder per deployment:
+
+```bash
+npm install -g clawwright
+mkdir my-openclaw && cd my-openclaw
+clawwright init
+clawwright bootstrap --check
+clawwright bootstrap
+```
+
+Or pinned per app, as a local dependency:
 
 ```bash
 npm install clawwright
 npx clawwright init
 ./clawwright bootstrap
 ```
-
-If `npm install` answers 404, the first release has not been published yet: build the tarball
-from a clone of the repository (`npm pack` in `tools/framework`) and `npm install
-<path-to-tgz>` in the app instead, or run `npm run install:system` in the clone for a
-system-wide command. The steps after the install are the same.
 
 The package requires Node.js 24 or newer. `clawwright init` writes an application
 declaration, host-specific environment template, a `clawwright` launcher, and project-local
@@ -63,8 +73,9 @@ claim that an untested path works. Hooks may mutate state; a stale lock or recip
 cutover is a safety refusal, not permission to bypass it. Agree disruptive recovery with
 the operator and preserve data and credentials.
 
-See the repository guides `docs/guide/operations.md` and `docs/guide/recipes.md` for the
-diagnostic sequence and durable recipe-repair contract.
+See the repository guides [Operations](https://github.com/PHPCraftdream/clawwright/blob/main/docs/guide/operations.md) and
+[Recipes](https://github.com/PHPCraftdream/clawwright/blob/main/docs/guide/recipes.md) for the diagnostic sequence and durable
+recipe-repair contract.
 
 ## Recipe private files
 
@@ -74,7 +85,8 @@ credentials on the target: `migrate` and `share` snapshots exclude them, `full` 
 and the `clawwright/private-config` target-write helpers refuse writes anywhere else.
 `privateFiles` lists recipe-relative files that `recipe import` leaves out of the copy — a
 filter over file names, not a guarantee. Both are literal paths, validated strictly. The
-repository's `docs/guide/recipes.md` documents both contracts, including their limits.
+repository's [Recipes guide](https://github.com/PHPCraftdream/clawwright/blob/main/docs/guide/recipes.md) documents both contracts,
+including their limits.
 
 For operator-side files created by app hooks (for example offsite full backups), the same
 public entry exports `protectPrivateDirectory(path)` and

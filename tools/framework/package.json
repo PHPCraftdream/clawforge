@@ -6,8 +6,16 @@
     "clawwright",
     "openclaw",
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude-code",
+    "ai-agents",
     "docker",
-    "self-hosting"
+    "docker-compose",
+    "self-hosting",
+    "wsl2",
+    "devops",
+    "cli"
   ],
   "author": "Clawwright contributors",
   "license": "(MIT OR Apache-2.0)",
@@ -47,7 +55,8 @@
     "./private-config": {
       "types": "./dist/security/privacy/private-config.d.ts",
       "default": "./dist/security/privacy/private-config.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",

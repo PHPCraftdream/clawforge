@@ -364,6 +364,7 @@ export const STAGE7_CONTROLS: readonly ControlDecl[] = [
     replace: "    alternatives.cmd = alternatives.pwsh = `cd ${shellQuote(path)}`;",
     check: "tools/checks/surfaces/checkout-subfolder-rows.check.ts",
     fragment: "cmd.exe lands in the target",
+    requires: ["windows-host"], // the check pastes the cmd/pwsh alternative into real cmd.exe, which only exists on a Windows host
   },
   {
     id: "C121",

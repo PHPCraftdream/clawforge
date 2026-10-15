@@ -368,7 +368,7 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     product: "tools/checks/kit/capabilities/native-tools.ts",
     search: 'tool === "bash" ? validateBash(binary, on) : validateTar(binary, on)',
     replace: 'tool === "bash" ? Promise.resolve(false) : validateTar(binary, on)',
-    check: "tools/checks/kit/capabilities/native-tools.check.ts", fragment: "independently working native Bash must be selected",
+    check: "tools/checks/kit/capabilities/native-tools.check.ts", fragment: "independently working native Bash must be selected", requires: ["windows-host"], // on Linux CI the edit fails the default POSIX Bash assertions instead, never this fragment
   },
   {
     id: "C274", finding: "real packing payload", note: "Corrupt inventoried payload bytes before real archive creation.",

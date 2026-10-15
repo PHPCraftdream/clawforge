@@ -1,6 +1,7 @@
 // Self-test for the negative-controls runner (stage 7, S0.3): a valid control holds on a
 // FAILING assertion line; not-failing, stale, fragment-missing and crashed outcomes are
-// reported as their machine kind; the product file inside the shared copy is byte-identical
+// reported as their machine kind; a control gated on a capability the host lacks is reported
+// as skipped (needs <cap>), counted separately, never a failure; the product file inside the shared copy is byte-identical
 // after the control (SHA-256 before === after — restoration observed where it happens); a
 // deliberately broken restore aborts the run; and a path climbing out of the copy or running
 // through the node_modules junction is rejected without any write. Assertions are
@@ -13,6 +14,7 @@ import { join, sep } from "node:path";
 import { runProcess } from "../spawn.ts";
 import { check, checkTrue, finish } from "../harness.ts";
 import { copyRepo, runControls, controlVerdict, FAIL_MARKER } from "../../controls/run-controls.ts";
+import type { CapabilityProbe } from "../capabilities/capabilities.ts";
 import type { ControlDecl } from "../../controls/controls.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-controls-self-"));
@@ -21,6 +23,24 @@ try {
   await writeFile(join(root, "product-a.ts"), "export const value = 1;\n");
   await writeFile(join(root, "product-b.ts"), "export const value = 3;\n");
   await writeFile(join(root, "check-mutation.ts"), `import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+const product = await readFile(fileURLToPath(new URL("./product-a.ts", import.meta.url)), "utf8");
+if (product.split("value = 2").length > 1) {
+  console.log(${JSON.stringify(FAIL_MARKER)} + "mutation detected: the value grammar is gone");
+  process.exit(1);
+}
+`);
+  await writeFile(join(root, "check-requires-cap.ts"), `// check:requires windows-host
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+const product = await readFile(fileURLToPath(new URL("./product-a.ts", import.meta.url)), "utf8");
+if (product.split("value = 2").length > 1) {
+  console.log(${JSON.stringify(FAIL_MARKER)} + "mutation detected: the value grammar is gone");
+  process.exit(1);
+}
+`);
+  await writeFile(join(root, "check-bad-requires.ts"), `// check:requires ssh-loopack
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 const product = await readFile(fileURLToPath(new URL("./product-a.ts", import.meta.url)), "utf8");
 if (product.split("value = 2").length > 1) {
@@ -122,6 +142,43 @@ await writeFile(fileURLToPath(new URL("./executed.marker", import.meta.url)), "r
   const sixth = await runControls(root, [control("S11", { check: "check-hangs-on-edit.ts", fragment: "never printed" })], { timeoutMs: 4000 });
   check("S11: an edited run that times out is reported as crashed", sixth.results[0]?.kind, "check-crashed");
   checkTrue("S11: the crashed control is not held", sixth.results[0]?.ok === false);
+
+  // Capability gating: a control whose check header or own requires names a capability the
+  // probe says the host lacks is skipped, never run and never a failure; control.requires
+  // gates on its own, and an unknown capability is refused before anything runs.
+  const gateMissing = (hasWindows: boolean): Pick<CapabilityProbe, "missing"> => ({ missing: async (required) => hasWindows ? [] : required.filter((c) => c === "windows-host") });
+  const gated = await runControls(root, [
+    control("S12", { check: "check-requires-cap.ts" }),
+    control("S13", { requires: ["windows-host"] }),
+  ], { probe: gateMissing(false) });
+  const gatedById = new Map(gated.results.map((result) => [result.id, result]));
+  check("S12: a check-header capability the host lacks skips the control", gatedById.get("S12")?.kind, "skipped");
+  check("S12: the skip names the missing capability", gatedById.get("S12")?.missing, ["windows-host"]);
+  checkTrue("S12: a skipped control is not held", gatedById.get("S12")?.ok === false);
+  check("S13: the control's own requires gates it too", gatedById.get("S13")?.kind, "skipped");
+  check("S13: the declared-requires skip names the capability", gatedById.get("S13")?.missing, ["windows-host"]);
+  checkTrue("S13: the declared-requires skip is not held", gatedById.get("S13")?.ok === false);
+  check("S12: the skip verdict names the capability in the operator's tokens", controlVerdict(gatedById.get("S12")!).split(/\s+/), ["skipped", "(needs", "windows-host)"]);
+  const ungated = await runControls(root, [
+    control("S14", { check: "check-requires-cap.ts" }),
+    control("S15", { requires: ["windows-host"] }),
+  ], { probe: gateMissing(true) });
+  check("S14: a satisfied check-header capability holds the control", ungated.results[0]?.kind, "held");
+  check("S15: a satisfied declared capability holds the control", ungated.results[1]?.kind, "held");
+  try {
+    await runControls(root, [control("SX", { requires: ["ssh-loopack"] })], { probe: gateMissing(true) });
+    checkTrue("SX: an unknown capability in requires is refused", false);
+  } catch (error) {
+    const words = (error as Error).message.split(/\s+/);
+    checkTrue("SX: an unknown capability in requires is refused", words.includes("unknown") && words.includes("capability") && words.some((word) => word.replace(/:$/, "") === "SX"));
+  }
+  try {
+    await runControls(root, [control("SY", { check: "check-bad-requires.ts" })], { probe: gateMissing(true) });
+    checkTrue("SY: an unknown capability in a check header is refused", false);
+  } catch (error) {
+    const words = (error as Error).message.split(/\s+/);
+    checkTrue("SY: an unknown capability in a check header is refused", words.includes("unknown") && words.includes("capability") && words.some((word) => word.replace(/:$/, "") === "check-bad-requires.ts"));
+  }
 
   // A tracked file deleted from the working tree is listed by git ls-files but must not
   // crash the copy: it is skipped, the surviving file keeps its mode.

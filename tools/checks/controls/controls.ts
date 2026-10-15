@@ -24,6 +24,8 @@ export interface ControlDecl {
   readonly fragment: string;
   /** The check's baseline needs git metadata in the temp copy (e.g. deploy's tracked-files vetting). */
   readonly needsGit?: boolean;
+  /** Host capabilities (capabilities.ts) whose absence means this control cannot bite on this host — it is reported as `skipped (needs <cap>)`, never as a failure. */
+  readonly requires?: readonly string[];
 }
 
 export const CONTROLS: readonly ControlDecl[] = [
@@ -204,6 +206,7 @@ export const CONTROLS: readonly ControlDecl[] = [
     replace: `const first = await localTarRunner("tar", [...forceLocal, ...args], { allowFailure: true, timeoutMs });`,
     check: "tools/checks/sets/tar/local-tar-owner.check.ts",
     fragment: "backslash:",
+    requires: ["windows-host"], // the exercised -C assertions only bite where join() spells paths with backslashes
   },
   {
     id: "C17",

@@ -12,13 +12,19 @@
 // A control whose edit no longer matches the product (it was refactored) is a FAILURE of
 // check:controls — a stale control, never a skip. Every declared path must resolve inside
 // the temp copy itself, never through the node_modules junction or any symlink.
+//
+// A control whose target check declares `check:requires` (or whose own `requires` list names)
+// a capability this host lacks is reported as `skipped (needs <cap>)` — counted separately,
+// never held, never failing.
 
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runProcess } from "#checks/kit/spawn.ts";
+import { CAPABILITIES, CapabilityProbe, isCapability, type Capability } from "../kit/capabilities/capabilities.ts";
+import { parseRequires } from "../kit/run.ts";
 import { CONTROLS, type ControlDecl } from "./controls.ts";
 
 export const FAIL_MARKER = "  FAIL ";
@@ -31,7 +37,8 @@ export type ControlKind =
   | "fragment-missing"
   | "check-crashed"
   | "restore-failed"
-  | "escaped-path";
+  | "escaped-path"
+  | "skipped";
 
 export interface ControlResult {
   readonly id: string;
@@ -48,6 +55,8 @@ export interface ControlResult {
   readonly productHashAfter?: string;
   /** Nonzero exit of the edited assertion run, recorded only for held controls. */
   readonly editedExit?: number;
+  /** Capabilities the host lacks, when kind is "skipped". */
+  readonly missing?: readonly Capability[];
   readonly durationMs: number;
 }
 
@@ -142,6 +151,27 @@ async function escapeProblem(tempRoot: string, rel: string): Promise<string | un
   return undefined;
 }
 
+/** The control's own capability demands, validated against the known set. */
+function declaredRequires(control: ControlDecl): readonly Capability[] {
+  return (control.requires ?? []).map((capability) => {
+    if (!isCapability(capability)) {
+      throw new Error(`${control.id}: unknown capability "${capability}" in a control's requires list (known: ${CAPABILITIES.join(", ")})`);
+    }
+    return capability;
+  });
+}
+
+/** The target check file's own `check:requires` demands, read the way run.ts reads headers. */
+async function checkRequires(repoRoot: string, check: string): Promise<readonly Capability[]> {
+  const handle = await open(join(repoRoot, check), "r");
+  try {
+    const { bytesRead, buffer } = await handle.read(Buffer.alloc(2048), 0, 2048, 0);
+    return parseRequires(buffer.toString("utf8", 0, bytesRead), check);
+  } finally {
+    await handle.close();
+  }
+}
+
 interface CheckRun {
   readonly code: number | null;
   readonly output: string;
@@ -223,8 +253,9 @@ async function runOne(
 export async function runControls(
   repoRoot: string,
   controls: readonly ControlDecl[],
-  options: { readonly timeoutMs?: number; /** Test hook (kit self-check): corrupt the restore to prove the abort. */ readonly breakRestore?: boolean } = {},
+  options: { readonly timeoutMs?: number; /** Test hook (kit self-check): corrupt the restore to prove the abort. */ readonly breakRestore?: boolean; /** Injectable capability probe (kit self-check). */ readonly probe?: Pick<CapabilityProbe, "missing"> } = {},
 ): Promise<ControlsRun> {
+  const probe = options.probe ?? new CapabilityProbe();
   const timeoutMs = options.timeoutMs ?? 600_000;
   const totalStart = Date.now();
   const copyStart = Date.now();
@@ -233,9 +264,23 @@ export async function runControls(
     await copyRepo(repoRoot, tempRoot);
     if (controls.some((control) => control.needsGit === true)) await initGitIndex(tempRoot);
     const copyMs = Date.now() - copyStart;
+    // A control is gated on the union of its check file's header requires and its own declared
+    // requires: a control whose gate is unsatisfied is skipped without any baseline run.
+    const missingByControl = new Map<string, readonly Capability[]>();
+    const runnableChecks = new Set<string>();
+    for (const control of controls) {
+      // The check path is validated BEFORE its header is read: an escaping or missing path is
+      // the control's own escaped-path result below, never a read outside the copy.
+      if (await escapeProblem(tempRoot, control.check) !== undefined) continue;
+      const required = [...new Set([...(await checkRequires(tempRoot, control.check)), ...declaredRequires(control)])];
+      const missing = await probe.missing(required);
+      missingByControl.set(control.id, missing);
+      if (missing.length === 0) runnableChecks.add(control.check);
+    }
     const baselineStart = Date.now();
     const baselines = new Map<string, CheckRun>();
     for (const check of new Set(controls.map((control) => control.check))) {
+      if (!runnableChecks.has(check)) continue;
       // A check path is validated like a product path BEFORE anything runs.
       if (await escapeProblem(tempRoot, check) !== undefined) continue;
       baselines.set(check, await runCheckFile(tempRoot, check, timeoutMs));
@@ -244,6 +289,11 @@ export async function runControls(
     const results: ControlResult[] = [];
     let aborted: string | undefined;
     for (const control of controls) {
+      const missing = missingByControl.get(control.id) ?? [];
+      if (missing.length > 0) {
+        results.push({ id: control.id, kind: "skipped", ok: false, reason: `skipped: needs ${missing.join(", ")}`, missing, durationMs: 0 });
+        continue;
+      }
       const result = await runOne(tempRoot, control, baselines.get(control.check), { timeoutMs, breakRestore: options.breakRestore });
       results.push(result);
       if (result.kind === "restore-failed") {
@@ -261,6 +311,7 @@ export async function runControls(
 
 /** Per-control evidence; the aggregate held summary remains unchanged. */
 export function controlVerdict(result: ControlResult): string {
+  if (result.kind === "skipped") return `skipped (needs ${(result.missing ?? []).join(", ")})`;
   return result.ok ? `held (edited exit ${result.editedExit})` : `FAIL — ${result.kind}: ${result.reason}`;
 }
 
@@ -282,11 +333,12 @@ async function main(): Promise<number> {
   }
   if (run.aborted !== undefined) process.stdout.write(`aborted: ${run.aborted}\n`);
   const held = run.results.filter((result) => result.ok).length;
+  const skipped = run.results.filter((result) => result.kind === "skipped").length;
   const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
   process.stdout.write(
-    `controls: ${held}/${run.results.length} held (copy ${seconds(run.copyMs)}, baseline ${seconds(run.baselineMs)}, total ${seconds(run.totalMs)})\n`,
+    `controls: ${held}/${run.results.length} held${skipped > 0 ? `, skipped ${skipped}` : ""} (copy ${seconds(run.copyMs)}, baseline ${seconds(run.baselineMs)}, total ${seconds(run.totalMs)})\n`,
   );
-  return held === run.results.length && run.aborted === undefined ? 0 : 1;
+  return run.results.every((result) => result.ok || result.kind === "skipped") && run.aborted === undefined ? 0 : 1;
 }
 
 /** The edited run's failing assertions — the evidence each verdict is judged on. */

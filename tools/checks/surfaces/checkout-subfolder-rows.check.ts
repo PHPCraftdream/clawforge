@@ -14,7 +14,7 @@ import { pwshCommand } from "#checks/kit/capabilities/capabilities.ts";
 import type { UserError } from "#framework/core/io/log.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
-const MARKER = ".clawforge-cd-row-marker";
+const MARKER = ".clawwright-cd-row-marker";
 const CASES: readonly (readonly [string, string])[] = [
   ["a path with a space", "dir with space"],
   ["a path with $", "dir$with space"],
@@ -30,7 +30,7 @@ function rows(error: UserError | undefined, shell: "posix" | "cmd" | "pwsh"): st
 }
 
 for (const [label, leaf] of CASES) {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-cd-rows-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-cd-rows-"));
   const target = join(root, leaf);
   await mkdir(target, { recursive: true });
   await writeFile(join(target, MARKER), "");

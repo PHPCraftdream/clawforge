@@ -27,7 +27,7 @@ async function deathOf(run: () => unknown): Promise<string> {
 }
 // --- runWatchCycle(): the transition matrix, persistence, and the webhook's own contract ---
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-watch-check-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-watch-check-check-"));
 useDeployment(root);
 const originalFetch = globalThis.fetch;
 

@@ -98,7 +98,7 @@ function contentFor(manifest: SetManifest, raw = "[]"): PortableContent {
 // reads desiredStateFile() from the active deployment, so without this the cases below read
 // a real deployment's declaration — and passed only because a failure to resolve it at all
 // used to be swallowed.
-const baseDeployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-image-base-"));
+const baseDeployment = await mkdtemp(join(tmpdir(), "clawwright-set-validate-image-base-"));
 await mkdir(resolve(baseDeployment, "config"), { recursive: true });
 await writeFile(resolve(baseDeployment, "config", "desired-state.json"), "[]");
 useDeployment(baseDeployment);
@@ -115,14 +115,14 @@ useDeployment(baseDeployment);
   const unpinned = await validateSet(contentFor(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } })), { lock: undefined });
   check("a tag instead of a digest is a finding", codes(unpinned), ["SET_IMAGE_UNPINNED"]);
   check("and the tag is named", unpinned[0]?.detail.includes("extended-stable"), true);
-  check("with no lock recorded, the remedy is bootstrap", unpinned[0]?.nextAction, "./clawforge bootstrap");
+  check("with no lock recorded, the remedy is bootstrap", unpinned[0]?.nextAction, "./clawwright bootstrap");
   {
     // A lock's EXISTENCE is not "deployed" — the advice follows the lock's CONTENT: a
     // lock for another image means the deployment was last pinned elsewhere, and the honest
     // path is the upgrade one — lock only after the gateway really runs the declared tag.
     const otherLock = { version: 1, image: { reference: "x:y", digest: "x@sha256:z" } } as DeploymentLock;
     const locked = await validateSet(contentFor(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } })), { lock: otherLock });
-    check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawforge upgrade --image ghcr.io/openclaw/openclaw:extended-stable  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))");
+    check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawwright upgrade --image ghcr.io/openclaw/openclaw:extended-stable  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))");
     check("the detail no longer claims lock records what the running gateway serves", locked[0]?.detail, imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", otherLock).detail);
     check("the detail names the reference the lock was taken for", locked[0]?.detail.includes("x:y"), true);
 
@@ -182,7 +182,7 @@ useDeployment(baseDeployment);
     const model = contentFor(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
     const lock = { version: 1, image: { reference: "x:y", digest: "x@sha256:z" } } as DeploymentLock;
     const before = await validateSet(model, { lock });
-    const other = await mkdtemp(join(tmpdir(), "clawforge-set-validate-image-ambient-"));
+    const other = await mkdtemp(join(tmpdir(), "clawwright-set-validate-image-ambient-"));
     await mkdir(resolve(other, "config"), { recursive: true });
     await writeFile(resolve(other, "config", "desired-state.json"), "[]");
     await writeFile(resolve(other, "config", "deployment.lock.json"), JSON.stringify({ version: 1, image: { reference: "ambient:other:tag", digest: "ambient@sha256:" + "b".repeat(64) } }));

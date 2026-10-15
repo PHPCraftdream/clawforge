@@ -55,7 +55,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "The boundary, since it is easy to over-promise: this pins the composition, not the " +
       "behaviour. The same lock brought up twice is the same code, image and content — and " +
       "the model can still answer differently.\n" +
-      "{--check} compares without writing; `{clawforge inspect}` reports the same differences as " +
+      "{--check} compares without writing; `{clawwright inspect}` reports the same differences as " +
       "warnings, because an instance that drifted from its lock still works and it is the " +
       "reader who decides whether the difference was intended.\n" +
       "Meant to be committed.",
@@ -67,14 +67,14 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     ...CLI,
     details:
       "Everything after `cli` is passed straight through to OpenClaw's own CLI, e.g.\n" +
-      "`{clawforge cli config get gateway.mode}`.\n" +
+      "`{clawwright cli config get gateway.mode}`.\n" +
       "By default each call is a fresh one-off container sharing the gateway's network " +
       "namespace, paying for its create/destroy on every call.\n" +
-      "Run `{clawforge cli-start}` once and this execs into that container instead, skipping that " +
+      "Run `{clawwright cli-start}` once and this execs into that container instead, skipping that " +
       "cost — noticeably faster, though both paths go through the WSL2/Docker Desktop " +
       "boundary either way and neither is instant.\n" +
-      "`{clawforge cli --help}` prints this text, same as `{clawforge help cli}`; to reach OpenClaw's " +
-      "own --help instead, put it after a bare --: `{clawforge cli -- --help}`.",
+      "`{clawwright cli --help}` prints this text, same as `{clawwright help cli}`; to reach OpenClaw's " +
+      "own --help instead, put it after a bare --: `{clawwright cli -- --help}`.",
     // Declared destructive not because it destroys anything itself, but because it can run
     // anything OpenClaw's CLI can — including that CLI's own destructive subcommands. Over
     // MCP that earns the same confirmation push/restore/deploy need, rather than a second
@@ -86,8 +86,8 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     ...EXEC,
     details:
       "Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever " +
-      "command you give it, e.g. `{clawforge exec curl -fsS http://127.0.0.1:18789/healthz}` " +
-      "or `{clawforge exec cat /app/docs/channels/telegram.md}`.\n" +
+      "command you give it, e.g. `{clawwright exec curl -fsS http://127.0.0.1:18789/healthz}` " +
+      "or `{clawwright exec cat /app/docs/channels/telegram.md}`.\n" +
       "Same container as `cli`: the OpenClaw image, the gateway's network namespace, the " +
       "same data mounts, the same one-off-vs-helper choice.\n" +
       "A captured run (over MCP or a pipe) decodes its output as UTF-8 text: bytes that are " +
@@ -129,21 +129,21 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     group: "low-level",
     ...CLI_START,
     details:
-      "`{clawforge cli}` and `{clawforge mcp-serve}` normally pay for a fresh container on every call " +
+      "`{clawwright cli}` and `{clawwright mcp-serve}` normally pay for a fresh container on every call " +
       "(`docker compose run --rm`) — creating and tearing one down costs several seconds " +
       "even with a warm image.\n" +
       "This starts a long-lived container instead (same image, mounts and network as the " +
       "one-off), so both commands `docker exec` into it instead of creating a new one — " +
       "consistently faster, though the exact saving depends on how busy Docker Desktop's " +
       "WSL2 VM is at the time.\n" +
-      "Idempotent. Not started by `{clawforge up}`; `{clawforge down}` removes it along with anything " +
+      "Idempotent. Not started by `{clawwright up}`; `{clawwright down}` removes it along with anything " +
       "else under the \"cli\" profile.",
   },
   "cli-stop": {
     summary: "Stop the persistent CLI helper",
     group: "low-level",
     ...CLI_STOP,
-    details: "`{clawforge cli}`/`{clawforge mcp-serve}` fall back to a one-off container once this is stopped.",
+    details: "`{clawwright cli}`/`{clawwright mcp-serve}` fall back to a one-off container once this is stopped.",
   },
   "configure-provider": {
     summary: "Configure model providers from target env vars",
@@ -278,7 +278,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "is reported for manual approval through a trusted admin session or the Control UI; " +
       "only accept and set try offer --with-model for explicit model approval. A scope " +
       "upgrade never starts a model turn implicitly.\n" +
-      "Requires the gateway to be running ({clawforge up}).",
+      "Requires the gateway to be running ({clawwright up}).",
   },
   deploy: {
     summary: "Deploy over SSH and bootstrap the server",
@@ -298,7 +298,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "same as locally.\n" +
       "Refuses to touch anything if a dependency is missing on the server, rather than " +
       "leaving it half set up.\n" +
-      "Available only when the framework runs from a ClawForge checkout: there has to be " +
+      "Available only when the framework runs from a Clawwright checkout: there has to be " +
       "a checkout for \"mirror the framework\" to mean anything. Installed as a package it " +
       "refuses outright rather than mirroring whatever sits above the package.",
   },
@@ -310,11 +310,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "Runs OpenClaw's own `mcp serve` and speaks JSON-RPC straight through stdio —\n" +
       "this is the bridge an MCP client (Claude Code, Codex, Claude Desktop) uses to read and " +
       "send messages in OpenClaw's channels.\n" +
-      "Set up a client with `{clawforge mcp-setup}`; this command is what the generated config " +
+      "Set up a client with `{clawwright mcp-setup}`; this command is what the generated config " +
       "actually invokes, not something to run by hand.\n" +
-      "Not the same thing as `{clawforge control-mcp}`, which exposes this deployment's own " +
+      "Not the same thing as `{clawwright control-mcp}`, which exposes this deployment's own " +
       "commands as MCP tools instead — mcp-setup registers both.\n" +
-      "By default this is a one-off container; run `{clawforge cli-start}` first and it execs into " +
+      "By default this is a one-off container; run `{clawwright cli-start}` first and it execs into " +
       "that container instead, cutting the wait before the client's first response — paid " +
       "once per connection either way.",
     // Owns stdin/stdout for JSON-RPC; cannot be a tool itself.
@@ -325,8 +325,8 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     group: "integrations",
     ...MCP_SETUP,
     details:
-      "Registers `clawforge` (mcp-serve, the bridge to OpenClaw's own channels) and " +
-      "`clawforge-control` —\n" +
+      "Registers `clawwright` (mcp-serve, the bridge to OpenClaw's own channels) and " +
+      "`clawwright-control` —\n" +
       "control-mcp, this deployment's own commands as tools (status, backup, secrets, " +
       "and the rest), so they don't have to be typed by hand.\n" +
       "Writes project .mcp.json for Claude Code and .codex/config.toml for Codex. " +
@@ -346,7 +346,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // declared here, not left as an implicit hole in the dispatcher.
     exportsSecrets: true,
     details:
-      "The same information `{clawforge mcp-setup}` writes to a file, printed instead —\n" +
+      "The same information `{clawwright mcp-setup}` writes to a file, printed instead —\n" +
       "useful for pasting into a client by hand or checking what {--json}/{--token} would produce.",
   },
 });

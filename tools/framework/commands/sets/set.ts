@@ -1,4 +1,4 @@
-// `clawforge set` — the command body: build, validate, diff, receipts, try, forget.
+// `clawwright set` — the command body: build, validate, diff, receipts, try, forget.
 //
 // Split for organisation only: set-secrets-guard.ts (value scan before a build writes
 // anything), set-manifest.ts (collectManifest/writeArtifact/buildSet), set-diff.ts,
@@ -73,7 +73,7 @@ function coherentLine(name: string, note = ""): string {
   return `set ${name} is coherent${note}`;
 }
 
-/** `clawforge set validate` — the same manifest `build` would produce, or one read back
+/** `clawwright set validate` — the same manifest `build` would produce, or one read back
  *  from an artifact, put through every check that needs no gateway.
  *
  *  Validating the working tree also checks the files are there; validating an artifact runs
@@ -141,7 +141,7 @@ async function validateAction(
   await report(loaded.manifest, "working tree", await validateLoadedSet(loaded));
 }
 
-/** `clawforge set forget --kind <kind> --name <name>` — removes an object this framework
+/** `clawwright set forget --kind <kind> --name <name>` — removes an object this framework
  *  created and stops tracking it. `apply` does this on its own for an orphaned MCP server
  *  or cron job; exposed by hand for an orphaned agent, whose removal prunes a workspace and
  *  memory — a decision for whoever runs this, not something a plan does automatically. The
@@ -170,7 +170,7 @@ async function forgetAction(ctx: Context, plan: ForgetPlan): Promise<void> {
   log(`${kind} "${name}" removed and no longer tracked as owned`);
 }
 
-/** `clawforge set build`: the artifact, and an inventory of what went into it. The plan
+/** `clawwright set build`: the artifact, and an inventory of what went into it. The plan
  *  carries the already-minted name (prepare owns the creator grammar; the run never
  *  re-validates it — NC-S2-grammar-in-run). */
 interface BuildPlan {

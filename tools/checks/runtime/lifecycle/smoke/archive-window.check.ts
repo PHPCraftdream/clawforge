@@ -276,7 +276,7 @@ check("found all three archive-based checks smoke consolidates", archiveChecks.m
    *  checks read installedRecipePrivatePaths()/privatePathsPolicy() off the real filesystem,
    *  the same way roundtrip.check.ts's fixture does. */
   async function withTempDeployment<T>(body: () => Promise<T>): Promise<T> {
-    const root = await mkdtemp(join(tmpdir(), "clawforge-smoke-archive-window-"));
+    const root = await mkdtemp(join(tmpdir(), "clawwright-smoke-archive-window-"));
     let previous: string | undefined;
     try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
     try {

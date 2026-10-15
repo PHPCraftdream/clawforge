@@ -79,9 +79,9 @@ try {
     }
     check(`${entry.name}: local recovery failure is unknown`, error instanceof TargetReadUnknownError, true);
     const advice = error instanceof UserError ? error.advice : [];
-    check(`every local recovery unknown carries diagnostic kind and argv: ${entry.name}`, advice.map((step) => ({ kind: step.kind, argv: "argv" in step ? step.argv : undefined })), [{ kind: "clawforge", argv: ["recover-env", "--dry-run"] }]);
+    check(`every local recovery unknown carries diagnostic kind and argv: ${entry.name}`, advice.map((step) => ({ kind: step.kind, argv: "argv" in step ? step.argv : undefined })), [{ kind: "clawwright", argv: ["recover-env", "--dry-run"] }]);
     const step = advice[0];
-    if (step?.kind === "clawforge") {
+    if (step?.kind === "clawwright") {
       const { transport: diagnosticTransport, dockerCalls } = recoveryTransport(ok("old\n"), [ok(validInspection)]);
       const execution = await withOutputSink(() => {}, () => executeCommand(app, step.argv[0]!, { kind: "argv", argv: step.argv.slice(1) }, { surface: "terminal", transport: diagnosticTransport }));
       checkTrue(`${entry.name}: advised recovery diagnostic reaches run and contacts Docker without OC_DATA_DIR`, execution.stage === "run" && execution.error === undefined && dockerCalls.length === 2);

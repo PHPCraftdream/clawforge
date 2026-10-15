@@ -1,13 +1,13 @@
 // The upgrade() stub shared by upgrade.check.ts and pin-and-digest.check.ts: a backup/
 // restore-compatible POSIX context (per restore.check.ts and backup.check.ts) plus the
-// runtime primitives ./clawforge upgrade itself drives.
+// runtime primitives ./clawwright upgrade itself drives.
 
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
 
-export const DATA_DIR = "/srv/clawforge/data";
+export const DATA_DIR = "/srv/clawwright/data";
 export const SHARED_TAG = "ghcr.io/openclaw/openclaw:extended-stable";
 // Full 64-hex digests: the explicit-digest format check refuses anything shorter.
 export const TARGET_DIGEST = `${SHARED_TAG.split(":")[0]}@sha256:${"1".repeat(64)}`;
@@ -26,7 +26,7 @@ export type Scenario = "success" | "health-fail" | "exit78" | "doctor-fail";
 
 /** A backup/restore-compatible POSIX stub, permissive by default (matching the proven shape
  *  restore.check.ts's own makeCtx() and backup.check.ts's stubBackupCtx() already use), plus
- *  the runtime primitives ./clawforge upgrade itself asks for. `image` overrides the
+ *  the runtime primitives ./clawwright upgrade itself asks for. `image` overrides the
  *  deployment's own OPENCLAW_IMAGE, for the pinned-channel scenarios below. */
 export function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?: string } = {}): { ctx: Context; calls: string[]; runningDigest: () => string } {
   const calls: string[] = [];
@@ -36,7 +36,7 @@ export function makeUpgradeCtx(scenario: Scenario, options: { image?: string; ru
 
   const mounts = mountPoints(DATA_DIR);
   const ctx = {
-    settings: { dataDir: DATA_DIR, backupDir: "/srv/clawforge/backups", env: {}, image: options.image ?? SHARED_TAG },
+    settings: { dataDir: DATA_DIR, backupDir: "/srv/clawwright/backups", env: {}, image: options.image ?? SHARED_TAG },
     paths: {
       toContainer: (path: string) => toContainerPath(path, mounts),
       fromContainer: (path: string) => fromContainerPath(path, mounts),

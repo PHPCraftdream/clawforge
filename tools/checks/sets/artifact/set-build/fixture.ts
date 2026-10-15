@@ -36,7 +36,7 @@ export const STORE_KEY = "sk-demo-9999-not-a-real-key";
 export const DIGEST = `ghcr.io/openclaw/openclaw@sha256:${"3".repeat(64)}`;
 /** Writes the example deployment and selects it. Pair with removeBuildDeployment(). */
 export async function createBuildDeployment(): Promise<string> {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-build-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-set-build-check-"));
   await mkdir(resolve(deployment, "config"), { recursive: true });
   await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
   await mkdir(resolve(deployment, "recipes", "demo", "data"), { recursive: true });
@@ -54,7 +54,7 @@ export async function createBuildDeployment(): Promise<string> {
   );
   await writeFile(resolve(deployment, ".env"), `OPENCLAW_GATEWAY_TOKEN=${TOKEN}\nOTHER_SETTING=some-value\n`);
   await writeFile(resolve(deployment, "secrets", "prod.env"), `ZAI_API_KEY=${STORE_KEY}\n`);
-  // The digest the build pins, written through the same file `./clawforge lock` writes, so the
+  // The digest the build pins, written through the same file `./clawwright lock` writes, so the
   // fixture and the command cannot disagree about where the digest lives.
   await writeFile(
     resolve(deployment, "config", "deployment.lock.json"),

@@ -53,7 +53,7 @@ else if (args[0] === 'compose' && args.includes('logs')) {
 `);
   }
   async function run(argv: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
-    const root = await mkdtemp(join(tmpdir(), "clawforge-option-literals-"));
+    const root = await mkdtemp(join(tmpdir(), "clawwright-option-literals-"));
     await fillFixture(root);
     const shim = join(root, "docker-fixture.mjs");
     try {

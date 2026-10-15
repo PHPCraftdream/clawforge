@@ -358,7 +358,7 @@ function humanChange(change: SetDiffChange): string {
   return `${symbol} ${change.kind} ${target}${values}`;
 }
 
-/** `clawforge set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison.
+/** `clawwright set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison.
  *  Read-only, so the verification gate's semantic findings are ignored here — a diff between a
  *  broken and a good build is exactly what a reader may want to ask (R32-05); the integrity
  *  checks still refuse a corrupt archive. */

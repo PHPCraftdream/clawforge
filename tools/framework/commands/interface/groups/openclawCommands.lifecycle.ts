@@ -58,7 +58,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "Restart re-reads what the container can see — never what compose baked into it: the " +
       "environment was interpolated from the deployment .env once, at creation, and no " +
       "restart changes it. A rotated repo-env secret needs the recreate that `secrets --apply` " +
-      "performs itself, or `{clawforge up}`.\n" +
+      "performs itself, or `{clawwright up}`.\n" +
       "Secrets are checked first, same as `up`; the port is not, since the container keeps " +
       "the binding it already holds.",
     ...RESTART,
@@ -78,7 +78,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "{--data} removes the data directory (OC_DATA_DIR), {--backups} the backup directory " +
       "(OC_BACKUP_DIR), {--snapshots} the snapshot directory (OC_SNAPSHOT_DIR).\n" +
       "Never touches the deployment directory itself (.env, config/, recipes/, secrets/) — " +
-      "remove that with {clawforge remove-app} once this instance is gone.\n" +
+      "remove that with {clawwright remove-app} once this instance is gone.\n" +
       "Default is a dry run: prints exactly what would be removed (container/network/volume " +
       "names, and each requested directory's path and size via du -sk) and exits 0 — nothing " +
       "is touched, no lock is taken.\n" +
@@ -117,7 +117,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "state in SQLite with a multi-megabyte -wal sibling, and a copy taken mid-write is " +
       "not restorable.\n" +
       "{--hot} skips the stop for those who accept that risk.\n" +
-      "{--profile} controls what travels in the archive (see `{clawforge help pull}` for what each " +
+      "{--profile} controls what travels in the archive (see `{clawwright help pull}` for what each " +
       "profile excludes); {--share}, {--migrate} and {--with-secrets} are shorthands for it, the " +
       "same vocabulary `pull` accepts — plain backups default to full, unlike `pull`, which " +
       "defaults to migrate.\n" +
@@ -144,7 +144,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "the failure is reported with the published path and a non-zero exit.\n" +
       "list — read-only: every archive in the backup directory (name, size, date, profile " +
       "parsed from the name) and every `<data>.replaced-*` copy restore left next to the " +
-      "data directory (name, size, date); marks which archive a bare `{clawforge restore}` " +
+      "data directory (name, size, date); marks which archive a bare `{clawwright restore}` " +
       "would pick by default. {--json} for machine output.\n" +
       "prune-replaced — deletes `<data>.replaced-*` copies, which otherwise accumulate " +
       "forever: previews what would be removed by default, only {--apply} removes anything, " +
@@ -154,7 +154,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "Archive pruning is already handled by this command's own rotation (OC_BACKUP_KEEP) " +
       "— prune-replaced never touches an archive.\n" +
       "install / uninstall — print (and, with {--apply}, install through the transport) a " +
-      "crontab entry that runs a plain `{clawforge backup}` every {--interval} (default 1d) — " +
+      "crontab entry that runs a plain `{clawwright backup}` every {--interval} (default 1d) — " +
       "30m, 6h or 1d, an explicit unit required (a bare number is minutes only for `watch install`); minutes must divide 60, hours must divide a day; anything " +
       "else is refused, naming the nearest valid values — the schedule OC_BACKUP_KEEP " +
       "presumes but nothing installed before this,\n" +
@@ -229,7 +229,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
     summary: "Check a snapshot for credentials",
     group: "save-move",
     details:
-      "What `{clawforge pull --share}` runs automatically, callable by hand against any archive.\n" +
+      "What `{clawwright pull --share}` runs automatically, callable by hand against any archive.\n" +
       "Structural checks (no absolute paths, no `..` escapes, no link writing outside the " +
       "archive) run first and need no unpacking;\n" +
       "then the archive is unpacked and searched for this instance's actual secret " +
@@ -272,7 +272,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "pre-upgrade backup, since the data may already have changed.\n" +
       "On success it pins the deployment's OPENCLAW_IMAGE to repo:tag@sha256:… (the " +
       "channel it was resolved from, alongside the new digest), so a later recreate stays " +
-      "on it — re-pin the deployment's own record with {clawforge lock} afterwards.\n" +
+      "on it — re-pin the deployment's own record with {clawwright lock} afterwards.\n" +
       "{--dry-run} prints the current digest, the channel, what it resolves to at the " +
       "registry, and whether that is an upgrade — changing nothing, not even taking the " +
       "instance lock.",
@@ -292,7 +292,7 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "credentials; the MCP bridge speaks clean JSON-RPC.\n" +
       "The drift check restores the declaration on its way out, verdict already in; if " +
       "that restore fails, the check fails saying the instance may still hold the drifted " +
-      "value and naming {clawforge apply-config} as the repair.\n" +
+      "value and naming {clawwright apply-config} as the repair.\n" +
       "Every check lands as passed, failed, not-checked (this deployment makes the check " +
       "inapplicable) or could-not-check (it could not obtain a verdict — the instance was " +
       "unreachable, the call never answered); the run exits non-zero unless every " +

@@ -16,7 +16,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 
 useLinuxHost();
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-inspect-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-inspect-"));
 const fixture = await createDeploymentFixture({ root }).catch(async (error) => {
   await rm(root, { recursive: true, force: true }); throw error;
 });

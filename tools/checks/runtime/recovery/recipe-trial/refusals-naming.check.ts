@@ -11,7 +11,7 @@ import {
   DATA_DIR, ref, type TrialFixture, liveProjectFor, messageOf, trialFixture, trialHashFor, useRecipesRoot,
 } from "./fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-refusals");
+const root = await useRecipesRoot("clawwright-recipe-trial-refusals");
 try {
   // `null` composes the compose.yml-absent case directly in the fixture — no
   // write-then-remove round trip, so the check tree keeps no unresolved rm target.
@@ -85,16 +85,16 @@ try {
       const project = down?.[down.indexOf("--project-name") + 1] ?? "";
       projects.push(project);
     }
-    const pattern = /^clawforge-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}$/;
-    checkTrue("both projects match clawforge-recipe-trial-<12hex>-<8hex>", projects.every((p) => pattern.test(p)));
+    const pattern = /^clawwright-recipe-trial-[0-9a-f]{12}-[0-9a-f]{8}$/;
+    checkTrue("both projects match clawwright-recipe-trial-<12hex>-<8hex>", projects.every((p) => pattern.test(p)));
     checkTrue("different runs carry different random suffixes", projects[0] !== projects[1]);
-    checkTrue("both runs share one hash prefix for the same recipe", projects[0]!.slice(0, "clawforge-recipe-trial-".length + 12) === projects[1]!.slice(0, "clawforge-recipe-trial-".length + 12));
-    checkTrue("the hash prefix is the one derived from the deployment + recipe pair", projects[0]!.startsWith(`clawforge-recipe-trial-${trialHashFor("named")}-`));
+    checkTrue("both runs share one hash prefix for the same recipe", projects[0]!.slice(0, "clawwright-recipe-trial-".length + 12) === projects[1]!.slice(0, "clawwright-recipe-trial-".length + 12));
+    checkTrue("the hash prefix is the one derived from the deployment + recipe pair", projects[0]!.startsWith(`clawwright-recipe-trial-${trialHashFor("named")}-`));
     const live = liveProjectFor("named");
     const legacy = `${"example-deployment"}-recipe-named`;
     checkTrue("the trial project never equals the live recipe project", projects.every((p) => p !== live));
     checkTrue("the trial project never equals a legacy project shape", projects.every((p) => p !== legacy));
-    checkTrue("the live project's own name is the un-prefixed hash form (control)", /^clawforge-recipe-[0-9a-f]{64}$/.test(live));
+    checkTrue("the live project's own name is the un-prefixed hash form (control)", /^clawwright-recipe-[0-9a-f]{64}$/.test(live));
     const teardownArgv = [first, second].flatMap((fixture: TrialFixture) => fixture.docker);
     checkTrue("no teardown argv carries the live project name", teardownArgv.every((argv) => !argv.includes(live)));
   }

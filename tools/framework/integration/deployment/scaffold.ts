@@ -34,15 +34,15 @@ const storedTarget = targetFrame({ kind: "checkout-shim", root: "" }, "posix");
 // Under the check-only apps root there is no checkout two levels up — the
 // declaration imports this checkout's framework by absolute file URL instead.
 function declarationSpecifier(module: string): string {
-  const override = process.env["CLAWFORGE_CHECKS_APPS_DIR"];
+  const override = process.env["CLAWWRIGHT_CHECKS_APPS_DIR"];
   if (override !== undefined && override !== "")
     return JSON.stringify(pathToFileURL(resolve(monorepoRoot, "tools", "framework", module)).href);
   return JSON.stringify(`../../tools/framework/${module}`);
 }
 
 export function declarationFor(name: string): string {
-  const seam = process.env["CLAWFORGE_CHECKS_APPS_DIR"] !== undefined &&
-    process.env["CLAWFORGE_CHECKS_APPS_DIR"] !== "";
+  const seam = process.env["CLAWWRIGHT_CHECKS_APPS_DIR"] !== undefined &&
+    process.env["CLAWWRIGHT_CHECKS_APPS_DIR"] !== "";
   return `// The ${name} deployment.
 //
 // Says which service this deployment manages and which framework commands it exposes.

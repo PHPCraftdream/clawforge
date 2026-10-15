@@ -1,4 +1,4 @@
-// `clawforge expose status` — and the one-line summary `clawforge status` folds in.
+// `clawwright expose status` — and the one-line summary `clawwright status` folds in.
 //
 // Prefers the PUBLISHED bind address/port read back from the running container
 // (runningConnectionFacts(), extended in runtime.ts/runtime-docker.ts to also carry
@@ -62,7 +62,7 @@ export function summarizeExposure(
   };
 }
 
-/** The one line `clawforge status` folds this command's whole answer into. */
+/** The one line `clawwright status` folds this command's whole answer into. */
 export function exposureOneLiner(summary: ExposureSummary): string {
   const scope = summary.wildcard
     ? `PUBLIC INTERFACE — see ${commandLine(["expose", "status"])}`

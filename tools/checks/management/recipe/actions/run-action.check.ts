@@ -32,7 +32,7 @@ import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 
 useLinuxHost();
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-run-action-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-run-action-"));
 const MARKER = join(root, "change-marker.txt");
 const RECIPE_DIR = join(root, "recipes", "local");
 

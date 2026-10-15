@@ -1,4 +1,4 @@
-// `clawforge smoke` — acceptance run for an instance. Checks the properties that actually
+// `clawwright smoke` — acceptance run for an instance. Checks the properties that actually
 // cost debugging time:
 //   - the gateway is healthy by BOTH criteria (HTTP probe and the runtime's own verdict)
 //   - the agent answers end to end, i.e. the provider key really resolved

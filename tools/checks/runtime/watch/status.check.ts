@@ -1,4 +1,4 @@
-// `./clawforge watch status` — the persisted last state, when it last changed, whether a
+// `./clawwright watch status` — the persisted last state, when it last changed, whether a
 // webhook/heartbeat is configured, the run diagnostics (last run, last error, an undelivered
 // alert, staleness), and that a state file from before any of this existed still parses.
 // Proves the one thing this action's task cares about most throughout: the URL itself never
@@ -66,7 +66,7 @@ check(
   true,
 );
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-watch-status-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-watch-status-check-"));
 useDeployment(root);
 
 try {
@@ -225,7 +225,7 @@ try {
   }
   // Two distinct filesystems: target scheduled history is never the operator's ad-hoc one.
   {
-    const remote = await mkdtemp(join(tmpdir(), "clawforge-watch-remote-"));
+    const remote = await mkdtemp(join(tmpdir(), "clawwright-watch-remote-"));
     const name = deploymentName();
     const remoteApp = join(remote, "apps", name);
     const ctx = {

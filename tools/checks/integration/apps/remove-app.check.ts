@@ -1,4 +1,4 @@
-// `./clawforge remove-app` — tools/framework/integration/deployment/remove.ts's removeApp().
+// `./clawwright remove-app` — tools/framework/integration/deployment/remove.ts's removeApp().
 //
 // A scratch apps/ this file builds and owns, never the real one (mirrors list.check.ts):
 // dry run lists and removes nothing, --yes removes for real, a bootstrapped instance
@@ -17,7 +17,7 @@ import type { AppDefinition } from "#framework/core/app.ts";
 import type { DeploymentSummary } from "#framework/integration/list.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-remove-app-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-remove-app-check-"));
 
 const FIXTURE_APP =
   'export default { name: "fixture", description: "fixture", service: { name: "gateway" }, ' +

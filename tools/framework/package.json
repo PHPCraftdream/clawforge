@@ -1,23 +1,23 @@
 {
-  "name": "@clawforge/framework",
+  "name": "clawwright",
   "version": "0.1.0",
-  "description": "ClawForge framework and CLI for operating self-hosted OpenClaw deployments.",
+  "description": "Clawwright framework and CLI for operating self-hosted OpenClaw deployments.",
   "keywords": [
-    "clawforge",
+    "clawwright",
     "openclaw",
     "mcp",
     "docker",
     "self-hosting"
   ],
-  "author": "ClawForge contributors",
+  "author": "Clawwright contributors",
   "license": "(MIT OR Apache-2.0)",
-  "homepage": "https://github.com/PHPCraftdream/clawforge#readme",
+  "homepage": "https://github.com/PHPCraftdream/clawwright#readme",
   "bugs": {
-    "url": "https://github.com/PHPCraftdream/clawforge/issues"
+    "url": "https://github.com/PHPCraftdream/clawwright/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PHPCraftdream/clawforge.git",
+    "url": "git+https://github.com/PHPCraftdream/clawwright.git",
     "directory": "tools/framework"
   },
   "type": "module",
@@ -25,7 +25,7 @@
     "#src/*": "./*"
   },
   "bin": {
-    "clawforge": "dist/entry/bin.js"
+    "clawwright": "dist/entry/bin.js"
   },
   "exports": {
     "./app": {

@@ -1,5 +1,5 @@
-// `clawforge backup install` / `backup uninstall` — a scheduler entry that runs
-// `clawforge backup` on an interval, mirroring `watch install`/`watch uninstall` exactly:
+// `clawwright backup install` / `backup uninstall` — a scheduler entry that runs
+// `clawwright backup` on an interval, mirroring `watch install`/`watch uninstall` exactly:
 // same crontab conventions, same Windows fallback, both built on schedule.ts.
 //
 // OC_BACKUP_KEEP (.env.example) presumes backups happen on a schedule; this command supplies

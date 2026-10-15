@@ -1,4 +1,4 @@
-// `clawforge pull` and `clawforge push` — moving an instance's whole state around.
+// `clawwright pull` and `clawwright push` — moving an instance's whole state around.
 //
 // Both are thin layers over backup/restore rather than a second implementation: those
 // already stop the gateway before touching sqlite and move existing data aside instead of
@@ -377,7 +377,7 @@ interface PullPaths {
 
 function computePullPaths(snapshotDir: string): PullPaths {
   const snapshot = `${snapshotDir}/${deploymentName()}-state-${stamp()}.tar.gz`;
-  const staging = `${snapshotDir}/.clawforge-pull-${randomBytes(8).toString("hex")}`;
+  const staging = `${snapshotDir}/.clawwright-pull-${randomBytes(8).toString("hex")}`;
   const staged = `${staging}/${snapshot.slice(snapshot.lastIndexOf("/") + 1)}`;
   return {
     snapshotDir,

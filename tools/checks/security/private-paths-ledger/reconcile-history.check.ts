@@ -1,6 +1,6 @@
 // The privacy history (see docs/internal/review-2026-09-23-xxa-round-6.md) has TWO
 // copies — the operator-side ledger at <deployment>/config/private-paths.json and the
-// target-side copy at <dataDir>/config/clawforge-private-paths.json — and every reader that
+// target-side copy at <dataDir>/config/clawwright-private-paths.json — and every reader that
 // never publishes used to ask only the first one.
 //
 // A deployment folder pointed at already-existing target data — a lost or freshly
@@ -106,7 +106,7 @@ const temporaries: string[] = [];
 /** A fresh operator-side deployment: scaffold.ts creates config/ for every real one, and
  *  the ledger's readers and writers are live only then. */
 const freshDeployment = async (label: string): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), `clawforge-pp-reconcile-${label}-${tag}-`));
+  const directory = await mkdtemp(join(tmpdir(), `clawwright-pp-reconcile-${label}-${tag}-`));
   await mkdir(join(directory, "config"), { recursive: true });
   temporaries.push(directory);
   return directory;
@@ -268,7 +268,7 @@ try {
             return {
               code: 0,
               stdout:
-                "data/\ndata/config/\ndata/config/openclaw.json\ndata/config/clawforge-private-paths.json\n" +
+                "data/\ndata/config/\ndata/config/openclaw.json\ndata/config/clawwright-private-paths.json\n" +
                 "data/workspace/\ndata/auth-secrets/\n",
               stderr: "",
             };
@@ -342,7 +342,7 @@ try {
 
   // === PART C — publish is an atomic replace, against a real LocalTransport ===============
 
-  const base = await mkdtemp(join(tmpdir(), `clawforge-pp-reconcile-publish-${tag}-`));
+  const base = await mkdtemp(join(tmpdir(), `clawwright-pp-reconcile-publish-${tag}-`));
   temporaries.push(base);
   // POSIX-style: the published copy is read back through the same names the transport used.
   const DATA_C = `${base.split(sep).join("/")}/data`;
@@ -440,7 +440,7 @@ try {
   if (transport === undefined) {
     skip("the fresh-folder reconcile scenario (no local POSIX filesystem and no WSL distribution with a shell)");
   } else {
-    PARENT = `/tmp/clawforge-pp-reconcile-${tag}`;
+    PARENT = `/tmp/clawwright-pp-reconcile-${tag}`;
     const DATA = `${PARENT}/data`;
     const ARCHIVES = `${PARENT}/archives`;
     const TARGET_HISTORY = ["sidecar-private", "sidecar-private/credentials.env"];
@@ -453,12 +453,12 @@ try {
     // The only surviving record of this instance's private paths: a history copy no
     // deployment here has ever read, in the exact canonical bytes a full backup publishes.
     await transport.writeFile(
-      `${DATA}/config/clawforge-private-paths.json`,
+      `${DATA}/config/clawwright-private-paths.json`,
       `${JSON.stringify({ privatePaths: TARGET_HISTORY }, null, 2)}\n`,
     );
 
     const deploymentH = await freshDeployment("d1");
-    const recipesH = await mkdtemp(join(tmpdir(), `clawforge-pp-reconcile-recipes-${tag}-`));
+    const recipesH = await mkdtemp(join(tmpdir(), `clawwright-pp-reconcile-recipes-${tag}-`));
     temporaries.push(recipesH);
     useDeployment(deploymentH);
     // A recipe set that declares nothing: the audit's precondition, verbatim.
@@ -489,7 +489,7 @@ try {
     await createArchive(ctx, { archive: fullFresh, profile: "full" });
     const fullEntries = await listArchive(ctx, fullFresh);
     checkTrue("the first full backup keeps the private file", fullEntries.includes("data/sidecar-private/credentials.env"));
-    checkTrue("and it carries the privacy history physically", fullEntries.includes("data/config/clawforge-private-paths.json"));
+    checkTrue("and it carries the privacy history physically", fullEntries.includes("data/config/clawwright-private-paths.json"));
 
     await recordPrivateWrite("vault/extra.env", "vault");
     const fullFreshAgain = `${ARCHIVES}/full-fresh-again.tar.gz`;
@@ -500,9 +500,9 @@ try {
       secondFullFailed = true;
     }
     check("a second full backup resolves against the existing history copy", secondFullFailed, false);
-    const publishedCopy = await transport.readFile(`${DATA}/config/clawforge-private-paths.json`);
+    const publishedCopy = await transport.readFile(`${DATA}/config/clawwright-private-paths.json`);
     checkTrue("its replace actually landed", publishedCopy.includes("vault/extra.env"));
-    checkTrue("and the second full still carries the history copy", (await listArchive(ctx, fullFreshAgain)).includes("data/config/clawforge-private-paths.json"));
+    checkTrue("and the second full still carries the history copy", (await listArchive(ctx, fullFreshAgain)).includes("data/config/clawwright-private-paths.json"));
   }
   });
 } finally {

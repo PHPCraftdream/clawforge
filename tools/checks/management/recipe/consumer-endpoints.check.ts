@@ -17,7 +17,7 @@ async function refusal(body: () => unknown | Promise<unknown>): Promise<unknown>
   }
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-endpoints-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-endpoints-"));
 const name = readName("recipe", "alpha");
 const directory = join(root, "alpha");
 const manifest = join(directory, "recipe.json");

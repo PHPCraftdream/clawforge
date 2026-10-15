@@ -7,9 +7,9 @@
 // A deployment is a directory under apps/ holding .env, config/, secrets/, recipes/ and
 // an app.ts naming its service. Several can sit side by side:
 //
-//   clawforge status                    the default deployment
-//   OC_APP=staging clawforge status     another one
-//   clawforge --app staging status      same, as an argument
+//   clawwright status                    the default deployment
+//   OC_APP=staging clawwright status     another one
+//   clawwright --app staging status      same, as an argument
 //
 // With neither set and no "openclaw" deployment, a checkout with exactly one deployment
 // under apps/ uses it automatically.
@@ -42,7 +42,7 @@ import { checkoutGate } from "./framework/entry/registry.ts";
 import { pathToFileURL } from "node:url";
 import { resolve as pathResolve } from "node:path";
 
-// A deployment's app.ts importing @clawforge/framework resolves onto this checkout's
+// A deployment's app.ts importing clawwright resolves onto this checkout's
 // sources — there is no dist build here (recipe hooks map the same table in the hook loader).
 resolveFrameworkFromSources();
 
@@ -106,7 +106,7 @@ switch (decision.kind) {
     process.exit(1);
   }
   case "refuse-misplaced-app-flag": {
-    // The advice renders with the program as typed — `clawforge`, not the checkout spelling,
+    // The advice renders with the program as typed — `clawwright`, not the checkout spelling,
     // which a global (cmd/pwsh) invocation could not run.
     reportError(new UserError(APP_ORDER, { advice: [command(["<command>"], { app: "<name>" })] }));
     process.exit(1);
@@ -126,7 +126,7 @@ switch (decision.kind) {
     // help itself promises. Built from openclawCommands directly (there's no app.ts yet):
     // every deployment's own declaration just re-exports this set unless it adds commands of its own.
     const genericApp: AppDefinition = {
-      name: "clawforge",
+      name: "clawwright",
       description: `self-hosting framework for OpenClaw — ${decision.description}`,
       commands: openclawCommands,
     };

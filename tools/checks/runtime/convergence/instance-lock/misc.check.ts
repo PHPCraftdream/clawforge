@@ -28,12 +28,12 @@ import type { LockFixture, PresenceModel } from "./fixture.ts";
 {
   const { ctx } = stubContext();
   const path = lockPath(ctx);
-  check("the lock is not under the data directory", path.startsWith("/srv/clawforge/"), false);
+  check("the lock is not under the data directory", path.startsWith("/srv/clawwright/"), false);
   // In a home of its own, beside the data directory. Beside it alone was not enough: the
   // parent can be root-owned, and then nothing next to the data directory is creatable at
   // all — bootstrap prepares this directory so the lock has somewhere it can go.
-  check("it sits in a prepared home beside it", path, "/srv/clawforge-locks/operation.lock");
-  check("whose name is derived from the data directory", lockHome(ctx), "/srv/clawforge-locks");
+  check("it sits in a prepared home beside it", path, "/srv/clawwright-locks/operation.lock");
+  check("whose name is derived from the data directory", lockHome(ctx), "/srv/clawwright-locks");
   // The data directory's own name is kept, so two deployments sharing a parent — which is
   // how a second deployment on one host is set up — cannot collide on one lock.
   const other = { settings: { dataDir: "/srv/other" } } as unknown as Context;
@@ -87,7 +87,7 @@ import type { LockFixture, PresenceModel } from "./fixture.ts";
   const files = new Map<string, string>();
   const dirs = new Set<string>();
   const denied = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exec(command: string, args: string[]) {
         if (command === "mkdir") {
@@ -124,13 +124,13 @@ interface ConsumerFixture extends LockFixture {
 function consumerFixture(history = false): ConsumerFixture {
   const fixture = stubContext();
   const presence = presenceModel(fixture.files, fixture.dirs, FIXTURE_LOCK_HOME);
-  if (history) presence.parents.set("/srv/clawforge", true);
+  if (history) presence.parents.set("/srv/clawwright", true);
   const probeAnswers = presence.answers;
   const contacts: Contact[] = [];
   const counts = { runtime: 0, appWrites: 0, journalReads: 0, journalWrites: 0, forbidden: 0 };
   const base = fixture.ctx.transport;
   const home = FIXTURE_LOCK_HOME;
-  const journal = (path: string): boolean => ["/srv/clawforge/clawforge-operations", "/srv/clawforge/cf-operations", "/srv/clawforge/oc-operations"]
+  const journal = (path: string): boolean => ["/srv/clawwright/clawwright-operations", "/srv/clawwright/cf-operations", "/srv/clawwright/oc-operations"]
     .some((root) => path === root || path.startsWith(`${root}/`));
   const note = (method: string, paths: string[], command?: string, safePresence = false): void => {
     contacts.push({ method, paths, ...(command === undefined ? {} : { command }), ...(safePresence ? { presence: true } : {}) });
@@ -139,7 +139,7 @@ function consumerFixture(history = false): ConsumerFixture {
       if (journal(path)) {
         if (writes) counts.journalWrites++; else counts.journalReads++;
       }
-      if (writes && path.startsWith("/srv/clawforge/")) counts.appWrites++;
+      if (writes && path.startsWith("/srv/clawwright/")) counts.appWrites++;
       if (!(path === home || path.startsWith(`${home}/`) || (history && journal(path)))) {
         counts.forbidden++;
         throw new Error("consumer attempted non-metadata contact");
@@ -291,9 +291,9 @@ function failedReport(label: string, output: string, error: unknown, changed: bo
   const record: OperationRecord = { id: historical.operationId, command: "restart", deployment: "fixture",
     startedAt: historical.takenAt, outcome: "abandoned", steps: [{ id: "config", status: "done", at: historical.takenAt }], note: "preserve history" };
   const bytes = `${JSON.stringify(record, null, 2)}\n`;
-  const path = "/srv/clawforge/clawforge-operations/20260919205351298-restart-e1f2f4.json";
+  const path = "/srv/clawwright/clawwright-operations/20260919205351298-restart-e1f2f4.json";
   f.files.set(path, bytes);
-  f.dirs.add("/srv/clawforge/clawforge-operations");
+  f.dirs.add("/srv/clawwright/clawwright-operations");
   const originalFiles = [...f.files];
   const originalDirs = [...f.dirs];
   for (const [argv, expected] of [[ [record.id, "--json"], record ], [ ["--limit", "1", "--json"], { operations: [record] } ]] as const) {
@@ -308,13 +308,13 @@ function failedReport(label: string, output: string, error: unknown, changed: bo
   check("history never executes metadata mutation", f.contacts.some((contact) => contact.command !== undefined && contact.command !== "test" && contact.presence !== true), false);
   noApplicationContact("history", f, true);
 }
-const deploymentRoot = await mkdtemp(join(tmpdir(), "clawforge-operations-presence-"));
+const deploymentRoot = await mkdtemp(join(tmpdir(), "clawwright-operations-presence-"));
 const deploymentFixture = await createDeploymentFixture({ root: deploymentRoot }).catch(async (error) => {
   await rm(deploymentRoot, { recursive: true, force: true }); throw error;
 });
 async function pipelineConsumer(f: ConsumerFixture): Promise<{ output: string; error?: unknown }> {
   const app: AppDefinition = { name: "operations-consumer", description: "fixture",
-    settings: () => ({ OC_TARGET_LOCATION: "local", OC_DATA_DIR: "/srv/clawforge" }),
+    settings: () => ({ OC_TARGET_LOCATION: "local", OC_DATA_DIR: "/srv/clawwright" }),
     commands: materializeCommands({ operations: { summary: "metadata", group: "check", ...OPERATIONS } }) };
   let output = "";
   const stages: Stage[] = [];
@@ -328,7 +328,7 @@ async function pipelineConsumer(f: ConsumerFixture): Promise<{ output: string; e
 const originalProbe = platformProbes.processStartedAt;
 platformProbes.processStartedAt = async () => ownProcessStartedAt();
 try {
-  await writeFile(join(deploymentRoot, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawforge\n", "utf8");
+  await writeFile(join(deploymentRoot, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawwright\n", "utf8");
   for (const holder of [historical, deadLocal]) {
     const f = consumerFixture();
     seed(f, holder);

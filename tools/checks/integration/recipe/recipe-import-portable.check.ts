@@ -32,7 +32,7 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
 // need in agent/recipe.check.ts.
 const ctx = { settings: { env: {} } } as unknown as Context;
 
-const scratch = resolve(tmpdir(), `clawforge-recipe-import-portable-check-${Date.now()}`);
+const scratch = resolve(tmpdir(), `clawwright-recipe-import-portable-check-${Date.now()}`);
 
 try {
   useDeployment(resolve(scratch, "example-deployment"));

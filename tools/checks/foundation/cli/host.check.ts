@@ -1,4 +1,4 @@
-// `./clawforge host <context> -- <command> [args...]` runs one ad hoc command against the
+// `./clawwright host <context> -- <command> [args...]` runs one ad hoc command against the
 // operator's own machine layers — the deployment's transport (target), wherever the container
 // engine actually executes (engine), or the bare machine (local) — instead of the deployment's
 // containers. Everything here is hermetic: contexts are resolved against an injected
@@ -558,9 +558,9 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   // bare-machine spawn working, not about who happens to run the checks.
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), async () => {
-    await host(ctxWith({}), ["local", "--", process.execPath, "-e", "console.log('clawforge host local e2e')"], envWith(process.platform, []));
+    await host(ctxWith({}), ["local", "--", process.execPath, "-e", "console.log('clawwright host local e2e')"], envWith(process.platform, []));
   });
-  check("local runs the command on this machine, unwrapped", written.join(""), "clawforge host local e2e\n");
+  check("local runs the command on this machine, unwrapped", written.join(""), "clawwright host local e2e\n");
 }
 
 finish("host");

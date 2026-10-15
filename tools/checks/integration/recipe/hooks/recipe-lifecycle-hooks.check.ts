@@ -25,9 +25,9 @@ import { check, finish } from "#checks/kit/harness.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 useComposeProjectOverride("example-app");
 
-const HOOK_LOG = "__clawforgeRecipeLifecycleEvents";
-const dataDir = "/srv/clawforge/data";
-const backupDir = "/srv/clawforge/backups";
+const HOOK_LOG = "__clawwrightRecipeLifecycleEvents";
+const dataDir = "/srv/clawwright/data";
+const backupDir = "/srv/clawwright/backups";
 
 interface Stub {
   ctx: Context;
@@ -142,7 +142,7 @@ const HOOKS: Record<string, string> = {
 /** Writes a fixture recipes root with the named recipes; hook files only for the ones that
  *  declare them ("quiet" deliberately ships none). */
 async function recipesWith(names: string[]): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-lifecycle-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-lifecycle-"));
   for (const name of names) {
     await mkdir(join(root, name), { recursive: true });
     await writeFile(join(root, name, "recipe.json"), JSON.stringify({ description: `${name} fixture` }), "utf8");
@@ -230,7 +230,7 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 
 // (3) A hung quiesce is bounded, refuses the snapshot and receives resume compensation.
 {
-  process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS = "250";
+  process.env.CLAWWRIGHT_RECIPE_HOOK_TIMEOUT_MS = "250";
   try {
     const result = await run("a hung quiesce aborts and compensates", {}, ["hung"]);
     check("the backup refuses the incomplete snapshot", result.archive, undefined);
@@ -239,7 +239,7 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
     check("the timeout refuses publication", result.output.includes(refusedHung), true);
     check("resume runs after gateway restart", result.events, ["pause", "quiesce:hung", "start", "waitForHealth", "resume:hung"]);
   } finally {
-    delete process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS;
+    delete process.env.CLAWWRIGHT_RECIPE_HOOK_TIMEOUT_MS;
   }
 }
 

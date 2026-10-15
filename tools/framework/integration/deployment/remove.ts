@@ -3,7 +3,7 @@
 // Repository-side only: apps/<name>/ itself (.env, config/, secrets/, recipes/, app.ts,
 // client configs) — never the target (instance/destroy.ts's destroy is bootstrap's inverse; this
 // is new-app's). Monorepo mode only, like list/new-app/check: this gate command exists
-// only in tools/clawforge.ts, never in entry/bin.ts's installed-mode gate.
+// only in tools/clawwright.ts, never in entry/bin.ts's installed-mode gate.
 
 import { readdir, rm, lstat } from "node:fs/promises";
 import { resolve } from "node:path";

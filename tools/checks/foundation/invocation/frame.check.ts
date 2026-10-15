@@ -36,7 +36,7 @@ import { FRAME_PRODUCERS, producer } from "#checks/golden/frames.ts";
 import { tokenizeLine } from "#checks/surfaces/advice/shells.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 
-const ROOT = "/clawforge-checkout";
+const ROOT = "/clawwright-checkout";
 const DOCS = `${ROOT}/docs`;
 const DEMO = `${ROOT}/apps/demo`;
 const APP_LOCAL = "/home/u/app-local";
@@ -51,19 +51,19 @@ const words = (line: string): readonly string[] => line.split(SPACE);
 /** A second checkout gate, beside the fake layout's own ROOT, for the adapter's rows. */
 const GATE = "/co";
 
-/** The fake fs the adapter classifies over: a checkout gate at GATE (tools/clawforge.ts
+/** The fake fs the adapter classifies over: a checkout gate at GATE (tools/clawwright.ts
  *  beside a tools/framework/package.json naming the framework) and app.ts beside the local
  *  deployment — nothing else exists. Paths are compared normalized, so the facts are the
  *  same on either platform's resolve(). The narrowed probe shape (exists/readFile) keeps
  *  frame.ts free of any import of the resolver. */
-const GATE_FILES = [`${GATE}/tools/clawforge.ts`, `${GATE}/tools/framework/package.json`, `${ROOT}/tools/clawforge.ts`, `${ROOT}/tools/framework/package.json`];
+const GATE_FILES = [`${GATE}/tools/clawwright.ts`, `${GATE}/tools/framework/package.json`, `${ROOT}/tools/clawwright.ts`, `${ROOT}/tools/framework/package.json`];
 const APP_FILES = [`${APP_LOCAL}/app.ts`];
 const key = (path: string): string => resolve(path).split(sep).join("/");
 const existsIn = (paths: readonly string[]): ((path: string) => boolean) => (path) => paths.some((entry) => key(entry) === key(path));
 const FS = {
   exists: (path: string): boolean => existsIn(GATE_FILES)(path) || existsIn(APP_FILES)(path),
   readFile: (path: string): string | undefined =>
-    key(path).endsWith("package.json") && existsIn(GATE_FILES)(path) ? '{"name":"@clawforge/framework"}' : undefined,
+    key(path).endsWith("package.json") && existsIn(GATE_FILES)(path) ? '{"name":"clawwright"}' : undefined,
 };
 const facts = (cwd: string, checkoutRoot: string | undefined = ROOT): HandoverFacts =>
   checkoutRoot === undefined ? { cwd, fs: FS } : { cwd, fs: FS, checkoutRoot };
@@ -93,7 +93,7 @@ const SYSTEM = defaultLaunch({ source: "global" });
 const SHIM = defaultLaunch({ source: "checkout-copy", root: ROOT });
 const DEPLOYMENT = defaultLaunch({ source: "local-package", appRoot: APP_LOCAL, host: "posix" });
 const BIN = defaultLaunch({ source: "local-package", appRoot: APP_LOCAL, host: "win32" });
-const WINDOWS_BIN_SPELLING = ["node_modules", ".bin", "clawforge"].join("\\");
+const WINDOWS_BIN_SPELLING = ["node_modules", ".bin", "clawwright"].join("\\");
 // Narrowed roots for the literal expectations below (defaultLaunch's union).
 if (DEPLOYMENT.kind !== "deployment-shim" || BIN.kind !== "npm-bin") throw new Error("defaultLaunch misclassified the local-package cases");
 const VERBATIM = launchOf({ program: "cw", mode: "installed", audience: "terminal" });
@@ -137,19 +137,19 @@ await requires("windows-host", "the checkout-root row of npm's Windows wrapper",
   check(
     "npm-bin win32 at the checkout root spells the shim with the bash note (D1, O1)",
     words(renderAdvice(command(["new-app", "<name>"], { at: "checkout-root" }), { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" })),
-    ["./clawforge", "new-app", "<name>", "", "(in", "bash)"],
+    ["./clawwright", "new-app", "<name>", "", "(in", "bash)"],
   );
 });
 await requires("posix-host", "the checkout-root rows of the POSIX frames", () => {
   check(
     "npm-bin posix at the checkout root spells the shim",
-    words(renderAdvice(command(["new-app", "<name>"], { at: "checkout-root" }), { program: "node_modules/.bin/clawforge", mode: "local-package", audience: "terminal" })),
-    ["./clawforge", "new-app", "<name>"],
+    words(renderAdvice(command(["new-app", "<name>"], { at: "checkout-root" }), { program: "node_modules/.bin/clawwright", mode: "local-package", audience: "terminal" })),
+    ["./clawwright", "new-app", "<name>"],
   );
   check(
     "system at the checkout root keeps the bare command",
-    words(renderAdvice(command(["new-app", "<name>"], { at: "checkout-root" }), { program: "clawforge", mode: "installed", audience: "terminal" })),
-    ["clawforge", "new-app", "<name>"],
+    words(renderAdvice(command(["new-app", "<name>"], { at: "checkout-root" }), { program: "clawwright", mode: "installed", audience: "terminal" })),
+    ["clawwright", "new-app", "<name>"],
   );
 });
 
@@ -172,31 +172,31 @@ await requires("windows-host", "the install rows under the Windows shells", () =
   check(
     "the checkout-shim install row under a Windows frame spells the shim with the bash note (D6/O1: the pwsh shell has no shim spelling)",
     words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" })),
-    ["./clawforge", "completion", "pwsh", "", "(in", "bash)"],
+    ["./clawwright", "completion", "pwsh", "", "(in", "bash)"],
   );
   check(
     "the npm-bin install row keeps the wrapper's backslashes under the pwsh shell it names (S1.4)",
     words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" })),
-    ["node_modules\\.bin\\clawforge", "completion", "pwsh"],
+    ["node_modules\\.bin\\clawwright", "completion", "pwsh"],
   );
 });
 await requires("posix-host", "the install row under the POSIX frame", () => {
   check(
     "the npm-bin install row keeps the posix spelling with the bash note (D6/O1: pwsh has no posix wrapper)",
-    words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: "node_modules/.bin/clawforge", mode: "local-package", audience: "terminal" })),
-    ["node_modules/.bin/clawforge", "completion", "pwsh", "", "(in", "bash)"],
+    words(renderAdvice(command(["completion", "pwsh"], { shell: "pwsh" }), { program: "node_modules/.bin/clawwright", mode: "local-package", audience: "terminal" })),
+    ["node_modules/.bin/clawwright", "completion", "pwsh", "", "(in", "bash)"],
   );
 });
 
 // --- the spell table (design §2.2) -------------------------------------------------------------------
 
 for (const [shell, host] of [["posix", "posix"], ["cmd", "win32"], ["pwsh", "posix"], ["pwsh", "win32"]] as const) {
-  check(`spell system ${shell} on ${host}`, spell(SYSTEM, shell, host, undefined), "clawforge");
+  check(`spell system ${shell} on ${host}`, spell(SYSTEM, shell, host, undefined), "clawwright");
 }
-check("spell checkout-shim posix (root itself)", spell(SHIM, "posix", "posix", ROOT), "./clawforge");
-check("spell checkout-shim posix (from apps/demo)", spell(SHIM, "posix", "posix", DEMO), "../../clawforge");
-check("spell checkout-shim posix (from docs)", spell(SHIM, "posix", "posix", DOCS), "../clawforge");
-check("spell checkout-shim posix (no paste directory)", spell(SHIM, "posix", "posix", undefined), "./clawforge");
+check("spell checkout-shim posix (root itself)", spell(SHIM, "posix", "posix", ROOT), "./clawwright");
+check("spell checkout-shim posix (from apps/demo)", spell(SHIM, "posix", "posix", DEMO), "../../clawwright");
+check("spell checkout-shim posix (from docs)", spell(SHIM, "posix", "posix", DOCS), "../clawwright");
+check("spell checkout-shim posix (no paste directory)", spell(SHIM, "posix", "posix", undefined), "./clawwright");
 check("spell checkout-shim cmd is not spelled", spell(SHIM, "cmd", "win32", undefined), undefined);
 check("spell checkout-shim pwsh on win32 is not spelled", spell(SHIM, "pwsh", "win32", undefined), undefined);
 // S1.4 note: design §2.2 spells shims for pwsh on a POSIX host "as posix"; the product
@@ -204,13 +204,13 @@ check("spell checkout-shim pwsh on win32 is not spelled", spell(SHIM, "pwsh", "w
 // renderer's fallback. The CURRENT table is pinned; the renderer owns the difference.
 check("spell checkout-shim pwsh on posix is not spelled (product; design table says as posix)", spell(SHIM, "pwsh", "posix", undefined), undefined);
 check("defaultLaunch classifies a posix local package as the deployment shim", { kind: DEPLOYMENT.kind, root: DEPLOYMENT.root }, { kind: "deployment-shim", root: APP_LOCAL });
-check("spell deployment-shim posix (root itself)", spell(DEPLOYMENT, "posix", "posix", APP_LOCAL), "./clawforge");
+check("spell deployment-shim posix (root itself)", spell(DEPLOYMENT, "posix", "posix", APP_LOCAL), "./clawwright");
 check("spell deployment-shim cmd is not spelled", spell(DEPLOYMENT, "cmd", "win32", undefined), undefined);
 check("spell deployment-shim pwsh on win32 is not spelled", spell(DEPLOYMENT, "pwsh", "win32", undefined), undefined);
 check("defaultLaunch classifies a win32 local package as npm's wrapper", { kind: BIN.kind, root: BIN.root }, { kind: "npm-bin", root: APP_LOCAL });
 
-check("spell npm-bin posix (no paste directory)", spell(BIN, "posix", "win32", undefined), "node_modules/.bin/clawforge");
-check("spell npm-bin posix (root itself)", spell(BIN, "posix", "win32", APP_LOCAL), "node_modules/.bin/clawforge");
+check("spell npm-bin posix (no paste directory)", spell(BIN, "posix", "win32", undefined), "node_modules/.bin/clawwright");
+check("spell npm-bin posix (root itself)", spell(BIN, "posix", "win32", APP_LOCAL), "node_modules/.bin/clawwright");
 check("spell npm-bin cmd (no paste directory)", spell(BIN, "cmd", "win32", undefined), WINDOWS_BIN_SPELLING);
 check("spell npm-bin cmd (root itself)", spell(BIN, "cmd", "win32", APP_LOCAL), WINDOWS_BIN_SPELLING);
 check("spell npm-bin pwsh on posix is not spelled", spell(BIN, "pwsh", "posix", undefined), undefined);
@@ -235,17 +235,17 @@ check("rel on win32 spells forward slashes", rel("C:/co/docs", "C:/co", "win32")
 check("rel on win32 crosses drives as an absolute path", rel("D:/x", "C:/co", "win32"), "C:/co");
 check("rel outside the root on win32 is absolute", rel("C:/elsewhere/x", "C:/co", "win32"), "C:/co");
 check("rel keeps a backslash as one posix component", rel("/co/a\\b", "/co", "posix"), "..");
-check("rel keeps posix semantics for a posix host on a win32 process", rel("/clawforge-checkout/docs", "/clawforge-checkout", "posix"), "..");
-check("the checkout shim spells from docs", spell(SHIM, "posix", "posix", DOCS), "../clawforge");
-check("the checkout shim spells from apps/demo", spell(SHIM, "posix", "posix", DEMO), "../../clawforge");
-check("spell npm-bin cmd (from a subdirectory)", spell(BIN, "cmd", "win32", `${APP_LOCAL}/sub`), ["..", "node_modules", ".bin", "clawforge"].join("\\"));
+check("rel keeps posix semantics for a posix host on a win32 process", rel("/clawwright-checkout/docs", "/clawwright-checkout", "posix"), "..");
+check("the checkout shim spells from docs", spell(SHIM, "posix", "posix", DOCS), "../clawwright");
+check("the checkout shim spells from apps/demo", spell(SHIM, "posix", "posix", DEMO), "../../clawwright");
+check("spell npm-bin cmd (from a subdirectory)", spell(BIN, "cmd", "win32", `${APP_LOCAL}/sub`), ["..", "node_modules", ".bin", "clawwright"].join("\\"));
 const pwshSub = spell(BIN, "pwsh", "win32", `${APP_LOCAL}/sub`);
-check("spell npm-bin pwsh (from a subdirectory)", pwshSub, ["..", "node_modules", ".bin", "clawforge"].join("\\"));
-checkTrue("the pwsh subdirectory bin spelling tokenizes as one word", JSON.stringify(tokenizeLine(pwshSub ?? "", "pwsh")) === JSON.stringify([["..", "node_modules", ".bin", "clawforge"].join("\\")]));
-checkTrue("the posix shim climb tokenizes as one pwsh word", JSON.stringify(tokenizeLine("../clawforge", "pwsh")) === JSON.stringify(["../clawforge"]));
-check("a hint printed at the root keeps the root spelling", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", ROOT))), ["./clawforge", "status"]);
-check("a hint printed from docs spells ../clawforge (O4)", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", DOCS))), ["../clawforge", "status"]);
-check("a hint printed from apps/demo spells ../../clawforge (O4)", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", DEMO))), ["../../clawforge", "status"]);
+check("spell npm-bin pwsh (from a subdirectory)", pwshSub, ["..", "node_modules", ".bin", "clawwright"].join("\\"));
+checkTrue("the pwsh subdirectory bin spelling tokenizes as one word", JSON.stringify(tokenizeLine(pwshSub ?? "", "pwsh")) === JSON.stringify([["..", "node_modules", ".bin", "clawwright"].join("\\")]));
+checkTrue("the posix shim climb tokenizes as one pwsh word", JSON.stringify(tokenizeLine("../clawwright", "pwsh")) === JSON.stringify(["../clawwright"]));
+check("a hint printed at the root keeps the root spelling", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", ROOT))), ["./clawwright", "status"]);
+check("a hint printed from docs spells ../clawwright (O4)", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", DOCS))), ["../clawwright", "status"]);
+check("a hint printed from apps/demo spells ../../clawwright (O4)", words(renderFrameAdvice(command(["status"]), frameWith(SHIM, "posix", DEMO))), ["../../clawwright", "status"]);
 
 // --- pasteShells: the table and the constructor invariant ---------------------------------------------
 
@@ -266,7 +266,7 @@ for (const p of FRAME_PRODUCERS) {
   const cwd = p.frame.cwd.kind === "dir" ? p.frame.cwd.path : ROOT;
   const launch = launchFromHandover(handoverOf(p.frame), facts(cwd, p.frame.places.checkoutRoot));
   // The no-facts frames keep their kind; a frame whose launch is launchOf's verbatim
-  // fallback for a shim spelling (the launcher's "../../clawforge") is refined by the
+  // fallback for a shim spelling (the launcher's "../../clawwright") is refined by the
   // file-facts classification — that refinement is the check's point, never a third kind.
   checkTrue(`handoverOf then launchFromHandover keeps the launch kind: ${p.label}`, launch.kind === p.frame.launch.kind || p.frame.launch.kind === "verbatim");
 }
@@ -285,42 +285,42 @@ check("a deployment-shim hand-over round-trips to its own root", launchFromHando
 // --- the real generated texts as hand-overs -------------------------------------------------------------
 
 const shimEnv = producer("checkout gate, handed over by the init shim").env ?? {};
-check("the committed shim's generated JSON is the hand-over", parseInvocation(shimEnv[INVOCATION_ENV] ?? ""), { program: "./clawforge", mode: "checkout", audience: "terminal" });
-check("the committed shim also writes the legacy line", shimEnv[INVOKED_AS_ENV] ?? "", "./clawforge");
+check("the committed shim's generated JSON is the hand-over", parseInvocation(shimEnv[INVOCATION_ENV] ?? ""), { program: "./clawwright", mode: "checkout", audience: "terminal" });
+check("the committed shim also writes the legacy line", shimEnv[INVOKED_AS_ENV] ?? "", "./clawwright");
 
 const launcher = producer("checkout gate, handed over by the monorepo MCP launcher").env ?? {};
-check("the monorepo launcher's JSON is the hand-over", parseInvocation(launcher[INVOCATION_ENV] ?? ""), { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
-check("the monorepo launcher's legacy line names the shim and the app", (launcher[INVOKED_AS_ENV] ?? "").split(SPACE), ["../../clawforge", "--app", "demo"]);
-check("the installed launcher writes no invocation variable", mcpLauncherContent("installed").includes("CLAWFORGE_INVOCATION"), false);
+check("the monorepo launcher's JSON is the hand-over", parseInvocation(launcher[INVOCATION_ENV] ?? ""), { program: "../../clawwright", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
+check("the monorepo launcher's legacy line names the shim and the app", (launcher[INVOKED_AS_ENV] ?? "").split(SPACE), ["../../clawwright", "--app", "demo"]);
+check("the installed launcher writes no invocation variable", mcpLauncherContent("installed").includes("CLAWWRIGHT_INVOCATION"), false);
 
 // --- the O7 fixture generations -------------------------------------------------------------------------
 
 const g0 = producer("fixture G0: shim before 710cf66 wrote no variables");
 checkTrue("G0 writes neither variable", g0.env?.[INVOCATION_ENV] === undefined && g0.env?.[INVOKED_AS_ENV] === undefined);
-check("G0 reads as the entry default", g0.invocation, { program: "clawforge", mode: "installed", audience: "terminal" });
+check("G0 reads as the entry default", g0.invocation, { program: "clawwright", mode: "installed", audience: "terminal" });
 check("G0 classifies as the system command", { kind: launchFromHandover(g0.invocation, facts(DEMO)).kind }, { kind: "system" });
 
 const g1 = producer("fixture G1 (710cf66): the legacy variable alone");
-check("G1 parses as the legacy hand-over", parseLegacyInvokedAs(g1.env?.[INVOKED_AS_ENV] ?? ""), { program: "./clawforge", mode: "checkout", audience: "terminal" });
+check("G1 parses as the legacy hand-over", parseLegacyInvokedAs(g1.env?.[INVOKED_AS_ENV] ?? ""), { program: "./clawwright", mode: "checkout", audience: "terminal" });
 check("G1 classifies as a bash shim hand-over", launchFromHandover(g1.invocation, facts(DEMO)), { kind: "checkout-shim", root: norm(ROOT) });
 
 const g2 = producer("fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects)");
 check("G2's v1 value is rejected by the strict parse", parseInvocation(g2.env?.[INVOCATION_ENV] ?? ""), undefined);
-check("G2 falls back to the legacy line", parseLegacyInvokedAs(g2.env?.[INVOKED_AS_ENV] ?? ""), { program: "./clawforge", mode: "checkout", audience: "terminal" });
-check("G2 reads through the legacy variable", g2.invocation, { program: "./clawforge", mode: "checkout", audience: "terminal" });
+check("G2 falls back to the legacy line", parseLegacyInvokedAs(g2.env?.[INVOKED_AS_ENV] ?? ""), { program: "./clawwright", mode: "checkout", audience: "terminal" });
+check("G2 reads through the legacy variable", g2.invocation, { program: "./clawwright", mode: "checkout", audience: "terminal" });
 check("G2 classifies as a bash shim hand-over", launchFromHandover(g2.invocation, facts(DEMO)), { kind: "checkout-shim", root: norm(ROOT) });
 
 const g3 = producer("fixture G3 (a841c16): v1 checkout + legacy");
-check("G3's v1 value parses strictly", parseInvocation(g3.env?.[INVOCATION_ENV] ?? ""), { program: "./clawforge", mode: "checkout", audience: "terminal" });
+check("G3's v1 value parses strictly", parseInvocation(g3.env?.[INVOCATION_ENV] ?? ""), { program: "./clawwright", mode: "checkout", audience: "terminal" });
 check("G3 classifies as the v1 value says", launchFromHandover(g3.invocation, facts(DEMO)), { kind: "checkout-shim", root: norm(ROOT) });
 
 const l1 = producer("fixture L1 (f620c8a): the legacy launcher variable");
-check("L1 parses with the app by flag", parseLegacyInvokedAs(l1.env?.[INVOKED_AS_ENV] ?? ""), { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" });
+check("L1 parses with the app by flag", parseLegacyInvokedAs(l1.env?.[INVOKED_AS_ENV] ?? ""), { program: "../../clawwright", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" });
 check("L1 classifies as the checkout shim", launchFromHandover(l1.invocation, facts(DEMO)), { kind: "checkout-shim", root: norm(ROOT) });
 check("L1 selects demo by flag", l1.frame.app, { state: "selected", name: "demo", by: "flag" });
 
 const l2 = producer("fixture L2 (a7d027e): v1 checkout launcher + legacy");
-check("L2's v1 value parses strictly", parseInvocation(l2.env?.[INVOCATION_ENV] ?? ""), { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
+check("L2's v1 value parses strictly", parseInvocation(l2.env?.[INVOCATION_ENV] ?? ""), { program: "../../clawwright", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
 check("L2 classifies as the checkout shim", launchFromHandover(l2.invocation, facts(DEMO)), { kind: "checkout-shim", root: norm(ROOT) });
 check("L2 keeps the mcp audience", l2.invocation.audience, "mcp");
 check("L2 selects demo by flag", l2.frame.app, { state: "selected", name: "demo", by: "flag" });
@@ -342,8 +342,8 @@ check("the verbatim classification spells the program as typed", spell(launchFro
 await requires("posix-host", "the spaced hand-set program's POSIX quoting", () => {
   check(
     "a spaced program renders quoted, pastable",
-    words(renderAdvice(command(["logs"]), { program: "/opt/claw forge/clawforge", mode: "checkout", audience: "terminal" })),
-    ["'/opt/claw", "forge/clawforge'", "logs"],
+    words(renderAdvice(command(["logs"]), { program: "/opt/claw forge/clawwright", mode: "checkout", audience: "terminal" })),
+    ["'/opt/claw", "forge/clawwright'", "logs"],
   );
 });
 

@@ -11,13 +11,13 @@ import { command } from "../../core/io/invocation/advice.ts";
 import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
 
 /** The two name markers of the tooling's own temp-sibling staging families: a private write
- *  stages `<path>.clawforge-private-<hex>`, a publish stages `<path>.clawforge-publish-<hex>`.
+ *  stages `<path>.clawwright-private-<hex>`, a publish stages `<path>.clawwright-publish-<hex>`.
  *  A process that dies before the rename leaves them beside the target under a name no
  *  declared exact path matches, so the snapshot policy recognizes the marker families
  *  themselves (service/archive/profile.ts excludes them, verify.ts refuses them). Defined
  *  here, where the names are created, so the policy readers cannot drift from the writers. */
-export const PRIVATE_STAGING_MARKER = ".clawforge-private-";
-export const PUBLISH_STAGING_MARKER = ".clawforge-publish-";
+export const PRIVATE_STAGING_MARKER = ".clawwright-private-";
+export const PUBLISH_STAGING_MARKER = ".clawwright-publish-";
 
 /** Builds an exclusive, owner-only remote write with cleanup owned by the writer. */
 export function privateWriteCommand(path: string): [string, string[]] {

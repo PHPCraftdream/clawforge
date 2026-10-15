@@ -353,7 +353,7 @@ export const STAGE7_ACCEPT_CONTROLS: readonly ControlDecl[] = [
     id: "C250", finding: "R3-A-1", note: "Restore the unavailable installed-command override for a checkout conflict.",
     product: "tools/framework/core/io/invocation/render.ts",
     search: '  // Arguments quote by the frame\'s shells, not by the program\'s spelling: a frame that',
-    replace: '  if (cwdConflict) program = "clawforge";\n  // Arguments quote by the frame\'s shells, not by the program\'s spelling: a frame that',
+    replace: '  if (cwdConflict) program = "clawwright";\n  // Arguments quote by the frame\'s shells, not by the program\'s spelling: a frame that',
     check: "tools/checks/surfaces/advice/checkout-paste.check.ts", fragment: "R3-A-1: checkout-only rendered paste exit 0",
   },
   {

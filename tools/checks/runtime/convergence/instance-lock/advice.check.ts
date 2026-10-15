@@ -65,7 +65,7 @@ for (const scenario of scenarios) {
       check(`${label}: observation manual`, observation.next?.kind, "manual");
       check(`${label}: observation no argv`, observation.next !== undefined && "argv" in observation.next, false);
     } else {
-      check(`${label}: observation read command`, observation.next?.kind, "clawforge");
+      check(`${label}: observation read command`, observation.next?.kind, "clawwright");
     }
     check(`${label}: observation preserves files`, JSON.stringify([...files]), beforeFiles);
     check(`${label}: observation preserves directories`, JSON.stringify([...dirs]), beforeDirs);

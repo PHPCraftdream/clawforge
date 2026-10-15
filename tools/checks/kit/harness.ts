@@ -96,13 +96,13 @@ export function finish(suite: string): void {
 }
 
 // Write isolation (stage 7 S0.4): a check that needs deployments sets
-// CLAWFORGE_CHECKS_APPS_DIR, which framework/core/env.ts's appsRootFor() honors —
+// CLAWWRIGHT_CHECKS_APPS_DIR, which framework/core/env.ts's appsRootFor() honors —
 // createApp and the gate's deployment resolution then land under the OS temp dir,
 // never the checkout's apps/. Each call gets its own mkdtemp directory (unique even for
 // concurrent runs of the same check), under a stable per-check prefix so leaked dirs stay
 // attributable; snapshots stay deterministic because golden scrub() maps tmpdir() to <tmp>,
 // erasing the random suffix along with the rest of the temp path.
-const CHECKS_APPS_ENV = "CLAWFORGE_CHECKS_APPS_DIR";
+const CHECKS_APPS_ENV = "CLAWWRIGHT_CHECKS_APPS_DIR";
 
 export interface IsolatedApps {
   readonly root: string;
@@ -113,7 +113,7 @@ export interface IsolatedApps {
 export async function isolatedAppsRoot(name: string): Promise<IsolatedApps> {
   // mkdtemp guarantees uniqueness, so concurrent/interleaved runs never collide and the
   // setup must not rm first (that would delete a sibling run's fixtures).
-  const root = await mkdtemp(join(tmpdir(), `clawforge-checks-apps-${name}-`));
+  const root = await mkdtemp(join(tmpdir(), `clawwright-checks-apps-${name}-`));
   const previous = process.env[CHECKS_APPS_ENV];
   process.env[CHECKS_APPS_ENV] = root;
   return {

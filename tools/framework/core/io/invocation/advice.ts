@@ -6,7 +6,7 @@ import { shellQuote } from "../shell.ts";
 export type Shell = "posix" | "cmd" | "pwsh";
 
 export interface CommandAdvice {
-  readonly kind: "clawforge";
+  readonly kind: "clawwright";
   /** The command word and its arguments, WITHOUT the program and without `--app`; an
    *  explicit deployment is `app` instead. */
   readonly argv: readonly string[];
@@ -57,7 +57,7 @@ export function command(
     throw new Error("command(): the deployment is the app option, not --app");
   }
   return {
-    kind: "clawforge",
+    kind: "clawwright",
     argv: parts,
     ...(options?.app === undefined ? {} : { app: options.app }),
     ...(options?.note === undefined ? {} : { note: options.note }),

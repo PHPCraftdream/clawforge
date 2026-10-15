@@ -14,7 +14,7 @@ import { fixture, type RecipeRecoveryFixture } from "../fixture.ts";
 
 const migrationBackup = { consistency: "application-cold-safe", persistentState: "all-in-declared-named-volumes-and-bind-mounts",
   cleanShutdown: "flushes-all-writers", restore: "application-safe-including-compensation" } as const;
-const backupRoot = "/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc";
+const backupRoot = "/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc";
 const options = (ephemeralPaths?: readonly string[]): SideStackMigrateOptions => ({ migrationBackup, backupRoot, ephemeralPaths });
 function diff(f: RecipeRecoveryFixture, output: () => string): void {
   const execute = f.transport.exec.bind(f.transport);

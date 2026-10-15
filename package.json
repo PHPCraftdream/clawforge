@@ -1,8 +1,8 @@
 {
-  "name": "clawforge-framework-repository",
+  "name": "clawwright-repository",
   "version": "0.1.0",
   "private": true,
-  "description": "Development repository for the @clawforge/framework package.",
+  "description": "Development repository for the clawwright package.",
   "license": "(MIT OR Apache-2.0)",
   "type": "module",
   "imports": {
@@ -11,8 +11,8 @@
     "#tools/*": "./tools/*"
   },
   "scripts": {
-    "check": "node --experimental-strip-types tools/clawforge.ts check",
-    "check:fast": "npm run typecheck && npm run lint && node --experimental-strip-types tools/clawforge.ts check --related",
+    "check": "node --experimental-strip-types tools/clawwright.ts check",
+    "check:fast": "npm run typecheck && npm run lint && node --experimental-strip-types tools/clawwright.ts check --related",
     "check:controls": "node --experimental-strip-types tools/checks/controls/run-controls.ts",
     "golden:update": "node --experimental-strip-types tools/dev/golden-update.ts",
     "docs:commands": "node --experimental-strip-types tools/dev/docs-commands.ts",

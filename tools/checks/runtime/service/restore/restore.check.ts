@@ -1,6 +1,6 @@
 // Checks that a direct restore never starts the gateway on a config it cannot satisfy.
 //
-// push() already had this guard — restoreArchive() itself did not, so `./clawforge restore` alone
+// push() already had this guard — restoreArchive() itself did not, so `./clawwright restore` alone
 // (the common path, without going through push) could start straight into a
 // SecretRefResolutionError crash-loop. No target: a stub transport drives restoreArchive()
 // end to end with a restored config that references a variable nothing supplies.
@@ -176,7 +176,7 @@ check("the gateway is never started when a required secret is missing", startCal
 // data, give the framework-native remediation. Nothing running — nothing said.
 
 {
-  const recipes = await mkdtemp(`${tmpdir()}/clawforge-restore-recipe-check-`);
+  const recipes = await mkdtemp(`${tmpdir()}/clawwright-restore-recipe-check-`);
   try {
     await mkdir(resolve(recipes, "vault"), { recursive: true });
     await writeFile(resolve(recipes, "vault", "recipe.json"), JSON.stringify({ description: "sidecar under the data directory" }), "utf8");
@@ -198,7 +198,7 @@ check("the gateway is never started when a required secret is missing", startCal
       );
       check("the warning says the stack was not recreated", output.includes("not recreated"), true);
       check("the warning points at the moved-aside data", output.includes("kept at /srv/openclaw/data.replaced-"), true);
-      check("the remediation names the framework commands", output.includes("./clawforge recipe remove vault") && output.includes("./clawforge recipe install vault"), true);
+      check("the remediation names the framework commands", output.includes("./clawwright recipe remove vault") && output.includes("./clawwright recipe install vault"), true);
     } finally {
       clearRecipesDir();
     }
@@ -219,11 +219,11 @@ check("the gateway is never started when a required secret is missing", startCal
   }
 }
 
-// --- which archive `./clawforge restore` picks when given none ------------------------------
+// --- which archive `./clawwright restore` picks when given none ------------------------------
 //
 // `pull` writes migrate and share archives into the same directory `backup` writes full ones
 // into, and the rule used to be "the newest file matching <deployment>-*.tar.gz". So the
-// documented `./clawforge restore` run right after `pull --share` replaced the data directory
+// documented `./clawwright restore` run right after `pull --share` replaced the data directory
 // with an archive carrying neither identity nor credentials: the gateway could not start, and
 // the real data survived only as <data>.replaced-<stamp>.
 
@@ -293,7 +293,7 @@ const NAME = deploymentName();
 // data and cannot change which archive is selected.
 await requires("posix-host", "restore selects an archive below a quoted path over a POSIX shell and GNU tools", async () => {
   await requires("gnu-userland", "restore selects an archive below a quoted path (GNU tools)", async () => {
-    const root = await mkdtemp(`${tmpdir()}/clawforge-restore-quote-check-`);
+    const root = await mkdtemp(`${tmpdir()}/clawwright-restore-quote-check-`);
     const marker = `${root}/shell-injected`;
     const directory = `${root}/backup files '$(touch ${marker})' ; echo hacked`;
     try {

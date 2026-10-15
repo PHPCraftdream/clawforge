@@ -29,17 +29,17 @@ const case4 = (checkout: string): Frame => ({
 check(
   "case 4 names the other deployment with --project-root",
   renderFrameAdvice(command(["destroy"], { app: "X" }), case4("/co")).split(" "),
-  ["clawforge", "--project-root", "/co/apps/X", "destroy"],
+  ["clawwright", "--project-root", "/co/apps/X", "destroy"],
 );
 check(
   "case 4 quotes the --project-root path for cmd/pwsh by the frame's shells rule",
   renderFrameAdvice(command(["destroy"], { app: "X" }), case4("/co with space")).split(" "),
-  ["clawforge", "--project-root", '"/co', "with", 'space/apps/X"', "destroy"],
+  ["clawwright", "--project-root", '"/co', "with", 'space/apps/X"', "destroy"],
 );
 check(
   "case 4 under a posix-only frame single-quotes the --project-root path",
   renderFrameAdvice(command(["destroy"], { app: "X" }), { ...case4("/co with space"), shells: ["posix"] }).split(" "),
-  ["clawforge", "--project-root", "'/co", "with", "space/apps/X'", "destroy"],
+  ["clawwright", "--project-root", "'/co", "with", "space/apps/X'", "destroy"],
 );
 check(
   "case 4 carries no --app and no note",
@@ -49,13 +49,13 @@ check(
 );
 check("R1-A-2 external cwd retains frame by-cwd selection", renderFrameAdvice(command(["destroy"], { app: "X" }), {
   ...case4("/co"), cwd: { kind: "dir", path: "/external/deployment" },
-}).split(" "), ["clawforge", "--project-root", "/co/apps/X", "destroy"]);
+}).split(" "), ["clawwright", "--project-root", "/co/apps/X", "destroy"]);
 
 const unknownRootFrame: Frame = { ...case4("/co"), places: {} };
 check(
   "the unknown-root cwd-conflict fallback keeps the re-rooted row with the paste-conflict note",
   renderFrameAdvice(command(["destroy"], { app: "X" }), unknownRootFrame).split(" "),
-  ["clawforge", "--app", "X", "destroy", "", "(from", "the", "checkout", "root)"],
+  ["clawwright", "--app", "X", "destroy", "", "(from", "the", "checkout", "root)"],
 );
 
 // R1-A-2 / O2: the prior --project-root selected aux by flag, but a fresh paste
@@ -79,7 +79,7 @@ for (const shell of ["cmd", "pwsh", "posix"] as const) {
     const line = renderFrameAdvice(advice, forShell(replayFrame, shell));
     const words = parsePaste(line, shell).words;
     check(`R1-A-2 ${shell}: fresh explicit/inherited aux advice uses O2, not --app`, words,
-      ["clawforge", "--project-root", `${replayRoot}/apps/aux`, "set", "build"]);
+      ["clawwright", "--project-root", `${replayRoot}/apps/aux`, "set", "build"]);
     const fresh = resolveInstalledEntry({
       cwd: replayFrame.cwd.kind === "dir" ? replayFrame.cwd.path : "",
       rawArgv: words.slice(1), platform: "win32", fs: replayFs,
@@ -92,10 +92,10 @@ for (const shell of ["cmd", "pwsh", "posix"] as const) {
 }
 check("R1-A-2 same-cwd aux still uses --app", renderFrameAdvice(command(["set", "build"]), {
   ...replayFrame, cwd: { kind: "dir", path: `${replayRoot}/apps/aux` },
-}).split(" "), ["clawforge", "--app", "aux", "set", "build"]);
+}).split(" "), ["clawwright", "--app", "aux", "set", "build"]);
 check("R1-A-2 checkout-root cwd still uses --app", renderFrameAdvice(command(["set", "build"]), {
   ...replayFrame, cwd: { kind: "dir", path: replayRoot },
-}).split(" "), ["clawforge", "--app", "aux", "set", "build"]);
+}).split(" "), ["clawwright", "--app", "aux", "set", "build"]);
 
 // changeDirectory: the POSIX text quotes by shellQuote (always single quotes), cmd/pwsh
 // take pushd unless the path carries `"`, `%`, `$` or a backtick — then cmd has NO safe

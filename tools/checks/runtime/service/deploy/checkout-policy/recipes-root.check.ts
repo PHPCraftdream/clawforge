@@ -28,7 +28,7 @@ const recordingCtx = {
 
 // Neither a private source root nor a store-shaped file at its top level may travel.
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-deploy-private-recipes-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-deploy-private-recipes-"));
   const privateCalls: { command: string; args: string[] }[] = [];
   const privateCtx = {
     ...ctx,

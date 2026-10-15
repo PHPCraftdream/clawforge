@@ -1,4 +1,4 @@
-// The backup/restore round-trip and privacy-check phase of `clawforge smoke`.
+// The backup/restore round-trip and privacy-check phase of `clawwright smoke`.
 //
 // The round-trip check is the heaviest: a FULL backup with the gateway held down, restored
 // into an isolated scratch root beside the data directory (never over live data) and compared
@@ -147,7 +147,7 @@ interface RoundTripScratch {
  *  own compensation to manage, not this function's. */
 function roundTripScratch(ctx: Context): RoundTripScratch {
   const dataDir = ctx.settings.dataDir;
-  const scratch = `${dataDirParent(dataDir)}/.clawforge-smoke-roundtrip-${randomBytes(4).toString("hex")}`;
+  const scratch = `${dataDirParent(dataDir)}/.clawwright-smoke-roundtrip-${randomBytes(4).toString("hex")}`;
   const restored = `${scratch}/${dataDirName(dataDir)}`;
   const isolated: Context = {
     ...ctx,

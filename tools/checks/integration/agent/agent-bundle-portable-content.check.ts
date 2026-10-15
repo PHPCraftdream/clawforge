@@ -24,7 +24,7 @@
 //     file, an undeclared sensitive-named file, and an internal alias to a declared-private
 //     target — the exact three-way parity the audit asked for, since inspect itself calls
 //     both of these functions and nothing else, so fixing them fixes inspect for free;
-//   - `./clawforge set build` (set-manifest.ts) carries the same verdict into
+//   - `./clawwright set build` (set-manifest.ts) carries the same verdict into
 //     manifest.recipes.<name>.agentFiles, the artifact `set apply` provisions from;
 //   - a symlink escaping the recipe directory is refused by every one of those readers BEFORE
 //     any file is read — proven by asserting the rejection carries none of the private bytes
@@ -113,7 +113,7 @@ function buildOnlyCtx(image: string): Context {
   } as unknown as Context;
 }
 
-const tempRoot = await mkdtemp(join(tmpdir(), "clawforge-p1-03-r4-"));
+const tempRoot = await mkdtemp(join(tmpdir(), "clawwright-p1-03-r4-"));
 const previousDeployment = (() => {
   try {
     return deploymentDir();

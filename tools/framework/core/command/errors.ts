@@ -2,7 +2,7 @@
 
 import { UserError } from "#src/core/io/log.ts";
 
-export const ARGUMENT_ERROR_TOKEN: unique symbol = Symbol("clawforge.argument-error");
+export const ARGUMENT_ERROR_TOKEN: unique symbol = Symbol("clawwright.argument-error");
 
 
 /** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most

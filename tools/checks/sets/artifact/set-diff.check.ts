@@ -94,7 +94,7 @@ async function makeArtifact(root: string, suffix: string, page: string, prompt: 
   return artifact;
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-set-diff-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-set-diff-check-"));
 const ctx = {} as Context;
 const set = (ctx: Context, argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
 try {

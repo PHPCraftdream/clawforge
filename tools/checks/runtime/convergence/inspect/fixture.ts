@@ -22,10 +22,10 @@ import { backupArchiveName } from "#framework/service/archive/index.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
-export const DATA = "/srv/clawforge/data";
+export const DATA = "/srv/clawwright/data";
 export const CONFIG_FILE = `${DATA}/config/openclaw.json`;
 export const MIRROR = `${DATA}/workspace/mcp-demo`;
-export const BACKUP_DIR = "/srv/clawforge/backups";
+export const BACKUP_DIR = "/srv/clawwright/backups";
 
 /** The instance as the stub presents it. Every field has a working default, so each case
  *  below states only the one thing it is about. */
@@ -108,7 +108,7 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
     const dataDir = spec.dataDir ?? DATA;
     const configFile = `${dataDir}/config/openclaw.json`;
     const envFile = `${dataDir}/config/.env`;
-    const ledgerFile = `${dataDir}/clawforge-managed.json`;
+    const ledgerFile = `${dataDir}/clawwright-managed.json`;
     const mirrorDir = `${dataDir}/workspace/mcp-demo`;
     // Matches the declaration written below, so a case that says nothing about the config
     // provokes no drift and every finding in it is the one that case is about.
@@ -276,7 +276,7 @@ export interface FixtureDeployment {
  *  disagree about the format and the checks would still pass. Without it every case would
  *  carry a LOCK_MISSING warning, pure noise in cases about something else. */
 export async function setupFixtureDeployment(): Promise<FixtureDeployment> {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-inspect-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-inspect-check-"));
   await mkdir(resolve(deployment, "config"), { recursive: true });
   await writeFile(
     resolve(deployment, "config", "desired-state.json"),

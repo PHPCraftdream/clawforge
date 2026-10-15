@@ -1,4 +1,4 @@
-// `clawforge bootstrap --check` — a read-only prerequisite report for a deployment
+// `clawwright bootstrap --check` — a read-only prerequisite report for a deployment
 // bootstrap has never touched: no lock, no mutation, no directory created. Everything real
 // bootstrap otherwise discovers mid-mutation (docker missing, compose v2 absent, a data
 // directory that needs root, the port already taken, a nearly-full disk) is answered here
@@ -24,7 +24,7 @@ function renderLine(result: PrereqResult): void {
   info(`${label} ${result.what}${result.next === undefined ? "" : ` — ${result.next}`}`);
 }
 
-/** `clawforge bootstrap --check`'s own run: prints one `ok`/`WARN`/`FAIL` line per prerequisite
+/** `clawwright bootstrap --check`'s own run: prints one `ok`/`WARN`/`FAIL` line per prerequisite
  *  and exits non-zero only when at least one FAILed. A transport that never reaches the
  *  target is reported through the same TARGET_UNREACHABLE finding every other command uses,
  *  rather than propagating as a stack trace. */

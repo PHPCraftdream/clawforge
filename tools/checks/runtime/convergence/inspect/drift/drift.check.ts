@@ -1,4 +1,4 @@
-// `./clawforge inspect` — the matching-instance baseline: what apply leaves alone, how the
+// `./clawwright inspect` — the matching-instance baseline: what apply leaves alone, how the
 // prospective config overlays declarations, and what a malformed or service-only agent bundle
 // does to inspection and apply. See ../fixture.ts for the shared stub and on-disk deployment;
 // config-comparison.check.ts and findings.check.ts are the rest of the drift checks, and
@@ -180,7 +180,7 @@ try {
       }
       let mcpUnset = 0;
       let writes = 0;
-      const ledgerPath = "/srv/clawforge/data/clawforge-managed.json";
+      const ledgerPath = "/srv/clawwright/data/clawwright-managed.json";
       const ledgerBefore = JSON.stringify({
         version: 1,
         objects: [{ kind: "mcp-server", name: "demo-mcp", recipe: "demo", createdAt: "2026-01-01T00:00:00.000Z" }],

@@ -46,7 +46,7 @@ function checkTracked(name: string, actual: unknown, expected: unknown): void {
 function startServer(name: string) {
   const proc = spawn(
     process.execPath,
-    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "control-mcp"],
+    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawwright.ts"), "--app", name, "control-mcp"],
     { cwd: apps.root, stdio: ["pipe", "pipe", "pipe"] },
   );
   let stderr = "";

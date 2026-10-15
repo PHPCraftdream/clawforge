@@ -45,8 +45,8 @@ const ownershipRefusal = (error: unknown, named = true): boolean => {
   assert.equal(error.cause, undefined, "ownership refusals do not retain raw daemon failures");
   if (named) {
     assert.deepEqual(error.advice, [
-      { kind: "clawforge", argv: ["recipe", "inspect", "cache"] },
-      { kind: "clawforge", argv: ["recipe", "migrate", "cache"] },
+      { kind: "clawwright", argv: ["recipe", "inspect", "cache"] },
+      { kind: "clawwright", argv: ["recipe", "migrate", "cache"] },
     ] satisfies Advice[]);
   } else {
     assert.equal(error.advice.length, 1);

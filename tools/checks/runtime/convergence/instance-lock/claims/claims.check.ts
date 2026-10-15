@@ -39,7 +39,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   // The lock was just taken by this same live process: not stale, not dead, so the refusal
   // never offers a takeover it cannot need yet — only a stale or dead holder gets that advice.
   check("and does not offer a takeover of a lock that is still alive", message.includes("--break-lock"), false);
-  check("it says to wait, and how to see what is running", message.includes("./clawforge operations op-1"), true);
+  check("it says to wait, and how to see what is running", message.includes("./clawwright operations op-1"), true);
 
   await first.release();
   const second = await takeLock(ctx, "provision-agent demo", "op-2");

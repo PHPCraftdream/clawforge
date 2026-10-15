@@ -7,12 +7,12 @@
 // list must show up as a reviewed diff of these files.
 //
 // Everything here runs without a real target: no docker, no network, no host state. The
-// only fixture written is a scratch deployment under a temp apps root (CLAWFORGE_CHECKS_APPS_DIR,
+// only fixture written is a scratch deployment under a temp apps root (CLAWWRIGHT_CHECKS_APPS_DIR,
 // via appsRootFor), created and removed around the subprocess calls that need a resolvable
 // deployment, and temp directories under the OS temp dir.
 //
 // Placeholders scrubbed from every snapshot (see scrub()):
-//   <root>      the clawforge checkout root on this machine
+//   <root>      the clawwright checkout root on this machine
 //   <tmp>       the OS temp directory
 //   <home>      the user's home directory
 // The scratch deployment is always named "golden-fixture", so hints that name it are
@@ -55,21 +55,21 @@ import { UnknownArgumentError } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 import { isolatedAppsRoot } from "#checks/kit/harness.ts";
 
-const GATE_SCRIPT = resolve(monorepoRoot, "tools", "clawforge.ts");
+const GATE_SCRIPT = resolve(monorepoRoot, "tools", "clawwright.ts");
 const BIN_SCRIPT = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts");
 const FIXTURE_APP = "golden-fixture";
 
 // The gate surfaces that list commands agree on one list: the declared checkout commands
-// (entry/checkout-gate.ts) plus the two wired in tools/clawforge.ts.
+// (entry/checkout-gate.ts) plus the two wired in tools/clawwright.ts.
 const CHECKOUT_GATE_HELP_ORDER = checkoutGateCommands.map((command) => command.name);
 const CHECKOUT_GATE_SURFACE_ORDER = [...CHECKOUT_GATE_HELP_ORDER, VERSION_COMMAND_NAME, COMPLETION_COMMAND_NAME];
 
 /** Invocations the refusal matrix is rendered under, in the order they appear in refusals.txt. */
 const INVOCATIONS: readonly [string, Invocation][] = [
-  ["checkout root (./clawforge)", { program: "./clawforge", mode: "checkout", audience: "terminal" }],
-  ["named deployment (./clawforge --app demo)", { program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" }],
-  ["installed command (clawforge)", { program: "clawforge", mode: "installed", audience: "terminal" }],
-  ["sole deployment (./clawforge --app demo)", { program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" }],
+  ["checkout root (./clawwright)", { program: "./clawwright", mode: "checkout", audience: "terminal" }],
+  ["named deployment (./clawwright --app demo)", { program: "./clawwright", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" }],
+  ["installed command (clawwright)", { program: "clawwright", mode: "installed", audience: "terminal" }],
+  ["sole deployment (./clawwright --app demo)", { program: "./clawwright", mode: "checkout", app: { name: "demo", selectedBy: "sole" }, audience: "terminal" }],
 ];
 
 /** Replaces machine-specific path prefixes with the placeholders documented in the header. */
@@ -110,14 +110,14 @@ function runGate(script: string, args: string[], options: GateOptions = {}): Pro
  *  `--app golden-fixture`, and no command ever sees the developer's own deployments. */
 function fixtureEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, OC_APP: FIXTURE_APP };
-  delete env.CLAWFORGE_INVOKED_AS;
-  delete env.CLAWFORGE_INVOCATION;
+  delete env.CLAWWRIGHT_INVOKED_AS;
+  delete env.CLAWWRIGHT_INVOCATION;
   return env;
 }
 
-/** Installed-entry environment: the command names itself `clawforge`, as a global install does. */
+/** Installed-entry environment: the command names itself `clawwright`, as a global install does. */
 function installedEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, CLAWFORGE_INVOKED_AS: "clawforge" };
+  return { ...process.env, CLAWWRIGHT_INVOKED_AS: "clawwright" };
 }
 
 function section(title: string, body: string): string {
@@ -132,7 +132,7 @@ function fixtureAppTs(): string {
   return [
     `const { openclawCommands } = await import(${JSON.stringify(commands)});`,
     `export default {`,
-    `  name: "clawforge",`,
+    `  name: "clawwright",`,
     `  description: "self-hosting framework for OpenClaw",`,
     `  commands: openclawCommands,`,
     `};`,
@@ -166,7 +166,7 @@ async function refusals(): Promise<string> {
     return rendered.join("");
   };
 
-  // The candidate lists mirror the entries: tools/clawforge.ts's baseCommandNames and
+  // The candidate lists mirror the entries: tools/clawwright.ts's baseCommandNames and
   // bin.ts's helpWithoutDeployment candidates. The gate command names come from the
   // declarations module (entry/checkout-gate.ts), not a hand list.
   const checkoutCandidates = [
@@ -193,7 +193,7 @@ async function refusals(): Promise<string> {
   // so the renderer omits `--app`); the dispatcher pointer is deployment-free by registry
   // origin, derived in refuseDispatcherTokens.
   const genericApp = {
-    name: "clawforge",
+    name: "clawwright",
     description: "self-hosting framework for OpenClaw — this checkout has no deployments yet",
     commands: openclawCommands,
   };
@@ -253,31 +253,31 @@ export async function renderGolden(): Promise<Record<string, string>> {
     // Checkout entry: the real gate script renders its own top-level help (gate help lines
     // included) with the scratch deployment selected, and each gate command's --help.
     const topHelp = await runGate(GATE_SCRIPT, ["help"], { env: fixtureEnv() });
-    const checkoutParts = [section("./clawforge help", topHelp.stderr + topHelp.stdout)];
+    const checkoutParts = [section("./clawwright help", topHelp.stderr + topHelp.stdout)];
     for (const gateCommand of CHECKOUT_GATE_SURFACE_ORDER) {
       const help = await runGate(GATE_SCRIPT, [gateCommand, "--help"], { env: fixtureEnv() });
-      checkoutParts.push(section(`./clawforge ${gateCommand} --help`, help.stderr + help.stdout));
+      checkoutParts.push(section(`./clawwright ${gateCommand} --help`, help.stderr + help.stdout));
     }
     checkoutParts.push(section("deployment commands (both entries render these identically)", await deploymentCommandHelp()));
     snapshots["help-checkout.txt"] = checkoutParts.join("");
 
     // Installed entry: bin.ts run from a fixture deployment in a temp directory, naming
-    // itself clawforge like a global install does.
-    const installedDir = await mkdtemp(join(tmpdir(), "clawforge-golden-installed-"));
+    // itself clawwright like a global install does.
+    const installedDir = await mkdtemp(join(tmpdir(), "clawwright-golden-installed-"));
     try {
       await writeFile(resolve(installedDir, "app.ts"), fixtureAppTs(), "utf8");
       const installedTop = await runGate(BIN_SCRIPT, ["help"], { env: installedEnv(), cwd: installedDir });
-      const installedParts = [section("clawforge help (installed)", installedTop.stderr + installedTop.stdout)];
+      const installedParts = [section("clawwright help (installed)", installedTop.stderr + installedTop.stdout)];
       for (const gateCommand of ["init", "version", "completion"]) {
         const help = await runGate(BIN_SCRIPT, [gateCommand, "--help"], { env: installedEnv(), cwd: installedDir });
-        installedParts.push(section(`clawforge ${gateCommand} --help (installed)`, help.stderr + help.stdout));
+        installedParts.push(section(`clawwright ${gateCommand} --help (installed)`, help.stderr + help.stdout));
       }
       // One real installed `<deployment command> --help` without a deployment: bin.ts's
       // helpWithoutDeployment path (gate commands only in the listing, note after the body).
-      const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-golden-empty-"));
+      const emptyDir = await mkdtemp(join(tmpdir(), "clawwright-golden-empty-"));
       try {
         const noDeployment = await runGate(BIN_SCRIPT, ["status", "--help"], { env: installedEnv(), cwd: emptyDir });
-        installedParts.push(section("clawforge status --help (installed, no app.ts here)", noDeployment.stderr + noDeployment.stdout));
+        installedParts.push(section("clawwright status --help (installed, no app.ts here)", noDeployment.stderr + noDeployment.stdout));
       } finally {
         await rm(emptyDir, { recursive: true, force: true });
       }
@@ -308,13 +308,13 @@ export async function renderGolden(): Promise<Record<string, string>> {
   const completionParts: string[] = [];
   for (const shell of COMPLETION_SHELLS) {
     const script = await runGate(GATE_SCRIPT, ["completion", shell], {});
-    completionParts.push(section(`./clawforge completion ${shell}`, script.stdout));
+    completionParts.push(section(`./clawwright completion ${shell}`, script.stdout));
   }
-  const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-golden-empty-"));
+  const emptyDir = await mkdtemp(join(tmpdir(), "clawwright-golden-empty-"));
   try {
     for (const shell of COMPLETION_SHELLS) {
       const script = await runGate(BIN_SCRIPT, ["completion", shell], { env: installedEnv(), cwd: emptyDir });
-      completionParts.push(section(`clawforge completion ${shell} (installed)`, script.stdout));
+      completionParts.push(section(`clawwright completion ${shell} (installed)`, script.stdout));
     }
   } finally {
     await rm(emptyDir, { recursive: true, force: true });

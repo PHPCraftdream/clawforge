@@ -17,7 +17,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // pinImageReference writes the deployment's OWN .env — a real temporary deployment
 // directory backs these checks, cleaned up at the end.
-const deploymentDir = await mkdtemp(join(tmpdir(), "clawforge-upgrade-pin-check-"));
+const deploymentDir = await mkdtemp(join(tmpdir(), "clawwright-upgrade-pin-check-"));
 useDeployment(deploymentDir);
 await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`, "utf8");
 

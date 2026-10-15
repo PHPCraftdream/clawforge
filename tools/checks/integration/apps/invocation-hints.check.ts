@@ -1,6 +1,6 @@
-// The commands a message tells the user to run follow how the CLI was invoked: `./clawforge`
-// from the monorepo gate or the committed shim, `clawforge` from the system-wide command
-// (where `./clawforge` does not even run in cmd.exe or PowerShell). Covered: the helper
+// The commands a message tells the user to run follow how the CLI was invoked: `./clawwright`
+// from the monorepo gate or the committed shim, `clawwright` from the system-wide command
+// (where `./clawwright` does not even run in cmd.exe or PowerShell). Covered: the helper
 // itself, help (Usage and footer), doctor's refusal and its JSON, the MCP envelope built
 // from it, the entry's hand-over of the prefix, and the entry's own default invocation.
 
@@ -43,10 +43,10 @@ import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runti
 import { check, finish, isolatedAppsRoot, requires } from "#checks/kit/harness.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 
-const HINT = "./clawforge";
+const HINT = "./clawwright";
 
 const MONO: Invocation = { program: HINT, mode: "checkout", audience: "terminal" };
-const GLOBAL: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
+const GLOBAL: Invocation = { program: "clawwright", mode: "installed", audience: "terminal" };
 const NAMED: Invocation = { ...MONO, app: { name: "staging", selectedBy: "flag" } };
 
 async function capture(body: () => void | Promise<void>): Promise<string> {
@@ -79,24 +79,24 @@ try {
   // --- the helper -----------------------------------------------------------------------------
 
   check("nothing set: the monorepo prefix", invocation(), MONO);
-  check("commandLine renders the prefix and the rest", commandLine(["bootstrap", "--check"]), "./clawforge bootstrap --check");
+  check("commandLine renders the prefix and the rest", commandLine(["bootstrap", "--check"]), "./clawwright bootstrap --check");
   setInvocation(GLOBAL);
-  check("commandLine follows the prefix", commandLine(["bootstrap", "--check"]), "clawforge bootstrap --check");
+  check("commandLine follows the prefix", commandLine(["bootstrap", "--check"]), "clawwright bootstrap --check");
   setInvocation(NAMED);
-  check("the app part is in the prefix", commandLine([]), "./clawforge --app staging");
-  check("emitRaw never rewrites data", await capture(() => emitRaw("./clawforge up\n")), "./clawforge up\n");
+  check("the app part is in the prefix", commandLine([]), "./clawwright --app staging");
+  check("emitRaw never rewrites data", await capture(() => emitRaw("./clawwright up\n")), "./clawwright up\n");
   // The flip: the output layer rewrites nothing. A document and a diagnostic alike leave as
   // they were built, whatever invocation is set right now — advice-matrix.check.ts's P3
   // holds the same law for every advice row, through this very info().
-  check("emit passes machine output through", await capture(() => emit("./clawforge up\n")), "./clawforge up\n");
-  check("info passes a diagnostic through, adding no --app of its own", await capture(() => info("./clawforge up")).then((text) => text.includes("./clawforge up") && !text.includes("./clawforge --app staging up")), true);
+  check("emit passes machine output through", await capture(() => emit("./clawwright up\n")), "./clawwright up\n");
+  check("info passes a diagnostic through, adding no --app of its own", await capture(() => info("./clawwright up")).then((text) => text.includes("./clawwright up") && !text.includes("./clawwright --app staging up")), true);
   // Lines copied into another shell or host are printed verbatim under any prefix.
-  const cron = cronLine(60, { cwd: "/srv/app1", command: "./clawforge", args: ["--app", "app1", "backup"] }, "backup", "app1");
+  const cron = cronLine(60, { cwd: "/srv/app1", command: "./clawwright", args: ["--app", "app1", "backup"] }, "backup", "app1");
   const remote = [
-    `would bootstrap remotely afterwards: cd '/opt/oc' && ./clawforge --app staging bootstrap`,
-    `bring it up there with: cd '/opt/oc' && ./clawforge --app staging bootstrap`,
-    `provider keys are not copied — install them there: cd '/srv/openclaw' && ./clawforge --app staging secrets --apply`,
-    `  bash -lc "cd /srv/app1 && ./clawforge backup"`,
+    `would bootstrap remotely afterwards: cd '/opt/oc' && ./clawwright --app staging bootstrap`,
+    `bring it up there with: cd '/opt/oc' && ./clawwright --app staging bootstrap`,
+    `provider keys are not copied — install them there: cd '/srv/openclaw' && ./clawwright --app staging secrets --apply`,
+    `  bash -lc "cd /srv/app1 && ./clawwright backup"`,
   ];
   for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
     setInvocation(value);
@@ -111,7 +111,7 @@ try {
   // render for this terminal — turns one of these red under a non-default prefix.
 
   const ok = { code: 0, stdout: "", stderr: "" };
-  const REMOTE = "/mnt/x/clawforge";
+  const REMOTE = "/mnt/x/clawwright";
   const sshCtx = {
     transport: {
       description: "ssh:user@host",
@@ -121,7 +121,7 @@ try {
   } as unknown as Context;
   const wslTransport = {
     description: "wsl:Ubuntu-24.04",
-    clientInvocation: (entry: string, args: string[]) => ({ command: "./clawforge", args: [entry, ...args] }),
+    clientInvocation: (entry: string, args: string[]) => ({ command: "./clawwright", args: [entry, ...args] }),
   };
   const wslCtx = { transport: wslTransport, paths: { async toTarget() { return REMOTE; } }, settings: {} } as unknown as Context;
   const deployCtx = {
@@ -146,7 +146,7 @@ try {
       // posixTargetInvocation that started rendering for this terminal (the invocation's
       // own program) fails THIS instead of silently moving what the crontab would run. The
       // tail after the marker's colon is the ownership hash, not part of the invocation.
-      const pinned = `${job === "backup" ? "0 0 * * *" : "*/5 * * * *"} cd '/opt/openclaw' && ./clawforge '--app' '${name}' ${quotedArgs} >/dev/null 2>&1 # clawforge-${job}:`;
+      const pinned = `${job === "backup" ? "0 0 * * *" : "*/5 * * * *"} cd '/opt/openclaw' && ./clawwright '--app' '${name}' ${quotedArgs} >/dev/null 2>&1 # clawwright-${job}:`;
       check(`${label} installs the pinned crontab invocation ${at}`, crontab.startsWith(pinned), true);
 
       // Windows, unsupported transport: the printed lines are the transport's and schtasks' own.
@@ -163,7 +163,7 @@ try {
       check(`${label}: the schtasks line spells the shim invocation ${at}`, (schtasks ?? "").includes(displayCommandLine(manual.command, manual.args)), true);
     }
 
-    const bootstrap = `cd '/opt/openclaw' && ./clawforge --app ${name} bootstrap`;
+    const bootstrap = `cd '/opt/openclaw' && ./clawwright --app ${name} bootstrap`;
     const dry = await capture(() => deploy(deployCtx, ["user@host", "--dry-run"]));
     check(`deploy --dry-run prints the remote bootstrap line verbatim ${at}`, dry.includes(`would bootstrap remotely afterwards: ${bootstrap}`), true);
     const skipped = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, false, undefined));
@@ -175,7 +175,7 @@ try {
     const spacedSkip = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/srv/my app", name, false, undefined));
     check(`deploy's manual bootstrap hint quotes a spaced remote path ${at}`, spacedSkip.includes("bring it up there with: cd '/srv/my app' &&"), true);
     const done = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, true, undefined));
-    check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: cd '/opt/openclaw' && ./clawforge --app ${name} secrets --apply`), true);
+    check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: cd '/opt/openclaw' && ./clawwright --app ${name} secrets --apply`), true);
     // The tunnel line is the shared sshTunnelCommand + renderArguments construction, so a
     // host carrying shell-active characters survives the paste (rf6-fix30).
     check(`deploy's tunnel line is verbatim ${at}`, done.includes(renderArguments(sshTunnelCommand("user@host", "18789", "18789"))), true);
@@ -198,28 +198,28 @@ try {
   // A checkout copy from apps/<name> two levels under a checkout root holding the launcher:
   // the geometry must exist inside the temp root, since the walk-up no longer finds the real
   // checkout from there. The markers checkoutGateIn() requires (entry/resolve.ts:241-250):
-  // tools/clawforge.ts beside tools/framework/package.json named @clawforge/framework; plus
-  // the ./clawforge launcher at the checkout root that the program spelling names. The
+  // tools/clawwright.ts beside tools/framework/package.json named clawwright; plus
+  // the ./clawwright launcher at the checkout root that the program spelling names. The
   // checkout is passed explicitly — classifyCopy() pins copy.path to the running checkout,
   // and bin.ts hands defaultInvocation() exactly this walked-to checkout (bin.ts:46).
   const fakeCheckout = resolve(apps.root, "synthetic-checkout");
   await mkdir(resolve(fakeCheckout, "tools", "framework"), { recursive: true });
   await mkdir(resolve(fakeCheckout, "apps", "invocation-hints-probe"), { recursive: true });
-  await writeFile(resolve(fakeCheckout, "tools", "framework", "package.json"), JSON.stringify({ name: "@clawforge/framework" }));
-  await writeFile(resolve(fakeCheckout, "tools", "clawforge.ts"), "");
-  await writeFile(resolve(fakeCheckout, "clawforge"), "");
+  await writeFile(resolve(fakeCheckout, "tools", "framework", "package.json"), JSON.stringify({ name: "clawwright" }));
+  await writeFile(resolve(fakeCheckout, "tools", "clawwright.ts"), "");
+  await writeFile(resolve(fakeCheckout, "clawwright"), "");
   const probeAppRoot = resolve(fakeCheckout, "apps", "invocation-hints-probe");
   check("a checkout copy from the checkout root names the root shim", await defaultInvocation(process.cwd()), { program: SHIM_PROGRAM, mode: "checkout" });
-  check("a checkout copy from apps/<name> names the launcher's two-levels-up path", await defaultInvocation(probeAppRoot, undefined, fakeCheckout), { program: "../../clawforge", mode: "checkout" });
+  check("a checkout copy from apps/<name> names the launcher's two-levels-up path", await defaultInvocation(probeAppRoot, undefined, fakeCheckout), { program: "../../clawwright", mode: "checkout" });
 
-  // --- the value between processes: versioned JSON in CLAWFORGE_INVOCATION -------------------
+  // --- the value between processes: versioned JSON in CLAWWRIGHT_INVOCATION -------------------
 
   for (const value of [
     MONO,
     GLOBAL,
     NAMED,
-    { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "cwd" }, audience: "mcp" },
-    { program: "../../clawforge", mode: "local-package", audience: "mcp" },
+    { program: "../../clawwright", mode: "checkout", app: { name: "app1", selectedBy: "cwd" }, audience: "mcp" },
+    { program: "../../clawwright", mode: "local-package", audience: "mcp" },
   ] as const) {
     check(`serialize then parse is the identity: ${serializeInvocation(value)}`, parseInvocation(serializeInvocation(value)), value);
   }
@@ -236,38 +236,38 @@ try {
 
   process.env[INVOCATION_ENV] = "not json";
   check("malformed JSON reads as unset", takeInvocationFromEnv(), undefined);
-  process.env[INVOCATION_ENV] = '{"version":2,"program":"clawforge","mode":"installed","audience":"terminal"}';
+  process.env[INVOCATION_ENV] = '{"version":2,"program":"clawwright","mode":"installed","audience":"terminal"}';
   check("an unknown version reads as unset", takeInvocationFromEnv(), undefined);
-  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"sometimes","audience":"terminal"}';
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawwright","mode":"sometimes","audience":"terminal"}';
   check("an unknown mode reads as unset", takeInvocationFromEnv(), undefined);
-  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","extra":true}';
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawwright","mode":"installed","audience":"terminal","extra":true}';
   check("an extra field reads as unset — never half a value", takeInvocationFromEnv(), undefined);
   process.env[INVOCATION_ENV] = '{"version":1,"program":"","mode":"installed","audience":"terminal"}';
   check("an empty program reads as unset", takeInvocationFromEnv(), undefined);
-  process.env[INVOCATION_ENV] = '{"version":1,"program":" ./clawforge ","mode":"checkout","audience":"terminal"}';
-  check("a padded program is trimmed, not stored raw", takeInvocationFromEnv(), { program: "./clawforge", mode: "checkout", audience: "terminal" });
-  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":" x ","selectedBy":"flag"}}';
-  check("a padded app name is trimmed, not stored raw", takeInvocationFromEnv(), { program: "clawforge", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
-  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
+  process.env[INVOCATION_ENV] = '{"version":1,"program":" ./clawwright ","mode":"checkout","audience":"terminal"}';
+  check("a padded program is trimmed, not stored raw", takeInvocationFromEnv(), { program: "./clawwright", mode: "checkout", audience: "terminal" });
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawwright","mode":"installed","audience":"terminal","app":{"name":" x ","selectedBy":"flag"}}';
+  check("a padded app name is trimmed, not stored raw", takeInvocationFromEnv(), { program: "clawwright", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawwright","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
   check("an unknown app selection reads as unset", takeInvocationFromEnv(), undefined);
   // Producers spell installed as the bare name and ./-relative as the checkout shim, the MCP
   // launcher or the local-package copy. The committed shim used to spell the rejected pair
   // (./-relative under "installed"); every writer is now checked against this reader below.
-  process.env[INVOCATION_ENV] = '{"version":1,"program":"./clawforge","mode":"installed","audience":"terminal"}';
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"./clawwright","mode":"installed","audience":"terminal"}';
   check("a checkout spelling under installed mode reads as unset", takeInvocationFromEnv(), undefined);
-  check("parseInvocation agrees with the env path", parseInvocation('{"version":1,"program":".\\\\clawforge","mode":"installed","audience":"terminal"}'), undefined);
-  process.env[INVOCATION_ENV] = '{"version":1,"program":".\\\\clawforge","mode":"checkout","audience":"terminal"}';
-  check("the same spelling under checkout mode still parses", takeInvocationFromEnv(), { program: ".\\clawforge", mode: "checkout", audience: "terminal" });
+  check("parseInvocation agrees with the env path", parseInvocation('{"version":1,"program":".\\\\clawwright","mode":"installed","audience":"terminal"}'), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":".\\\\clawwright","mode":"checkout","audience":"terminal"}';
+  check("the same spelling under checkout mode still parses", takeInvocationFromEnv(), { program: ".\\clawwright", mode: "checkout", audience: "terminal" });
   process.env[INVOCATION_ENV] = serializeInvocation({ program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" });
   check("the Windows bin spelling under local-package still parses", takeInvocationFromEnv(), { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" });
 
-  process.env[INVOKED_AS_ENV] = "./clawforge --app staging";
+  process.env[INVOKED_AS_ENV] = "./clawwright --app staging";
   check("the legacy shim variable is mapped onto the value", takeInvocationFromEnv(), NAMED);
   check("it is removed, so descendants never inherit it", process.env[INVOKED_AS_ENV], undefined);
-  process.env[INVOKED_AS_ENV] = "clawforge";
+  process.env[INVOKED_AS_ENV] = "clawwright";
   check("legacy without a suffix maps to the program alone", takeInvocationFromEnv(), GLOBAL);
-  process.env[INVOKED_AS_ENV] = "/usr/local/bin/clawforge";
-  check("a bare path ending in clawforge is still checkout mode", takeInvocationFromEnv(), { program: "/usr/local/bin/clawforge", mode: "checkout", audience: "terminal" });
+  process.env[INVOKED_AS_ENV] = "/usr/local/bin/clawwright";
+  check("a bare path ending in clawwright is still checkout mode", takeInvocationFromEnv(), { program: "/usr/local/bin/clawwright", mode: "checkout", audience: "terminal" });
   process.env[INVOKED_AS_ENV] = "   ";
   check("blank legacy reads as unset", takeInvocationFromEnv(), undefined);
   // A legacy value that is only a flag suffix, or one carrying spacing, is garbage a
@@ -279,37 +279,37 @@ try {
   check("a legacy value with internal spacing reads as unset", takeInvocationFromEnv(), undefined);
   check("parseLegacyInvokedAs refuses a -- program", parseLegacyInvokedAs("--app x"), undefined);
   check("parseLegacyInvokedAs refuses a spaced program", parseLegacyInvokedAs("a b"), undefined);
-  check("parseLegacyInvokedAs agrees with the env path", parseLegacyInvokedAs("../../clawforge --app app1"), { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "flag" }, audience: "terminal" });
+  check("parseLegacyInvokedAs agrees with the env path", parseLegacyInvokedAs("../../clawwright --app app1"), { program: "../../clawwright", mode: "checkout", app: { name: "app1", selectedBy: "flag" }, audience: "terminal" });
   // R4-A F2: the documented rule — spacing between program and suffix trims away, so a doubled
   // space there still parses, while spacing INSIDE the program does not.
-  check("parseLegacyInvokedAs keeps a doubled space between program and suffix", parseLegacyInvokedAs("clawforge  --app x"), { program: "clawforge", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
+  check("parseLegacyInvokedAs keeps a doubled space between program and suffix", parseLegacyInvokedAs("clawwright  --app x"), { program: "clawwright", mode: "installed", app: { name: "x", selectedBy: "flag" }, audience: "terminal" });
 
-  // --- monorepo prefix: outputs keep ./clawforge --------------------------------------------
+  // --- monorepo prefix: outputs keep ./clawwright --------------------------------------------
 
   const mono = await samples();
-  check("monorepo: Usage", mono.usage.includes("Usage: ./clawforge <command> [options]"), true);
-  check("monorepo: help footer", mono.usage.includes("Run `./clawforge help <command>` or `./clawforge <command> --help`"), true);
-  check("monorepo: command Usage", mono.commandHelp.includes("Usage: ./clawforge logs"), true);
-  check("monorepo: doctor's refusal", mono.refusal.includes("Next: ./clawforge secrets --apply, ./clawforge up"), true);
-  check("monorepo: MCP nextActions", mono.nextActions, ["./clawforge secrets --apply", "./clawforge up"]);
+  check("monorepo: Usage", mono.usage.includes("Usage: ./clawwright <command> [options]"), true);
+  check("monorepo: help footer", mono.usage.includes("Run `./clawwright help <command>` or `./clawwright <command> --help`"), true);
+  check("monorepo: command Usage", mono.commandHelp.includes("Usage: ./clawwright logs"), true);
+  check("monorepo: doctor's refusal", mono.refusal.includes("Next: ./clawwright secrets --apply, ./clawwright up"), true);
+  check("monorepo: MCP nextActions", mono.nextActions, ["./clawwright secrets --apply", "./clawwright up"]);
 
-  // --- system-wide prefix: no ./clawforge anywhere ------------------------------------------
+  // --- system-wide prefix: no ./clawwright anywhere ------------------------------------------
 
   setInvocation(GLOBAL);
   const global = await samples();
-  check("global: Usage", global.usage.includes("Usage: clawforge <command> [options]"), true);
-  check("global: help footer", global.usage.includes("Run `clawforge help <command>` or `clawforge <command> --help`"), true);
-  check("global: command Usage", global.commandHelp.includes("Usage: clawforge logs"), true);
-  check("global: doctor's refusal", global.refusal.includes("Next: clawforge secrets --apply, clawforge up"), true);
-  check("global: doctor's JSON nextActions", global.json.includes('"clawforge up"'), true);
-  check("global: MCP nextActions are what a human would type", global.nextActions, ["clawforge secrets --apply", "clawforge up"]);
+  check("global: Usage", global.usage.includes("Usage: clawwright <command> [options]"), true);
+  check("global: help footer", global.usage.includes("Run `clawwright help <command>` or `clawwright <command> --help`"), true);
+  check("global: command Usage", global.commandHelp.includes("Usage: clawwright logs"), true);
+  check("global: doctor's refusal", global.refusal.includes("Next: clawwright secrets --apply, clawwright up"), true);
+  check("global: doctor's JSON nextActions", global.json.includes('"clawwright up"'), true);
+  check("global: MCP nextActions are what a human would type", global.nextActions, ["clawwright secrets --apply", "clawwright up"]);
   for (const [name, text] of Object.entries(global)) {
-    if (typeof text === "string") check(`global: ${name} has no ./clawforge`, text.includes(HINT), false);
+    if (typeof text === "string") check(`global: ${name} has no ./clawwright`, text.includes(HINT), false);
   }
-  check("global: MCP nextActions have no ./clawforge", global.nextActions.some((entry) => entry.includes(HINT)), false);
+  check("global: MCP nextActions have no ./clawwright", global.nextActions.some((entry) => entry.includes(HINT)), false);
 
   // --- the advice renderer --------------------------------------------------------------------
-  // One renderer turns advice — a clawforge command, a shell line, a manual step — into the
+  // One renderer turns advice — a clawwright command, a shell line, a manual step — into the
   // exact text a user pastes. The `--app` rule and the argument quoting live there and only
   // there; advice.ts is data.
 
@@ -333,7 +333,7 @@ try {
   const SPACED_LOGS = `${HINT} logs 'a b'`;
   const NOTED_UP = `${HINT} up  (after the change)`;
   const MANUAL_TEXT = "reconnect the MCP client (in Claude Code: /mcp)";
-  const SHELL_TEXT = "cd /srv && ./clawforge backup";
+  const SHELL_TEXT = "cd /srv && ./clawwright backup";
   const SHELL_NOTE = "on the target";
   const NOTED_SHELL = `${SHELL_TEXT}  (${SHELL_NOTE})`;
   const ARROW = "\n    → ";
@@ -367,8 +367,8 @@ try {
   setInvocation(GLOBAL);
   let hostQuote = '"';
   await requires("posix-host", "a posix host's bare program pastes into sh, which quotes with single quotes", () => { hostQuote = "'"; });
-  check("a spaced word under the bare program", renderAdvice(command(["logs", "a b"])).split(" "), ["clawforge", "logs", `${hostQuote}a`, `b${hostQuote}`]);
-  check("a placeholder stays bare under the bare program", renderAdvice(command(["new-app", "<name>"])), "clawforge new-app <name>");
+  check("a spaced word under the bare program", renderAdvice(command(["logs", "a b"])).split(" "), ["clawwright", "logs", `${hostQuote}a`, `b${hostQuote}`]);
+  check("a placeholder stays bare under the bare program", renderAdvice(command(["new-app", "<name>"])), "clawwright new-app <name>");
 
   // 5. A note trails the line, after two spaces.
   setInvocation(MONO);
@@ -393,7 +393,7 @@ try {
   const SHIM_TARGET = targetFrame({ kind: "checkout-shim", root: "" }, "posix");
   check("the stored shim text spells the checkout program", renderAdvice(command(["status"]), SHIM_TARGET), STATUS);
   check("the stored shim text names its app", renderAdvice(command(["status"], { app: "demo" }), SHIM_TARGET), DEMO_STATUS);
-  check("a bare-program invocation is untouched by the shim", renderAdvice(command(["status"])), "clawforge status");
+  check("a bare-program invocation is untouched by the shim", renderAdvice(command(["status"])), "clawwright status");
 
   // 9. The error path: die and UserError carry advice, formatError appends one rendered line
   //    per piece, and reportError prints the whole thing verbatim through the output sink.
@@ -406,7 +406,7 @@ try {
   setInvocation(MONO);
   check("formatError appends the advice line under the checkout prefix", formatError(failure), `bootstrap failed${ARROW}${HINT} logs`);
   setInvocation(GLOBAL);
-  check("the advice line follows the bare program", formatError(failure), `bootstrap failed${ARROW}clawforge logs`);
+  check("the advice line follows the bare program", formatError(failure), `bootstrap failed${ARROW}clawwright logs`);
   setInvocation(FLAG_DEMO);
   check("the advice line names the deployment", formatError(failure), `bootstrap failed${ARROW}${DEMO_LOGS}`);
   setInvocation(MONO);
@@ -429,21 +429,21 @@ try {
   //     exactly as renderAdvice() built it, so there is no rewriting left to describe.
   setInvocation(MONO);
 
-  // --- every producer of a CLAWFORGE_INVOCATION value hands over one the strict reader accepts ---
-  const shimLine = /export CLAWFORGE_INVOCATION='([^']+)'/.exec(SHIM)?.[1] ?? "";
+  // --- every producer of a CLAWWRIGHT_INVOCATION value hands over one the strict reader accepts ---
+  const shimLine = /export CLAWWRIGHT_INVOCATION='([^']+)'/.exec(SHIM)?.[1] ?? "";
   check("the committed shim hands over an invocation the strict reader accepts", parseInvocation(shimLine),
-    { program: "./clawforge", mode: "checkout", audience: "terminal" });
+    { program: "./clawwright", mode: "checkout", audience: "terminal" });
 
-  const launcherSource = /CLAWFORGE_INVOCATION = JSON\.stringify\((.*)\);/.exec(mcpLauncherContent("monorepo"))?.[1] ?? "";
+  const launcherSource = /CLAWWRIGHT_INVOCATION = JSON\.stringify\((.*)\);/.exec(mcpLauncherContent("monorepo"))?.[1] ?? "";
   const launcherValue = new Function("basename", `return (${launcherSource.replaceAll("basename(root)", '"demo"')})`)((p: string) => p) as Invocation;
   check("the monorepo MCP launcher hands over an invocation the strict reader accepts",
     parseInvocation(JSON.stringify(launcherValue)),
-    { program: "../../clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
+    { program: "../../clawwright", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" });
   check("the installed launcher hands no invocation over — the system-wide command it spawns names itself",
-    mcpLauncherContent("installed").includes("CLAWFORGE_INVOCATION"), false);
+    mcpLauncherContent("installed").includes("CLAWWRIGHT_INVOCATION"), false);
 
   // The entry default is a producer too: bin.ts re-serialises whatever defaultInvocation()
-  // answers into CLAWFORGE_INVOCATION for the delegate (entry/delegate.ts), so the real
+  // answers into CLAWWRIGHT_INVOCATION for the delegate (entry/delegate.ts), so the real
   // function's checkout answers must survive the strict reader for the roots it is called
   // with (the checkout root, and an apps/<name> deployment).
   for (const [label, root] of [["checkout root", process.cwd()], ["apps/<name>", probeAppRoot]] as const) {
@@ -457,17 +457,17 @@ try {
     const other = resolve(apps.root, "another-checkout");
     const value = { ...(await defaultInvocation(resolve(apps.root, "invocation-hints-probe"), undefined, other)), audience: "terminal" as const };
     check("defaultInvocation names a decided checkout that differs from the running copy's",
-      value, { program: `${other.replaceAll("\\", "/")}/clawforge`, mode: "checkout", audience: "terminal" });
+      value, { program: `${other.replaceAll("\\", "/")}/clawwright`, mode: "checkout", audience: "terminal" });
   }
 
   // The entry re-serialises whatever invocation() holds (bin, the delegate), so every default
   // must survive a serialize/parse cycle unchanged.
   const roundTrips: Invocation[] = [
-    { program: "clawforge", mode: "installed", audience: "terminal" },
+    { program: "clawwright", mode: "installed", audience: "terminal" },
     { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" },
     { program: WINDOWS_BIN_PROGRAM, mode: "local-package", audience: "terminal" },
     { program: SHIM_PROGRAM, mode: "local-package", audience: "terminal" },
-    { program: "clawforge", mode: "installed", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" },
+    { program: "clawwright", mode: "installed", app: { name: "demo", selectedBy: "flag" }, audience: "mcp" },
   ];
   for (const [index, value] of roundTrips.entries()) {
     check(`re-serialisation round-trip ${index + 1} of ${roundTrips.length}`, parseInvocation(serializeInvocation(value)), value);

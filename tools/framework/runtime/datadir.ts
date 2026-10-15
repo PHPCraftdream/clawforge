@@ -24,10 +24,10 @@ export const SUDO_PASSWORD_REFUSAL = "sudo asks for a password, which cannot be 
 /** Provenance marker written by ensureDataDirs into a data root it created or adopted: its
  *  presence licenses narrow drift re-owning on later runs; its absence makes ensureDataDirs
  *  refuse to re-own anything. Exported for the check fixtures. */
-export const DATA_DIR_MARKER = ".clawforge-data-dir";
+export const DATA_DIR_MARKER = ".clawwright-data-dir";
 
 const DATA_DIR_MARKER_CONTENT =
-  "clawforge data directory — created or adopted by clawforge (runtime/datadir.ts).\n" +
+  "clawwright data directory — created or adopted by clawwright (runtime/datadir.ts).\n" +
   "Written by ensureDataDirs; its presence is what keeps ownership maintenance narrow:\n" +
   "a tree without it was not set up by this framework and is never re-owned automatically.\n";
 
@@ -332,7 +332,7 @@ export async function ensureDataDirs(
       if (owner === OWNER) continue;
       die(
         `refusing to take ownership of ${path}${owner === "" ? "" : ` (owned by ${owner})`}: ` +
-          `${dataDir} carries no ${DATA_DIR_MARKER} marker, so nothing proves clawforge created this ` +
+          `${dataDir} carries no ${DATA_DIR_MARKER} marker, so nothing proves clawwright created this ` +
           "tree, and re-owning a directory this deployment did not set up is how a shared or system " +
           "directory gets handed to the container's uid.\n" +
           "If it really is this deployment's data, adopt it explicitly once:\n" +
@@ -365,7 +365,7 @@ export async function ensureDataDirs(
   }
   await chownToOwner(ctx, created, "created by this run");
   if (ours) {
-    await chownToOwner(ctx, preExisting, "ownership drift on a proven clawforge data directory");
+    await chownToOwner(ctx, preExisting, "ownership drift on a proven clawwright data directory");
   }
 
   // auth-secrets holds encryption keys.

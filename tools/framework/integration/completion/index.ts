@@ -38,15 +38,15 @@ export const COMPLETION_ARGUMENTS = [
  *  bash render itself, which is what makes that identity hold. */
 function renderZsh(data: CompletionData): string {
   const bash = renderBash(data);
-  const body = bash.slice(bash.indexOf("_clawforge_lookup()"), bash.indexOf(bashCompletionLines));
+  const body = bash.slice(bash.indexOf("_clawwright_lookup()"), bash.indexOf(bashCompletionLines));
   // The note (installLineParts) rides AFTER each whole composed line, never inside it.
   const install = installLineParts(["completion", "zsh"], "posix");
   const note = install.note === undefined ? "" : `  (${install.note})`;
   return (
-    "#compdef clawforge ./clawforge\n" +
-    "# clawforge zsh completion — generated from the live command declarations, via bash's\n" +
+    "#compdef clawwright ./clawwright\n" +
+    "# clawwright zsh completion — generated from the live command declarations, via bash's\n" +
     "# completion protocol (bashcompinit), so this cannot drift from the bash script's own\n" +
-    `# grammar. Install: ${install.line} > "\${fpath[1]}/_clawforge" (new shell), or${note}\n` +
+    `# grammar. Install: ${install.line} > "\${fpath[1]}/_clawwright" (new shell), or${note}\n` +
     `# source <(${install.line}) in the current one.${note}\n` +
     "autoload -Uz bashcompinit\n" +
     "bashcompinit\n" +
@@ -74,7 +74,7 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
       "Generated from the live command declarations — names, flags, and a multi-action " +
       "command's own flags under the right action — so it cannot drift from --help.\n" +
       'Install: eval "$({install completion bash})"; ' +
-      '{install completion zsh} > "${fpath[1]}/_clawforge"; or take ' +
+      '{install completion zsh} > "${fpath[1]}/_clawwright"; or take ' +
       "{install completion pwsh} and pipe it through Out-String and Invoke-Expression.\n" +
       (appFlag ? "--app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +
       "Completes the built-in commands only: a command a deployment declares itself is not offered, " +
@@ -85,7 +85,7 @@ export function makeCompletionGateCommand(siblings: readonly GateCommand[], appF
       effect: "read",
       arguments: COMPLETION_ARGUMENTS,
       run: async (_on, plan) => {
-        const model = completionData(commandRegistry({ deployment: openclawCommands, gate: siblings, appName: "clawforge" }), appFlag);
+        const model = completionData(commandRegistry({ deployment: openclawCommands, gate: siblings, appName: "clawwright" }), appFlag);
         emitRaw(renderCompletion(plan.shell, model));
         return 0;
       },

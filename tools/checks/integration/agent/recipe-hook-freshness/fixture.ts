@@ -11,7 +11,7 @@ import type { Context } from "#framework/core/context.ts";
  *  process importing every check file is never left pointing at a scratch root deleted from
  *  under it. */
 export function scratchDeployment(): { freshRoot: string; outerRecipes: string } {
-  const freshRoot = resolve(tmpdir(), `clawforge-recipe-hook-fresh-${process.pid}-${Date.now()}`);
+  const freshRoot = resolve(tmpdir(), `clawwright-recipe-hook-fresh-${process.pid}-${Date.now()}`);
   const outerRecipes = resolve(freshRoot, "outer-recipes");
   useDeployment(resolve(freshRoot, "deployment"));
   return { freshRoot, outerRecipes };
@@ -27,7 +27,7 @@ export function stubContext(env: Record<string, string>): { ctx: Context; calls:
   const files = new Map<string, string>();
   const dirs = new Set<string>();
   const ctx = {
-    settings: { env, dataDir: "/srv/clawforge-recipe-hook-freshness-check" },
+    settings: { env, dataDir: "/srv/clawwright-recipe-hook-freshness-check" },
     transport: {
       description: "stub",
       async exec(command: string, args: string[]) {

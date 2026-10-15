@@ -14,9 +14,9 @@ no code in it beyond a short declaration and, where needed, its own commands.
 Deployments are not kept in the repository: `apps/` is entirely in `.gitignore`. That
 follows from the boundary rather than being a separate decision — a deployment directory
 consists of one host's paths, its keys and its snapshots, which is exactly what must not be
-committed. A fresh clone therefore starts with `./clawforge new-app <name>`.
+committed. A fresh clone therefore starts with `./clawwright new-app <name>`.
 
-That leaves the question `./clawforge lock` raises — its committed output is a promise of
+That leaves the question `./clawwright lock` raises — its committed output is a promise of
 reproducibility, and a promise needs somewhere to live. The answer: a deployment directory is
 meant to become a git repository of its own, separate from this one — `setupProjectMcp`
 already writes it a *nested* `.gitignore` (`.mcp.json`, `.codex/`), which means nothing at all
@@ -36,7 +36,7 @@ tools/framework/          package metadata and shared service definition
     operate/                 expose, watch, incident, recover-env — run against a live instance
   set/                     artifact and ownership modules
   docker-compose.yml       the service definition, shared by every deployment
-tools/clawforge.ts               the gate: picks a deployment and hands over to the framework
+tools/clawwright.ts               the gate: picks a deployment and hands over to the framework
 apps/openclaw/            git-ignored: one host's configuration
   app.ts                  which service is managed and which commands are available
   .env                    paths, port, image, token (git-ignored)
@@ -83,7 +83,7 @@ Why the bridge is a separate thing:
 
 Calling `wslpath` is not an option: backslashes do not survive the trip through `wsl.exe`, so
 a Windows path loses its separators and arrives as one fused segment. Translation is done in
-our own code and covered by checks (see "What `./clawforge check` covers" below).
+our own code and covered by checks (see "What `./clawwright check` covers" below).
 
 **TypeScript is executed directly** (type stripping), with no build step and no `tsx`. The
 flip side: constructs that need code generation are unavailable — `constructor(private x)`,
@@ -95,7 +95,7 @@ second parser written here would disagree with it eventually. So `npm install` i
 prerequisite of the gate in this repository, as [Quick start](../README.md#quick-start) says;
 the published package declares it as a dependency and npm installs it with the package.
 
-The only shell file is `clawforge`: it runs before Node and only looks for a suitable Node.
+The only shell file is `clawwright`: it runs before Node and only looks for a suitable Node.
 
 ### Combinations, and which of them are proven
 
@@ -106,7 +106,7 @@ leaves room for a native installation, but no such setup exists.
 | --- | --- | --- |
 | WSL + Docker | `auto` (from Windows) or `wsl` | **Verified live 2026-09-08**: smoke 8/8, a round trip with matching checksums, a second deployment with its own port and token |
 | Local + Docker | `local` | **Unverified**: needs Node 24+ inside WSL, where there is none |
-| SSH + Docker | `ssh` + `OC_SSH_HOST` | **Unverified**: needs a server. Delivery contents are checked against a recording transport (`./clawforge check`); there has been no live run |
+| SSH + Docker | `ssh` + `OC_SSH_HOST` | **Unverified**: needs a server. Delivery contents are checked against a recording transport (`./clawwright check`); there has been no live run |
 
 What is unverified says so on purpose: the code is written and covered by checks, which is
 not the same thing as a scenario that has run.
@@ -145,7 +145,7 @@ and the recipe project. The container is not named in compose: it is found throu
 project and the service — `docker ps --filter name=` matches substrings, and a neighbouring
 deployment's container would answer for ours.
 
-`./clawforge new-app` hands a new deployment its own directories (`/srv/<name>/…`) and the first
+`./clawwright new-app` hands a new deployment its own directories (`/srv/<name>/…`) and the first
 free port, and `up` refuses to take a port belonging to another project. Names that become
 paths (`--app`, `--store`, a recipe) are validated: `--store ../../other` would read
 another deployment's keys.
@@ -153,10 +153,10 @@ another deployment's keys.
 ## Adding a second deployment
 
 ```bash
-./clawforge new-app staging        # a directory with .env, config/, secrets/, recipes/
+./clawwright new-app staging        # a directory with .env, config/, secrets/, recipes/
 # edit apps/staging/.env: its own OC_DATA_DIR and port
-./clawforge --app staging bootstrap
-./clawforge --app staging status
+./clawwright --app staging bootstrap
+./clawwright --app staging status
 ```
 
 ## The second distribution route: the framework as an npm dependency
@@ -167,10 +167,10 @@ framework has a second, independent entry point — `tools/framework/entry/bin.t
 works with exactly one deployment at that repository's root, with no `apps/<name>`: there
 is nowhere for neighbours to come from there. Both entry points share one dispatcher
 (`cli.ts`), so the command set cannot drift; what differs is only what genuinely is
-different: `tools/clawforge.ts` resolves `apps/<name>` from the monorepo root (`monorepoRoot`,
+different: `tools/clawwright.ts` resolves `apps/<name>` from the monorepo root (`monorepoRoot`,
 `core/env.ts`), `entry/bin.ts` resolves the single deployment from its own `cwd`; `new-app`
 (integration/deployment/scaffold.ts) generates a declaration with a relative import into `tools/framework/`,
-`init` (integration/deployment/init.ts) with a package-specifier import (`@clawforge/framework/app`), because
+`init` (integration/deployment/init.ts) with a package-specifier import (`clawwright/app`), because
 outside the monorepo the relative path does not exist.
 
 The practical flow, and why packaging raw `.ts` does not work, are in
@@ -188,7 +188,7 @@ into. They used to be written separately, which is how `--profile` came to be de
 flag while the parser wanted a value: over MCP it arrived as a bare `share` and was taken
 for a file name.
 
-This is also what makes the MCP surface a *mirror* rather than a subset. Everything `./clawforge`
+This is also what makes the MCP surface a *mirror* rather than a subset. Everything `./clawwright`
 can do from a terminal is offered as a tool, including the commands that run before a
 deployment exists (`check`, `new-app`/`init`) — those are declared as `GateCommand`s
 (framework/integration/gate.ts) for exactly this reason: the gate needs dispatch and help, the server
@@ -300,7 +300,7 @@ footing as renaming a command. `inspection.check.ts` lists the names explicitly 
 shows up in a diff rather than in someone's broken automation.
 
 A finding's severity is what "healthy" means: blocking findings say the instance is not
-doing its job, warnings are differences worth naming that still work. `./clawforge doctor` fails on
+doing its job, warnings are differences worth naming that still work. `./clawwright doctor` fails on
 the first kind and not the second — a check that objects to everything stops being consulted.
 
 ## Advice is data
@@ -308,16 +308,16 @@ the first kind and not the second — a check that objects to everything stops b
 Most of what a command says at the end is advice: the remedy a problem code carries, the way
 out of a refusal, the scheduler line `watch install` offers. That text used to be written as
 a string at each of those places and rewritten on the way out to the invocation it printed
-under — `./clawforge` back to `clawforge` under a global install, `--app <name>` added for a
+under — `./clawwright` back to `clawwright` under a global install, `--app <name>` added for a
 non-default deployment — and the rewriting did not stop at JSON documents, so a document
 could describe a call the user never made and a cron line could come back spelled for a
 shell it was not written for.
 
-Advice is now a value: a clawforge command (its arguments, and the deployment when it has to
+Advice is now a value: a clawwright command (its arguments, and the deployment when it has to
 be named), a line for another shell, host or scheduler (cron, `schtasks`, a command on a
 server), or an action with no command in it. One renderer (`core/io/invocation/render.ts`)
 turns a value into text, and it is the only place the `--app` rule and the program spelling
-live. That is the invariant worth stating: **a clawforge command reaches output only through
+live. That is the invariant worth stating: **a clawwright command reaches output only through
 the renderer, from data; a line written for another shell, host or scheduler is its own
 advice, and nothing rewrites it.** A `schtasks` line, a server command and a JSON document
 come out exactly as built under every invocation — including one they were not built for.
@@ -326,9 +326,9 @@ What the user sees is one command in one set of words wherever it appears — an
 line, a problem code's remedy, `nextActions` in a document — spelled for the invocation that
 printed it, with the remedy carried as data as well: `next` on the problems and documents
 that name one, `nextSteps` in the MCP envelope. Help prose names a command by a token
-(`{clawforge …}`, a flag by `{--flag}`) that only the help renderer fills in, checked against
+(`{clawwright …}`, a flag by `{--flag}`) that only the help renderer fills in, checked against
 the specification by `tools/checks/surfaces/help-prose.check.ts`, so a renamed flag breaks
-the check rather than the help. An application's own `details` — its own `./clawforge`
+the check rather than the help. An application's own `details` — its own `./clawwright`
 included — is no longer rewritten either: what the declaration says is what prints.
 
 ## Structured results for the MCP surface
@@ -349,7 +349,7 @@ check it needed loses the thread.
 
 ## Two rollbacks, kept apart — and a third, for the image
 
-`./clawforge rollback` restores one file: the configuration a run replaced. `./clawforge push` restores the
+`./clawwright rollback` restores one file: the configuration a run replaced. `./clawwright push` restores the
 data directory from a snapshot: configuration, workspaces, agent memory, transcripts — the
 lot. They look adjacent and are not, and the moment someone reaches for the wrong one is the
 moment they have already broken something.
@@ -359,7 +359,7 @@ file aside, it can do so on every run without asking, which means the undo is al
 available. If undoing a bad configuration cost an agent a week of accumulated notes, nobody
 would use it, and the transaction would exist on paper only.
 
-`./clawforge upgrade` adds a third kind, at the image layer rather than the configuration or the
+`./clawwright upgrade` adds a third kind, at the image layer rather than the configuration or the
 data: it records the digest running before the change, and on any failure recreates on that
 exact digest — never the tag, which may have moved again since. Whether the data also needs
 putting back is not asked once, up front; it is answered by what actually failed. A container
@@ -401,7 +401,7 @@ heartbeat write — with only the first one logged, at debug level (`OC_DEBUG=1`
 one after it restates the same fact. A refusal now says which of the two is true — "not
 refreshed for N minutes" or "refreshed N seconds ago — the operation is still running" — and
 only ever suggests `--break-lock` once the holder is actually stale or provably dead; a live,
-recently-refreshed holder is told to wait, or to run `./clawforge operations <id>` to see what
+recently-refreshed holder is told to wait, or to run `./clawwright operations <id>` to see what
 it is doing, never to break its own lock.
 
 The generation check and heartbeat publication run together under the same
@@ -432,7 +432,7 @@ Sharing the name would collapse two permissions into one.
 A lock outlives a run killed by a signal — a closed pipe will do it — because a `finally`
 does not run then. That is what the staleness report and `--break-lock` are for; there is no
 cleanup path that survives `SIGKILL`, and pretending otherwise would be worse than saying so.
-Every pid a lock or guard records is the CLI process's own — wherever `clawforge` itself runs,
+Every pid a lock or guard records is the CLI process's own — wherever `clawwright` itself runs,
 never anything living on a WSL or SSH transport's target — so liveness is always checked
 locally, with the tool's own `process.kill(pid, 0)`, regardless of which transport reaches the
 deployment. When the outer instance lock's holder was recorded on this same machine and its
@@ -451,7 +451,7 @@ remote pid's liveness cannot be probed from here at all, and neither `--break-lo
 guessed PID proves it dead.
 
 **Runbook — taking over a guard orphaned on another machine.** First, actually verify: reach
-the recorded machine (`owner.json`'s `machine` field) and confirm its `clawforge` process is
+the recorded machine (`owner.json`'s `machine` field) and confirm its `clawwright` process is
 gone — a crashed run, not a slow one. Only once that is certain, run any lock-taking command
 with `--break-foreign-lock <hostId>` — every command that accepts `--break-lock` accepts this
 too, plus `secrets --apply`, which never accepts `--break-lock` but still takes this narrower,
@@ -569,7 +569,7 @@ runtime is there is none of its business.
 
 ### `expose`: narrowest scope first
 
-`./clawforge expose` reaches a loopback-bound gateway from outside this host without ever
+`./clawwright expose` reaches a loopback-bound gateway from outside this host without ever
 publishing it: `ssh` prints (and, with `--run`, opens) the SSH tunnel for
 `OC_TARGET_LOCATION=ssh` deployments; `tailscale` prints (and, with `--apply`, applies) a
 tailnet-only `tailscale serve` — `tailscale funnel`, the public-internet sibling, is refused
@@ -589,7 +589,7 @@ map every other module uses.
 
 ### `watch`: liveness only, transitions only, and one place each finding lives
 
-`./clawforge watch check` answers a narrower question than `inspect`/`doctor`: not "does the
+`./clawwright watch check` answers a narrower question than `inspect`/`doctor`: not "does the
 instance match what this repository declares", but "is it doing its job right now". It calls
 the same `gatherInspection()` those two commands do — a second gatherer would eventually
 answer the same question differently, which is exactly the reasoning `gather.ts`'s own header
@@ -622,14 +622,14 @@ place — masking is the second layer, not the only one.
 `watch install`/`watch uninstall` only ever install a crontab entry — never a systemd --user
 timer, which needs `loginctl enable-linger` and a systemd-as-PID-1 assumption neither is
 guaranteed to hold — and only where an unattended cron can be trusted to find this tooling's
-own node and checkout at all: a real SSH host (`./clawforge deploy` already mirrored the checkout
+own node and checkout at all: a real SSH host (`./clawwright deploy` already mirrored the checkout
 there) or a POSIX `local` target (tooling and target are the same machine). A WSL target's
 Docker distro is a container host, not a place this tooling is proven to also run, and Windows
 itself has neither cron nor systemd — for both, the command prints the exact command an
 operator-side scheduler would need to invoke (built from `Transport.clientInvocation()`, the
 same "how would an external client reach this target" question `mcp-setup` already asks it)
 rather than installing something that would silently never fire. Every entry is marked with a
-`# clawforge-watch:<deployment>` comment so a re-run replaces only its own line and `uninstall`
+`# clawwright-watch:<deployment>` comment so a re-run replaces only its own line and `uninstall`
 removes only it, never a sibling deployment's or a foreign entry already in that crontab.
 
 Lives at `tools/framework/commands/operate/watch/`, beside `expose/` for the same reason.
@@ -731,16 +731,16 @@ Checked by grep rather than by eye:
   and every tool is a command (`mcp-mirror.check.ts`, which reads both surfaces from real
   processes rather than from the declarations they come from).
 
-The rest is `./clawforge check` (paths, archives, arguments, delivery contents, secret masking) and
-`./clawforge smoke` against a live instance.
+The rest is `./clawwright check` (paths, archives, arguments, delivery contents, secret masking) and
+`./clawwright smoke` against a live instance.
 
-### What `./clawforge check` covers
+### What `./clawwright check` covers
 
 ```bash
-./clawforge check
+./clawwright check
 ```
 
-A selection — `./clawforge check` runs every `*.check.ts` under `tools/checks/`, and there are
+A selection — `./clawwright check` runs every `*.check.ts` under `tools/checks/`, and there are
 more of them than fit here:
 
 | File | What it covers |
@@ -776,9 +776,9 @@ more of them than fit here:
 | `runtime/service/state/backup/list.check.ts` | `backup list` text and `--json` both report archives and replaced copies with size/date, mark the default restore pick, and an empty backup/data directory reports "none found" rather than erroring |
 | `runtime/service/state/backup/prune-replaced.check.ts` | `backup prune-replaced` previews without `--apply`; deletes only with it; deletes only exact `<dataDir>.replaced-<stamp>` siblings, refusing a symlink, a path outside the data directory's parent, or the data directory itself; `--keep <n>` retains the newest `n`; the delete path takes the instance lock and honours `--break-lock`/`--break-foreign-lock` |
 | `runtime/connection-facts/upgrade.check.ts` | the target tag is resolved to a digest and pulled by digest, never the tag itself; the running digest is recorded before anything changes; a healthy upgrade takes a pre-upgrade backup, recreates on the target digest, and passes `openclaw doctor --lint`; a generic health failure recreates back on the previous digest without touching data; a container exit during migrations (code 78) additionally restores the pre-upgrade backup; a blocking `doctor --lint` finding rolls back the same way a health failure does; `--dry-run` resolves the digest to report the plan but changes nothing; and an instance already on the resolved digest is a no-op |
-| `runtime/connection-facts/bootstrap-image-pin.check.ts` | a fresh pull is pinned to the digest it just proved — `.env` rewritten, the moving tag gone, the pull itself proven to run before the digest is read; `--no-pull` asks for no digest to pin and leaves `.env` byte-identical; a deployment already pinned to a digest is never asked to re-resolve and never rewritten — `./clawforge upgrade` is the only way to move it from there; and a digest the runtime cannot resolve locally leaves the tag alone rather than guessing |
+| `runtime/connection-facts/bootstrap-image-pin.check.ts` | a fresh pull is pinned to the digest it just proved — `.env` rewritten, the moving tag gone, the pull itself proven to run before the digest is read; `--no-pull` asks for no digest to pin and leaves `.env` byte-identical; a deployment already pinned to a digest is never asked to re-resolve and never rewritten — `./clawwright upgrade` is the only way to move it from there; and a digest the runtime cannot resolve locally leaves the tag alone rather than guessing |
 | `provision-agent.check.ts` | path and argv builders, `collectRecipeFiles` excluding `agent/`, the create-vs-skip decisions, and cron reconciliation against the declaration |
-| `mcp-mirror.check.ts` | the promise itself: every command `./clawforge help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
+| `mcp-mirror.check.ts` | the promise itself: every command `./clawwright help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
 | `gate-commands.check.ts` | the gate's own commands: dispatch, `--help` from the declaration, and the same schema/argv derivation the deployment's commands get |
 | `logs-bounded.check.ts` | `logs` and `recipe logs` follow on a terminal and read a bounded tail under a sink, with `--tail` parsed rather than passed on; `--since` accepting a duration or an RFC3339/ISO date-time and refusing anything else; `--grep` compiling to a `RegExp` or refusing an invalid pattern, filtering the bounded read, and filtering a followed stream line by line under a sink |
 | `deployment-list.check.ts` | `listDeployments()` against a scratch `apps/` and a stubbed context: the four configuration fields plus `pinned` read straight from `.env`; a missing `.env`, a broken `app.ts` and a failing `isRunning()` each produce their own row and reason rather than failing the whole call; `NotBootstrapped` maps to its own state; `--no-status` never builds a context at all; and the active deployment global is restored to what it was before `list` ran |
@@ -792,7 +792,7 @@ more of them than fit here:
 | `lock.check.ts` | what the lock notices: an image that moved behind an unchanged tag, a framework bump, an edited recipe, a newly required secret — and that all of it is a warning |
 | `plan.check.ts` | the order, as rules: secrets before anything that needs the instance, configuration before the restart that reads it, start instead of start-then-restart, recipes after the gateway is up |
 | `runtime/convergence/plan.check.ts` | the recovery half of the order: recover-env before the two dumps, the dumps before the steps that write to the target, the declaration dump executable only while the declaration is absent, and the store dump advisory because the refusal is the safeguard |
-| `runtime/convergence/apply/*.check.ts` | stopping at the first failure, reporting what did not run as advisory or blocked, and never performing an advisory step; a runner asserted for every executable id the planner can emit; the recovery step reaching done and every step landing in the journal under one operation id that `./clawforge operations <id>` reads back; a dump's `--force` refusal failing the step with the file untouched; and `--dry-run` emitting the plan and writing nothing |
+| `runtime/convergence/apply/*.check.ts` | stopping at the first failure, reporting what did not run as advisory or blocked, and never performing an advisory step; a runner asserted for every executable id the planner can emit; the recovery step reaching done and every step landing in the journal under one operation id that `./clawwright operations <id>` reads back; a dump's `--force` refusal failing the step with the file untouched; and `--dry-run` emitting the plan and writing nothing |
 | `operations.check.ts` | the journal is on disk before the next step starts, an unfinished run keeps every step it managed and gains no invented outcome, and a target that cannot be written to does not fail the run it is recording |
 | `rollback.check.ts` | choosing what to undo: the newest run that took a snapshot, never one that took none, and every refusal saying where to look instead |
 | `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration; flag combinations that mean nothing together are refused before the first read or write — `--dry-run` with `--dump` in both argv orders, `--break-lock`/`--break-foreign-lock` with either a dump or a dry run, `--force` without `--dump` — each refusal leaving the existing declaration byte-identical, with a plain `--dump --force` as the working control |

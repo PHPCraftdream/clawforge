@@ -41,7 +41,7 @@ try {
 
   const writes: Record<string, string> = {};
   const ctx = {
-    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", env: {} },
     transport: {
       description: "stub",
       async exists(): Promise<boolean> {
@@ -80,7 +80,7 @@ try {
 
   checkTrue("a live-config read error aborts secrets --apply instead of reporting success", thrown !== "");
   checkTrue("the error names the actual cause", thrown.includes("could not be read"));
-  check("config/.env is never written on the target", writes["/srv/clawforge/data/config/.env"], undefined);
+  check("config/.env is never written on the target", writes["/srv/clawwright/data/config/.env"], undefined);
 
   // The same hazard one layer up: the EXISTENCE check itself failing. A transport that
   // cannot reach the target now throws from exists() rather than answering "absent"
@@ -88,7 +88,7 @@ try {
   // the empty base comes back and takes config/.env's other keys with it.
   const checkFailureWrites: Record<string, string> = {};
   const checkFailureCtx = {
-    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", env: {} },
     transport: {
       description: "stub",
       async exists(path: string): Promise<boolean> {
@@ -126,7 +126,7 @@ try {
   }
 
   checkTrue("a failed existence check aborts secrets --apply too", checkFailure.includes("could not check whether"));
-  check("and config/.env is left alone", checkFailureWrites["/srv/clawforge/data/config/.env"], undefined);
+  check("and config/.env is left alone", checkFailureWrites["/srv/clawwright/data/config/.env"], undefined);
 } finally {
   await teardownDeployment(deployDir);
 }
@@ -136,7 +136,7 @@ deployDir = await setupDeployment("declaration");
 try {
   const storeName = "declaration-store";
   await writeFile(resolve(deployDir, "secrets", `${storeName}.env`), "ZAI_API_KEY=zai-value\n", "utf8");
-  const targetEnv = "/srv/clawforge/data/config/.env";
+  const targetEnv = "/srv/clawwright/data/config/.env";
 
   for (const scenario of [
     ["invalid JSON", "{"],
@@ -147,7 +147,7 @@ try {
     await writeFile(resolve(deployDir, "config", "desired-state.json"), scenario[1], "utf8");
     const writes: Record<string, string> = {};
     const ctx = {
-      settings: { dataDir: "/srv/clawforge/data", env: {} },
+      settings: { dataDir: "/srv/clawwright/data", env: {} },
       transport: {
         description: "stub",
         async exists(path: string): Promise<boolean> { return !path.endsWith("openclaw.json"); },
@@ -176,7 +176,7 @@ try {
   await mkdir(resolve(deployDir, "config", "desired-state.json"));
   const writes: Record<string, string> = {};
   const ctx = {
-    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", env: {} },
     transport: {
       description: "stub",
       async exists(path: string): Promise<boolean> { return !path.endsWith("openclaw.json"); },

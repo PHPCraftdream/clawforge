@@ -44,7 +44,7 @@ export interface PlanAction {
   readonly command?: string;
   /** Which findings this step resolves — why it is in the list at all. */
   readonly because: ProblemCode[];
-  /** True when `clawforge apply` cannot or must not perform it. */
+  /** True when `clawwright apply` cannot or must not perform it. */
   readonly advisory?: boolean;
 }
 
@@ -77,7 +77,7 @@ function recipeWork(inspection: Inspection): Map<string, ProblemCode[]> {
     if (!recipeCodes.includes(entry.code)) continue;
     // The remedy carries the recipe name as its argv: ["provision-agent", "<recipe>"] —
     // read from the advice's data, never re-parsed out of the human sentence.
-    const recipe = entry.next.kind === "clawforge" && entry.next.argv[0] === "provision-agent" && entry.next.argv.length === 2
+    const recipe = entry.next.kind === "clawwright" && entry.next.argv[0] === "provision-agent" && entry.next.argv.length === 2
       ? entry.next.argv[1]
       : undefined;
     if (recipe === undefined) continue;
@@ -91,7 +91,7 @@ function recipeWork(inspection: Inspection): Map<string, ProblemCode[]> {
 /** SET_OBJECT_ORPHANED's remedy is set forget's argv — ["set", "forget", "--kind", <kind>,
  *  "--name", <name>] — same convention as recipeWork's, kind/name taken from there. */
 function forgottenObject(entry: Problem): { kind: string; name: string } | undefined {
-  const argv = entry.next.kind === "clawforge" ? entry.next.argv : [];
+  const argv = entry.next.kind === "clawwright" ? entry.next.argv : [];
   return argv.length === 6 && argv[0] === "set" && argv[1] === "forget" && argv[2] === "--kind" && argv[4] === "--name"
     ? { kind: argv[3], name: argv[5] }
     : undefined;

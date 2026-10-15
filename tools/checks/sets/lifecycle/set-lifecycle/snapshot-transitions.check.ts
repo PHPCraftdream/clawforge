@@ -92,7 +92,7 @@ try {
     // after. Scoped to this one apply call only — rollback --previous-set below uses the plain,
     // unfaulted ctx.
     const isOperationRecord = (path: string): boolean =>
-      /\/clawforge-operations\/[^/]+\.json$/.test(path) && !path.endsWith(".openclaw.json");
+      /\/clawwright-operations\/[^/]+\.json$/.test(path) && !path.endsWith(".openclaw.json");
     let faulted = false;
     const faultyCtx = {
       ...ctx,

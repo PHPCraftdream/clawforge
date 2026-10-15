@@ -124,7 +124,7 @@ export async function transferStorage(io: StackIO, p: MigrationPrepared, storage
   const existing = volumeNames((await io.run(["volume", "ls", "--format", "{{.Name}}"])).stdout);
   if (existing.includes(storage.target)) throw new Error("recipe migration fresh destination collided");
   await io.run(["volume", "create", "--driver", "local", "--label", `com.docker.compose.project=${io.project}`,
-    "--label", `io.clawforge.recipe.migration=${p.plan.token}`,
+    "--label", `io.clawwright.recipe.migration=${p.plan.token}`,
     "--label", `com.docker.compose.volume=${storage.target.slice(io.project.length + 1)}`, storage.target]);
   await verifyTargetVolume(io, p, storage);
   await verifyWriters(io, p.storage, p.containers.map((c) => c.id));
@@ -137,7 +137,7 @@ export async function verifyTargetVolume(io: StackIO, p: MigrationPrepared, stor
   const v = object(values[0]);
   const labels = object(v["Labels"]);
   if (v["Name"] !== storage.target || v["Driver"] !== "local" || Object.keys(object(v["Options"] ?? {})).length
-    || labels["io.clawforge.recipe.migration"] !== p.plan.token || labels["com.docker.compose.project"] !== io.project
+    || labels["io.clawwright.recipe.migration"] !== p.plan.token || labels["com.docker.compose.project"] !== io.project
     || labels["com.docker.compose.volume"] !== storage.target.slice(io.project.length + 1))
     throw new Error("recipe migration target volume transaction ownership unproven");
 }

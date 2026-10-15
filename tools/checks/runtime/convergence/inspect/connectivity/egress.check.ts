@@ -1,4 +1,4 @@
-// `./clawforge inspect` — the outbound half of reachability: the probe runs INSIDE the
+// `./clawwright inspect` — the outbound half of reachability: the probe runs INSIDE the
 // gateway container, because Runtime.probe() curls from the operator machine and cannot
 // see a name that resolves there and nowhere else — the 2026-09-20 outage, invisible to
 // every probe for a day. It asks only the endpoints the live configuration names, in one
@@ -73,7 +73,7 @@ function egressContext(
 
 const contextFixture = await setupFixtureDeployment();
 const { goodChecksums, stubContext } = contextFixture;
-const deployment = await mkdtemp(resolve(tmpdir(), "clawforge-egress-check-"));
+const deployment = await mkdtemp(resolve(tmpdir(), "clawwright-egress-check-"));
 let deploymentFixture: Awaited<ReturnType<typeof createDeploymentFixture>>;
 try {
   deploymentFixture = await createDeploymentFixture({ root: deployment });
@@ -172,7 +172,7 @@ const BOTH_OK = [
       const mapped = await inspect();
       const failures = mapped.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE");
       const mappedNext = failures[1]?.next;
-      check("declared path selects recipe diagnostic", mappedNext?.kind === "clawforge" ? mappedNext.argv : undefined, ["recipe", "inspect", "declared-proxy", "--json"]);
+      check("declared path selects recipe diagnostic", mappedNext?.kind === "clawwright" ? mappedNext.argv : undefined, ["recipe", "inspect", "declared-proxy", "--json"]);
       check("mapped failure identifies exact declared service", failures[1]?.detail.includes("declared-proxy") && failures[1]?.detail.includes("http-bridge"), true);
       check("unowned provider does not inherit proxy ownership", failures[0]?.next, PROBLEM_CODES.EGRESS_UNREACHABLE.next);
       check("mapping preserves actual probe results", mapped.observed.egress?.map((entry) => entry.state), ["dns", "unreachable"]);

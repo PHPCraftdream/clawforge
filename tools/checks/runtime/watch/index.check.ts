@@ -1,4 +1,4 @@
-// `./clawforge watch` — the dispatcher (unknown/missing action, routing to the right
+// `./clawwright watch` — the dispatcher (unknown/missing action, routing to the right
 // sub-handler), the effect the declaration carries (only install/uninstall --apply mutate),
 // and the AppCommand wiring: the derived arguments are well formed, and the MCP schema/argv
 // round trip matches every other command's contract.
@@ -54,7 +54,7 @@ function recordingTransport(): { transport: Transport; contacts: string[] } {
   return { transport, contacts };
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-watch-index-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-watch-index-check-"));
 useDeployment(root);
 
 try {

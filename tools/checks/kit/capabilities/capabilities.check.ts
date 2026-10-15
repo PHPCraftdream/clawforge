@@ -101,7 +101,7 @@ check("hasPosixModes() agrees with a manual chmod/stat round trip here", await h
 
 function directModeRoundTrip(): Promise<boolean> {
   return (async () => {
-    const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-modes-direct-"));
+    const dir = await mkdtemp(join(tmpdir(), "clawwright-cap-modes-direct-"));
     try {
       const file = join(dir, "probe");
       await writeFile(file, "");
@@ -116,7 +116,7 @@ function directModeRoundTrip(): Promise<boolean> {
 }
 
 async function directSymlinkRoundTrip(): Promise<boolean> {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-cap-symlink-direct-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-cap-symlink-direct-"));
   try {
     symlinkSync("target", join(dir, "probe"), "file");
     return readlinkSync(join(dir, "probe")) === "target";

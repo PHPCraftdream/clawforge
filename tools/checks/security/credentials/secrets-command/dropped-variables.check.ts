@@ -26,10 +26,10 @@ try {
   const storeName = "dropped-store";
   await writeFile(resolve(deployDir, "secrets", `${storeName}.env`), "ZAI_API_KEY=zai-value\n", "utf8");
 
-  const targetEnv = "/srv/clawforge/data/config/.env";
+  const targetEnv = "/srv/clawwright/data/config/.env";
   const writes: Record<string, string> = {};
   const ctx = {
-    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", env: {} },
     runtime: {
       async isRunning(): Promise<boolean> {
         return false;

@@ -8,7 +8,7 @@ import { readName } from "#framework/core/values/names.ts";
 import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-recipe-lint-")));
+const root = await realpath(await mkdtemp(join(tmpdir(), "clawwright-recipe-lint-")));
 const fixture = await createDeploymentFixture({ root });
 const directory = join(root, "recipes", "local");
 const name = readName("recipe", "local");

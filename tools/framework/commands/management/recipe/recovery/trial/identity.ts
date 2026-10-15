@@ -26,9 +26,9 @@ export function trialIdentity(ctx: Context, name: string): TrialIdentity {
     .digest("hex")
     .slice(0, 12);
   const random = randomBytes(4).toString("hex");
-  const project = `clawforge-recipe-trial-${hash}-${random}`;
+  const project = `clawwright-recipe-trial-${hash}-${random}`;
   if (!COMPOSE_PROJECT_PATTERN.test(project)) die(`derived trial compose project "${project}" is not a valid project name`);
-  return { project, home: `${locksDir(ctx.settings.dataDir)}/.clawforge-recipe-trial-${hash}-${random}`, hash, random };
+  return { project, home: `${locksDir(ctx.settings.dataDir)}/.clawwright-recipe-trial-${hash}-${random}`, hash, random };
 }
 
 /** Docker image-name grammar, lowercased: path segments of [a-z0-9] with . _ - inner
@@ -37,7 +37,7 @@ export function trialIdentity(ctx: Context, name: string): TrialIdentity {
 const IMAGE_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\/[a-z0-9][a-z0-9._-]*[a-z0-9])*(?::[a-zA-Z0-9_.-]+)?$/;
 
 export function buildTagOf(identity: TrialIdentity, service: string): string {
-  const tag = `clawforge-recipe-trial-build-${identity.hash}-${identity.random}--${service.toLowerCase()}`;
+  const tag = `clawwright-recipe-trial-build-${identity.hash}-${identity.random}--${service.toLowerCase()}`;
   if (!IMAGE_NAME_PATTERN.test(tag)) die(`recipe trial refuses ${service}.build: the derived trial image tag "${tag}" is not a valid image name`);
   return tag;
 }

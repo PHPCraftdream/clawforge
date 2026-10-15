@@ -16,7 +16,7 @@ await runTransportScenarios("wsl", () => new WslTransport(distro), {
   // a missing command fails wsl.exe's own execve(), which it reports as exit 1, not the
   // POSIX-shell 127 a `sh -c` invocation would give.
   nonexistentCommandExitCode: 1,
-  makeUnreachableTransport: () => new WslTransport("clawforge-check-definitely-missing-distro"),
+  makeUnreachableTransport: () => new WslTransport("clawwright-check-definitely-missing-distro"),
 });
 
 finish("transport contract: wsl");

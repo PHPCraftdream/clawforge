@@ -14,7 +14,7 @@ import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 import { ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-copy-exec");
+const root = await useRecipesRoot("clawwright-recipe-trial-copy-exec");
 try {
   await root.write("subject", {
     description: "Copy semantics probe",
@@ -32,7 +32,7 @@ try {
   check("the product copies exactly the top-level entries, nested dropped", copy.slice(5), ["state", "certs"]);
 
   await requires("posix-host", "the generated copy script executes against a real tree", async () => {
-    const base = await mkdtemp(join(tmpdir(), "clawforge-recipe-trial-copyexec-"));
+    const base = await mkdtemp(join(tmpdir(), "clawwright-recipe-trial-copyexec-"));
     try {
       const dataDir = join(base, "data");
       await mkdir(join(dataDir, "state", "db"), { recursive: true });

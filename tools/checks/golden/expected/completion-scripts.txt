@@ -1,203 +1,203 @@
-=== ./clawforge completion bash ===
-# clawforge bash completion — generated from the command declarations.
-# Install: eval "$(./clawforge completion bash)"
-_clawforge_lookup() {
+=== ./clawwright completion bash ===
+# clawwright bash completion — generated from the command declarations.
+# Install: eval "$(./clawwright completion bash)"
+_clawwright_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
-    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
-    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
-    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "first verify") _clawforge_reply="--help --json --profile" ;;
-    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "first smoke") _clawforge_reply="--help --json --quick" ;;
-    "first inspect") _clawforge_reply="--help --json" ;;
-    "first doctor") _clawforge_reply="--help --json" ;;
-    "first plan") _clawforge_reply="--help --json --set" ;;
-    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
-    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
-    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
-    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
-    "first status") _clawforge_reply="--help --json" ;;
-    "first lock") _clawforge_reply="--check --help --json" ;;
-    "first cli") _clawforge_reply="--help" ;;
-    "first exec") _clawforge_reply="--help" ;;
-    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
-    "first cli-start") _clawforge_reply="--help" ;;
-    "first cli-stop") _clawforge_reply="--help" ;;
-    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
-    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "first mcp-serve") _clawforge_reply="--help" ;;
-    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
-    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
-    "first check") _clawforge_reply="--base --help --jobs --list --related --require --timings --top" ;;
-    "first new-app") _clawforge_reply="--help" ;;
-    "first remove-app") _clawforge_reply="--help --yes" ;;
-    "first list") _clawforge_reply="--help --json --no-status" ;;
-    "first version") _clawforge_reply="--help --json --verbose" ;;
-    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
-    "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
-    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
-    "after backup list") _clawforge_reply="--help --json" ;;
-    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
-    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "after verify *") _clawforge_reply="--help --json --profile" ;;
-    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "after smoke *") _clawforge_reply="--help --json --quick" ;;
-    "after inspect *") _clawforge_reply="--help --json" ;;
-    "after doctor *") _clawforge_reply="--help --json" ;;
-    "after plan *") _clawforge_reply="--help --json --set" ;;
-    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
-    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
-    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after expose status") _clawforge_reply="--help --json" ;;
-    "after expose *") _clawforge_reply="--help" ;;
-    "after watch check") _clawforge_reply="--help --json" ;;
-    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after watch status") _clawforge_reply="--help --json" ;;
-    "after watch test") _clawforge_reply="--help --json" ;;
-    "after watch *") _clawforge_reply="--help" ;;
-    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
-    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
-    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory *") _clawforge_reply="--help --json" ;;
-    "after status *") _clawforge_reply="--help --json" ;;
-    "after lock *") _clawforge_reply="--check --help --json" ;;
-    "after cli *") _clawforge_reply="--help" ;;
-    "after exec *") _clawforge_reply="--help" ;;
-    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
-    "after cli-start *") _clawforge_reply="--help" ;;
-    "after cli-stop *") _clawforge_reply="--help" ;;
-    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "after recipe list") _clawforge_reply="--help --json" ;;
-    "after recipe import") _clawforge_reply="--help" ;;
-    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
-    "after recipe check") _clawforge_reply="--dry-run --help" ;;
-    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
-    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
-    "after recipe trial") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
-    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
-    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
-    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
-    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
-    "after recipe retire-legacy") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
-    "after recipe status") _clawforge_reply="--help" ;;
-    "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe pin") _clawforge_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
-    "after recipe run") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
-    "after recipe *") _clawforge_reply="--help --json" ;;
-    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "after mcp-serve *") _clawforge_reply="--help" ;;
-    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
-    "after set build") _clawforge_reply="--help --json --name" ;;
-    "after set validate") _clawforge_reply="--help --json --name --set" ;;
-    "after set diff") _clawforge_reply="--from --help --json --to" ;;
-    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
-    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
-    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
-    "after set *") _clawforge_reply="--help" ;;
-    "after check *") _clawforge_reply="--base --help --jobs --list --related --require --timings --top" ;;
-    "after new-app *") _clawforge_reply="--help" ;;
-    "after remove-app *") _clawforge_reply="--help --yes" ;;
-    "after list *") _clawforge_reply="--help --json --no-status" ;;
-    "after version *") _clawforge_reply="--help --json --verbose" ;;
-    "after completion *") _clawforge_reply="--help" ;;
-    "after control-mcp *") _clawforge_reply="--help" ;;
-    "after help *") _clawforge_reply="--help" ;;
-    "verbatim cli") _clawforge_reply="0" ;;
-    "verbatim exec") _clawforge_reply="0" ;;
-    "verbatim host") _clawforge_reply="1" ;;
-    "verbatimFlags cli") _clawforge_reply="" ;;
-    "verbatimFlags exec") _clawforge_reply="" ;;
-    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
-    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
-    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
-    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
-    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
-    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions verify") _clawforge_reply="--profile" ;;
-    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
-    "valueOptions plan") _clawforge_reply="--set" ;;
-    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
-    "valueOptions accept") _clawforge_reply="--set" ;;
-    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
-    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
-    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
-    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
-    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
-    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
-    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
-    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions deploy") _clawforge_reply="--path" ;;
-    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
-    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
-    "valueOptions check") _clawforge_reply="--jobs --require --top --base" ;;
-    "values backup--profile") _clawforge_reply="full migrate share" ;;
-    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
-    "values pull--profile") _clawforge_reply="full migrate share" ;;
-    "values verify--profile") _clawforge_reply="full migrate share" ;;
-    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryplan--backend") _clawforge_reply="builtin" ;;
-    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
-    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
-    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+      "top") _clawwright_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
+    "first bootstrap") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawwright_reply="--grep --help --since --tail" ;;
+    "first backup") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawwright_reply="--help --json --profile" ;;
+    "first upgrade") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawwright_reply="--help --json --quick" ;;
+    "first inspect") _clawwright_reply="--help --json" ;;
+    "first doctor") _clawwright_reply="--help --json" ;;
+    "first plan") _clawwright_reply="--help --json --set" ;;
+    "first apply") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawwright_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "first apply-config") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawwright_reply="--help ssh status tailscale" ;;
+    "first watch") _clawwright_reply="--help check install status test uninstall" ;;
+    "first incident") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawwright_reply="--help --json configure index plan setup status verify" ;;
+    "first status") _clawwright_reply="--help --json" ;;
+    "first lock") _clawwright_reply="--check --help --json" ;;
+    "first cli") _clawwright_reply="--help" ;;
+    "first exec") _clawwright_reply="--help" ;;
+    "first host") _clawwright_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawwright_reply="--help" ;;
+    "first cli-stop") _clawwright_reply="--help" ;;
+    "first configure-provider") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawwright_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
+    "first provision-agent") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawwright_reply="--help" ;;
+    "first mcp-setup") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawwright_reply="--help --json --token" ;;
+    "first set") _clawwright_reply="--help build diff forget receipts try validate" ;;
+    "first check") _clawwright_reply="--base --help --jobs --list --related --require --timings --top" ;;
+    "first new-app") _clawwright_reply="--help" ;;
+    "first remove-app") _clawwright_reply="--help --yes" ;;
+    "first list") _clawwright_reply="--help --json --no-status" ;;
+    "first version") _clawwright_reply="--help --json --verbose" ;;
+    "first completion") _clawwright_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawwright_reply="--help" ;;
+    "first help") _clawwright_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawwright_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawwright_reply="--help --json" ;;
+    "after backup prune-replaced") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawwright_reply="--help --json --profile" ;;
+    "after upgrade *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawwright_reply="--help --json --quick" ;;
+    "after inspect *") _clawwright_reply="--help --json" ;;
+    "after doctor *") _clawwright_reply="--help --json" ;;
+    "after plan *") _clawwright_reply="--help --json --set" ;;
+    "after apply *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawwright_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "after apply-config *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawwright_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawwright_reply="--help --json" ;;
+    "after expose *") _clawwright_reply="--help" ;;
+    "after watch check") _clawwright_reply="--help --json" ;;
+    "after watch install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawwright_reply="--help --json" ;;
+    "after watch test") _clawwright_reply="--help --json" ;;
+    "after watch *") _clawwright_reply="--help" ;;
+    "after incident *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawwright_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawwright_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawwright_reply="--help --json" ;;
+    "after status *") _clawwright_reply="--help --json" ;;
+    "after lock *") _clawwright_reply="--check --help --json" ;;
+    "after cli *") _clawwright_reply="--help" ;;
+    "after exec *") _clawwright_reply="--help" ;;
+    "after host *") _clawwright_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawwright_reply="--help" ;;
+    "after cli-stop *") _clawwright_reply="--help" ;;
+    "after configure-provider *") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawwright_reply="--help --json" ;;
+    "after recipe import") _clawwright_reply="--help" ;;
+    "after recipe new") _clawwright_reply="--help --with-hooks" ;;
+    "after recipe check") _clawwright_reply="--dry-run --help" ;;
+    "after recipe verify") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawwright_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe trial") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
+    "after recipe remove") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawwright_reply="--help --json --tail" ;;
+    "after recipe recover") _clawwright_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
+    "after recipe retire-legacy") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
+    "after recipe status") _clawwright_reply="--help" ;;
+    "after recipe logs") _clawwright_reply="--help --tail" ;;
+    "after recipe pin") _clawwright_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
+    "after recipe run") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
+    "after recipe *") _clawwright_reply="--help --json" ;;
+    "after provision-agent *") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawwright_reply="--help" ;;
+    "after mcp-setup *") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawwright_reply="--help --json --token" ;;
+    "after set build") _clawwright_reply="--help --json --name" ;;
+    "after set validate") _clawwright_reply="--help --json --name --set" ;;
+    "after set diff") _clawwright_reply="--from --help --json --to" ;;
+    "after set receipts") _clawwright_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawwright_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawwright_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawwright_reply="--help" ;;
+    "after check *") _clawwright_reply="--base --help --jobs --list --related --require --timings --top" ;;
+    "after new-app *") _clawwright_reply="--help" ;;
+    "after remove-app *") _clawwright_reply="--help --yes" ;;
+    "after list *") _clawwright_reply="--help --json --no-status" ;;
+    "after version *") _clawwright_reply="--help --json --verbose" ;;
+    "after completion *") _clawwright_reply="--help" ;;
+    "after control-mcp *") _clawwright_reply="--help" ;;
+    "after help *") _clawwright_reply="--help" ;;
+    "verbatim cli") _clawwright_reply="0" ;;
+    "verbatim exec") _clawwright_reply="0" ;;
+    "verbatim host") _clawwright_reply="1" ;;
+    "verbatimFlags cli") _clawwright_reply="" ;;
+    "verbatimFlags exec") _clawwright_reply="" ;;
+    "verbatimFlags host") _clawwright_reply="--root --confirm-root" ;;
+    "valueOptions bootstrap") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawwright_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawwright_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawwright_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawwright_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawwright_reply="--profile" ;;
+    "valueOptions upgrade") _clawwright_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawwright_reply="--set" ;;
+    "valueOptions apply") _clawwright_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawwright_reply="--set" ;;
+    "valueOptions rollback") _clawwright_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawwright_reply="--limit --break-foreign-lock" ;;
+    "valueOptions apply-config") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawwright_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawwright_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawwright_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawwright_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
+    "valueOptions configure-provider") _clawwright_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawwright_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawwright_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
+    "valueOptions provision-agent") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawwright_reply="--path" ;;
+    "valueOptions mcp-setup") _clawwright_reply="--client" ;;
+    "valueOptions set") _clawwright_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "valueOptions check") _clawwright_reply="--jobs --require --top --base" ;;
+    "values backup--profile") _clawwright_reply="full migrate share" ;;
+    "values backupcreate--profile") _clawwright_reply="full migrate share" ;;
+    "values pull--profile") _clawwright_reply="full migrate share" ;;
+    "values verify--profile") _clawwright_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawwright_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawwright_reply="builtin" ;;
+    "values mcp-setup--client") _clawwright_reply="claude codex both" ;;
+    "values setforget--kind") _clawwright_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
 }
 
-_clawforge_complete() {
+_clawwright_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
@@ -216,13 +216,13 @@ _clawforge_complete() {
     COMPREPLY=( $(compgen -W "$("${COMP_WORDS[0]}" list --json --no-status 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | grep -v '^[.]')" -- "$cur") )
     return
   fi
-    if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawwright_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  if _clawwright_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
@@ -231,9 +231,9 @@ _clawforge_complete() {
   # pass-through command's literal tail starts at its first undeclared dash word or its first
   # word past the declared positionals. Missing arms answer empty.
   local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
-  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  if _clawwright_lookup "valueOptions $cmd"; then opts="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatim $cmd"; then isverb=1; verb="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatimFlags $cmd"; then flags="$_clawwright_reply"; fi
   for token in "${between[@]}"; do
     if (( swallow )); then swallow=0; continue; fi
     if [[ "$token" == "--" ]]; then ended=1; break; fi
@@ -250,228 +250,228 @@ _clawforge_complete() {
   if (( ended || tail )); then COMPREPLY=(); return; fi
   # The first word names the action; an option still waiting for its value completes that
   # value (keyed command + action + option), or nothing when it has no choices.
-  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if [[ "${between[0]}" != -* ]] && _clawwright_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
   if (( swallow )); then
-    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawwright_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if _clawforge_lookup "after $cmd ${between[0]}"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
-  elif _clawforge_lookup "after $cmd *"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  if _clawwright_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
+  elif _clawwright_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
 }
-complete -F _clawforge_complete clawforge
-complete -F _clawforge_complete ./clawforge
+complete -F _clawwright_complete clawwright
+complete -F _clawwright_complete ./clawwright
 
-=== ./clawforge completion zsh ===
-#compdef clawforge ./clawforge
-# clawforge zsh completion — generated from the live command declarations, via bash's
+=== ./clawwright completion zsh ===
+#compdef clawwright ./clawwright
+# clawwright zsh completion — generated from the live command declarations, via bash's
 # completion protocol (bashcompinit), so this cannot drift from the bash script's own
-# grammar. Install: ./clawforge completion zsh > "${fpath[1]}/_clawforge" (new shell), or
-# source <(./clawforge completion zsh) in the current one.
+# grammar. Install: ./clawwright completion zsh > "${fpath[1]}/_clawwright" (new shell), or
+# source <(./clawwright completion zsh) in the current one.
 autoload -Uz bashcompinit
 bashcompinit
-_clawforge_lookup() {
+_clawwright_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
-    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
-    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
-    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "first verify") _clawforge_reply="--help --json --profile" ;;
-    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "first smoke") _clawforge_reply="--help --json --quick" ;;
-    "first inspect") _clawforge_reply="--help --json" ;;
-    "first doctor") _clawforge_reply="--help --json" ;;
-    "first plan") _clawforge_reply="--help --json --set" ;;
-    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
-    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
-    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
-    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
-    "first status") _clawforge_reply="--help --json" ;;
-    "first lock") _clawforge_reply="--check --help --json" ;;
-    "first cli") _clawforge_reply="--help" ;;
-    "first exec") _clawforge_reply="--help" ;;
-    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
-    "first cli-start") _clawforge_reply="--help" ;;
-    "first cli-stop") _clawforge_reply="--help" ;;
-    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
-    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "first mcp-serve") _clawforge_reply="--help" ;;
-    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
-    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
-    "first check") _clawforge_reply="--base --help --jobs --list --related --require --timings --top" ;;
-    "first new-app") _clawforge_reply="--help" ;;
-    "first remove-app") _clawforge_reply="--help --yes" ;;
-    "first list") _clawforge_reply="--help --json --no-status" ;;
-    "first version") _clawforge_reply="--help --json --verbose" ;;
-    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
-    "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
-    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
-    "after backup list") _clawforge_reply="--help --json" ;;
-    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
-    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "after verify *") _clawforge_reply="--help --json --profile" ;;
-    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "after smoke *") _clawforge_reply="--help --json --quick" ;;
-    "after inspect *") _clawforge_reply="--help --json" ;;
-    "after doctor *") _clawforge_reply="--help --json" ;;
-    "after plan *") _clawforge_reply="--help --json --set" ;;
-    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
-    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
-    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after expose status") _clawforge_reply="--help --json" ;;
-    "after expose *") _clawforge_reply="--help" ;;
-    "after watch check") _clawforge_reply="--help --json" ;;
-    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after watch status") _clawforge_reply="--help --json" ;;
-    "after watch test") _clawforge_reply="--help --json" ;;
-    "after watch *") _clawforge_reply="--help" ;;
-    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
-    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
-    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory *") _clawforge_reply="--help --json" ;;
-    "after status *") _clawforge_reply="--help --json" ;;
-    "after lock *") _clawforge_reply="--check --help --json" ;;
-    "after cli *") _clawforge_reply="--help" ;;
-    "after exec *") _clawforge_reply="--help" ;;
-    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
-    "after cli-start *") _clawforge_reply="--help" ;;
-    "after cli-stop *") _clawforge_reply="--help" ;;
-    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "after recipe list") _clawforge_reply="--help --json" ;;
-    "after recipe import") _clawforge_reply="--help" ;;
-    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
-    "after recipe check") _clawforge_reply="--dry-run --help" ;;
-    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
-    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
-    "after recipe trial") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
-    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
-    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
-    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
-    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
-    "after recipe retire-legacy") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
-    "after recipe status") _clawforge_reply="--help" ;;
-    "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe pin") _clawforge_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
-    "after recipe run") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
-    "after recipe *") _clawforge_reply="--help --json" ;;
-    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "after mcp-serve *") _clawforge_reply="--help" ;;
-    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
-    "after set build") _clawforge_reply="--help --json --name" ;;
-    "after set validate") _clawforge_reply="--help --json --name --set" ;;
-    "after set diff") _clawforge_reply="--from --help --json --to" ;;
-    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
-    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
-    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
-    "after set *") _clawforge_reply="--help" ;;
-    "after check *") _clawforge_reply="--base --help --jobs --list --related --require --timings --top" ;;
-    "after new-app *") _clawforge_reply="--help" ;;
-    "after remove-app *") _clawforge_reply="--help --yes" ;;
-    "after list *") _clawforge_reply="--help --json --no-status" ;;
-    "after version *") _clawforge_reply="--help --json --verbose" ;;
-    "after completion *") _clawforge_reply="--help" ;;
-    "after control-mcp *") _clawforge_reply="--help" ;;
-    "after help *") _clawforge_reply="--help" ;;
-    "verbatim cli") _clawforge_reply="0" ;;
-    "verbatim exec") _clawforge_reply="0" ;;
-    "verbatim host") _clawforge_reply="1" ;;
-    "verbatimFlags cli") _clawforge_reply="" ;;
-    "verbatimFlags exec") _clawforge_reply="" ;;
-    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
-    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
-    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
-    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
-    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
-    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions verify") _clawforge_reply="--profile" ;;
-    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
-    "valueOptions plan") _clawforge_reply="--set" ;;
-    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
-    "valueOptions accept") _clawforge_reply="--set" ;;
-    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
-    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
-    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
-    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
-    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
-    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
-    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
-    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions deploy") _clawforge_reply="--path" ;;
-    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
-    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
-    "valueOptions check") _clawforge_reply="--jobs --require --top --base" ;;
-    "values backup--profile") _clawforge_reply="full migrate share" ;;
-    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
-    "values pull--profile") _clawforge_reply="full migrate share" ;;
-    "values verify--profile") _clawforge_reply="full migrate share" ;;
-    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryplan--backend") _clawforge_reply="builtin" ;;
-    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
-    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
-    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+      "top") _clawwright_reply="accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch --version -v --app" ;;
+    "first bootstrap") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawwright_reply="--grep --help --since --tail" ;;
+    "first backup") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawwright_reply="--help --json --profile" ;;
+    "first upgrade") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawwright_reply="--help --json --quick" ;;
+    "first inspect") _clawwright_reply="--help --json" ;;
+    "first doctor") _clawwright_reply="--help --json" ;;
+    "first plan") _clawwright_reply="--help --json --set" ;;
+    "first apply") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawwright_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "first apply-config") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawwright_reply="--help ssh status tailscale" ;;
+    "first watch") _clawwright_reply="--help check install status test uninstall" ;;
+    "first incident") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawwright_reply="--help --json configure index plan setup status verify" ;;
+    "first status") _clawwright_reply="--help --json" ;;
+    "first lock") _clawwright_reply="--check --help --json" ;;
+    "first cli") _clawwright_reply="--help" ;;
+    "first exec") _clawwright_reply="--help" ;;
+    "first host") _clawwright_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawwright_reply="--help" ;;
+    "first cli-stop") _clawwright_reply="--help" ;;
+    "first configure-provider") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawwright_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
+    "first provision-agent") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawwright_reply="--help" ;;
+    "first mcp-setup") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawwright_reply="--help --json --token" ;;
+    "first set") _clawwright_reply="--help build diff forget receipts try validate" ;;
+    "first check") _clawwright_reply="--base --help --jobs --list --related --require --timings --top" ;;
+    "first new-app") _clawwright_reply="--help" ;;
+    "first remove-app") _clawwright_reply="--help --yes" ;;
+    "first list") _clawwright_reply="--help --json --no-status" ;;
+    "first version") _clawwright_reply="--help --json --verbose" ;;
+    "first completion") _clawwright_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawwright_reply="--help" ;;
+    "first help") _clawwright_reply="--help accept apply apply-config backup bootstrap check cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident inspect list lock logs mcp-creds mcp-serve mcp-setup memory new-app operations plan provision-agent pull push recipe recover-env remove-app restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawwright_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawwright_reply="--help --json" ;;
+    "after backup prune-replaced") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawwright_reply="--help --json --profile" ;;
+    "after upgrade *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawwright_reply="--help --json --quick" ;;
+    "after inspect *") _clawwright_reply="--help --json" ;;
+    "after doctor *") _clawwright_reply="--help --json" ;;
+    "after plan *") _clawwright_reply="--help --json --set" ;;
+    "after apply *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawwright_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "after apply-config *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawwright_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawwright_reply="--help --json" ;;
+    "after expose *") _clawwright_reply="--help" ;;
+    "after watch check") _clawwright_reply="--help --json" ;;
+    "after watch install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawwright_reply="--help --json" ;;
+    "after watch test") _clawwright_reply="--help --json" ;;
+    "after watch *") _clawwright_reply="--help" ;;
+    "after incident *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawwright_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawwright_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawwright_reply="--help --json" ;;
+    "after status *") _clawwright_reply="--help --json" ;;
+    "after lock *") _clawwright_reply="--check --help --json" ;;
+    "after cli *") _clawwright_reply="--help" ;;
+    "after exec *") _clawwright_reply="--help" ;;
+    "after host *") _clawwright_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawwright_reply="--help" ;;
+    "after cli-stop *") _clawwright_reply="--help" ;;
+    "after configure-provider *") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawwright_reply="--help --json" ;;
+    "after recipe import") _clawwright_reply="--help" ;;
+    "after recipe new") _clawwright_reply="--help --with-hooks" ;;
+    "after recipe check") _clawwright_reply="--dry-run --help" ;;
+    "after recipe verify") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawwright_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe trial") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
+    "after recipe remove") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawwright_reply="--help --json --tail" ;;
+    "after recipe recover") _clawwright_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
+    "after recipe retire-legacy") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
+    "after recipe status") _clawwright_reply="--help" ;;
+    "after recipe logs") _clawwright_reply="--help --tail" ;;
+    "after recipe pin") _clawwright_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
+    "after recipe run") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
+    "after recipe *") _clawwright_reply="--help --json" ;;
+    "after provision-agent *") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawwright_reply="--help" ;;
+    "after mcp-setup *") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawwright_reply="--help --json --token" ;;
+    "after set build") _clawwright_reply="--help --json --name" ;;
+    "after set validate") _clawwright_reply="--help --json --name --set" ;;
+    "after set diff") _clawwright_reply="--from --help --json --to" ;;
+    "after set receipts") _clawwright_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawwright_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawwright_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawwright_reply="--help" ;;
+    "after check *") _clawwright_reply="--base --help --jobs --list --related --require --timings --top" ;;
+    "after new-app *") _clawwright_reply="--help" ;;
+    "after remove-app *") _clawwright_reply="--help --yes" ;;
+    "after list *") _clawwright_reply="--help --json --no-status" ;;
+    "after version *") _clawwright_reply="--help --json --verbose" ;;
+    "after completion *") _clawwright_reply="--help" ;;
+    "after control-mcp *") _clawwright_reply="--help" ;;
+    "after help *") _clawwright_reply="--help" ;;
+    "verbatim cli") _clawwright_reply="0" ;;
+    "verbatim exec") _clawwright_reply="0" ;;
+    "verbatim host") _clawwright_reply="1" ;;
+    "verbatimFlags cli") _clawwright_reply="" ;;
+    "verbatimFlags exec") _clawwright_reply="" ;;
+    "verbatimFlags host") _clawwright_reply="--root --confirm-root" ;;
+    "valueOptions bootstrap") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawwright_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawwright_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawwright_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawwright_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawwright_reply="--profile" ;;
+    "valueOptions upgrade") _clawwright_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawwright_reply="--set" ;;
+    "valueOptions apply") _clawwright_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawwright_reply="--set" ;;
+    "valueOptions rollback") _clawwright_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawwright_reply="--limit --break-foreign-lock" ;;
+    "valueOptions apply-config") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawwright_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawwright_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawwright_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawwright_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
+    "valueOptions configure-provider") _clawwright_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawwright_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawwright_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
+    "valueOptions provision-agent") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawwright_reply="--path" ;;
+    "valueOptions mcp-setup") _clawwright_reply="--client" ;;
+    "valueOptions set") _clawwright_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "valueOptions check") _clawwright_reply="--jobs --require --top --base" ;;
+    "values backup--profile") _clawwright_reply="full migrate share" ;;
+    "values backupcreate--profile") _clawwright_reply="full migrate share" ;;
+    "values pull--profile") _clawwright_reply="full migrate share" ;;
+    "values verify--profile") _clawwright_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawwright_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawwright_reply="builtin" ;;
+    "values mcp-setup--client") _clawwright_reply="claude codex both" ;;
+    "values setforget--kind") _clawwright_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
 }
 
-_clawforge_complete() {
+_clawwright_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
@@ -490,13 +490,13 @@ _clawforge_complete() {
     COMPREPLY=( $(compgen -W "$("${COMP_WORDS[0]}" list --json --no-status 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | grep -v '^[.]')" -- "$cur") )
     return
   fi
-    if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawwright_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  if _clawwright_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
@@ -505,9 +505,9 @@ _clawforge_complete() {
   # pass-through command's literal tail starts at its first undeclared dash word or its first
   # word past the declared positionals. Missing arms answer empty.
   local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
-  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  if _clawwright_lookup "valueOptions $cmd"; then opts="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatim $cmd"; then isverb=1; verb="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatimFlags $cmd"; then flags="$_clawwright_reply"; fi
   for token in "${between[@]}"; do
     if (( swallow )); then swallow=0; continue; fi
     if [[ "$token" == "--" ]]; then ended=1; break; fi
@@ -524,29 +524,29 @@ _clawforge_complete() {
   if (( ended || tail )); then COMPREPLY=(); return; fi
   # The first word names the action; an option still waiting for its value completes that
   # value (keyed command + action + option), or nothing when it has no choices.
-  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if [[ "${between[0]}" != -* ]] && _clawwright_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
   if (( swallow )); then
-    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawwright_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if _clawforge_lookup "after $cmd ${between[0]}"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
-  elif _clawforge_lookup "after $cmd *"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  if _clawwright_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
+  elif _clawwright_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
 }
-complete -F _clawforge_complete clawforge
-complete -F _clawforge_complete ./clawforge
+complete -F _clawwright_complete clawwright
+complete -F _clawwright_complete ./clawwright
 
-=== ./clawforge completion pwsh ===
-# clawforge PowerShell completion — generated from the command declarations.
-# Install: run ./clawforge completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell
-$clawforgeApp = $true
-$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v", "--app")
-$clawforgeFirst = [hashtable]::new(@{
+=== ./clawwright completion pwsh ===
+# clawwright PowerShell completion — generated from the command declarations.
+# Install: run ./clawwright completion pwsh in Git Bash, save the output to a file, and dot-source it from PowerShell
+$clawwrightApp = $true
+$clawwrightTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v", "--app")
+$clawwrightFirst = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -598,7 +598,7 @@ $clawforgeFirst = [hashtable]::new(@{
   "control-mcp" = @("--help")
   "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "check", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "inspect", "list", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "new-app", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "remove-app", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
 }, [System.StringComparer]::Ordinal)
-$clawforgeAfter = [hashtable]::new(@{
+$clawwrightAfter = [hashtable]::new(@{
   "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up *" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart *" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -693,17 +693,17 @@ $clawforgeAfter = [hashtable]::new(@{
   "control-mcp *" = @("--help")
   "help *" = @("--help")
 }, [System.StringComparer]::Ordinal)
-$clawforgeVerbatim = [hashtable]::new(@{
+$clawwrightVerbatim = [hashtable]::new(@{
   "cli" = 0
   "exec" = 0
   "host" = 1
 }, [System.StringComparer]::Ordinal)
-$clawforgeVerbatimFlags = [hashtable]::new(@{
+$clawwrightVerbatimFlags = [hashtable]::new(@{
   "cli" = @()
   "exec" = @()
   "host" = @("--root", "--confirm-root")
 }, [System.StringComparer]::Ordinal)
-$clawforgeValueOptions = [hashtable]::new(@{
+$clawwrightValueOptions = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock")
   "up" = @("--break-foreign-lock")
   "restart" = @("--break-foreign-lock")
@@ -735,7 +735,7 @@ $clawforgeValueOptions = [hashtable]::new(@{
   "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
   "check" = @("--jobs", "--require", "--top", "--base")
 }, [System.StringComparer]::Ordinal)
-$clawforgeValues = [hashtable]::new(@{
+$clawwrightValues = [hashtable]::new(@{
   "backup--profile" = @("full", "migrate", "share")
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
@@ -747,12 +747,12 @@ $clawforgeValues = [hashtable]::new(@{
   "mcp-setup--client" = @("claude", "codex", "both")
   "setforget--kind" = @("agent", "mcp-server", "cron-job")
 }, [System.StringComparer]::Ordinal)
-$clawforgeCompleter = {
+$clawwrightCompleter = {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
   $rest = @(if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() })
   # Only the words BEFORE the word being completed pick the command — the partial word
-  # itself is not a typed command (R32-02: 'clawforge sta<Tab>' saw the command "sta").
+  # itself is not a typed command (R32-02: 'clawwright sta<Tab>' saw the command "sta").
   $scan = $rest
   if ($wordToComplete -ne '') {
     $scan = @(if ($rest.Count -gt 1) { @($rest[0..($rest.Count - 2)]) } else { @() })
@@ -763,10 +763,10 @@ $clawforgeCompleter = {
   # command (and a value that looks like a command name does not shadow the real one).
   # The '--app=<name>' form carries its own value in one token: it is skipped alone.
   $i = 0
-  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }
+  while ($clawwrightApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }
   $candidates = @()
   if ($i -ge $scan.Count) {
-    if ($clawforgeApp -and $prev -ceq '--app') {
+    if ($clawwrightApp -and $prev -ceq '--app') {
       # --app's own value, lazily: only while no command word has been typed — --app must
       # come before the command, so past one the command's flags return (R33-10). Whichever
       # of the system-wide command or the checkout shim was typed makes the call.
@@ -776,7 +776,7 @@ $clawforgeCompleter = {
       }
       return
     }
-    $candidates = @($clawforgeTop)
+    $candidates = @($clawwrightTop)
   } else {
     $cmd = $scan[$i]
     $between = @()
@@ -789,240 +789,240 @@ $clawforgeCompleter = {
     $swallow = $false
     $tail = $false
     $free = 0
-    $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)
+    $isVerbatim = $clawwrightVerbatim.ContainsKey($cmd)
     foreach ($w2 in $between) {
       if ($swallow) { $swallow = $false; continue }
       if ($w2 -ceq '--') { $ended = $true; break }
       $key = $w2
       $inline = $false
       if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }
-      if ((-not $inline) -and ($w2 -cne '') -and ($clawforgeValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }
+      if ((-not $inline) -and ($w2 -cne '') -and ($clawwrightValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }
       if ($w2.StartsWith('-')) {
-        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }
+        if ($isVerbatim -and -not ($clawwrightVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }
         continue
       }
       $free = $free + 1
-      if ($isVerbatim -and $free -gt $clawforgeVerbatim[$cmd]) { $tail = $true; break }
+      if ($isVerbatim -and $free -gt $clawwrightVerbatim[$cmd]) { $tail = $true; break }
     }
     # The first word names the action; an option still waiting for its value completes that
     # value (keyed command + action + option), or nothing when it has no choices.
     $scope = ''
     $afterKey = "$cmd $($between[0])"
-    if ($between.Count -gt 0 -and $clawforgeAfter.ContainsKey($afterKey)) { $scope = $between[0] }
+    if ($between.Count -gt 0 -and $clawwrightAfter.ContainsKey($afterKey)) { $scope = $between[0] }
     if ($between.Count -eq 0) {
       # An unknown command reaches `first` with nothing under that key: the @() keeps the
       # type an array and the filter below drops the $null — nothing is offered.
-      $candidates = @($clawforgeFirst[$cmd])
+      $candidates = @($clawwrightFirst[$cmd])
     } elseif ($ended -or $tail) {
       $candidates = @()
     } elseif ($swallow) {
       $key = "$cmd$scope$prev"
-      if ($clawforgeValues.ContainsKey($key)) { $candidates = @($clawforgeValues[$key]) } else { $candidates = @() }
-    } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
-      $candidates = @($clawforgeAfter[$afterKey])
+      if ($clawwrightValues.ContainsKey($key)) { $candidates = @($clawwrightValues[$key]) } else { $candidates = @() }
+    } elseif ($clawwrightAfter.ContainsKey($afterKey)) {
+      $candidates = @($clawwrightAfter[$afterKey])
     } else {
-      $candidates = @($clawforgeAfter["$cmd *"])
+      $candidates = @($clawwrightAfter["$cmd *"])
     }
   }
   $candidates | Where-Object { $_ -clike "$wordToComplete*" } | Sort-Object -Unique -CaseSensitive | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }
 }
-Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock $clawforgeCompleter
+Register-ArgumentCompleter -Native -CommandName clawwright, ./clawwright -ScriptBlock $clawwrightCompleter
 
-=== clawforge completion bash (installed) ===
-# clawforge bash completion — generated from the command declarations.
-# Install: eval "$(clawforge completion bash)"
-_clawforge_lookup() {
+=== clawwright completion bash (installed) ===
+# clawwright bash completion — generated from the command declarations.
+# Install: eval "$(clawwright completion bash)"
+_clawwright_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
-    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
-    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
-    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "first verify") _clawforge_reply="--help --json --profile" ;;
-    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "first smoke") _clawforge_reply="--help --json --quick" ;;
-    "first inspect") _clawforge_reply="--help --json" ;;
-    "first doctor") _clawforge_reply="--help --json" ;;
-    "first plan") _clawforge_reply="--help --json --set" ;;
-    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
-    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
-    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
-    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
-    "first status") _clawforge_reply="--help --json" ;;
-    "first lock") _clawforge_reply="--check --help --json" ;;
-    "first cli") _clawforge_reply="--help" ;;
-    "first exec") _clawforge_reply="--help" ;;
-    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
-    "first cli-start") _clawforge_reply="--help" ;;
-    "first cli-stop") _clawforge_reply="--help" ;;
-    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
-    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "first mcp-serve") _clawforge_reply="--help" ;;
-    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
-    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
-    "first init") _clawforge_reply="--help --local" ;;
-    "first version") _clawforge_reply="--help --json --verbose" ;;
-    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
-    "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
-    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
-    "after backup list") _clawforge_reply="--help --json" ;;
-    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
-    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "after verify *") _clawforge_reply="--help --json --profile" ;;
-    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "after smoke *") _clawforge_reply="--help --json --quick" ;;
-    "after inspect *") _clawforge_reply="--help --json" ;;
-    "after doctor *") _clawforge_reply="--help --json" ;;
-    "after plan *") _clawforge_reply="--help --json --set" ;;
-    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
-    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
-    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after expose status") _clawforge_reply="--help --json" ;;
-    "after expose *") _clawforge_reply="--help" ;;
-    "after watch check") _clawforge_reply="--help --json" ;;
-    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after watch status") _clawforge_reply="--help --json" ;;
-    "after watch test") _clawforge_reply="--help --json" ;;
-    "after watch *") _clawforge_reply="--help" ;;
-    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
-    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
-    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory *") _clawforge_reply="--help --json" ;;
-    "after status *") _clawforge_reply="--help --json" ;;
-    "after lock *") _clawforge_reply="--check --help --json" ;;
-    "after cli *") _clawforge_reply="--help" ;;
-    "after exec *") _clawforge_reply="--help" ;;
-    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
-    "after cli-start *") _clawforge_reply="--help" ;;
-    "after cli-stop *") _clawforge_reply="--help" ;;
-    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "after recipe list") _clawforge_reply="--help --json" ;;
-    "after recipe import") _clawforge_reply="--help" ;;
-    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
-    "after recipe check") _clawforge_reply="--dry-run --help" ;;
-    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
-    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
-    "after recipe trial") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
-    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
-    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
-    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
-    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
-    "after recipe retire-legacy") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
-    "after recipe status") _clawforge_reply="--help" ;;
-    "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe pin") _clawforge_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
-    "after recipe run") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
-    "after recipe *") _clawforge_reply="--help --json" ;;
-    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "after mcp-serve *") _clawforge_reply="--help" ;;
-    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
-    "after set build") _clawforge_reply="--help --json --name" ;;
-    "after set validate") _clawforge_reply="--help --json --name --set" ;;
-    "after set diff") _clawforge_reply="--from --help --json --to" ;;
-    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
-    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
-    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
-    "after set *") _clawforge_reply="--help" ;;
-    "after init *") _clawforge_reply="--help --local" ;;
-    "after version *") _clawforge_reply="--help --json --verbose" ;;
-    "after completion *") _clawforge_reply="--help" ;;
-    "after control-mcp *") _clawforge_reply="--help" ;;
-    "after help *") _clawforge_reply="--help" ;;
-    "verbatim cli") _clawforge_reply="0" ;;
-    "verbatim exec") _clawforge_reply="0" ;;
-    "verbatim host") _clawforge_reply="1" ;;
-    "verbatimFlags cli") _clawforge_reply="" ;;
-    "verbatimFlags exec") _clawforge_reply="" ;;
-    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
-    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
-    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
-    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
-    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
-    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions verify") _clawforge_reply="--profile" ;;
-    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
-    "valueOptions plan") _clawforge_reply="--set" ;;
-    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
-    "valueOptions accept") _clawforge_reply="--set" ;;
-    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
-    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
-    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
-    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
-    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
-    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
-    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
-    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions deploy") _clawforge_reply="--path" ;;
-    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
-    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
-    "values backup--profile") _clawforge_reply="full migrate share" ;;
-    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
-    "values pull--profile") _clawforge_reply="full migrate share" ;;
-    "values verify--profile") _clawforge_reply="full migrate share" ;;
-    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryplan--backend") _clawforge_reply="builtin" ;;
-    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
-    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
-    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+      "top") _clawwright_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
+    "first bootstrap") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawwright_reply="--grep --help --since --tail" ;;
+    "first backup") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawwright_reply="--help --json --profile" ;;
+    "first upgrade") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawwright_reply="--help --json --quick" ;;
+    "first inspect") _clawwright_reply="--help --json" ;;
+    "first doctor") _clawwright_reply="--help --json" ;;
+    "first plan") _clawwright_reply="--help --json --set" ;;
+    "first apply") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawwright_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "first apply-config") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawwright_reply="--help ssh status tailscale" ;;
+    "first watch") _clawwright_reply="--help check install status test uninstall" ;;
+    "first incident") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawwright_reply="--help --json configure index plan setup status verify" ;;
+    "first status") _clawwright_reply="--help --json" ;;
+    "first lock") _clawwright_reply="--check --help --json" ;;
+    "first cli") _clawwright_reply="--help" ;;
+    "first exec") _clawwright_reply="--help" ;;
+    "first host") _clawwright_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawwright_reply="--help" ;;
+    "first cli-stop") _clawwright_reply="--help" ;;
+    "first configure-provider") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawwright_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
+    "first provision-agent") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawwright_reply="--help" ;;
+    "first mcp-setup") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawwright_reply="--help --json --token" ;;
+    "first set") _clawwright_reply="--help build diff forget receipts try validate" ;;
+    "first init") _clawwright_reply="--help --local" ;;
+    "first version") _clawwright_reply="--help --json --verbose" ;;
+    "first completion") _clawwright_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawwright_reply="--help" ;;
+    "first help") _clawwright_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawwright_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawwright_reply="--help --json" ;;
+    "after backup prune-replaced") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawwright_reply="--help --json --profile" ;;
+    "after upgrade *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawwright_reply="--help --json --quick" ;;
+    "after inspect *") _clawwright_reply="--help --json" ;;
+    "after doctor *") _clawwright_reply="--help --json" ;;
+    "after plan *") _clawwright_reply="--help --json --set" ;;
+    "after apply *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawwright_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "after apply-config *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawwright_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawwright_reply="--help --json" ;;
+    "after expose *") _clawwright_reply="--help" ;;
+    "after watch check") _clawwright_reply="--help --json" ;;
+    "after watch install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawwright_reply="--help --json" ;;
+    "after watch test") _clawwright_reply="--help --json" ;;
+    "after watch *") _clawwright_reply="--help" ;;
+    "after incident *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawwright_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawwright_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawwright_reply="--help --json" ;;
+    "after status *") _clawwright_reply="--help --json" ;;
+    "after lock *") _clawwright_reply="--check --help --json" ;;
+    "after cli *") _clawwright_reply="--help" ;;
+    "after exec *") _clawwright_reply="--help" ;;
+    "after host *") _clawwright_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawwright_reply="--help" ;;
+    "after cli-stop *") _clawwright_reply="--help" ;;
+    "after configure-provider *") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawwright_reply="--help --json" ;;
+    "after recipe import") _clawwright_reply="--help" ;;
+    "after recipe new") _clawwright_reply="--help --with-hooks" ;;
+    "after recipe check") _clawwright_reply="--dry-run --help" ;;
+    "after recipe verify") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawwright_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe trial") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
+    "after recipe remove") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawwright_reply="--help --json --tail" ;;
+    "after recipe recover") _clawwright_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
+    "after recipe retire-legacy") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
+    "after recipe status") _clawwright_reply="--help" ;;
+    "after recipe logs") _clawwright_reply="--help --tail" ;;
+    "after recipe pin") _clawwright_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
+    "after recipe run") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
+    "after recipe *") _clawwright_reply="--help --json" ;;
+    "after provision-agent *") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawwright_reply="--help" ;;
+    "after mcp-setup *") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawwright_reply="--help --json --token" ;;
+    "after set build") _clawwright_reply="--help --json --name" ;;
+    "after set validate") _clawwright_reply="--help --json --name --set" ;;
+    "after set diff") _clawwright_reply="--from --help --json --to" ;;
+    "after set receipts") _clawwright_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawwright_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawwright_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawwright_reply="--help" ;;
+    "after init *") _clawwright_reply="--help --local" ;;
+    "after version *") _clawwright_reply="--help --json --verbose" ;;
+    "after completion *") _clawwright_reply="--help" ;;
+    "after control-mcp *") _clawwright_reply="--help" ;;
+    "after help *") _clawwright_reply="--help" ;;
+    "verbatim cli") _clawwright_reply="0" ;;
+    "verbatim exec") _clawwright_reply="0" ;;
+    "verbatim host") _clawwright_reply="1" ;;
+    "verbatimFlags cli") _clawwright_reply="" ;;
+    "verbatimFlags exec") _clawwright_reply="" ;;
+    "verbatimFlags host") _clawwright_reply="--root --confirm-root" ;;
+    "valueOptions bootstrap") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawwright_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawwright_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawwright_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawwright_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawwright_reply="--profile" ;;
+    "valueOptions upgrade") _clawwright_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawwright_reply="--set" ;;
+    "valueOptions apply") _clawwright_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawwright_reply="--set" ;;
+    "valueOptions rollback") _clawwright_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawwright_reply="--limit --break-foreign-lock" ;;
+    "valueOptions apply-config") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawwright_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawwright_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawwright_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawwright_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
+    "valueOptions configure-provider") _clawwright_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawwright_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawwright_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
+    "valueOptions provision-agent") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawwright_reply="--path" ;;
+    "valueOptions mcp-setup") _clawwright_reply="--client" ;;
+    "valueOptions set") _clawwright_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "values backup--profile") _clawwright_reply="full migrate share" ;;
+    "values backupcreate--profile") _clawwright_reply="full migrate share" ;;
+    "values pull--profile") _clawwright_reply="full migrate share" ;;
+    "values verify--profile") _clawwright_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawwright_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawwright_reply="builtin" ;;
+    "values mcp-setup--client") _clawwright_reply="claude codex both" ;;
+    "values setforget--kind") _clawwright_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
 }
 
-_clawforge_complete() {
+_clawwright_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
@@ -1034,13 +1034,13 @@ _clawforge_complete() {
         cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-        if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+        if _clawwright_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  if _clawwright_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
@@ -1049,9 +1049,9 @@ _clawforge_complete() {
   # pass-through command's literal tail starts at its first undeclared dash word or its first
   # word past the declared positionals. Missing arms answer empty.
   local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
-  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  if _clawwright_lookup "valueOptions $cmd"; then opts="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatim $cmd"; then isverb=1; verb="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatimFlags $cmd"; then flags="$_clawwright_reply"; fi
   for token in "${between[@]}"; do
     if (( swallow )); then swallow=0; continue; fi
     if [[ "$token" == "--" ]]; then ended=1; break; fi
@@ -1068,221 +1068,221 @@ _clawforge_complete() {
   if (( ended || tail )); then COMPREPLY=(); return; fi
   # The first word names the action; an option still waiting for its value completes that
   # value (keyed command + action + option), or nothing when it has no choices.
-  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if [[ "${between[0]}" != -* ]] && _clawwright_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
   if (( swallow )); then
-    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawwright_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if _clawforge_lookup "after $cmd ${between[0]}"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
-  elif _clawforge_lookup "after $cmd *"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  if _clawwright_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
+  elif _clawwright_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
 }
-complete -F _clawforge_complete clawforge
-complete -F _clawforge_complete ./clawforge
+complete -F _clawwright_complete clawwright
+complete -F _clawwright_complete ./clawwright
 
-=== clawforge completion zsh (installed) ===
-#compdef clawforge ./clawforge
-# clawforge zsh completion — generated from the live command declarations, via bash's
+=== clawwright completion zsh (installed) ===
+#compdef clawwright ./clawwright
+# clawwright zsh completion — generated from the live command declarations, via bash's
 # completion protocol (bashcompinit), so this cannot drift from the bash script's own
-# grammar. Install: clawforge completion zsh > "${fpath[1]}/_clawforge" (new shell), or
-# source <(clawforge completion zsh) in the current one.
+# grammar. Install: clawwright completion zsh > "${fpath[1]}/_clawwright" (new shell), or
+# source <(clawwright completion zsh) in the current one.
 autoload -Uz bashcompinit
 bashcompinit
-_clawforge_lookup() {
+_clawwright_lookup() {
   case "$1" in
-      "top") _clawforge_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
-    "first bootstrap") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "first up") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first restart") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first down") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "first destroy") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "first logs") _clawforge_reply="--grep --help --since --tail" ;;
-    "first backup") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
-    "first restore") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "first pull") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "first push") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "first verify") _clawforge_reply="--help --json --profile" ;;
-    "first upgrade") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "first smoke") _clawforge_reply="--help --json --quick" ;;
-    "first inspect") _clawforge_reply="--help --json" ;;
-    "first doctor") _clawforge_reply="--help --json" ;;
-    "first plan") _clawforge_reply="--help --json --set" ;;
-    "first apply") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "first accept") _clawforge_reply="--help --json --set --with-model" ;;
-    "first rollback") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "first operations") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "first apply-config") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "first expose") _clawforge_reply="--help ssh status tailscale" ;;
-    "first watch") _clawforge_reply="--help check install status test uninstall" ;;
-    "first incident") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "first recover-env") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "first memory") _clawforge_reply="--help --json configure index plan setup status verify" ;;
-    "first status") _clawforge_reply="--help --json" ;;
-    "first lock") _clawforge_reply="--check --help --json" ;;
-    "first cli") _clawforge_reply="--help" ;;
-    "first exec") _clawforge_reply="--help" ;;
-    "first host") _clawforge_reply="--confirm-root --help --root engine local target" ;;
-    "first cli-start") _clawforge_reply="--help" ;;
-    "first cli-stop") _clawforge_reply="--help" ;;
-    "first configure-provider") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "first secrets") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "first recipe") _clawforge_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
-    "first provision-agent") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "first deploy") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "first mcp-serve") _clawforge_reply="--help" ;;
-    "first mcp-setup") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "first mcp-creds") _clawforge_reply="--help --json --token" ;;
-    "first set") _clawforge_reply="--help build diff forget receipts try validate" ;;
-    "first init") _clawforge_reply="--help --local" ;;
-    "first version") _clawforge_reply="--help --json --verbose" ;;
-    "first completion") _clawforge_reply="--help bash pwsh zsh" ;;
-    "first control-mcp") _clawforge_reply="--help" ;;
-    "first help") _clawforge_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
-    "after bootstrap *") _clawforge_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
-    "after up *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after restart *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after down *") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after destroy *") _clawforge_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
-    "after logs *") _clawforge_reply="--grep --help --since --tail" ;;
-    "after backup list") _clawforge_reply="--help --json" ;;
-    "after backup prune-replaced") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
-    "after backup install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after backup uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after backup create") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after backup *") _clawforge_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
-    "after restore *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
-    "after pull *") _clawforge_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
-    "after push *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
-    "after verify *") _clawforge_reply="--help --json --profile" ;;
-    "after upgrade *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
-    "after smoke *") _clawforge_reply="--help --json --quick" ;;
-    "after inspect *") _clawforge_reply="--help --json" ;;
-    "after doctor *") _clawforge_reply="--help --json" ;;
-    "after plan *") _clawforge_reply="--help --json --set" ;;
-    "after apply *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
-    "after accept *") _clawforge_reply="--help --json --set --with-model" ;;
-    "after rollback *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
-    "after operations *") _clawforge_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
-    "after apply-config *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
-    "after expose ssh") _clawforge_reply="--help --local-port --run" ;;
-    "after expose tailscale") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after expose status") _clawforge_reply="--help --json" ;;
-    "after expose *") _clawforge_reply="--help" ;;
-    "after watch check") _clawforge_reply="--help --json" ;;
-    "after watch install") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
-    "after watch uninstall") _clawforge_reply="--apply --break-foreign-lock --break-lock --help" ;;
-    "after watch status") _clawforge_reply="--help --json" ;;
-    "after watch test") _clawforge_reply="--help --json" ;;
-    "after watch *") _clawforge_reply="--help" ;;
-    "after incident *") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
-    "after recover-env *") _clawforge_reply="--adopt-runtime --dry-run --help --json" ;;
-    "after memory plan") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory configure") _clawforge_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
-    "after memory setup") _clawforge_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
-    "after memory status") _clawforge_reply="--allow-download --allow-spend --deep --help --json" ;;
-    "after memory index") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory verify") _clawforge_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
-    "after memory *") _clawforge_reply="--help --json" ;;
-    "after status *") _clawforge_reply="--help --json" ;;
-    "after lock *") _clawforge_reply="--check --help --json" ;;
-    "after cli *") _clawforge_reply="--help" ;;
-    "after exec *") _clawforge_reply="--help" ;;
-    "after host *") _clawforge_reply="--confirm-root --help --root" ;;
-    "after cli-start *") _clawforge_reply="--help" ;;
-    "after cli-stop *") _clawforge_reply="--help" ;;
-    "after configure-provider *") _clawforge_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
-    "after secrets *") _clawforge_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
-    "after recipe list") _clawforge_reply="--help --json" ;;
-    "after recipe import") _clawforge_reply="--help" ;;
-    "after recipe new") _clawforge_reply="--help --with-hooks" ;;
-    "after recipe check") _clawforge_reply="--dry-run --help" ;;
-    "after recipe verify") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe onboard") _clawforge_reply="--break-foreign-lock --break-lock --help" ;;
-    "after recipe diagnose") _clawforge_reply="--break-foreign-lock --break-lock --help --tail" ;;
-    "after recipe install") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
-    "after recipe trial") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
-    "after recipe remove") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
-    "after recipe inspect") _clawforge_reply="--help --json --tail" ;;
-    "after recipe recover") _clawforge_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
-    "after recipe migrate") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
-    "after recipe retire-legacy") _clawforge_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
-    "after recipe status") _clawforge_reply="--help" ;;
-    "after recipe logs") _clawforge_reply="--help --tail" ;;
-    "after recipe pin") _clawforge_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
-    "after recipe run") _clawforge_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
-    "after recipe *") _clawforge_reply="--help --json" ;;
-    "after provision-agent *") _clawforge_reply="--break-foreign-lock --break-lock --help --json" ;;
-    "after deploy *") _clawforge_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
-    "after mcp-serve *") _clawforge_reply="--help" ;;
-    "after mcp-setup *") _clawforge_reply="--client --help --json --rewrite-launcher" ;;
-    "after mcp-creds *") _clawforge_reply="--help --json --token" ;;
-    "after set build") _clawforge_reply="--help --json --name" ;;
-    "after set validate") _clawforge_reply="--help --json --name --set" ;;
-    "after set diff") _clawforge_reply="--from --help --json --to" ;;
-    "after set receipts") _clawforge_reply="--help --json --receipt --set-id" ;;
-    "after set try") _clawforge_reply="--help --json --keep --set --with-model" ;;
-    "after set forget") _clawforge_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
-    "after set *") _clawforge_reply="--help" ;;
-    "after init *") _clawforge_reply="--help --local" ;;
-    "after version *") _clawforge_reply="--help --json --verbose" ;;
-    "after completion *") _clawforge_reply="--help" ;;
-    "after control-mcp *") _clawforge_reply="--help" ;;
-    "after help *") _clawforge_reply="--help" ;;
-    "verbatim cli") _clawforge_reply="0" ;;
-    "verbatim exec") _clawforge_reply="0" ;;
-    "verbatim host") _clawforge_reply="1" ;;
-    "verbatimFlags cli") _clawforge_reply="" ;;
-    "verbatimFlags exec") _clawforge_reply="" ;;
-    "verbatimFlags host") _clawforge_reply="--root --confirm-root" ;;
-    "valueOptions bootstrap") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions up") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions restart") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions down") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions destroy") _clawforge_reply="--confirm-name --break-foreign-lock" ;;
-    "valueOptions logs") _clawforge_reply="--tail --since --grep" ;;
-    "valueOptions backup") _clawforge_reply="--profile --keep --break-foreign-lock --interval" ;;
-    "valueOptions restore") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions pull") _clawforge_reply="--profile --break-foreign-lock" ;;
-    "valueOptions push") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions verify") _clawforge_reply="--profile" ;;
-    "valueOptions upgrade") _clawforge_reply="--image --break-foreign-lock" ;;
-    "valueOptions plan") _clawforge_reply="--set" ;;
-    "valueOptions apply") _clawforge_reply="--set --expect --break-foreign-lock" ;;
-    "valueOptions accept") _clawforge_reply="--set" ;;
-    "valueOptions rollback") _clawforge_reply="--operation --break-foreign-lock" ;;
-    "valueOptions operations") _clawforge_reply="--limit --break-foreign-lock" ;;
-    "valueOptions apply-config") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions expose") _clawforge_reply="--local-port --break-foreign-lock" ;;
-    "valueOptions watch") _clawforge_reply="--interval --break-foreign-lock" ;;
-    "valueOptions incident") _clawforge_reply="--tail --break-foreign-lock" ;;
-    "valueOptions memory") _clawforge_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
-    "valueOptions configure-provider") _clawforge_reply="--provider --env --break-foreign-lock" ;;
-    "valueOptions secrets") _clawforge_reply="--store --break-foreign-lock" ;;
-    "valueOptions recipe") _clawforge_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
-    "valueOptions provision-agent") _clawforge_reply="--break-foreign-lock" ;;
-    "valueOptions deploy") _clawforge_reply="--path" ;;
-    "valueOptions mcp-setup") _clawforge_reply="--client" ;;
-    "valueOptions set") _clawforge_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
-    "values backup--profile") _clawforge_reply="full migrate share" ;;
-    "values backupcreate--profile") _clawforge_reply="full migrate share" ;;
-    "values pull--profile") _clawforge_reply="full migrate share" ;;
-    "values verify--profile") _clawforge_reply="full migrate share" ;;
-    "values memoryplan--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryconfigure--mode") _clawforge_reply="embeddings keyword disabled" ;;
-    "values memoryplan--backend") _clawforge_reply="builtin" ;;
-    "values memoryconfigure--backend") _clawforge_reply="builtin" ;;
-    "values mcp-setup--client") _clawforge_reply="claude codex both" ;;
-    "values setforget--kind") _clawforge_reply="agent mcp-server cron-job" ;;
+      "top") _clawwright_reply="accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch --version -v" ;;
+    "first bootstrap") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "first up") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first restart") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first down") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "first destroy") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "first logs") _clawwright_reply="--grep --help --since --tail" ;;
+    "first backup") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets create install list prune-replaced uninstall" ;;
+    "first restore") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "first pull") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "first push") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "first verify") _clawwright_reply="--help --json --profile" ;;
+    "first upgrade") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "first smoke") _clawwright_reply="--help --json --quick" ;;
+    "first inspect") _clawwright_reply="--help --json" ;;
+    "first doctor") _clawwright_reply="--help --json" ;;
+    "first plan") _clawwright_reply="--help --json --set" ;;
+    "first apply") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "first accept") _clawwright_reply="--help --json --set --with-model" ;;
+    "first rollback") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "first operations") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "first apply-config") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "first expose") _clawwright_reply="--help ssh status tailscale" ;;
+    "first watch") _clawwright_reply="--help check install status test uninstall" ;;
+    "first incident") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "first recover-env") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "first memory") _clawwright_reply="--help --json configure index plan setup status verify" ;;
+    "first status") _clawwright_reply="--help --json" ;;
+    "first lock") _clawwright_reply="--check --help --json" ;;
+    "first cli") _clawwright_reply="--help" ;;
+    "first exec") _clawwright_reply="--help" ;;
+    "first host") _clawwright_reply="--confirm-root --help --root engine local target" ;;
+    "first cli-start") _clawwright_reply="--help" ;;
+    "first cli-stop") _clawwright_reply="--help" ;;
+    "first configure-provider") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "first secrets") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "first recipe") _clawwright_reply="--help --json check diagnose import inspect install list logs migrate new onboard pin recover remove retire-legacy run status trial verify" ;;
+    "first provision-agent") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "first deploy") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "first mcp-serve") _clawwright_reply="--help" ;;
+    "first mcp-setup") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "first mcp-creds") _clawwright_reply="--help --json --token" ;;
+    "first set") _clawwright_reply="--help build diff forget receipts try validate" ;;
+    "first init") _clawwright_reply="--help --local" ;;
+    "first version") _clawwright_reply="--help --json --verbose" ;;
+    "first completion") _clawwright_reply="--help bash pwsh zsh" ;;
+    "first control-mcp") _clawwright_reply="--help" ;;
+    "first help") _clawwright_reply="--help accept apply apply-config backup bootstrap cli cli-start cli-stop completion configure-provider control-mcp deploy destroy doctor down exec expose help host incident init inspect lock logs mcp-creds mcp-serve mcp-setup memory operations plan provision-agent pull push recipe recover-env restart restore rollback secrets set smoke status up upgrade verify version watch" ;;
+    "after bootstrap *") _clawwright_reply="--break-foreign-lock --break-lock --check --help --json --no-pull" ;;
+    "after up *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after restart *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after down *") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after destroy *") _clawwright_reply="--backups --break-foreign-lock --break-lock --confirm-name --data --help --snapshots --yes" ;;
+    "after logs *") _clawwright_reply="--grep --help --since --tail" ;;
+    "after backup list") _clawwright_reply="--help --json" ;;
+    "after backup prune-replaced") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --json --keep" ;;
+    "after backup install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after backup uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after backup create") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after backup *") _clawwright_reply="--dry-run --help --hot --migrate --native --profile --share --with-secrets" ;;
+    "after restore *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json --no-start" ;;
+    "after pull *") _clawwright_reply="--break-foreign-lock --break-lock --help --hot --json --migrate --profile --share --with-secrets" ;;
+    "after push *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force --fresh-identity --help --json" ;;
+    "after verify *") _clawwright_reply="--help --json --profile" ;;
+    "after upgrade *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --image --json" ;;
+    "after smoke *") _clawwright_reply="--help --json --quick" ;;
+    "after inspect *") _clawwright_reply="--help --json" ;;
+    "after doctor *") _clawwright_reply="--help --json" ;;
+    "after plan *") _clawwright_reply="--help --json --set" ;;
+    "after apply *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --expect --help --json --set" ;;
+    "after accept *") _clawwright_reply="--help --json --set --with-model" ;;
+    "after rollback *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --no-restart --operation --previous-set" ;;
+    "after operations *") _clawwright_reply="--break-foreign-lock --break-lock --confirmed --help --json --limit --takeover-lock" ;;
+    "after apply-config *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --dump --force --help --json" ;;
+    "after expose ssh") _clawwright_reply="--help --local-port --run" ;;
+    "after expose tailscale") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after expose status") _clawwright_reply="--help --json" ;;
+    "after expose *") _clawwright_reply="--help" ;;
+    "after watch check") _clawwright_reply="--help --json" ;;
+    "after watch install") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --interval" ;;
+    "after watch uninstall") _clawwright_reply="--apply --break-foreign-lock --break-lock --help" ;;
+    "after watch status") _clawwright_reply="--help --json" ;;
+    "after watch test") _clawwright_reply="--help --json" ;;
+    "after watch *") _clawwright_reply="--help" ;;
+    "after incident *") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json --keep-exposure --tail" ;;
+    "after recover-env *") _clawwright_reply="--adopt-runtime --dry-run --help --json" ;;
+    "after memory plan") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory configure") _clawwright_reply="--backend --env --help --json --mode --model --model-checksum --model-path --model-source --model-version --provider" ;;
+    "after memory setup") _clawwright_reply="--agent --all-agents --allow-download --allow-install --help --json --model-checksum --model-max-bytes --model-source --model-version --plugin-version" ;;
+    "after memory status") _clawwright_reply="--allow-download --allow-spend --deep --help --json" ;;
+    "after memory index") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory verify") _clawwright_reply="--agent --all-agents --allow-download --allow-spend --help --json --model-checksum --model-source --model-version" ;;
+    "after memory *") _clawwright_reply="--help --json" ;;
+    "after status *") _clawwright_reply="--help --json" ;;
+    "after lock *") _clawwright_reply="--check --help --json" ;;
+    "after cli *") _clawwright_reply="--help" ;;
+    "after exec *") _clawwright_reply="--help" ;;
+    "after host *") _clawwright_reply="--confirm-root --help --root" ;;
+    "after cli-start *") _clawwright_reply="--help" ;;
+    "after cli-stop *") _clawwright_reply="--help" ;;
+    "after configure-provider *") _clawwright_reply="--break-foreign-lock --break-lock --env --force --help --json --provider" ;;
+    "after secrets *") _clawwright_reply="--apply --break-foreign-lock --dump --force --help --init-store --json --print-template --store --template" ;;
+    "after recipe list") _clawwright_reply="--help --json" ;;
+    "after recipe import") _clawwright_reply="--help" ;;
+    "after recipe new") _clawwright_reply="--help --with-hooks" ;;
+    "after recipe check") _clawwright_reply="--dry-run --help" ;;
+    "after recipe verify") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe onboard") _clawwright_reply="--break-foreign-lock --break-lock --help" ;;
+    "after recipe diagnose") _clawwright_reply="--break-foreign-lock --break-lock --help --tail" ;;
+    "after recipe install") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --force-disabled --help" ;;
+    "after recipe trial") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help" ;;
+    "after recipe remove") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --volumes" ;;
+    "after recipe inspect") _clawwright_reply="--help --json --tail" ;;
+    "after recipe recover") _clawwright_reply="--break-foreign-lock --break-lock --build --dry-run --help --pull --reconcile-consumer --service" ;;
+    "after recipe migrate") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --helper-image --shutdown-timeout" ;;
+    "after recipe retire-legacy") _clawwright_reply="--apply --break-foreign-lock --break-lock --help --helper-image --shutdown-timeout" ;;
+    "after recipe status") _clawwright_reply="--help" ;;
+    "after recipe logs") _clawwright_reply="--help --tail" ;;
+    "after recipe pin") _clawwright_reply="--apply --artifact --break-foreign-lock --break-lock --help --version" ;;
+    "after recipe run") _clawwright_reply="--break-foreign-lock --break-lock --dry-run --help --json" ;;
+    "after recipe *") _clawwright_reply="--help --json" ;;
+    "after provision-agent *") _clawwright_reply="--break-foreign-lock --break-lock --help --json" ;;
+    "after deploy *") _clawwright_reply="--adopt --dry-run --help --json --no-bootstrap --path" ;;
+    "after mcp-serve *") _clawwright_reply="--help" ;;
+    "after mcp-setup *") _clawwright_reply="--client --help --json --rewrite-launcher" ;;
+    "after mcp-creds *") _clawwright_reply="--help --json --token" ;;
+    "after set build") _clawwright_reply="--help --json --name" ;;
+    "after set validate") _clawwright_reply="--help --json --name --set" ;;
+    "after set diff") _clawwright_reply="--from --help --json --to" ;;
+    "after set receipts") _clawwright_reply="--help --json --receipt --set-id" ;;
+    "after set try") _clawwright_reply="--help --json --keep --set --with-model" ;;
+    "after set forget") _clawwright_reply="--break-foreign-lock --break-lock --help --kind --name" ;;
+    "after set *") _clawwright_reply="--help" ;;
+    "after init *") _clawwright_reply="--help --local" ;;
+    "after version *") _clawwright_reply="--help --json --verbose" ;;
+    "after completion *") _clawwright_reply="--help" ;;
+    "after control-mcp *") _clawwright_reply="--help" ;;
+    "after help *") _clawwright_reply="--help" ;;
+    "verbatim cli") _clawwright_reply="0" ;;
+    "verbatim exec") _clawwright_reply="0" ;;
+    "verbatim host") _clawwright_reply="1" ;;
+    "verbatimFlags cli") _clawwright_reply="" ;;
+    "verbatimFlags exec") _clawwright_reply="" ;;
+    "verbatimFlags host") _clawwright_reply="--root --confirm-root" ;;
+    "valueOptions bootstrap") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions up") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions restart") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions down") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions destroy") _clawwright_reply="--confirm-name --break-foreign-lock" ;;
+    "valueOptions logs") _clawwright_reply="--tail --since --grep" ;;
+    "valueOptions backup") _clawwright_reply="--profile --keep --break-foreign-lock --interval" ;;
+    "valueOptions restore") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions pull") _clawwright_reply="--profile --break-foreign-lock" ;;
+    "valueOptions push") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions verify") _clawwright_reply="--profile" ;;
+    "valueOptions upgrade") _clawwright_reply="--image --break-foreign-lock" ;;
+    "valueOptions plan") _clawwright_reply="--set" ;;
+    "valueOptions apply") _clawwright_reply="--set --expect --break-foreign-lock" ;;
+    "valueOptions accept") _clawwright_reply="--set" ;;
+    "valueOptions rollback") _clawwright_reply="--operation --break-foreign-lock" ;;
+    "valueOptions operations") _clawwright_reply="--limit --break-foreign-lock" ;;
+    "valueOptions apply-config") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions expose") _clawwright_reply="--local-port --break-foreign-lock" ;;
+    "valueOptions watch") _clawwright_reply="--interval --break-foreign-lock" ;;
+    "valueOptions incident") _clawwright_reply="--tail --break-foreign-lock" ;;
+    "valueOptions memory") _clawwright_reply="--mode --backend --provider --model --env --model-path --model-checksum --model-source --model-version --plugin-version --model-max-bytes --agent" ;;
+    "valueOptions configure-provider") _clawwright_reply="--provider --env --break-foreign-lock" ;;
+    "valueOptions secrets") _clawwright_reply="--store --break-foreign-lock" ;;
+    "valueOptions recipe") _clawwright_reply="--break-foreign-lock --tail --service --helper-image --shutdown-timeout --version --artifact" ;;
+    "valueOptions provision-agent") _clawwright_reply="--break-foreign-lock" ;;
+    "valueOptions deploy") _clawwright_reply="--path" ;;
+    "valueOptions mcp-setup") _clawwright_reply="--client" ;;
+    "valueOptions set") _clawwright_reply="--name --set --from --to --set-id --receipt --kind --break-foreign-lock" ;;
+    "values backup--profile") _clawwright_reply="full migrate share" ;;
+    "values backupcreate--profile") _clawwright_reply="full migrate share" ;;
+    "values pull--profile") _clawwright_reply="full migrate share" ;;
+    "values verify--profile") _clawwright_reply="full migrate share" ;;
+    "values memoryplan--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryconfigure--mode") _clawwright_reply="embeddings keyword disabled" ;;
+    "values memoryplan--backend") _clawwright_reply="builtin" ;;
+    "values memoryconfigure--backend") _clawwright_reply="builtin" ;;
+    "values mcp-setup--client") _clawwright_reply="claude codex both" ;;
+    "values setforget--kind") _clawwright_reply="agent mcp-server cron-job" ;;
     *) return 1 ;;
   esac
 }
 
-_clawforge_complete() {
+_clawwright_complete() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   local prev="${COMP_WORDS[COMP_CWORD-1]}"
   local words=("${COMP_WORDS[@]}")
@@ -1294,13 +1294,13 @@ _clawforge_complete() {
         cmd="$w"; idx=$i; break
   done
   if [[ -z "$cmd" ]]; then
-        if _clawforge_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+        if _clawwright_lookup "top"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   if (( cword - idx - 1 > 0 )); then between=("${words[@]:$((idx + 1)):$((cword - idx - 1))}"); fi
   # The command's own first candidates; a command the table does not carry completes to
   # nothing at all.
-  if _clawforge_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); return; fi
+  if _clawwright_lookup "first $cmd"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); return; fi
   # Nothing after the command: the word being completed IS its own first position, which
   # the lookup above already answered.
   if (( ${#between[@]} == 0 )); then return; fi
@@ -1309,9 +1309,9 @@ _clawforge_complete() {
   # pass-through command's literal tail starts at its first undeclared dash word or its first
   # word past the declared positionals. Missing arms answer empty.
   local opts="" flags="" verb="" isverb=0 ended=0 swallow=0 tail=0 free=0 token key inline
-  if _clawforge_lookup "valueOptions $cmd"; then opts="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatim $cmd"; then isverb=1; verb="$_clawforge_reply"; fi
-  if _clawforge_lookup "verbatimFlags $cmd"; then flags="$_clawforge_reply"; fi
+  if _clawwright_lookup "valueOptions $cmd"; then opts="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatim $cmd"; then isverb=1; verb="$_clawwright_reply"; fi
+  if _clawwright_lookup "verbatimFlags $cmd"; then flags="$_clawwright_reply"; fi
   for token in "${between[@]}"; do
     if (( swallow )); then swallow=0; continue; fi
     if [[ "$token" == "--" ]]; then ended=1; break; fi
@@ -1328,29 +1328,29 @@ _clawforge_complete() {
   if (( ended || tail )); then COMPREPLY=(); return; fi
   # The first word names the action; an option still waiting for its value completes that
   # value (keyed command + action + option), or nothing when it has no choices.
-  if [[ "${between[0]}" != -* ]] && _clawforge_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
+  if [[ "${between[0]}" != -* ]] && _clawwright_lookup "after $cmd ${between[0]}"; then scope="${between[0]}"; fi
   if (( swallow )); then
-    if _clawforge_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") ); else COMPREPLY=(); fi
+    if _clawwright_lookup "values ${cmd}${scope}${prev}"; then COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") ); else COMPREPLY=(); fi
     return
   fi
   # Past a word after the command: that word's own list, else the command's fallback.
-  if _clawforge_lookup "after $cmd ${between[0]}"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
-  elif _clawforge_lookup "after $cmd *"; then
-    COMPREPLY=( $(compgen -W "$_clawforge_reply" -- "$cur") )
+  if _clawwright_lookup "after $cmd ${between[0]}"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
+  elif _clawwright_lookup "after $cmd *"; then
+    COMPREPLY=( $(compgen -W "$_clawwright_reply" -- "$cur") )
   else
     COMPREPLY=()
   fi
 }
-complete -F _clawforge_complete clawforge
-complete -F _clawforge_complete ./clawforge
+complete -F _clawwright_complete clawwright
+complete -F _clawwright_complete ./clawwright
 
-=== clawforge completion pwsh (installed) ===
-# clawforge PowerShell completion — generated from the command declarations.
-# Install: clawforge completion pwsh | Out-String | Invoke-Expression
-$clawforgeApp = $false
-$clawforgeTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v")
-$clawforgeFirst = [hashtable]::new(@{
+=== clawwright completion pwsh (installed) ===
+# clawwright PowerShell completion — generated from the command declarations.
+# Install: clawwright completion pwsh | Out-String | Invoke-Expression
+$clawwrightApp = $false
+$clawwrightTop = @("accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch", "--version", "-v")
+$clawwrightFirst = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -1399,7 +1399,7 @@ $clawforgeFirst = [hashtable]::new(@{
   "control-mcp" = @("--help")
   "help" = @("--help", "accept", "apply", "apply-config", "backup", "bootstrap", "cli", "cli-start", "cli-stop", "completion", "configure-provider", "control-mcp", "deploy", "destroy", "doctor", "down", "exec", "expose", "help", "host", "incident", "init", "inspect", "lock", "logs", "mcp-creds", "mcp-serve", "mcp-setup", "memory", "operations", "plan", "provision-agent", "pull", "push", "recipe", "recover-env", "restart", "restore", "rollback", "secrets", "set", "smoke", "status", "up", "upgrade", "verify", "version", "watch")
 }, [System.StringComparer]::Ordinal)
-$clawforgeAfter = [hashtable]::new(@{
+$clawwrightAfter = [hashtable]::new(@{
   "bootstrap *" = @("--break-foreign-lock", "--break-lock", "--check", "--help", "--json", "--no-pull")
   "up *" = @("--break-foreign-lock", "--break-lock", "--help")
   "restart *" = @("--break-foreign-lock", "--break-lock", "--help")
@@ -1491,17 +1491,17 @@ $clawforgeAfter = [hashtable]::new(@{
   "control-mcp *" = @("--help")
   "help *" = @("--help")
 }, [System.StringComparer]::Ordinal)
-$clawforgeVerbatim = [hashtable]::new(@{
+$clawwrightVerbatim = [hashtable]::new(@{
   "cli" = 0
   "exec" = 0
   "host" = 1
 }, [System.StringComparer]::Ordinal)
-$clawforgeVerbatimFlags = [hashtable]::new(@{
+$clawwrightVerbatimFlags = [hashtable]::new(@{
   "cli" = @()
   "exec" = @()
   "host" = @("--root", "--confirm-root")
 }, [System.StringComparer]::Ordinal)
-$clawforgeValueOptions = [hashtable]::new(@{
+$clawwrightValueOptions = [hashtable]::new(@{
   "bootstrap" = @("--break-foreign-lock")
   "up" = @("--break-foreign-lock")
   "restart" = @("--break-foreign-lock")
@@ -1532,7 +1532,7 @@ $clawforgeValueOptions = [hashtable]::new(@{
   "mcp-setup" = @("--client")
   "set" = @("--name", "--set", "--from", "--to", "--set-id", "--receipt", "--kind", "--break-foreign-lock")
 }, [System.StringComparer]::Ordinal)
-$clawforgeValues = [hashtable]::new(@{
+$clawwrightValues = [hashtable]::new(@{
   "backup--profile" = @("full", "migrate", "share")
   "backupcreate--profile" = @("full", "migrate", "share")
   "pull--profile" = @("full", "migrate", "share")
@@ -1544,12 +1544,12 @@ $clawforgeValues = [hashtable]::new(@{
   "mcp-setup--client" = @("claude", "codex", "both")
   "setforget--kind" = @("agent", "mcp-server", "cron-job")
 }, [System.StringComparer]::Ordinal)
-$clawforgeCompleter = {
+$clawwrightCompleter = {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
   $rest = @(if ($tokens.Count -gt 1) { @($tokens[1..($tokens.Count - 1)]) } else { @() })
   # Only the words BEFORE the word being completed pick the command — the partial word
-  # itself is not a typed command (R32-02: 'clawforge sta<Tab>' saw the command "sta").
+  # itself is not a typed command (R32-02: 'clawwright sta<Tab>' saw the command "sta").
   $scan = $rest
   if ($wordToComplete -ne '') {
     $scan = @(if ($rest.Count -gt 1) { @($rest[0..($rest.Count - 2)]) } else { @() })
@@ -1560,10 +1560,10 @@ $clawforgeCompleter = {
   # command (and a value that looks like a command name does not shadow the real one).
   # The '--app=<name>' form carries its own value in one token: it is skipped alone.
   $i = 0
-  while ($clawforgeApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }
+  while ($clawwrightApp -and $i -lt $scan.Count -and ($scan[$i] -ceq '--app' -or $scan[$i].StartsWith('--app='))) { $i = $i + $(if ($scan[$i] -ceq '--app') { 2 } else { 1 }) }
   $candidates = @()
   if ($i -ge $scan.Count) {
-    if ($clawforgeApp -and $prev -ceq '--app') {
+    if ($clawwrightApp -and $prev -ceq '--app') {
       # --app's own value, lazily: only while no command word has been typed — --app must
       # come before the command, so past one the command's flags return (R33-10). Whichever
       # of the system-wide command or the checkout shim was typed makes the call.
@@ -1573,7 +1573,7 @@ $clawforgeCompleter = {
       }
       return
     }
-    $candidates = @($clawforgeTop)
+    $candidates = @($clawwrightTop)
   } else {
     $cmd = $scan[$i]
     $between = @()
@@ -1586,44 +1586,44 @@ $clawforgeCompleter = {
     $swallow = $false
     $tail = $false
     $free = 0
-    $isVerbatim = $clawforgeVerbatim.ContainsKey($cmd)
+    $isVerbatim = $clawwrightVerbatim.ContainsKey($cmd)
     foreach ($w2 in $between) {
       if ($swallow) { $swallow = $false; continue }
       if ($w2 -ceq '--') { $ended = $true; break }
       $key = $w2
       $inline = $false
       if ($w2.StartsWith('--') -and $w2.Contains('=')) { $key = $w2.Substring(0, $w2.IndexOf('=')); $inline = $true }
-      if ((-not $inline) -and ($w2 -cne '') -and ($clawforgeValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }
+      if ((-not $inline) -and ($w2 -cne '') -and ($clawwrightValueOptions[$cmd] -ccontains $w2)) { $swallow = $true; continue }
       if ($w2.StartsWith('-')) {
-        if ($isVerbatim -and -not ($clawforgeVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }
+        if ($isVerbatim -and -not ($clawwrightVerbatimFlags[$cmd] -ccontains $key)) { $tail = $true; break }
         continue
       }
       $free = $free + 1
-      if ($isVerbatim -and $free -gt $clawforgeVerbatim[$cmd]) { $tail = $true; break }
+      if ($isVerbatim -and $free -gt $clawwrightVerbatim[$cmd]) { $tail = $true; break }
     }
     # The first word names the action; an option still waiting for its value completes that
     # value (keyed command + action + option), or nothing when it has no choices.
     $scope = ''
     $afterKey = "$cmd $($between[0])"
-    if ($between.Count -gt 0 -and $clawforgeAfter.ContainsKey($afterKey)) { $scope = $between[0] }
+    if ($between.Count -gt 0 -and $clawwrightAfter.ContainsKey($afterKey)) { $scope = $between[0] }
     if ($between.Count -eq 0) {
       # An unknown command reaches `first` with nothing under that key: the @() keeps the
       # type an array and the filter below drops the $null — nothing is offered.
-      $candidates = @($clawforgeFirst[$cmd])
+      $candidates = @($clawwrightFirst[$cmd])
     } elseif ($ended -or $tail) {
       $candidates = @()
     } elseif ($swallow) {
       $key = "$cmd$scope$prev"
-      if ($clawforgeValues.ContainsKey($key)) { $candidates = @($clawforgeValues[$key]) } else { $candidates = @() }
-    } elseif ($clawforgeAfter.ContainsKey($afterKey)) {
-      $candidates = @($clawforgeAfter[$afterKey])
+      if ($clawwrightValues.ContainsKey($key)) { $candidates = @($clawwrightValues[$key]) } else { $candidates = @() }
+    } elseif ($clawwrightAfter.ContainsKey($afterKey)) {
+      $candidates = @($clawwrightAfter[$afterKey])
     } else {
-      $candidates = @($clawforgeAfter["$cmd *"])
+      $candidates = @($clawwrightAfter["$cmd *"])
     }
   }
   $candidates | Where-Object { $_ -clike "$wordToComplete*" } | Sort-Object -Unique -CaseSensitive | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }
 }
-Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock $clawforgeCompleter
+Register-ArgumentCompleter -Native -CommandName clawwright, ./clawwright -ScriptBlock $clawwrightCompleter
 

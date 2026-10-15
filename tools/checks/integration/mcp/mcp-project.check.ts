@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
-import { CLAWFORGE_CONTROL_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp/project.ts";
+import { CLAWWRIGHT_CONTROL_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp/project.ts";
 import { initApp } from "#framework/integration/deployment/init.ts";
 import { createApp, deploymentEnv } from "#framework/integration/deployment/scaffold.ts";
 import { isolatedAppsRoot } from "#checks/kit/harness.ts";
@@ -13,10 +13,10 @@ import { projectPort } from "#framework/core/env.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 
-const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-mcp-project-")));
+const root = await realpath(await mkdtemp(join(tmpdir(), "clawwright-mcp-project-")));
 let monorepoApp: string | undefined;
 let claimedSibling: string | undefined;
-const checksAppsEnv = "CLAWFORGE_CHECKS_APPS_DIR";
+const checksAppsEnv = "CLAWWRIGHT_CHECKS_APPS_DIR";
 const apps = await isolatedAppsRoot("mcp-project");
 try {
   const entries = { demo: { command: "node", args: ["test.js", "control-mcp"] } };
@@ -43,8 +43,8 @@ try {
   const claudeText = await readFile(join(app,".mcp.json"),"utf8");
   const codexText = await readFile(join(app,".codex/config.toml"),"utf8");
   const claude = JSON.parse(claudeText);
-  assert.ok(claude.mcpServers.clawforge && claude.mcpServers[CLAWFORGE_CONTROL_MCP_NAME]);
-  assert.ok(codexText.includes(`[mcp_servers."${CLAWFORGE_CONTROL_MCP_NAME}"]`));
+  assert.ok(claude.mcpServers.clawwright && claude.mcpServers[CLAWWRIGHT_CONTROL_MCP_NAME]);
+  assert.ok(codexText.includes(`[mcp_servers."${CLAWWRIGHT_CONTROL_MCP_NAME}"]`));
   assert.ok(!claudeText.includes(app) && !codexText.includes(app), "no absolute host paths in generated configuration");
   const gitignoreLines = (await readFile(join(app,".gitignore"),"utf8")).split(/\r?\n/);
   assert.ok(gitignoreLines.includes("/.codex/config.toml"));
@@ -71,8 +71,8 @@ try {
   await writeFile(join(app,".codex/config.toml"),codexText);
 
   // A small installed package proves actual resolution without Docker or either client.
-  const pkg = join(app,"node_modules/@clawforge/framework"); await mkdir(join(pkg,"dist"),{recursive:true});
-  await writeFile(join(pkg,"package.json"),JSON.stringify({name:"@clawforge/framework",type:"module",exports:{"./app":"./dist/core/app.js"}}));
+  const pkg = join(app,"node_modules/clawwright"); await mkdir(join(pkg,"dist"),{recursive:true});
+  await writeFile(join(pkg,"package.json"),JSON.stringify({name:"clawwright",type:"module",exports:{"./app":"./dist/core/app.js"}}));
   await mkdir(join(pkg,"dist/core"),{recursive:true});
   await writeFile(join(pkg,"dist/core/app.js"),"export const marker=true;\n");
   await mkdir(join(pkg,"dist/entry"),{recursive:true});
@@ -83,7 +83,7 @@ try {
   // committed launcher (which moved with the directory, and still knows it is "installed"),
   // whether the client sets CLAUDE_PROJECT_DIR (Claude Code) or leaves it unset (falling back
   // to its own cwd) — either way, spawning from a subdirectory below the deployment works.
-  const entry = projectMcpEntries()[CLAWFORGE_CONTROL_MCP_NAME];
+  const entry = projectMcpEntries()[CLAWWRIGHT_CONTROL_MCP_NAME];
   // The "no env var" case unsets CLAUDE_PROJECT_DIR — it strips a real one this very check
   // might itself be running under, so the fallback path is actually exercised, not skipped.
   const cases: { env: Record<string, string>; unsetEnv: string[] }[] = [
@@ -103,24 +103,24 @@ try {
   // "-check-" in both names so a leftover from a killed run (SIGKILL skips the finally
   // below) is swept by run.ts's own orphan sweep, the same as every other check-owned
   // deployment. The deployment is created under a synthetic checkout (apps/<name> two levels
-  // under a root with tools/clawforge.ts) because the monorepo launcher resolves its gate as
-  // deploymentRoot/../../tools/clawforge.ts — layout parity with a real checkout, with the
-  // synthetic tools/clawforge.ts a shim that hands off to the real gate of this checkout.
+  // under a root with tools/clawwright.ts) because the monorepo launcher resolves its gate as
+  // deploymentRoot/../../tools/clawwright.ts — layout parity with a real checkout, with the
+  // synthetic tools/clawwright.ts a shim that hands off to the real gate of this checkout.
   const name = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
   const syntheticRoot = resolve(apps.root, "synthetic-checkout");
   monorepoApp = resolve(syntheticRoot, "apps", name);
-  const realGate = resolve(fileURLToPath(new URL("../../../clawforge.ts", import.meta.url)));
+  const realGate = resolve(fileURLToPath(new URL("../../../clawwright.ts", import.meta.url)));
   await mkdir(join(syntheticRoot, "tools"), { recursive: true });
   await writeFile(
-    join(syntheticRoot, "tools", "clawforge.ts"),
+    join(syntheticRoot, "tools", "clawwright.ts"),
     `// Check-only shim: stands in for the monorepo gate at this synthetic checkout's root.\n` +
     `import { pathToFileURL } from "node:url";\n` +
-    `if (process.env.CLAWFORGE_REAL_GATE === undefined) throw new Error("CLAWFORGE_REAL_GATE not set");\n` +
-    `await import(pathToFileURL(process.env.CLAWFORGE_REAL_GATE).href);\n`,
+    `if (process.env.CLAWWRIGHT_REAL_GATE === undefined) throw new Error("CLAWWRIGHT_REAL_GATE not set");\n` +
+    `await import(pathToFileURL(process.env.CLAWWRIGHT_REAL_GATE).href);\n`,
     "utf8",
   );
   // createApp places the deployment under appsRootFor(monorepoRoot), which honors
-  // CLAWFORGE_CHECKS_APPS_DIR: point it at the synthetic apps/ and KEEP it there for
+  // CLAWWRIGHT_CHECKS_APPS_DIR: point it at the synthetic apps/ and KEEP it there for
   // everything that exercises the deployment — the launcher child (and the control-mcp
   // gate it runs) resolves deployments through the same variable, so restoring to the
   // isolated apps root early would make the gate answer "deployment not found". The env
@@ -140,9 +140,11 @@ try {
     mcpLauncherContent("monorepo"),
     "new-app writes the monorepo-mode launcher",
   );
-  assert.ok(mcpLauncherContent("monorepo").includes('CLAWFORGE_INVOCATION = JSON.stringify({ version: 1, program: "../../clawforge"'), "the checkout launcher makes hints resolve from apps/<name>");
-  assert.ok(mcpLauncherContent("monorepo").includes('CLAWFORGE_INVOKED_AS = "../../clawforge --app "'), "the checkout launcher also feeds frameworks that only read the old variable");
-  const previousLauncher = mcpLauncherContent("monorepo").split("\n").filter((line) => !/^\/\/ (Hints must|frameworks read)|CLAWFORGE_INVOCATION|CLAWFORGE_INVOKED_AS/.test(line)).join("\n");
+  assert.ok(mcpLauncherContent("monorepo").includes('CLAWWRIGHT_INVOCATION = JSON.stringify({ version: 1, program: "../../clawwright"'), "the checkout launcher makes hints resolve from apps/<name>");
+  assert.ok(mcpLauncherContent("monorepo").includes('CLAWWRIGHT_INVOKED_AS = "../../clawwright --app "'), "the checkout launcher also feeds frameworks that only read the old variable");
+  // The launcher shipped before the hint lines, under the project's former name (clawforge).
+  const previousLauncher = mcpLauncherContent("monorepo").split("\n").filter((line) => !/^\/\/ (Hints must|frameworks read)|CLAWWRIGHT_INVOCATION|CLAWWRIGHT_INVOKED_AS/.test(line)).join("\n")
+    .replaceAll("CLAWWRIGHT", "CLAWFORGE").replaceAll("Clawwright", "ClawForge").replaceAll("clawwright", "clawforge");
   assert.equal(createHash("sha256").update(previousLauncher).digest("hex"), "184fdbb3149ce05cd8b6c970538c93bc162dc0049b2d730cb927802dbb992431", "the retired launcher text is the one shipped before");
   await writeFile(join(monorepoApp, MCP_LAUNCHER_FILENAME), previousLauncher, "utf8");
   await setupProjectMcp(monorepoApp, "monorepo");
@@ -157,9 +159,9 @@ try {
   assert.notEqual(assigned, candidate, "new-app avoids a port recorded in a sibling deployment");
   await readFile(join(monorepoApp,".codex/config.toml"),"utf8");
   const native = JSON.parse(await readFile(join(monorepoApp,".mcp.json"),"utf8"));
-  const monorepoEntry = native.mcpServers[CLAWFORGE_CONTROL_MCP_NAME];
+  const monorepoEntry = native.mcpServers[CLAWWRIGHT_CONTROL_MCP_NAME];
   const input = JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list"})+"\n";
-  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp,CLAWFORGE_REAL_GATE:realGate},input,timeoutMs:60000});
+  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp,CLAWWRIGHT_REAL_GATE:realGate},input,timeoutMs:60000});
   const reply = JSON.parse(child.stdout);
   assert.ok(reply.result.tools.some((tool: {name:string})=>tool.name==="mcp-setup"));
   process.stderr.write("all project MCP setup checks passed\n");

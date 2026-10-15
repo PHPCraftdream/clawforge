@@ -1,4 +1,4 @@
-// `./clawforge rollback` — choosing what to undo.
+// `./clawwright rollback` — choosing what to undo.
 //
 // Restoring the file is one transport write; picking the wrong operation to restore from is
 // the failure worth guarding. Every refusal below exists because the alternative is putting
@@ -15,7 +15,7 @@ function stubContext() {
   return {
     files,
     ctx: {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         async mkdirp(): Promise<void> {},
         async exists(path: string): Promise<boolean> {
@@ -61,7 +61,7 @@ async function refusal(ctx: Context, wanted?: string): Promise<string> {
   check("with no operations at all, it refuses", message !== "", true);
   // The most likely reason someone is here is that they want the DATA back, which is a
   // different operation entirely. Saying so beats letting them conclude nothing can be done.
-  check("and points at the other operation, in case that is what was meant", message.includes("./clawforge push"), true);
+  check("and points at the other operation, in case that is what was meant", message.includes("./clawwright push"), true);
 }
 
 {
@@ -81,7 +81,7 @@ async function refusal(ctx: Context, wanted?: string): Promise<string> {
   const { ctx } = stubContext();
   const message = await refusal(ctx, "20260101000000000-apply-abcdef");
   check("an id that was never recorded is refused", message.includes("was recorded"), true);
-  check("and it says where to look for real ones", message.includes("./clawforge operations"), true);
+  check("and it says where to look for real ones", message.includes("./clawwright operations"), true);
 }
 
 {
@@ -99,21 +99,21 @@ async function refusal(ctx: Context, wanted?: string): Promise<string> {
   const { ctx } = stubContext();
 
   const older = await Journal.open(ctx, "apply", "example");
-  await older.noteSnapshot("/srv/clawforge/clawforge-operations/older.openclaw.json");
+  await older.noteSnapshot("/srv/clawwright/clawwright-operations/older.openclaw.json");
   await older.close("succeeded");
 
   const changedNothing = await Journal.open(ctx, "apply", "example");
   await changedNothing.close("succeeded");
 
   const newer = await Journal.open(ctx, "apply", "example");
-  await newer.noteSnapshot("/srv/clawforge/clawforge-operations/newer.openclaw.json");
+  await newer.noteSnapshot("/srv/clawwright/clawwright-operations/newer.openclaw.json");
   await newer.close("failed");
 
   const chosen = await operationToRollback(ctx);
   check("the most recent run WITH a snapshot is chosen", chosen.id, newer.id);
   // Not merely the most recent run: the one in between changed nothing and has nothing to
   // put back, and skipping it silently is the whole job of this function.
-  check("even though a later-listed run had none", chosen.configSnapshot, "/srv/clawforge/clawforge-operations/newer.openclaw.json");
+  check("even though a later-listed run had none", chosen.configSnapshot, "/srv/clawwright/clawwright-operations/newer.openclaw.json");
 
   const named = await operationToRollback(ctx, older.id);
   check("an explicitly named older operation is honoured", named.id, older.id);

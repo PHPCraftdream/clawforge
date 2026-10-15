@@ -1,4 +1,4 @@
-// `clawforge apply` — run the plan, then check the result.
+// `clawwright apply` — run the plan, then check the result.
 //
 // "Applied" and "working" are different claims. Every step returning successfully doesn't
 // mean the instance is healthy, so this command inspects again afterwards and reports what
@@ -71,7 +71,7 @@ export async function preflightControlMarkers(ctx: Context): Promise<void> {
 }
 
 /** How each executable step is actually performed. Called directly rather than shelling
- *  out to `clawforge`: the step already knows which function it means, and going back
+ *  out to `clawwright`: the step already knows which function it means, and going back
  *  out through the dispatcher would lose the Context, the output sink and the error. */
 const RUNNERS: Record<string, (ctx: Context, action: PlanAction) => Promise<void>> = {
   // Recovery steps write only the operator side (.env, local store, declaration) — nothing

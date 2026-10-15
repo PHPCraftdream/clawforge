@@ -8,30 +8,30 @@ comes in two flavours, and a recipe may be either or both.
 **A service**: `recipe.json`, `compose.yml` and a multi-stage `Dockerfile`.
 
 ```bash
-./clawforge recipe list
-./clawforge recipe import <source> [new-name]
-./clawforge recipe new <name> [--with-hooks]
-./clawforge recipe install <name>
-./clawforge recipe status <name>
-./clawforge recipe verify <name>
-./clawforge recipe run <name> <recipe-action> [<key>=<value> ...] [--dry-run]
-./clawforge recipe onboard <name>
-./clawforge recipe remove <name> [--volumes]
-./clawforge recipe inspect <name> [--json]
-./clawforge recipe pin <name> --version <v> [--apply]
-./clawforge recipe trial <name> [--dry-run]
-./clawforge recipe check <name> [--dry-run]
-./clawforge recipe retire-legacy <name> [--apply]
+./clawwright recipe list
+./clawwright recipe import <source> [new-name]
+./clawwright recipe new <name> [--with-hooks]
+./clawwright recipe install <name>
+./clawwright recipe status <name>
+./clawwright recipe verify <name>
+./clawwright recipe run <name> <recipe-action> [<key>=<value> ...] [--dry-run]
+./clawwright recipe onboard <name>
+./clawwright recipe remove <name> [--volumes]
+./clawwright recipe inspect <name> [--json]
+./clawwright recipe pin <name> --version <v> [--apply]
+./clawwright recipe trial <name> [--dry-run]
+./clawwright recipe check <name> [--dry-run]
+./clawwright recipe retire-legacy <name> [--apply]
 ```
 
 Every recipe is its **own compose project**, not a service in our file. That is why
 `up`/`down`/`status` keep dealing with the gateway alone, a broken recipe cannot drag it
 down, and state snapshots never pick up a recipe's images or volumes.
 
-The project is `clawforge-recipe-<sha256>`, derived from the validated gateway namespace
+The project is `clawwright-recipe-<sha256>`, derived from the validated gateway namespace
 and the validated recipe name — all lifecycle commands, diagnostics and backup discovery
 use the same builder, even when a recipe manifest is broken. To get the exact project and
-its ownership evidence, run `./clawforge recipe inspect <name> --json` and review the
+its ownership evidence, run `./clawwright recipe inspect <name> --json` and review the
 reported namespaces and containers.
 
 Every mutating recipe action runs under the instance lock. `install` and `remove` change the
@@ -49,7 +49,7 @@ instead of refusing itself.
 service, `restart: unless-stopped` already set) — no hooks by default. Refuses an existing
 directory, the same way `import` does, and validates `<name>` with the same rules every
 other recipe name follows. `--with-hooks` also writes commented `prepare.ts`/`verify.ts`
-stubs using the `@clawforge/framework/private-config` helpers shown below, ready to
+stubs using the `clawwright/private-config` helpers shown below, ready to
 uncomment, with a one-line reminder that hooks run with the operator's own rights.
 
 A recipe can sit in the repository switched off — `"enabled": false` in `recipe.json`.
@@ -72,10 +72,10 @@ real recipe directory. Only package-internal (`#specifier`) imports are validate
 inside the recipe directory; a plain relative import is resolved, checksummed and re-stamped,
 not containment-checked — hooks already run with the operator's full rights, so reading what
 they import is the real boundary. Use the public
-`@clawforge/framework/private-config` helpers for generated credentials, atomic owner-only files,
+`clawwright/private-config` helpers for generated credentials, atomic owner-only files,
 env updates and checksums; the framework never prints the values. The specifier works in both
 kinds of deployment: an installed one resolves it from the framework package, a checkout
-deployment (`./clawforge new-app`) resolves it against the checkout's own framework sources. A secret is never a
+deployment (`./clawwright new-app`) resolves it against the checkout's own framework sources. A secret is never a
 command-line argument — use `execWithSecrets` (or the private-file helpers) instead of putting
 a credential in `args`.
 `execWithSecrets` creates the temporary target directory and file with owner-only access:
@@ -145,7 +145,7 @@ declaration equal to or above a declared mount destination refuses migration. Se
 [executor notes](../internal/recipe-migration-executor.md#writable-layer-inspection-and-ephemeralpaths)
 for the matching and refusal rules.
 
-### Reconcile helpers (`@clawforge/framework/recipe-kit`)
+### Reconcile helpers (`clawwright/recipe-kit`)
 
 For converging an owned path onto a desired set of members, the recipe-kit `reconcile`
 module exposes four helpers (worked example in the
@@ -240,7 +240,7 @@ export async function run(ctx, recipe, input) {
 ```
 
 ```bash
-./clawforge recipe run status-board announce message="deploy finished" --dry-run
+./clawwright recipe run status-board announce message="deploy finished" --dry-run
 ```
 
 ### Config path ownership (`owns`)
@@ -347,7 +347,7 @@ rejected at load instead of silently excluding nothing:
   `<data>/sidecar-credentials/../escape.env` is refused even though the string carries a
   declared prefix, and `//` and `.` fold away before the comparison.
 
-The `@clawforge/framework/private-config` helpers enforce the same declaration from the
+The `clawwright/private-config` helpers enforce the same declaration from the
 writing side: `ensurePrivateTargetDirectory` and `replacePrivateTargetFile` only proceed inside
 a declared path, files land mode 600 and directories 700, and a symlink between the data
 directory and the declared root is refused (the data root itself may be a link, and a link at
@@ -356,7 +356,7 @@ author's path-assembly mistake, not isolation from hostile code — the hook alr
 full context. A prepare hook that uses them:
 
 ```ts
-import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@clawforge/framework/private-config";
+import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "clawwright/private-config";
 
 export async function prepare(ctx, recipe): Promise<void> {
   const dataDir = ctx.settings.dataDir;
@@ -384,7 +384,7 @@ name is copied. The enforced promise about a recipe's private files is the targe
 
 **Keyed pseudonyms and intent journals.** When a journal must remember *that* an identifier
 was seen without remembering the identifier, use the keyed-pseudonym helpers from
-`@clawforge/framework/private-config`. `privatePseudonymKey` creates the deployment's HMAC key
+`clawwright/private-config`. `privatePseudonymKey` creates the deployment's HMAC key
 exactly once under a declared private path (exclusive create — an existing key is only ever
 read and validated, never rewritten, and concurrent first-callers converge on one key). The key is versioned, registered for redaction, and never returned to output:
 a tampered, truncated or wrong-version key file refuses with a content-free error.
@@ -400,7 +400,7 @@ and "finished", journal the intent with `appendPrivateIntent`, journal the outco
 over the pending set:
 
 ```ts
-import { privatePseudonym, appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents } from "@clawforge/framework/private-config";
+import { privatePseudonym, appendPrivateIntent, appendPrivateResult, readPendingPrivateIntents } from "clawwright/private-config";
 
 const token = await privatePseudonym(ctx, `${dataDir}/vault/pseudonym-key.json`, { recipe: recipe.name, namespace: "user-id", value: rawUserId });
 await appendPrivateIntent(ctx, `${dataDir}/vault/journal.jsonl`, { id: orderId, kind: "sync" });
@@ -418,7 +418,7 @@ never echo the content. None of them knows about `--dry-run`: a hook skips the w
 `ctx.dryRun` is set.
 
 ```ts
-import { readPrivateState, writePrivateState, appendPrivateJournal, readPrivateJournal } from "@clawforge/framework/private-config";
+import { readPrivateState, writePrivateState, appendPrivateJournal, readPrivateJournal } from "clawwright/private-config";
 
 const isCursor = (value: unknown): value is { cursor: number } =>
   typeof value === "object" && value !== null && typeof (value as { cursor?: unknown }).cursor === "number";
@@ -456,9 +456,9 @@ working recipes beside a broken one, and the broken recipe is the one not listed
 Checking that a declaration took effect, in the order that answers the question:
 
 ```bash
-./clawforge recipe install <name>      # runs prepare.ts — the first write outside every declaration is refused
-./clawforge backup --profile migrate   # stops with an error if any manifest is broken; excludes declared paths
-./clawforge verify --profile migrate <archive>   # refuses the archive if a declared path travelled anyway
+./clawwright recipe install <name>      # runs prepare.ts — the first write outside every declaration is refused
+./clawwright backup --profile migrate   # stops with an error if any manifest is broken; excludes declared paths
+./clawwright verify --profile migrate <archive>   # refuses the archive if a declared path travelled anyway
 ```
 
 `verify` passing after a migrate backup is the round trip: exclusion at archive time and
@@ -512,15 +512,15 @@ constants for paths and protocol values, pure renderers for generated files, and
 hooks that orchestrate those functions. Validate inputs at the boundary, keep secrets inside
 private-file helpers, return safe structured results, and document only the decisions a future
 maintainer cannot infer from the code. Run the repository typecheck and linter, then
-`./clawforge recipe check <name>` before shipping a recipe.
+`./clawwright recipe check <name>` before shipping a recipe.
 
 ### Updating a pinned artifact
 
 Use `recipe pin` to update the version and checksum defaults for a pinned release artifact in a recipe Dockerfile:
 
 ```bash
-./clawforge recipe pin <name> --version <V>
-./clawforge recipe pin <name> --version <V> --apply
+./clawwright recipe pin <name> --version <V>
+./clawwright recipe pin <name> --version <V> --apply
 ```
 
 Without `--apply`, the command previews the proposed change. `--apply` updates the two Docker `ARG` defaults atomically while holding the instance lock. If the Dockerfile contains more than one recognized pinned-artifact declaration, identify the intended current asset with `--artifact <basename>`; the value is the expanded asset basename, not a path or URL. The requested version must be a simple token containing letters and digits, followed only by letters, digits, `_`, `.`, `+` or `-`; paths and URLs are not versions. A request for the already-pinned version is refused.
@@ -532,7 +532,7 @@ Changing the pins does not restart a running service: rebuild and restart it wit
 
 ### Local recipe checks
 
-Run `./clawforge recipe check <name>` before deploying recipe-code changes. The command
+Run `./clawwright recipe check <name>` before deploying recipe-code changes. The command
 first lints portable Dockerfiles, then recursively discovers portable `*.check.ts` files,
 excludes `node_modules` paths, sorts files, and runs each with
 `node --experimental-strip-types` in the recipe directory.
@@ -571,7 +571,7 @@ The finding becomes info `waived`, retaining the waived code, location and reaso
 or failing own check files exit 1; warnings/info alone exit 0. Lint findings print before
 own check execution; lint errors do not suppress those checks.
 
-Use `./clawforge recipe check <name> --dry-run` to list lint targets and own check files
+Use `./clawwright recipe check <name> --dry-run` to list lint targets and own check files
 without executing recipe code; preview exits 0.
 Real execution requires confirmation over MCP, like verify/onboard: checks run with the
 operator's rights and are not sandboxed. Only a minimal environment is passed; deployment
@@ -587,7 +587,7 @@ never executed.
 
 ### Trying a recipe against a copy of its data
 
-`./clawforge recipe trial <name>` builds the recipe and runs its stack against a copy of
+`./clawwright recipe trial <name>` builds the recipe and runs its stack against a copy of
 the live data, without touching the live stack. It copies the recipe's declared
 `privatePaths` from the live data directory into a target-side scratch directory and starts
 the trial from that copy. The live stack, its ports and its data are never touched, and no
@@ -689,16 +689,16 @@ Use the framework inspection and bounded recovery/migration path instead of raw
 `docker compose down`:
 
 ```bash
-./clawforge recipe inspect <name> --json
+./clawwright recipe inspect <name> --json
 # Current owned namespace: recreate exactly one declared service
-./clawforge recipe recover <name> --service <service> --dry-run
-./clawforge recipe recover <name> --service <service>
+./clawwright recipe recover <name> --service <service> --dry-run
+./clawwright recipe recover <name> --service <service>
 # Proven owned legacy namespace: preview the whole migration
-./clawforge recipe migrate <name> --dry-run
-./clawforge recipe migrate <name>
+./clawwright recipe migrate <name> --dry-run
+./clawwright recipe migrate <name>
 # Proven owned legacy namespace whose data is disposable: preview the retirement
-./clawforge recipe retire-legacy <name>
-./clawforge recipe retire-legacy <name> --apply
+./clawwright recipe retire-legacy <name>
+./clawwright recipe retire-legacy <name> --apply
 ```
 
 Choose the cutover path by what the legacy stack still is. `recipe migrate` is for a legacy
@@ -849,7 +849,7 @@ the supported next step for each:
 * **Ownership/namespace unproven** — the legacy project's containers do not prove they
   belong to this recipe (missing, foreign or ambiguous `project.working_dir` /
   `project.config_files` labels), or the target namespace is not an empty, proven-owned
-  one. Nothing is adopted or stopped. Run `./clawforge recipe inspect <name> --json`,
+  one. Nothing is adopted or stopped. Run `./clawwright recipe inspect <name> --json`,
   read the reported namespaces and provenance, and resolve the ownership question
   deliberately before re-previewing.
 * **Writable-layer data** — the containers' writable layers hold data outside declared
@@ -876,7 +876,7 @@ no hooks, no target writes, with the full refusal reason in the preview.
 
 The last resort is outside the framework's guarantees. A manual cutover — stopping the old
 stack with `docker compose -p <project> down` (never with `-v`) using the exact project name `recipe inspect`
-prints, preserving all bind-mounted data yourself, and then `./clawforge recipe install
+prints, preserving all bind-mounted data yourself, and then `./clawwright recipe install
 <name>` — is not covered by the migration contract: nothing verifies the old containers are
 gone rather than merely stopped, named-volume data is not transferred by the reinstall and
 stays wherever the old project left it, no cold backups are taken, and a mistake can lose
@@ -887,7 +887,7 @@ only with the data's location and the old project's state verified by hand.
 directory.
 
 ```bash
-./clawforge provision-agent <recipe>
+./clawwright provision-agent <recipe>
 ```
 
 ```

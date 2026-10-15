@@ -30,7 +30,7 @@ for (const invalid of [true, {}, { ...declaration, extra: true }, { ...declarati
 for (const invalid of [undefined, true, { ...declaration, restore: "archive-only" }]) {
   const f = fixture(true);
   let actualError: unknown;
-  try { await f.stack.planMigrate!({ backupRoot: "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: invalid as typeof declaration }); }
+  try { await f.stack.planMigrate!({ backupRoot: "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: invalid as typeof declaration }); }
   catch (error) { actualError = error; }
   checkTrue("missing/invalid contract refuses before any runtime call or write", actualError instanceof Error && f.calls.length === 0 && f.writes.length === 0);
 }
@@ -57,7 +57,7 @@ function layerFixture(changes: string, cold = false) {
 {
   const { f } = layerFixture("A /bind\n");
   const plan = await f.stack.planMigrate!({
-    backupRoot: "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: declaration,
+    backupRoot: "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: declaration,
   });
   const result = await f.stack.migrate!(plan, f.lock);
   check("created mountpoint metadata permits complete cold cutover", [result.evidence.source, result.evidence.target, result.evidence.archivesVerified],
@@ -70,7 +70,7 @@ for (const changes of ["C /bind\n", "D /bind\n", "A /bind/unbacked\n", "A /bind-
     let error: unknown;
     try {
       const plan = await f.stack.planMigrate!({
-        backupRoot: "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: declaration,
+        backupRoot: "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc", migrationBackup: declaration,
       });
       await f.stack.migrate!(plan, f.lock);
     } catch (caught) { error = caught; }
@@ -98,7 +98,7 @@ for (const unreadable of [false, true]) {
   f.setConfig({ services: { db: { ...service, volumes: [
     { type: "volume", source: "data", target: "/named" }, { type: "bind", source: "/application/data", target: "/bind" },
   ] }, worker: service }, volumes: { data: { name: "current_data" } } });
-  const root = "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc";
+  const root = "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc";
   const files = f.files;
   const journalFiles = () => [...files.entries()]
     .filter(([path]) => path === `${root}/journal.json` || (path.startsWith(`${root}/`) && /^journal-\d+\.json$/.test(path.slice(root.length + 1))))
@@ -181,7 +181,7 @@ for (const unreadable of [false, true]) {
 // or identifyTarget's signal check must make the corresponding negative commit.
 const torRoot = "/fixture/data/tor-socks5";
 const torChild = "/fixture/data/tor-socks5/privoxy.config";
-const torBackup = "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc";
+const torBackup = "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc";
 const originalIDs = ["1".repeat(64), "3".repeat(64)]; // proxy, bridge (fixture source inventory order)
 const configEntry = (): Entry => ({ kind: "file", mode: 0o644, uid: 42, gid: 84, mtime: 128,
   bytes: new Uint8Array([102, 111, 114, 119, 97, 114, 100, 0, 255, 10]) });
@@ -371,7 +371,7 @@ for (const scenario of ["unchanged SIGINT", "source-path replacement", "source-p
     }
   }
 }
-const nativeBackup = "/private/.clawforge-recipe-recovery/12345678-1234-4234-8234-123456789abc";
+const nativeBackup = "/private/.clawwright-recipe-recovery/12345678-1234-4234-8234-123456789abc";
 const nativeHome = "/native/instance/data-locks";
 function nativeMigrationFixture(): RecipeRecoveryFixture {
   const f = fixture(true, { definitionFile: "/mnt/d/project/recipes/db/compose.yml", dataDir: "/native/instance/data", sourceMode: 0o777, sourceUid: 1000 });
@@ -384,7 +384,7 @@ function nativeMigrationFixture(): RecipeRecoveryFixture {
   f.setConfig({ services: { db: { image: "mutable:tag", user: "", environment: { PASSWORD: "container-secret" }, volumes: [
     { type: "volume", source: "data", target: "/named" }, { type: "bind", source: "/application/data", target: "/bind" },
   ] } }, volumes: { data: { name: "current_data" } } });
-  f.storage.parents.set("/private/.clawforge-recipe-recovery", { kind: "directory", mode: 0o700, uid: 1000, gid: 1000, mtime: 0 });
+  f.storage.parents.set("/private/.clawwright-recipe-recovery", { kind: "directory", mode: 0o700, uid: 1000, gid: 1000, mtime: 0 });
   return f;
 }
 {
@@ -399,7 +399,7 @@ function nativeMigrationFixture(): RecipeRecoveryFixture {
   checkTrue("native migration actual target up ran", !!up);
   check("native migration keeps original Compose project directory", up?.args[(up?.args.indexOf("--project-directory") ?? -1) + 1], "/mnt/d/project/recipes/db");
   const resolved = up?.args[(up?.args.indexOf("--file") ?? -1) + 1] ?? "";
-  checkTrue("native migration actual target document retained under native home", resolved.startsWith(`${nativeHome}/.clawforge-operation-`) && resolved.endsWith("/resolved.json") && f.files.has(resolved));
+  checkTrue("native migration actual target document retained under native home", resolved.startsWith(`${nativeHome}/.clawwright-operation-`) && resolved.endsWith("/resolved.json") && f.files.has(resolved));
   const operation = f.storage.parents.get(resolved.slice(0, resolved.lastIndexOf("/")));
   check("native migration operation directory private and owned", [operation?.kind, operation?.mode, operation?.uid], ["directory", 0o700, 1000]);
   const metadata = f.privateFiles.get(resolved);
@@ -412,9 +412,9 @@ function nativeMigrationFixture(): RecipeRecoveryFixture {
     { Type: "bind", Source: "/application/data", Destination: "/bind", RW: true },
   ]);
   check("native migration retained target provenance file", target.Config.Labels["com.docker.compose.project.config_files"], resolved);
-  check("native migration retained target definition provenance", target.Config.Labels["io.clawforge.recipe.definition"], "/mnt/d/project/recipes/db/compose.yml");
-  checkTrue("native migration retained document digest provenance", /^[0-9a-f]{64}$/.test(target.Config.Labels["io.clawforge.recipe.document-sha256"] ?? "")
-    && target.Config.Labels["io.clawforge.recipe.document-sha256"] === document.services.db.labels["io.clawforge.recipe.document-sha256"]);
+  check("native migration retained target definition provenance", target.Config.Labels["io.clawwright.recipe.definition"], "/mnt/d/project/recipes/db/compose.yml");
+  checkTrue("native migration retained document digest provenance", /^[0-9a-f]{64}$/.test(target.Config.Labels["io.clawwright.recipe.document-sha256"] ?? "")
+    && target.Config.Labels["io.clawwright.recipe.document-sha256"] === document.services.db.labels["io.clawwright.recipe.document-sha256"]);
   check("native migration truthful success evidence", [result.evidence.source, result.evidence.target, result.evidence.sourceResumeAttempted,
     result.evidence.cleanShutdownVerified, result.evidence.archivesVerified, result.retainedSource], ["absent", "running", false, true, true, true]);
   const journal = JSON.parse(f.files.get(result.journalPath)!) as OwnerJournal;
@@ -515,7 +515,7 @@ for (const fault of ["root777", "file644", "collision", "filewrite"] as const) {
   try { await f.stack.migrate!(plan, f.lock); } catch (error) { failure = error; }
   const after = migrationSnapshot(f);
   checkTrue(`preallocated ${fault} rejects at native allocation`, failure instanceof Error
-    && allocated.startsWith(`${nativeHome}/.clawforge-operation-`));
+    && allocated.startsWith(`${nativeHome}/.clawwright-operation-`));
   check(`preallocated ${fault} exact seam counts`, [mkdirFaults, writeFaults],
     fault === "root777" || fault === "collision" ? [1, 0] : [0, 1]);
   check(`preallocated ${fault} locked execution`, f.locks, 1);
@@ -589,7 +589,7 @@ for (const fault of ["root777", "file644", "collision", "filewrite"] as const) {
   check("prepared contract retained archives and checksums", [f.storage.archives.size, f.storage.checksums.size], [2, 2]);
 }
 const migrationOptions = (): Pick<StackMigrateOptions, "migrationBackup"> => ({ migrationBackup: declaration });
-const backupRoot = "/private/.clawforge-recipe-recovery/12345678-1234-4123-8123-123456789abc";
+const backupRoot = "/private/.clawwright-recipe-recovery/12345678-1234-4123-8123-123456789abc";
 function populated(): RecipeRecoveryFixture {
   const f = fixture(true);
   f.storage.volumes.set("legacy_data", expectedTree());

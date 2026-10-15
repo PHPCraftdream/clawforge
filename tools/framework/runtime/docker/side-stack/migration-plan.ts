@@ -181,7 +181,7 @@ export async function verifyWriters(io: StackIO, storage: Storage[], permitted: 
 }
 
 export function backupParent(root: string): string {
-  if (!safePath(root) || !/^.*\/\.clawforge-recipe-recovery\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(root))
+  if (!safePath(root) || !/^.*\/\.clawwright-recipe-recovery\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(root))
     throw new Error("recipe migration backup root requires private recovery parent and exclusive UUID child");
   return root.slice(0, root.lastIndexOf("/"));
 }

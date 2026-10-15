@@ -21,7 +21,7 @@ useLinuxHost();
 const realNow = Date.now.bind(Date);
 let clockOffset = 0;
 Date.now = () => realNow() + clockOffset;
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-retire-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-retire-"));
 const fixture = await createDeploymentFixture({ root }).catch(async (error) => { await rm(root, { recursive: true, force: true }); throw error; });
 try {
   const envFile = join(root, ".env");
@@ -232,7 +232,7 @@ try {
   checkTrue("never removes/builds images", dockerVerbs.every((verb) => verb[0] !== "rmi" && !(verb[0] === "image" && verb[1] !== "inspect")));
   checkTrue("never kills or forces", dockerVerbs.every((verb) => verb[0] !== "kill" && !verb.includes("--force")));
   check("private recovery directory created", privateMkdirs > 0, true);
-  const journals = journalWrites.filter((write) => write.path.includes(".clawforge-recipe-recovery/"));
+  const journals = journalWrites.filter((write) => write.path.includes(".clawwright-recipe-recovery/"));
   const phases = journals.filter((write) => /journal-\d+\.json$/.test(write.path)).map((write) => (JSON.parse(write.content) as { events: { phase: string }[] }).events.at(-1)!.phase);
   check("journal phases in order", phases, ["prepared", "stopped-verified", "writer-isolation-verified", "backups-verified", "inspect-recorded", "manifest-recorded", "retired"]);
   const manifest = JSON.parse(journals.find((write) => write.path.endsWith("manifest.json"))!.content) as { archives: { archive: string; restoreArgv: string[]; source: string }[]; images: { imageId: string }[] };

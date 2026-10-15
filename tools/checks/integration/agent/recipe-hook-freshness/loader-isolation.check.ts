@@ -12,30 +12,30 @@ import { check, finish } from "#checks/kit/harness.ts";
 import { scratchDeployment, stubContext } from "./fixture.ts";
 const { outerRecipes } = scratchDeployment();
 // Bare imports: the documented hook shape imports
-// `@clawforge/framework/private-config`, a package specifier resolved from the recipe's
+// `clawwright/private-config`, a package specifier resolved from the recipe's
 // own node_modules. The loader this replaces executed rewritten copies from a scratch
 // cache directory whose package scope had no node_modules, so even an unmodified first
 // run broke every hook importing a dependency; hooks now execute from their real path,
 // where normal resolution applies — on the first load and again after an edit re-imports
 // the hook.
 {
-  const bareRoot = resolve(tmpdir(), `clawforge-recipe-hook-bare-${Date.now()}`);
+  const bareRoot = resolve(tmpdir(), `clawwright-recipe-hook-bare-${Date.now()}`);
   try {
-    await mkdir(resolve(bareRoot, "bare", "node_modules", "@clawforge", "framework"), { recursive: true });
+    await mkdir(resolve(bareRoot, "bare", "node_modules", "clawwright"), { recursive: true });
     await writeFile(resolve(bareRoot, "bare", "recipe.json"), JSON.stringify({ description: "Bare import probe" }), "utf8");
     await writeFile(
-      resolve(bareRoot, "bare", "node_modules", "@clawforge", "framework", "package.json"),
-      JSON.stringify({ name: "@clawforge/framework", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
+      resolve(bareRoot, "bare", "node_modules", "clawwright", "package.json"),
+      JSON.stringify({ name: "clawwright", version: "0.0.0-check", type: "module", exports: { "./private-config": "./private-config.js" } }),
       "utf8",
     );
     await writeFile(
-      resolve(bareRoot, "bare", "node_modules", "@clawforge", "framework", "private-config.js"),
+      resolve(bareRoot, "bare", "node_modules", "clawwright", "private-config.js"),
       "export function stubRevision() { return 42; }\n",
       "utf8",
     );
     await writeFile(
       resolve(bareRoot, "bare", "verify.ts"),
-      "import { stubRevision } from \"@clawforge/framework/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
+      "import { stubRevision } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() }; }\n",
       "utf8",
     );
     useRecipesDir(bareRoot);
@@ -46,10 +46,10 @@ const { outerRecipes } = scratchDeployment();
       return JSON.parse(output) as { revision?: number };
     };
 
-    check("bare: a hook importing @clawforge/framework/private-config resolves it from the recipe's own node_modules", (await verifyOnce()).revision, 42);
+    check("bare: a hook importing clawwright/private-config resolves it from the recipe's own node_modules", (await verifyOnce()).revision, 42);
     await writeFile(
       resolve(bareRoot, "bare", "verify.ts"),
-      "import { stubRevision } from \"@clawforge/framework/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() + 8 }; }\n",
+      "import { stubRevision } from \"clawwright/private-config\";\nexport async function verify() { return { ok: true, revision: stubRevision() + 8 }; }\n",
       "utf8",
     );
     check("bare: the package import still resolves after an edit re-imports the hook", (await verifyOnce()).revision, 50);
@@ -67,7 +67,7 @@ const { outerRecipes } = scratchDeployment();
 // stayed held. The outer race is the check's own bounded wait: a loader regression may
 // not hang the shared runner process this file runs in.
 {
-  const cycleRoot = resolve(tmpdir(), `clawforge-recipe-hook-cycle-${Date.now()}`);
+  const cycleRoot = resolve(tmpdir(), `clawwright-recipe-hook-cycle-${Date.now()}`);
   try {
     await mkdir(resolve(cycleRoot, "cycle"), { recursive: true });
     await writeFile(resolve(cycleRoot, "cycle", "recipe.json"), JSON.stringify({ description: "Cycle probe" }), "utf8");
@@ -115,15 +115,15 @@ const { outerRecipes } = scratchDeployment();
 }
 
 // No shared hook cache to adopt from: the loader this
-// replaces wrote content-addressed copies into a predictable `clawforge-hook-cache`
+// replaces wrote content-addressed copies into a predictable `clawwright-hook-cache`
 // directory under the system temp dir and imported whatever file was already sitting at
 // the expected name — a local attacker who won that race got their code executed with
 // the operator's privileges. Hooks now execute from their real path, so a hook run
 // creates no cache directory at all, and a foreign module planted at the old location
 // is never imported: the answer comes from the recipe's own edited file.
 {
-  const adoptedRoot = resolve(tmpdir(), `clawforge-recipe-hook-adopt-${Date.now()}`);
-  const oldCacheDir = resolve(tmpdir(), "clawforge-hook-cache");
+  const adoptedRoot = resolve(tmpdir(), `clawwright-recipe-hook-adopt-${Date.now()}`);
+  const oldCacheDir = resolve(tmpdir(), "clawwright-hook-cache");
   const poisonDir = resolve(oldCacheDir, "poisoned");
   let cacheDirExisted = false;
   try {
@@ -153,7 +153,7 @@ const { outerRecipes } = scratchDeployment();
     await verifyOnce();
     const cacheEntriesAfter = await readdir(oldCacheDir).catch(() => [] as string[]);
     check(
-      "cache: a hook run writes nothing into clawforge-hook-cache under the system temp dir",
+      "cache: a hook run writes nothing into clawwright-hook-cache under the system temp dir",
       JSON.stringify(cacheEntriesAfter),
       JSON.stringify(cacheEntriesBefore),
     );
@@ -172,12 +172,12 @@ const { outerRecipes } = scratchDeployment();
 
 // The bounded deadline behind cycle handling: a hook
 // whose evaluation never settles must fail with a clear timeout error instead of a hung
-// call holding the instance lock. CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS exists so this path
+// call holding the instance lock. CLAWWRIGHT_HOOK_IMPORT_TIMEOUT_MS exists so this path
 // is testable in seconds; the stub recipe's verify never resolves its top-level await.
 // The abandoned evaluation must not surface as an unhandled rejection — this block (and
 // the whole runner process) finishing cleanly is part of the assertion.
 {
-  const hangRoot = resolve(tmpdir(), `clawforge-recipe-hook-hang-${Date.now()}`);
+  const hangRoot = resolve(tmpdir(), `clawwright-recipe-hook-hang-${Date.now()}`);
   try {
     await mkdir(resolve(hangRoot, "hang"), { recursive: true });
     await writeFile(resolve(hangRoot, "hang", "recipe.json"), JSON.stringify({ description: "Hang probe" }), "utf8");
@@ -188,7 +188,7 @@ const { outerRecipes } = scratchDeployment();
     );
     useRecipesDir(hangRoot);
     const { ctx } = stubContext({});
-    process.env.CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS = "1000";
+    process.env.CLAWWRIGHT_HOOK_IMPORT_TIMEOUT_MS = "1000";
     let failure = "";
     try {
       let output = "";
@@ -197,7 +197,7 @@ const { outerRecipes } = scratchDeployment();
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     } finally {
-      delete process.env.CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS;
+      delete process.env.CLAWWRIGHT_HOOK_IMPORT_TIMEOUT_MS;
     }
     check("deadline: a hook whose evaluation never settles fails with a clear timeout error, not a hang", /did not settle within/.test(failure), true);
   } finally {

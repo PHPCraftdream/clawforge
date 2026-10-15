@@ -14,7 +14,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 
 /** A fresh deployment with config/ and secrets/, already selected for this file. */
 export async function setupDeployment(prefix: string): Promise<string> {
-  const deployDir = await mkdtemp(resolve(tmpdir(), `clawforge-secrets-${prefix}-check-`));
+  const deployDir = await mkdtemp(resolve(tmpdir(), `clawwright-secrets-${prefix}-check-`));
   await mkdir(resolve(deployDir, "config"), { recursive: true });
   await mkdir(resolve(deployDir, "secrets"), { recursive: true });
   useDeployment(deployDir);

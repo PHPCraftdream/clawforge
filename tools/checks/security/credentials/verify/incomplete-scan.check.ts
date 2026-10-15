@@ -58,7 +58,7 @@ function checkCleanup(label: string, scenario: ReturnType<typeof scenarioForScan
   const { events, files } = scenario;
   check(`${label} releases its lock`, scenario.lock(), false);
   check(`${label} cleans scan and publication staging`, [...files.keys()].some((path) =>
-    path.startsWith("/tmp/clawforge-verify-") || path.includes(".clawforge-backup-") || path.includes(".clawforge-pull-")), false);
+    path.startsWith("/tmp/clawwright-verify-") || path.includes(".clawwright-backup-") || path.includes(".clawwright-pull-")), false);
   const patterns = events.filter((event) => event.startsWith("private-pattern:")).map((event) => event.slice("private-pattern:".length));
   checkTrue(`${label} used the secret scan`, patterns.length > 0);
   checkTrue(`${label} removes every pattern`, patterns.every((path) => events.includes(`remove:${path}`)));

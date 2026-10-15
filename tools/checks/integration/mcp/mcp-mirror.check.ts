@@ -3,7 +3,7 @@
 // `logs`, `cli` and the gate's commands each drifted out of the MCP surface at some point,
 // and nothing failed when they did — the surface was whatever was left after the exclusions,
 // rather than a promise anyone could check. This compares the two surfaces as a user meets
-// them: the command list `./clawforge help` prints, and the tool list a client receives. Anything
+// them: the command list `./clawwright help` prints, and the tool list a client receives. Anything
 // on the first and not on the second has to be in MCP_EXEMPTIONS with a reason.
 //
 // Both are read from real processes rather than from the declarations they come from, so a
@@ -24,7 +24,7 @@ import { check, finish, isolatedAppsRoot } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 function run(args: string[], input = ""): Promise<{ stdout: string; stderr: string }> {
-  return runProcess(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args], { cwd: tmpdir(), input });
+  return runProcess(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawwright.ts"), ...args], { cwd: tmpdir(), input });
 }
 
 /** Command names as the help screen lists them: the deployment's own, indented six spaces,
@@ -180,10 +180,10 @@ try {
 
   // Not a second implementation of the console's own lookup: for a representative
   // multi-paragraph command, and for the bare command list, the tool's text matches
-  // `./clawforge help [<command>]` exactly.
+  // `./clawwright help [<command>]` exactly.
   const consoleRecipeHelp = await run(["--app", deployment, "help", "recipe"]);
   check(
-    "the help tool's text matches ./clawforge help <command> exactly",
+    "the help tool's text matches ./clawwright help <command> exactly",
     helpTextFor("recipe"),
     (consoleRecipeHelp.stdout + consoleRecipeHelp.stderr).trim(),
   );
@@ -209,7 +209,7 @@ try {
     .filter((line) => line.trim() !== "")
     .map((line) => JSON.parse(line) as { result?: { content?: Array<{ text?: string }> } })[0]
     ?.result?.content?.[0]?.text ?? "";
-  check("the help tool with no command matches ./clawforge help exactly", helpBareText, (help.stdout + help.stderr).trim());
+  check("the help tool with no command matches ./clawwright help exactly", helpBareText, (help.stdout + help.stderr).trim());
 } finally {
   await apps.dispose();
 }

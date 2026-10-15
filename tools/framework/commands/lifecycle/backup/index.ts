@@ -1,4 +1,4 @@
-// `clawforge backup` — a consistent snapshot of the data directory.
+// `clawwright backup` — a consistent snapshot of the data directory.
 //
 // The gateway is stopped for the duration by default: OpenClaw keeps state in SQLite
 // databases with multi-megabyte -wal files, and a copy taken mid-write is not restorable.
@@ -7,7 +7,7 @@
 // Split into four files: this one keeps the creation path (BACKUP_ARGUMENTS, createBackup
 // and the dispatcher below); list.ts is the read-only archive/replaced-copy inventory;
 // prune-replaced.ts is the explicit, --apply-gated cleanup of `<dataDir>.replaced-*` copies
-// restore leaves behind; install.ts wires `clawforge backup` onto a schedule (crontab, or
+// restore leaves behind; install.ts wires `clawwright backup` onto a schedule (crontab, or
 // a printed/applyable `schtasks` entry on Windows). `list`/`prune-replaced`/`install`/
 // `uninstall` are additional first positional actions; no action still creates an archive.
 
@@ -151,7 +151,7 @@ export interface BackupOptions {
 }
 
 /** Thrown when native mode cannot be attempted at all — the caller (createBackup itself for
- *  a direct `--native` request, and clawforge upgrade for its pre-upgrade backup) falls
+ *  a direct `--native` request, and clawwright upgrade for its pre-upgrade backup) falls
  *  back to the classic stopped tar path rather than treating it as a hard failure. Any other
  *  error out of the native path is a real failure and propagates as-is. */
 export class NativeBackupUnsupportedError extends Error {}
@@ -159,7 +159,7 @@ export class NativeBackupUnsupportedError extends Error {}
 /** The pristine archive `openclaw backup create` wrote, kept inside the published archive at
  *  this name so restore can feed it back to `openclaw backup verify` before trusting the
  *  rest — see createNativeArchive and restore.ts. */
-export const NATIVE_MANIFEST_NAME = ".clawforge-native-manifest.tar.gz";
+export const NATIVE_MANIFEST_NAME = ".clawwright-native-manifest.tar.gz";
 
 // UTC, not local time: state.ts's snapshot names and restore.ts's <data>.replaced-<stamp>
 // both already are, and local time would put a backup taken the same moment as a pull two
@@ -248,7 +248,7 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
  *  beside the native point-in-time database would be replayed onto it on restore and corrupt
  *  it), Chromium profile locks, and this run's own native archive, which sits in config/
  *  while the difference is taken. */
-const NEVER_COPY_LIVE = [/-(wal|shm|journal)$/, /(^|\/)Singleton(Lock|Cookie|Socket)$/, /(^|\/)\.clawforge-native-[^/]*\.tar\.gz$/];
+const NEVER_COPY_LIVE = [/-(wal|shm|journal)$/, /(^|\/)Singleton(Lock|Cookie|Socket)$/, /(^|\/)\.clawwright-native-[^/]*\.tar\.gz$/];
 
 export function omittedOnPurpose(relative: string): boolean {
   return NEVER_COPY_LIVE.some((pattern) => pattern.test(relative));
@@ -309,7 +309,7 @@ async function createNativeArchive(
   compensationErrors: unknown[],
 ): Promise<void> {
   const { dataDir } = ctx.settings;
-  const nativeTarget = `${dataDir}/config/.clawforge-native-${randomUUID()}.tar.gz`;
+  const nativeTarget = `${dataDir}/config/.clawwright-native-${randomUUID()}.tar.gz`;
   let containerOutput: string;
   try {
     containerOutput = ctx.paths.toContainer(nativeTarget);
@@ -405,7 +405,7 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   const archive = `${backupDir}/${backupArchiveName(deploymentName(), timestamp(), profile)}`;
   // Keep the archive in a private directory until it is complete. The final name must only
   // appear after tar and chmod succeed, so a failed tar cannot become the newest backup.
-  const stagingDir = `${backupDir}/.clawforge-backup-${randomUUID()}`;
+  const stagingDir = `${backupDir}/.clawwright-backup-${randomUUID()}`;
   const stagingArchive = `${stagingDir}/archive.tar.gz`;
 
   await runBackupTransaction(ctx, options, profile, dataDir, backupDir, archive, stagingDir, stagingArchive);

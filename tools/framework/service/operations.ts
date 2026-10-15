@@ -63,7 +63,7 @@ export function newOperationId(command: string): string {
 }
 
 export function operationsDir(ctx: Context): string {
-  return `${ctx.settings.dataDir}/clawforge-operations`;
+  return `${ctx.settings.dataDir}/clawwright-operations`;
 }
 
 function legacyOperationsDir(ctx: Context): string {

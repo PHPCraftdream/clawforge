@@ -29,7 +29,7 @@ const deployment = resolve(local, `app-${id}`);
 const previousRoot = selectedDeployment();
 const previousOverride = composeProjectOverride();
 const base: Transport = process.platform === "win32" ? new WslTransport(process.env.OC_WSL_DISTRO ?? DEFAULT_WSL_DISTRO) : new LocalTransport();
-const target = (await base.exec("mktemp", ["-d", `/tmp/clawforge-restore-${id}-XXXXXX`])).stdout.trim();
+const target = (await base.exec("mktemp", ["-d", `/tmp/clawwright-restore-${id}-XXXXXX`])).stdout.trim();
 const operator = (await base.exec("id", ["-u"])).stdout.trim();
 const group = (await base.exec("id", ["-g"])).stdout.trim();
 const fixturePrefix = operator === "0" || operator === "1000" ? [] : ["sudo", "-n"];

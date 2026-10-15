@@ -67,7 +67,7 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
-          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+          node --experimental-strip-types tools/clawwright.ts check --related --base "$(git merge-base origin/main HEAD)"
 
       # ubuntu-latest ships openssh-client but not always a running sshd: install it if
       # missing, start it, and authorize a passphrase-less key for the `ssh-loopback`
@@ -116,11 +116,11 @@ jobs:
           app="$RUNNER_TEMP/cf-system-smoke"
           mkdir -p "$app"
           cd "$app"
-          clawforge version
-          clawforge init
-          help="$(clawforge help 2>&1)"
+          clawwright version
+          clawwright init
+          help="$(clawwright help 2>&1)"
           grep -q bootstrap <<<"$help"
-          ./clawforge version
+          ./clawwright version
 
       - name: Typecheck and lint
         if: env.FULL_TIER == 'true'
@@ -137,7 +137,7 @@ jobs:
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.
-        run: node --experimental-strip-types tools/clawforge.ts check --timings
+        run: node --experimental-strip-types tools/clawwright.ts check --timings
 
   macos-checks:
     # Matrix cell: macOS host, ssh target only — no local target on macOS by design
@@ -175,7 +175,7 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
-          node --experimental-strip-types tools/clawforge.ts check --related --base "$(git merge-base origin/main HEAD)"
+          node --experimental-strip-types tools/clawwright.ts check --related --base "$(git merge-base origin/main HEAD)"
 
       # `setremotelogin` is the documented way to turn on sshd on GitHub's hosted macOS
       # runners without a GUI session; ASSUMPTION (unverified here — no Actions run available):
@@ -218,11 +218,11 @@ jobs:
           app="$RUNNER_TEMP/cf-system-smoke"
           mkdir -p "$app"
           cd "$app"
-          clawforge version
-          clawforge init
-          help="$(clawforge help 2>&1)"
+          clawwright version
+          clawwright init
+          help="$(clawwright help 2>&1)"
           grep -q bootstrap <<<"$help"
-          ./clawforge version
+          ./clawwright version
 
       - name: Typecheck and lint
         if: env.FULL_TIER == 'true'
@@ -231,7 +231,7 @@ jobs:
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.
-        run: node --experimental-strip-types tools/clawforge.ts check --timings
+        run: node --experimental-strip-types tools/clawwright.ts check --timings
 
   windows-checks:
     # Matrix cell: Windows host, no WSL — the "no-WSL" cell. The same `npm run check` every
@@ -279,7 +279,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $base = git merge-base origin/main HEAD
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --experimental-strip-types tools/clawforge.ts check --related --base $base
+          node --experimental-strip-types tools/clawwright.ts check --related --base $base
           exit $LASTEXITCODE
 
       - name: Run checks
@@ -302,11 +302,11 @@ jobs:
           app="$RUNNER_TEMP/cf-system-smoke"
           mkdir -p "$app"
           cd "$app"
-          clawforge version
-          clawforge init
-          help="$(clawforge help 2>&1)"
+          clawwright version
+          clawwright init
+          help="$(clawwright help 2>&1)"
           grep -q bootstrap <<<"$help"
-          ./clawforge version
+          ./clawwright version
 
       - name: The system-wide command from PowerShell
         if: env.FULL_TIER == 'true'
@@ -315,10 +315,10 @@ jobs:
           # help is written to stderr; Actions runs pwsh with Stop, which 2>&1 must not trip.
           $ErrorActionPreference = 'Continue'
           Set-Location (Join-Path $env:RUNNER_TEMP 'cf-system-smoke')
-          $version = clawforge version
-          if ($LASTEXITCODE -ne 0) { throw 'clawforge version failed' }
-          $help = clawforge help 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0 -or -not ($help -match 'bootstrap')) { throw 'clawforge help did not list the deployment commands' }
+          $version = clawwright version
+          if ($LASTEXITCODE -ne 0) { throw 'clawwright version failed' }
+          $help = clawwright help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or -not ($help -match 'bootstrap')) { throw 'clawwright help did not list the deployment commands' }
           $version
 
       - name: Typecheck and lint
@@ -336,7 +336,7 @@ jobs:
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.
-        run: node --experimental-strip-types tools/clawforge.ts check --timings
+        run: node --experimental-strip-types tools/clawwright.ts check --timings
 
   windows-wsl:
     # Matrix cell: Windows host, WSL2 target — the only hosted-runner attempt at exercising a
@@ -383,7 +383,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $base = git merge-base origin/main HEAD
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --experimental-strip-types tools/clawforge.ts check --related --base $base
+          node --experimental-strip-types tools/clawwright.ts check --related --base $base
           exit $LASTEXITCODE
 
       - name: Provision a real WSL2 distro (best-effort)
@@ -413,7 +413,7 @@ jobs:
       - name: Check timing summary
         if: always()
         # The E3 run-timings feature: prints the stored ranking even when a check step failed.
-        run: node --experimental-strip-types tools/clawforge.ts check --timings
+        run: node --experimental-strip-types tools/clawwright.ts check --timings
 
   windows-controls:
     # Each control breaks guarded code in a copy and requires its check to fail, proving the

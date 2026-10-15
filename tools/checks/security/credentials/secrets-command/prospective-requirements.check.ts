@@ -32,7 +32,7 @@ try {
 
   const writes: Record<string, string> = {};
   const ctx = {
-    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", env: {} },
     runtime: {
       async isRunning(): Promise<boolean> {
         return false;
@@ -79,7 +79,7 @@ try {
     () => secrets(ctx, ["--apply", "--store", storeName]),
   );
 
-  const installed = writes["/srv/clawforge/data/config/.env"];
+  const installed = writes["/srv/clawwright/data/config/.env"];
   checkTrue(
     "a secret only a not-yet-applied declaration needs is actually installed, not refused as empty",
     installed?.includes("NEWPROV_API_KEY=my-value") === true,

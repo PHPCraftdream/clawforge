@@ -1,4 +1,4 @@
-// `./clawforge backup prune-replaced` — previews by default, deletes only with --apply,
+// `./clawwright backup prune-replaced` — previews by default, deletes only with --apply,
 // respects --keep, refuses anything that is not exactly a `<dataDir>.replaced-<stamp>`
 // sibling (a symlink, a nested path, an odd name), and takes the instance lock for the
 // delete path. Runs the REAL locking code (guardedWith()/takeLock()) against the same

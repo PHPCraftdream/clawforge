@@ -46,7 +46,7 @@ const OWNED_KINDS: readonly OwnedKind[] = ["agent", "mcp-server", "cron-job"];
 const LEGACY_NAMESPACES = ["oc", "cf"] as const;
 
 export function ledgerFile(ctx: Context): string {
-  return `${ctx.settings.dataDir}/clawforge-managed.json`;
+  return `${ctx.settings.dataDir}/clawwright-managed.json`;
 }
 
 function legacyLedgerFiles(ctx: Context): string[] {
@@ -155,7 +155,7 @@ export async function writeFileAtomic(ctx: Context, path: string, content: strin
     await ctx.transport.writeFile(path, content);
     return;
   }
-  const temporary = `${path}.clawforge-staged-${randomBytes(8).toString("hex")}`;
+  const temporary = `${path}.clawwright-staged-${randomBytes(8).toString("hex")}`;
   try {
     await ctx.transport.writeFile(temporary, content);
     const moved = await ctx.transport.exec("mv", ["-f", "--", temporary, path]);

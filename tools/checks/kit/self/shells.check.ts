@@ -88,7 +88,7 @@ check("msvcrt.odd.backslash.run.makes.a.literal.quote", msvcrtArgv("a\\\"b"), ["
 check("msvcrt.backslashes.elsewhere.are.literal", msvcrtArgv("C:\\dir\\x"), ["C:\\dir\\x"]);
 check("msvcrt.empty.quoted.argument.is.one.empty.word", msvcrtArgv("a\u0020\"\"\u0020b"), ["a", "", "b"]);
 check("msvcrt.unquoted.whitespace.separates.arguments", msvcrtArgv("a\u0020\tb"), ["a", "b"]);
-check("cmd.program.argv.runs.the.model.then.the.program.parser", programArgv("clawforge\u0020\"a\"\"&calc\"\u0020\"C:\\dir\\\\\"", "cmd"), ["clawforge", "a\"&calc", "C:\\dir\\"]);
+check("cmd.program.argv.runs.the.model.then.the.program.parser", programArgv("clawwright\u0020\"a\"\"&calc\"\u0020\"C:\\dir\\\\\"", "cmd"), ["clawwright", "a\"&calc", "C:\\dir\\"]);
 check("posix.program.argv.is.the.shell.words", programArgv("ls\u0020'a\u0020b'", "posix"), ["ls", "a\u0020b"]);
 
 // --- pwsh -------------------------------------------------------------------------------------

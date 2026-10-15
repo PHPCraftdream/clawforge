@@ -78,7 +78,7 @@ const previousDeployment = (() => {
 })();
 
 const tag = randomBytes(4).toString("hex");
-const deployment = await mkdtemp(join(tmpdir(), `clawforge-pp-ledger-serial-${tag}-`));
+const deployment = await mkdtemp(join(tmpdir(), `clawwright-pp-ledger-serial-${tag}-`));
 await mkdir(join(deployment, "config"), { recursive: true });
 
 try {

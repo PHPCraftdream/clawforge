@@ -1,4 +1,4 @@
-// `clawforge restore` — puts an archive back onto the instance.
+// `clawwright restore` — puts an archive back onto the instance.
 //
 // Two properties matter and are preserved:
 //   - the current data is moved aside, never deleted, so a wrong restore is recoverable
@@ -201,7 +201,7 @@ function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<void> {
  *  cannot be read fails the restore, never reads as "nothing to protect". An archive without
  *  one predates history travelling with backups. */
 async function importRestoredHistory(ctx: Context, name: string, entries: readonly string[], dataDir: string): Promise<void> {
-  const historyEntry = `${name}/config/clawforge-private-paths.json`;
+  const historyEntry = `${name}/config/clawwright-private-paths.json`;
   if (entries.some((entry) => entry.replace(/^\.\//, "") === historyEntry)) {
     const added = await importRestoredPrivatePathsHistory(ctx, privatePathsHistoryFile(dataDir));
     if (added.length > 0) info(`privacy history restored with the data: ${added.length} path(s) stay protected`);
@@ -209,14 +209,14 @@ async function importRestoredHistory(ctx: Context, name: string, entries: readon
   }
   if ((await persistedPrivatePaths()).length > 0) {
     info(
-      "this archive carries no privacy history (a backup made before clawforge copied it into backups) — " +
+      "this archive carries no privacy history (a backup made before clawwright copied it into backups) — " +
         "this deployment's own ledger still protects its recorded paths",
     );
     return;
   }
   warn(
     "this archive carries no privacy history and this deployment has none recorded: private files that recipe " +
-      "hooks wrote before clawforge kept records cannot be classified from what is here — declare the paths " +
+      "hooks wrote before clawwright kept records cannot be classified from what is here — declare the paths " +
       "(recipes' privatePaths) or record them with a private write before trusting migrate/share with this data",
   );
 }
@@ -229,7 +229,7 @@ async function importRestoredHistory(ctx: Context, name: string, entries: readon
  *  path available before restore has put anything back), and removed again whatever happens. */
 async function verifyEmbeddedNativeManifest(ctx: Context, archive: string, manifestEntry: string): Promise<void> {
   log("this archive embeds OpenClaw's own native backup manifest — verifying it before unpacking anything else");
-  const session = `${ctx.settings.dataDir}/config/.clawforge-restore-verify-${randomBytes(6).toString("hex")}`;
+  const session = `${ctx.settings.dataDir}/config/.clawwright-restore-verify-${randomBytes(6).toString("hex")}`;
   const prefix = await sudoFor(ctx, archive);
   let created = false;
   try {
@@ -516,7 +516,7 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
 
   // The restored config can reference variables nothing on this instance has yet — push()
   // works around this by always restoring with noStart and doing its own preflight after
-  // installing keys, but a direct `clawforge restore` has no such second step. Without this, an
+  // installing keys, but a direct `clawwright restore` has no such second step. Without this, an
   // archive missing its secrets starts straight into a SecretRefResolutionError crash-loop.
   try {
     await preflightSecrets(ctx);

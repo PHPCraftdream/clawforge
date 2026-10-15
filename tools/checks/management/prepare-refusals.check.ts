@@ -78,9 +78,9 @@ for (const kase of [
 // the refusal lands before any contact and without a Context. The sentence itself stays
 // pinned in checkout-policy.check.ts (INSTALLED_PACKAGE_MODE), which owns that text.
 {
-  const empty = await mkdtemp(join(tmpdir(), "clawforge-no-checkout-"));
-  const previous = process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"];
-  process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"] = empty;
+  const empty = await mkdtemp(join(tmpdir(), "clawwright-no-checkout-"));
+  const previous = process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"];
+  process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"] = empty;
   try {
     useDeployment(empty); // prepare reads the deployment's .env before the checkout sentence
     const { transport, contacts } = recordingTransport();
@@ -89,8 +89,8 @@ for (const kase of [
     checkTrue("deploy without a checkout is refused, not run", execution.error instanceof Error);
     check("deploy without a checkout: the target was never contacted", contacts, []);
   } finally {
-    if (previous === undefined) delete process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"];
-    else process.env["CLAWFORGE_CHECKS_SOURCE_ROOT"] = previous;
+    if (previous === undefined) delete process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"];
+    else process.env["CLAWWRIGHT_CHECKS_SOURCE_ROOT"] = previous;
     await rm(empty, { recursive: true, force: true });
   }
 }
@@ -102,7 +102,7 @@ for (const kase of [
 // attempt. The fixture's deployment directory carries no .env at all, so the app setting is
 // the effective layer.
 {
-  const isolated = await mkdtemp(join(tmpdir(), "clawforge-deploy-settings-"));
+  const isolated = await mkdtemp(join(tmpdir(), "clawwright-deploy-settings-"));
   await writeFile(join(isolated, ".env"), "OC_DATA_DIR=/srv/openclaw/data\n"); // no OC_REMOTE_PATH: the app-settings layer is effective
   useDeployment(isolated);
   const settingsApp = (ocRemotePath: string): AppDefinition => ({
@@ -122,9 +122,9 @@ for (const kase of [
     checkTrue("deploy app-settings invalid path: the target was never contacted", invalidContacts.length === 0);
 
     const { transport: validTransport, contacts } = recordingTransport();
-    const valid = await executeCommand(settingsApp("/opt/clawforge-fixture"), "deploy", { kind: "argv", argv: ["deployer@server"] }, { surface: "mcp", confirmed: true, transport: validTransport });
+    const valid = await executeCommand(settingsApp("/opt/clawwright-fixture"), "deploy", { kind: "argv", argv: ["deployer@server"] }, { surface: "mcp", confirmed: true, transport: validTransport });
     checkTrue("deploy app-settings valid path proceeds past validation to the connection attempt", contacts.length > 0);
-    checkTrue("deploy app-settings valid path is not refused by the --path sentence", (valid.error as Error | undefined)?.message !== PATH_SENTENCE("/opt/clawforge-fixture"));
+    checkTrue("deploy app-settings valid path is not refused by the --path sentence", (valid.error as Error | undefined)?.message !== PATH_SENTENCE("/opt/clawwright-fixture"));
   } finally {
     await rm(isolated, { recursive: true, force: true });
   }

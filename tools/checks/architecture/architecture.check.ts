@@ -5,7 +5,7 @@
 // slipped in. Lower means real progress — but it must be recorded: lower the baseline in the
 // same commit as the change that reduced it, so a decrease is never silently lost.
 //
-// Per-file counts are stored for the location-based metrics (dotClawforgeLiterals,
+// Per-file counts are stored for the location-based metrics (dotClawwrightLiterals,
 // imageStringOps, prosePins) so a failure names the files that grew; the two stage-7 S2.5
 // plain counts live in ./command-layer/kind-casts.ts alongside their counters.
 
@@ -49,9 +49,9 @@ interface ExemptLines {
 }
 interface Baseline {
   readonly about: string;
-  readonly dotClawforgeLiterals: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
-  readonly dotClawforgeLiteralsNonTs: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
-  readonly dotClawforgeConcatLiterals: { readonly comment: string; readonly total: number };
+  readonly dotClawwrightLiterals: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
+  readonly dotClawwrightLiteralsNonTs: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
+  readonly dotClawwrightConcatLiterals: { readonly comment: string; readonly total: number };
   readonly rawArgvPredicates: {
     readonly comment: string;
     readonly readOnlyWhen: number;
@@ -187,19 +187,19 @@ for (const selfCheck of SCANNER_SELF_CHECKS) {
   checkTrue(`scanner self-check: ${selfCheck.name}`, selfCheck.expect({ ...scan, imports: importedFrameworkSymbols(selfCheck.source) }));
 }
 
-// 1. `./clawforge` literals in tools/framework and in the checkout entry — stage 4
+// 1. `./clawwright` literals in tools/framework and in the checkout entry — stage 4
 // (Advice): the command name must reach output only through one renderer, so this goes to 0
 // outside it. An occurrence on an `exempt` line (the shim naming itself, the completion
 // registration) is left out of the per-file counts but still counted in the total, and the
 // table fails in both directions: a line it names that no longer exists, and an occurrence
 // left once the recorded multiplicity ran out.
-const LITERAL = "./clawforge";
+const LITERAL = "./clawwright";
 const exemptLeft = new Map<string, Map<string, number>>(
-  Object.entries(baseline.dotClawforgeLiterals.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+  Object.entries(baseline.dotClawwrightLiterals.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
 );
 const literalAfter = new Map<string, number>();
 let literalTotal = 0;
-for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) {
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawwright.ts")]) {
   const content = await readFile(full, "utf8");
   const left = exemptLeft.get(rel(full));
   let counted = 0;
@@ -217,11 +217,11 @@ for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) 
 for (const [file, lines] of exemptLeft) {
   for (const [line, unmatched] of lines) {
     if (unmatched === 0) continue;
-    checkTrue(`dotClawforgeLiterals.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+    checkTrue(`dotClawwrightLiterals.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
   }
 }
-report(perFileRatchet("dotClawforgeLiterals", baseline.dotClawforgeLiterals.files, literalAfter));
-report(ratchet("dotClawforgeLiterals.total", baseline.dotClawforgeLiterals.total, literalTotal, [], []));
+report(perFileRatchet("dotClawwrightLiterals", baseline.dotClawwrightLiterals.files, literalAfter));
+report(ratchet("dotClawwrightLiterals.total", baseline.dotClawwrightLiterals.total, literalTotal, [], []));
 
 // 1a. The same literal in the static non-.ts product files under tools/framework (yml/yaml/
 // sh/json/md/txt, plus dot/extensionless text files — .env.example ships into every
@@ -251,7 +251,7 @@ async function walkTextFiles(dir: string): Promise<string[]> {
   return found;
 }
 const nonTsExemptLeft = new Map<string, Map<string, number>>(
-  Object.entries(baseline.dotClawforgeLiteralsNonTs.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+  Object.entries(baseline.dotClawwrightLiteralsNonTs.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
 );
 const nonTsAfter = new Map<string, number>();
 let nonTsTotal = 0;
@@ -273,21 +273,21 @@ for (const full of await walkTextFiles(resolve(root, "tools", "framework"))) {
 for (const [file, lines] of nonTsExemptLeft) {
   for (const [line, unmatched] of lines) {
     if (unmatched === 0) continue;
-    checkTrue(`dotClawforgeLiteralsNonTs.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+    checkTrue(`dotClawwrightLiteralsNonTs.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
   }
 }
-report(perFileRatchet("dotClawforgeLiteralsNonTs", baseline.dotClawforgeLiteralsNonTs.files, nonTsAfter));
-report(ratchet("dotClawforgeLiteralsNonTs.total", baseline.dotClawforgeLiteralsNonTs.total, nonTsTotal, [], []));
+report(perFileRatchet("dotClawwrightLiteralsNonTs", baseline.dotClawwrightLiteralsNonTs.files, nonTsAfter));
+report(ratchet("dotClawwrightLiteralsNonTs.total", baseline.dotClawwrightLiteralsNonTs.total, nonTsTotal, [], []));
 
-// 1b. The concatenation spelling escapes 1: `"." + "/clawforge"` builds the same literal —
+// 1b. The concatenation spelling escapes 1: `"." + "/clawwright"` builds the same literal —
 // same invariant, 0 outside the renderer.
-const CONCAT_LITERAL = /["'`]\.["'`]\s*\+\s*["'`]\/clawforge["'`]/;
+const CONCAT_LITERAL = /["'`]\.["'`]\s*\+\s*["'`]\/clawwright["'`]/;
 let concatTotal = 0;
-for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) {
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawwright.ts")]) {
   const content = await readFile(full, "utf8");
   for (const line of content.split("\n")) if (CONCAT_LITERAL.test(line)) concatTotal += 1;
 }
-report(ratchet("dotClawforgeConcatLiterals", baseline.dotClawforgeConcatLiterals.total, concatTotal, [], []));
+report(ratchet("dotClawwrightConcatLiterals", baseline.dotClawwrightConcatLiterals.total, concatTotal, [], []));
 
 // 3. Flag spellings in help prose — stage 4 (design 2.3): a `--name` the declaration itself
 // declares, spelled in its own `details` outside a token and outside a code span quoting
@@ -316,9 +316,9 @@ const commandNames = new Set(surfaceRegistry().names);
 const TOKEN_SPAN = /\{[^{}]*\}/g;
 const CODE_SPAN = /`[^`]*`/g;
 const FLAG_MENTION = /(?<![\w-])--([A-Za-z][A-Za-z0-9-]*)/g;
-/** A leading program word is not the command: `./clawforge apply-config --dry-run` reads as
+/** A leading program word is not the command: `./clawwright apply-config --dry-run` reads as
  *  apply-config's own --dry-run, not as another tool's line. */
-const PROGRAM_WORD = /^\.?\/?clawforge$/;
+const PROGRAM_WORD = /^\.?\/?clawwright$/;
 
 function proseFlagCount(details: string, declared: ReadonlySet<string>): number {
   // Tokens first: a recognized span becomes one space, so the words around it stay apart.
@@ -612,7 +612,7 @@ async function scanFile(full: string): Promise<void> {
 for (const dir of rawScanRoots) {
   for (const full of await walk(dir)) await scanFile(full);
 }
-await scanFile(resolve(root, "tools", "clawforge.ts"));
+await scanFile(resolve(root, "tools", "clawwright.ts"));
 for (const [file, lines] of rawScanExemptLeft) {
   for (const [line, unmatched] of lines) {
     if (unmatched === 0) continue;

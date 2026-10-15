@@ -36,7 +36,7 @@ import { mcpLauncherContent } from "#framework/integration/mcp/project.ts";
 /** The fake layout, spelled exactly as golden/matrix.ts spells it (read-only constants):
  *  the checkout ROOT with its gate, the deployment APP under it, and a deployed app's own
  *  local package APP_LOCAL. */
-const ROOT = "/clawforge-checkout";
+const ROOT = "/clawwright-checkout";
 const APP_LOCAL = "/home/u/app-local";
 const DOCS = `${ROOT}/docs`;
 const DEMO = `${ROOT}/apps/demo`;
@@ -45,18 +45,18 @@ const DEMO = `${ROOT}/apps/demo`;
  *  are compared normalized (absolute, this host's separators), because frame.ts resolves
  *  with node:path and the host here may be Windows. */
 const LAYOUT = [
-  `${ROOT}/tools/clawforge.ts`,
+  `${ROOT}/tools/clawwright.ts`,
   `${ROOT}/tools/framework/package.json`,
-  `${ROOT}/clawforge`,
+  `${ROOT}/clawwright`,
   `${DEMO}/app.ts`,
   `${APP_LOCAL}/app.ts`,
-  `${APP_LOCAL}/node_modules/@clawforge/framework/entry/bin.js`,
-  `${APP_LOCAL}/node_modules/.bin/clawforge`,
+  `${APP_LOCAL}/node_modules/clawwright/entry/bin.js`,
+  `${APP_LOCAL}/node_modules/.bin/clawwright`,
 ].map((path) => resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, ""));
 const FS = {
   exists: (path: string): boolean => LAYOUT.includes(resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, "")),
   readFile: (path: string): string | undefined =>
-    resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, "") === LAYOUT[1] ? '{"name":"@clawforge/framework"}' : undefined,
+    resolve(path).split(sep).join("/").replace(/^[A-Za-z]:/, "") === LAYOUT[1] ? '{"name":"clawwright"}' : undefined,
 };
 
 export interface FrameProducer {
@@ -66,7 +66,7 @@ export interface FrameProducer {
   /** How the process was actually started: the parsed hand-over (env producers) or the
    *  frame's own v1 projection (constructor producers) — the law check's input. */
   readonly invocation: Invocation;
-  /** The CLAWFORGE_* variables the producer's shim or launcher wrote, when it wrote any. */
+  /** The CLAWWRIGHT_* variables the producer's shim or launcher wrote, when it wrote any. */
   readonly env?: Record<string, string>;
   /** The selection-sweep facts (design §5) this producer also carries: the app selection
    *  the entry sees besides the hand-over — a typed --app, an OC_APP export (including the
@@ -86,15 +86,15 @@ export interface FrameProducer {
 // --- hand-over extraction (real texts, real parsers) ----------------------------------------------
 
 /** The committed init shim's two variables, out of the generated text itself. */
-const SHIM_JSON = /export CLAWFORGE_INVOCATION='([^']+)'/.exec(SHIM)?.[1] ?? "";
-const SHIM_LEGACY = /export CLAWFORGE_INVOKED_AS=(.*)/.exec(SHIM)?.[1]?.trim() ?? "";
+const SHIM_JSON = /export CLAWWRIGHT_INVOCATION='([^']+)'/.exec(SHIM)?.[1] ?? "";
+const SHIM_LEGACY = /export CLAWWRIGHT_INVOKED_AS=(.*)/.exec(SHIM)?.[1]?.trim() ?? "";
 
 /** The monorepo MCP launcher's two variables: the generated expressions, evaluated with
  *  basename(root) bound to the fake deployment name (the same reading
  *  invocation-hints.check.ts does of the same text). */
 const MONOREPO_LAUNCHER = mcpLauncherContent("monorepo");
-const LAUNCHER_JSON_SOURCE = /CLAWFORGE_INVOCATION = JSON\.stringify\((.*)\);/.exec(MONOREPO_LAUNCHER)?.[1] ?? "";
-const LAUNCHER_LEGACY_SOURCE = /CLAWFORGE_INVOKED_AS = (.+);/.exec(MONOREPO_LAUNCHER)?.[1] ?? "";
+const LAUNCHER_JSON_SOURCE = /CLAWWRIGHT_INVOCATION = JSON\.stringify\((.*)\);/.exec(MONOREPO_LAUNCHER)?.[1] ?? "";
+const LAUNCHER_LEGACY_SOURCE = /CLAWWRIGHT_INVOKED_AS = (.+);/.exec(MONOREPO_LAUNCHER)?.[1] ?? "";
 const demo = (expression: string): string => expression.replaceAll("basename(root)", '"demo"');
 const LAUNCHER_JSON = JSON.stringify(
   new Function("basename", `return (${demo(LAUNCHER_JSON_SOURCE)})`)() as object,
@@ -109,7 +109,7 @@ function handedOver(env: Record<string, string>): Invocation {
   const strict = json === undefined ? undefined : parseInvocation(json);
   return strict
     ?? parseLegacyInvokedAs(env[INVOKED_AS_ENV] ?? "")
-    ?? { program: "clawforge", mode: "installed", audience: "terminal" };
+    ?? { program: "clawwright", mode: "installed", audience: "terminal" };
 }
 
 const HOST: HostPlatform = "posix";
@@ -191,8 +191,8 @@ const list: FrameProducer[] = [
   // The installed launcher writes no variables: the entry default (G0's reading).
   {
     label: "MCP launcher (installed): no variables — the entry default",
-    frame: frameFromInvocation({ program: "clawforge", mode: "installed", audience: "terminal" }, { ...FACTS, cwd: ROOT, places: { checkoutRoot: ROOT } }),
-    invocation: { program: "clawforge", mode: "installed", audience: "terminal" },
+    frame: frameFromInvocation({ program: "clawwright", mode: "installed", audience: "terminal" }, { ...FACTS, cwd: ROOT, places: { checkoutRoot: ROOT } }),
+    invocation: { program: "clawwright", mode: "installed", audience: "terminal" },
     selection: { ocApp: "" },
   },
 
@@ -215,8 +215,8 @@ const list: FrameProducer[] = [
   },
   {
     label: "manual verbatim (spaced program)",
-    frame: frameFromInvocation({ program: "/opt/claw forge/clawforge", mode: "checkout", audience: "terminal" }, { ...FACTS, cwd: ROOT, places: { checkoutRoot: ROOT } }),
-    invocation: { program: "/opt/claw forge/clawforge", mode: "checkout", audience: "terminal" },
+    frame: frameFromInvocation({ program: "/opt/claw forge/clawwright", mode: "checkout", audience: "terminal" }, { ...FACTS, cwd: ROOT, places: { checkoutRoot: ROOT } }),
+    invocation: { program: "/opt/claw forge/clawwright", mode: "checkout", audience: "terminal" },
   },
   // The S1.4 case-4 producer (O2): the system-wide command pasted inside a deployment the
   // user cwd-selected — advice naming ANOTHER deployment must run there via --project-root.
@@ -236,19 +236,19 @@ const list: FrameProducer[] = [
 // current writers — the current G3/L2 texts are pinned elsewhere; these are the
 // independent expectations the reader must keep accepting (I11).
 const G0_ENV: Record<string, string> = {};
-const G1_ENV: Record<string, string> = { [INVOKED_AS_ENV]: "./clawforge" };
+const G1_ENV: Record<string, string> = { [INVOKED_AS_ENV]: "./clawwright" };
 const G2_ENV: Record<string, string> = {
-  [INVOCATION_ENV]: '{"version":1,"program":"./clawforge","mode":"installed","audience":"terminal"}',
-  [INVOKED_AS_ENV]: "./clawforge",
+  [INVOCATION_ENV]: '{"version":1,"program":"./clawwright","mode":"installed","audience":"terminal"}',
+  [INVOKED_AS_ENV]: "./clawwright",
 };
 const G3_ENV: Record<string, string> = {
-  [INVOCATION_ENV]: '{"version":1,"program":"./clawforge","mode":"checkout","audience":"terminal"}',
-  [INVOKED_AS_ENV]: "./clawforge",
+  [INVOCATION_ENV]: '{"version":1,"program":"./clawwright","mode":"checkout","audience":"terminal"}',
+  [INVOKED_AS_ENV]: "./clawwright",
 };
-const L1_ENV: Record<string, string> = { [INVOKED_AS_ENV]: "../../clawforge --app demo" };
+const L1_ENV: Record<string, string> = { [INVOKED_AS_ENV]: "../../clawwright --app demo" };
 const L2_ENV: Record<string, string> = {
-  [INVOCATION_ENV]: '{"version":1,"program":"../../clawforge","mode":"checkout","app":{"name":"demo","selectedBy":"flag"},"audience":"mcp"}',
-  [INVOKED_AS_ENV]: "../../clawforge --app demo",
+  [INVOCATION_ENV]: '{"version":1,"program":"../../clawwright","mode":"checkout","app":{"name":"demo","selectedBy":"flag"},"audience":"mcp"}',
+  [INVOKED_AS_ENV]: "../../clawwright --app demo",
 };
 
 for (const [label, env] of [
@@ -285,7 +285,7 @@ export function producer(label: string): FrameProducer {
 }
 
 /** A launch spelling the producer registry cannot carry (launchOf is the current adapter):
- *  a bare non-`clawforge` word under installed mode. The spell table's verbatim row and the
+ *  a bare non-`clawwright` word under installed mode. The spell table's verbatim row and the
  *  pasteShells invariant read this. */
 export const VERBATIM_LAUNCH: ReturnType<typeof launchOf> = launchOf({ program: "cw", mode: "installed", audience: "terminal" });
 

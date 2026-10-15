@@ -24,7 +24,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 // binds applicationSecrets --------------------------------------------------------------
 
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-backup-hooks-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-backup-hooks-"));
   try {
     await mkdir(join(root, "data", "config"), { recursive: true });
     await mkdir(join(root, "config"), { recursive: true });
@@ -66,8 +66,8 @@ import { check, finish } from "#checks/kit/harness.ts";
 
 // --- createBackup(): afterBackup fires after publication/rotation, with the right info ----
 
-const DATA_DIR = "/srv/clawforge/hooks-data";
-const BACKUP_DIR = "/srv/clawforge/hooks-backups";
+const DATA_DIR = "/srv/clawwright/hooks-data";
+const BACKUP_DIR = "/srv/clawwright/hooks-backups";
 
 function stubBackupCtx(hooks: { applicationAfterBackup?: Context["applicationAfterBackup"] } = {}): { ctx: Context; files: Set<string> } {
   const files = new Set([DATA_DIR]);
@@ -156,7 +156,7 @@ function stubBackupCtx(hooks: { applicationAfterBackup?: Context["applicationAft
   });
   check("a failing afterBackup hook names the published archive and its own error", message.includes("backup published at") && message.includes("afterBackup hook failed") && message.includes("upload failed: disk full"), true);
   check("the published archive is not deleted when the hook fails", [...files].some((path) => path.endsWith(".tar.gz")), true);
-  check("no staging leftovers remain either", [...files].some((path) => path.includes(".clawforge-backup-")), false);
+  check("no staging leftovers remain either", [...files].some((path) => path.includes(".clawwright-backup-")), false);
 }
 
 // --- restoreArchive(): beforeRestore runs first, can redirect the archive, and a failure

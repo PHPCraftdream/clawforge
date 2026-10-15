@@ -1,4 +1,4 @@
-// `./clawforge recover-env`, against a real temp deployment: stale connection facts are
+// `./clawwright recover-env`, against a real temp deployment: stale connection facts are
 // merged back into .env in place, the gateway token sharing the file passes through
 // byte-identical and is never printed, `--dry-run` and a full match write nothing, and
 // facts Docker's answer does not carry are named, never guessed. The refusals are pinned
@@ -40,7 +40,7 @@ const SEED = [
 ].join("\n");
 
 const previous = (() => { try { return deploymentDir(); } catch { return undefined; } })();
-const deployDir = await mkdtemp(join(tmpdir(), "clawforge-recover-env-check-"));
+const deployDir = await mkdtemp(join(tmpdir(), "clawwright-recover-env-check-"));
 useDeployment(deployDir);
 
 // Every case's captured output lands here too, so the secret sharing the file can be proven
@@ -234,7 +234,7 @@ try {
     const { error } = await capture(() => recoverEnv(ctx, []));
     check("a runtime with no running container throws", error !== "", true);
     // Independent token expectation: single-word tokens, no counted prose pin.
-    const NOT_RUNNING = ["stub", "is", "not", "running,", "or", "its", "container", "could", "not", "be", "inspected", "—", "the", "connection", "facts", "are", "recoverable", "only", "from", "a", "running", "container,", "since", "that", "is", "where", "compose's", "resolved", "values", "live.", "Start", "it", "and", "try", "again:", "./clawforge", "up"];
+    const NOT_RUNNING = ["stub", "is", "not", "running,", "or", "its", "container", "could", "not", "be", "inspected", "—", "the", "connection", "facts", "are", "recoverable", "only", "from", "a", "running", "container,", "since", "that", "is", "where", "compose's", "resolved", "values", "live.", "Start", "it", "and", "try", "again:", "./clawwright", "up"];
     check("the refusal says the container is not running", NOT_RUNNING.every((token) => error.includes(token)), true);
     check("a refused recovery leaves the file byte-identical", await readFile(envFile(), "utf8"), SEED);
   }
@@ -253,7 +253,7 @@ try {
 
   // --- the inherent limit: no .env at all cannot be recovered against --------------------
   {
-    const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-recover-env-check-"));
+    const emptyDir = await mkdtemp(join(tmpdir(), "clawwright-recover-env-check-"));
     useDeployment(emptyDir);
     const expectedRefusal = missingEnvRefusal(envFile());
     let error = "";

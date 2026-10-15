@@ -35,7 +35,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 
   /** Everything below runs with a disposable deployment directory selected. */
   async function withRecordedPrivatePath<T>(body: () => Promise<T>, record = true): Promise<T> {
-    const root = await mkdtemp(join(tmpdir(), "clawforge-smoke-roundtrip-"));
+    const root = await mkdtemp(join(tmpdir(), "clawwright-smoke-roundtrip-"));
     let previous: string | undefined;
     try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
     try {
@@ -341,7 +341,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   await withRecordedPrivatePath(async () => {
     const runtimeEvents = (events: string[]): string[] => events.filter((event) => event.startsWith("runtime:"));
     const litterLeft = (files: Map<string, string>): boolean =>
-      [...files.keys()].some((path) => path.includes(".clawforge-smoke-roundtrip-"));
+      [...files.keys()].some((path) => path.includes(".clawwright-smoke-roundtrip-"));
     // A plain `.includes(DATA_DIR)` would also match the lock's own sibling directory
     // (`${DATA_DIR}-locks`, see core/env.ts's locksDir) — the instance lock's release now
     // moves its own generation marker within that directory, which is an

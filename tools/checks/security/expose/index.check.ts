@@ -1,4 +1,4 @@
-// `./clawforge expose` — the dispatcher (unknown/missing action, routing to the right
+// `./clawwright expose` — the dispatcher (unknown/missing action, routing to the right
 // sub-handler), the effect the declaration carries (only tailscale --apply mutates), and the
 // AppCommand wiring: the derived arguments and the MCP schema/argv round trip.
 

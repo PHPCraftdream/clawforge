@@ -9,7 +9,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-escape");
+const root = await useRecipesRoot("clawwright-recipe-trial-escape");
 try {
   await root.write("subject", { description: "A recipe whose resolved value carries a $ expression" });
   const fixture = trialFixture();

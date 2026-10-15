@@ -549,7 +549,7 @@ const codesOf = (problems: readonly { code: string }[]): string[] => problems.ma
 // EnvSyntaxError (file + 1-based line), never be swallowed by the absent-template path.
 {
   const source = await createBuildDeployment();
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-env-template-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-env-template-"));
   await cp(source, deployment, { recursive: true });
   useDeployment(deployment);
   try {

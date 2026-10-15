@@ -26,7 +26,7 @@ if (manifest.license !== "(MIT OR Apache-2.0)") throw new Error("the package mus
 if (!manifest.homepage || !manifest.bugs?.url || manifest.repository?.type !== "git" || !manifest.repository.url) {
   throw new Error("the package must declare repository, homepage and issue metadata");
 }
-if (manifest.bin?.clawforge !== "dist/entry/bin.js") throw new Error("the package bin must be clawforge -> dist/entry/bin.js");
+if (manifest.bin?.clawwright !== "dist/entry/bin.js") throw new Error("the package bin must be clawwright -> dist/entry/bin.js");
 const exported = (name: string, types: string, runtime: string): boolean => {
   const entry = manifest.exports?.[name];
   return typeof entry === "object" && entry !== null && entry.types === types && entry.default === runtime;
@@ -52,7 +52,7 @@ const workflow = await readFile(resolve(monorepoRoot, ".github", "workflows", "p
 if (!workflow.includes("default: token") || !workflow.includes("secrets.NPM_TOKEN")) {
   throw new Error("the first release must publish through the CI token job");
 }
-if (!workflow.includes("CLAWFORGE_ENABLE_TRUSTED_PUBLISHER")) {
+if (!workflow.includes("CLAWWRIGHT_ENABLE_TRUSTED_PUBLISHER")) {
   throw new Error("the Trusted Publisher job must remain explicitly disabled");
 }
 

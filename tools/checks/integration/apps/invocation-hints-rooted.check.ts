@@ -22,7 +22,7 @@ const sourceRoot = await isolatedAppsRoot("rooted-hints-source");
 await cp(resolve(monorepoRoot, "tools"), resolve(sourceRoot.root, "tools"), { recursive: true });
 await cp(resolve(monorepoRoot, "package.json"), resolve(sourceRoot.root, "package.json"));
 await symlink(resolve(monorepoRoot, "node_modules"), resolve(sourceRoot.root, "node_modules"), "junction");
-const GATE = resolve(sourceRoot.root, "tools", "clawforge.ts");
+const GATE = resolve(sourceRoot.root, "tools", "clawwright.ts");
 const SUBDIR = resolve(sourceRoot.root, "docs");
 await mkdir(SUBDIR);
 
@@ -35,30 +35,30 @@ function runGate(args: string[], cwd: string): Promise<string> {
 // entry: the real gate runs against an EMPTY apps root, so a deployment left in the checkout never selects itself
 
 const docsHelp = await runGate(["help"], SUBDIR);
-check("help from docs/ spells the entry relative to that folder", docsHelp.split(["Usage:", "../clawforge", "<command>", "[options]"].join(" ")).length > 1, true);
-check("help from docs/ carries no root spelling", docsHelp.split(["Usage:", "./clawforge"].join(" ")).length > 1, false);
+check("help from docs/ spells the entry relative to that folder", docsHelp.split(["Usage:", "../clawwright", "<command>", "[options]"].join(" ")).length > 1, true);
+check("help from docs/ carries no root spelling", docsHelp.split(["Usage:", "./clawwright"].join(" ")).length > 1, false);
 
 const docsUnknown = await runGate(["frobnicate"], SUBDIR);
-check("an unknown command's hint from docs/ spells the entry relative to that folder", docsUnknown.split(["run", "../clawforge", "help"].join(" ")).length > 1, true);
+check("an unknown command's hint from docs/ spells the entry relative to that folder", docsUnknown.split(["run", "../clawwright", "help"].join(" ")).length > 1, true);
 
 const rootHelp = await runGate(["help"], sourceRoot.root);
-check("help from the checkout root keeps the root spelling", rootHelp.split(["Usage:", "./clawforge", "<command>", "[options]"].join(" ")).length > 1, true);
+check("help from the checkout root keeps the root spelling", rootHelp.split(["Usage:", "./clawwright", "<command>", "[options]"].join(" ")).length > 1, true);
 await entryApps.dispose();
 await sourceRoot.dispose();
 
 // unit frame
 
-const ROOT = "/clawforge-checkout";
+const ROOT = "/clawwright-checkout";
 const HOST = "posix";
 const FRAME_SUBDIR = `${ROOT}/docs`;
 const frame = checkoutGateFrame(ROOT, { host: HOST, msys: false, cwd: FRAME_SUBDIR });
-checkTrue("frame rooted relative hint", renderFrameAdvice(command(["status"]), frame) === ["../clawforge", "status"].join(" "));
-checkTrue("the rooted hint derives its entry from the frame root", renderFrameAdvice(command(["status"]), frame).startsWith("../clawforge"));
+checkTrue("frame rooted relative hint", renderFrameAdvice(command(["status"]), frame) === ["../clawwright", "status"].join(" "));
+checkTrue("the rooted hint derives its entry from the frame root", renderFrameAdvice(command(["status"]), frame).startsWith("../clawwright"));
 const atRoot = checkoutGateFrame(ROOT, { host: HOST, msys: false, cwd: ROOT });
-checkTrue("root frame spelling", renderFrameAdvice(command(["status"]), atRoot) === ["./clawforge", "status"].join(" "));
+checkTrue("root frame spelling", renderFrameAdvice(command(["status"]), atRoot) === ["./clawwright", "status"].join(" "));
 
 // production: delegated spawn helper executes the production spawn contract through an injected runner.
-const invocation: Invocation = { program: "clawforge", mode: "installed", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" };
+const invocation: Invocation = { program: "clawwright", mode: "installed", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" };
 const spawnFrame = frameFromInvocation(invocation, { host: "posix", msys: false, cwd: process.cwd() });
 const fixture = await createDeploymentFixture();
 try {
@@ -67,10 +67,10 @@ try {
   const appsRoot = appsRootFor(checkoutRoot);
   const appRoot = resolve(monorepoRoot, "apps", "demo");
   const owner = frameworkOwner({ self: resolve(root, "global", "entry", "bin.js"), appRoot, launchArgv: ["--app", "demo", "status"], argv: ["status"], handedOver: false, platform: "linux", fs: {
-    exists: (path) => path === resolve(checkoutRoot, "tools", "clawforge.ts") || path === resolve(appRoot, "app.ts") || path === resolve(checkoutRoot, "apps", "demo", "app.ts"),
+    exists: (path) => path === resolve(checkoutRoot, "tools", "clawwright.ts") || path === resolve(appRoot, "app.ts") || path === resolve(checkoutRoot, "apps", "demo", "app.ts"),
     isDirectory: (path) => path === resolve(checkoutRoot, "apps", "demo") || path === resolve(checkoutRoot, "apps"),
     readdir: (path) => path === resolve(checkoutRoot, "apps") ? ["demo"] : [],
-    readFile: (path) => path === resolve(checkoutRoot, "tools", "framework", "package.json") ? JSON.stringify({ name: "@clawforge/framework" }) : undefined,
+    readFile: (path) => path === resolve(checkoutRoot, "tools", "framework", "package.json") ? JSON.stringify({ name: "clawwright" }) : undefined,
     realpath: (path) => path,
   }, localEntry: undefined });
   checkTrue("system launch delegates to owning checkout gate", owner.kind === "spawn" && owner.delegated === false);
@@ -86,10 +86,10 @@ try {
     const finalInvocation = captured === undefined ? undefined : parseInvocation(String(captured.options.env?.[INVOCATION_ENV]));
     checkTrue("delegated spawn serializes selected app", finalInvocation?.app?.name === "demo" && finalInvocation.app.selectedBy === "flag");
     const final = resolveCheckoutEntry({ root: checkoutRoot, cwd: process.cwd(), argv: owner.args, ocApp: undefined, handedOver: true, launch: frame.launch, handedProgram: owner.entry, fs: {
-      exists: (path) => path === resolve(checkoutRoot, "tools", "clawforge.ts") || path === resolve(appsRoot, "openclaw", "app.ts") || path === resolve(appsRoot, "demo", "app.ts"),
+      exists: (path) => path === resolve(checkoutRoot, "tools", "clawwright.ts") || path === resolve(appsRoot, "openclaw", "app.ts") || path === resolve(appsRoot, "demo", "app.ts"),
       isDirectory: (path) => path === appsRoot || path === resolve(appsRoot, "demo"),
       readdir: (path) => path === appsRoot ? ["demo"] : [],
-      readFile: (path) => path === resolve(checkoutRoot, "tools", "framework", "package.json") ? JSON.stringify({ name: "@clawforge/framework" }) : undefined,
+      readFile: (path) => path === resolve(checkoutRoot, "tools", "framework", "package.json") ? JSON.stringify({ name: "clawwright" }) : undefined,
       realpath: (path) => path,
     }, gateCommands: [], deploymentCommands: ["status"], variadicCommands: [] });
     checkTrue("delegated spawn passes the selected app to the final gate", final.kind === "run" && final.appName === "demo");

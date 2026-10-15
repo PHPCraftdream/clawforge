@@ -1,4 +1,4 @@
-// `./clawforge recipe`'s own argument grammar (arguments.ts, wired in from index.ts): every
+// `./clawwright recipe`'s own argument grammar (arguments.ts, wired in from index.ts): every
 // action refuses a flag or positional it does not use instead of silently accepting it —
 // `recipe list --bogus extra` used to run as though neither token were there.
 
@@ -27,7 +27,7 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
 function stubContext(): Context {
   const dirs = new Set<string>();
   return {
-    settings: { env: {}, dataDir: "/srv/clawforge-recipe-arguments-check" },
+    settings: { env: {}, dataDir: "/srv/clawwright-recipe-arguments-check" },
     transport: {
       description: "stub",
       async exec(command: string, args: string[]) {
@@ -90,7 +90,7 @@ function stubContext(): Context {
   } as unknown as Context;
 }
 
-const scratch = resolve(tmpdir(), `clawforge-recipe-arguments-check-${Date.now()}`);
+const scratch = resolve(tmpdir(), `clawwright-recipe-arguments-check-${Date.now()}`);
 
 try {
   await mkdir(resolve(scratch, "plain"), { recursive: true });

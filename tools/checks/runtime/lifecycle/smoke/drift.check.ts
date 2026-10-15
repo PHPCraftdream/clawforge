@@ -12,7 +12,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 // --- drift cleanup is a restore after the verdict --------------------------------------------
 
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-smoke-drift-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-smoke-drift-"));
   let previous: string | undefined;
   try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
   try {
@@ -26,7 +26,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     let batchCalls = 0;
     const files = new Map<string, string>();
     const dirs = new Set<string>();
-    const dataDir = "/srv/clawforge";
+    const dataDir = "/srv/clawwright";
     files.set(`${dataDir}/config/openclaw.json`, JSON.stringify({ agents: { defaults: { model: { primary: "fixture-model" } } } }));
     const ctx = {
       settings: { dataDir },

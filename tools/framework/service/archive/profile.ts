@@ -109,13 +109,13 @@ function baseExcludes(dataName: string): string[] {
     `${root}/config/logs`,
     `${root}/config/openclaw.json.bak*`,
     `${root}/config/openclaw.json.last-good`,
-    `${root}/config/clawforge-desired.json`,
-    `${root}/config/clawforge-desired.dry-*.json`,
+    `${root}/config/clawwright-desired.json`,
+    `${root}/config/clawwright-desired.dry-*.json`,
     // Provider-key staging is private from creation and normally removed after rename, but a
     // process can die between those steps. It is credential material, never instance state.
-    `${root}/config/.env.clawforge-*`,
+    `${root}/config/.env.clawwright-*`,
     // A native backup's in-flight full archive; a crash must not nest it into a later backup.
-    `${root}/config/.clawforge-native-*`,
+    `${root}/config/.clawwright-native-*`,
     // The tooling's own temp-sibling staging families (transport.ts), same story one layer
     // out: real bytes sit in the sibling from the first byte written, and a dead process or
     // failed cleanup leaves them beside the target — exposed under workspace/, where the
@@ -124,7 +124,7 @@ function baseExcludes(dataName: string): string[] {
     // against GNU tar 1.35+).
     `${root}/*${PRIVATE_STAGING_MARKER}*`,
     `${root}/*${PUBLISH_STAGING_MARKER}*`,
-    `${root}/clawforge-operation.lock`,
+    `${root}/clawwright-operation.lock`,
     ...LEGACY_PREFIXES.flatMap((prefix) => [
       `${root}/config/${prefix}-desired.json`,
       `${root}/${prefix}-operation.lock`,
@@ -157,8 +157,8 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/config/.env`,
       // The privacy history is published for full backups only; this profile's readers
       // don't expect it — verify's SHARE_ALLOWED would refuse a share archive holding it.
-      `${root}/config/clawforge-private-paths.json`,
-      `${root}/clawforge-operations`,
+      `${root}/config/clawwright-private-paths.json`,
+      `${root}/clawwright-operations`,
       ...LEGACY_PREFIXES.map((prefix) => `${root}/${prefix}-operations`),
       `${root}/${DATA_DIR_MARKER}`, // names the OLD host; restore's trustExisting writes a fresh one
     );
@@ -168,7 +168,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
     // Handing the agent to someone else: only its personality travels.
     excludes.push(
       `${root}/config/.env`,
-      `${root}/config/clawforge-private-paths.json`, // published for full backups only
+      `${root}/config/clawwright-private-paths.json`, // published for full backups only
       `${root}/config/identity`,
       `${root}/config/devices`,
       `${root}/config/state`,
@@ -176,9 +176,9 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/auth-secrets`,
       // Host-local history and copies of THIS host's configuration — the receiving side
       // has its own, and a shared agent shouldn't carry someone else's.
-      `${root}/clawforge-operations`,
-      `${root}/clawforge-managed.json`,
-      `${root}/clawforge-installed-set.json`,
+      `${root}/clawwright-operations`,
+      `${root}/clawwright-managed.json`,
+      `${root}/clawwright-installed-set.json`,
       `${root}/${DATA_DIR_MARKER}`, // same reasoning as migrate above
       ...LEGACY_PREFIXES.flatMap((prefix) => [
         `${root}/${prefix}-operations`,

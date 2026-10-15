@@ -9,7 +9,7 @@ import { unpackArtifact, withUnpackedArtifact } from "#framework/set/artifacts/i
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-set-artifact-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-set-artifact-check-"));
 try {
   const source = join(root, "source");
   await mkdir(join(source, "config"), { recursive: true });

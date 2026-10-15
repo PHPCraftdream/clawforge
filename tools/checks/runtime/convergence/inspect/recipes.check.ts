@@ -1,4 +1,4 @@
-// `./clawforge inspect` — a recipe's agent, MCP server and cron job drift, plus the two
+// `./clawwright inspect` — a recipe's agent, MCP server and cron job drift, plus the two
 // health-verdict criteria (HTTP probes vs the runtime's own opinion). Split out of
 // inspect.check.ts; see fixture.ts for the shared stub and on-disk deployment,
 // inspect-drift.check.ts and inspect-lock.check.ts for the rest.
@@ -44,7 +44,7 @@ try {
     check(
       "and the remedy names the recipe, not the whole declaration",
       inspection.problems[0]?.nextAction,
-      "./clawforge provision-agent demo",
+      "./clawwright provision-agent demo",
     );
   }
 
@@ -61,7 +61,7 @@ try {
     const broken = inspection.problems.find((entry) => entry.code === "MCP_SERVER_MISSING");
     check("a registered server with the wrong command is still MCP_SERVER_MISSING", broken !== undefined, true);
     check("saying it is registered but wrong, not absent", broken?.detail.includes("does not launch"), true);
-    check("the remedy still names the recipe", broken?.nextAction, "./clawforge provision-agent demo");
+    check("the remedy still names the recipe", broken?.nextAction, "./clawwright provision-agent demo");
     check("the instance is not reported healthy", renderJson(inspection).healthy, false);
   }
   {
@@ -151,7 +151,7 @@ try {
     const stale = inspection.problems.find((entry) => entry.code === "RECIPE_MIRROR_DRIFT");
     check("a prompt older than the recipe is drift", stale?.detail.includes("AGENTS.md"), true);
     check("and it says the agent is the one running it", stale?.detail.includes("agent \"onboarding\""), true);
-    check("with the recipe named as the remedy", stale?.nextAction, "./clawforge provision-agent demo");
+    check("with the recipe named as the remedy", stale?.nextAction, "./clawwright provision-agent demo");
   }
   {
     const withExtra = { ...goodChecksums, "data/withdrawn.md": "1".repeat(64) };
@@ -169,7 +169,7 @@ try {
   }
   {
     // The grace period every container passes through on the way up. Reported as a fault,
-    // every ./clawforge apply would end by announcing a problem on an instance it had just brought
+    // every ./clawwright apply would end by announcing a problem on an instance it had just brought
     // back correctly — which is how a report teaches people to ignore it.
     const inspection = await gatherInspection(
       stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, health: "starting" }),
@@ -198,7 +198,7 @@ try {
   // recipeExpectations() feeds both inspect and plan; a file where recipes/ should be must
   // fail naming the path rather than reading as a deployment with none declared.
   {
-    const badDeployment = await mkdtemp(join(tmpdir(), "clawforge-inspect-recipes-check-"));
+    const badDeployment = await mkdtemp(join(tmpdir(), "clawwright-inspect-recipes-check-"));
     await writeFile(resolve(badDeployment, "recipes"), "not a directory");
     useDeployment(badDeployment);
     try {

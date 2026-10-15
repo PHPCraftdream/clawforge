@@ -31,7 +31,7 @@ function recordingContext(spec: TargetSpec) {
   let chowned = false;
 
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> {
         return existing.has(path);
@@ -111,7 +111,7 @@ async function run(ctx: Context): Promise<string> {
 // --- the ordinary case does no work at all -----------------------------------------------------
 
 {
-  const { ctx, calls } = recordingContext({ existing: [lockHome({ settings: { dataDir: "/srv/clawforge" } } as unknown as Context)] });
+  const { ctx, calls } = recordingContext({ existing: [lockHome({ settings: { dataDir: "/srv/clawwright" } } as unknown as Context)] });
   await run(ctx);
   check("an existing, writable home is left alone", calls.some((call) => call.command === "chown"), false);
   check("and nothing is created", calls.some((call) => call.command === "mkdir"), false);
@@ -142,11 +142,11 @@ async function run(ctx: Context): Promise<string> {
   const calls: { command: string; args: string[] }[] = [];
   let existsCalls = 0;
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> {
         existsCalls += 1;
-        throw new Error(`could not check whether ${path} exists: /srv/clawforge cannot be searched by the target user`);
+        throw new Error(`could not check whether ${path} exists: /srv/clawwright cannot be searched by the target user`);
       },
       async exec(command: string, args: string[]): Promise<ExecResult> {
         calls.push({ command, args });
@@ -158,7 +158,7 @@ async function run(ctx: Context): Promise<string> {
 
   let prefix: unknown;
   try {
-    prefix = await sudoFor(ctx, "/srv/clawforge/data");
+    prefix = await sudoFor(ctx, "/srv/clawwright/data");
   } catch (error) {
     prefix = `threw: ${(error as Error).message}`;
   }
@@ -168,7 +168,7 @@ async function run(ctx: Context): Promise<string> {
   check(
     "and writability is asked about that path, not about an ancestor",
     calls.find((call) => call.command === "test")?.args,
-    ["-w", "/srv/clawforge/data"],
+    ["-w", "/srv/clawwright/data"],
   );
 }
 
@@ -181,24 +181,24 @@ async function run(ctx: Context): Promise<string> {
   let asked = 0;
   const calls: { command: string; args: string[] }[] = [];
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> {
         asked += 1;
         if (asked === 1) throw new Error(`could not check whether ${path} exists (exit 255): connection reset`);
-        return path === "/srv/clawforge";
+        return path === "/srv/clawwright";
       },
       async exec(command: string, args: string[]): Promise<ExecResult> {
         calls.push({ command, args });
         // Only the directory that exists is writable; test -w on an absent path answers 1.
-        if (command === "test" && args[0] === "-w") return { code: args[1] === "/srv/clawforge" ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "test" && args[0] === "-w") return { code: args[1] === "/srv/clawwright" ? 0 : 1, stdout: "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
     },
   } as unknown as Context;
 
-  check("a probe that throws once and then answers is asked again", await sudoFor(ctx, "/srv/clawforge/data"), []);
-  check("and writability is judged on the nearest existing ancestor", calls.find((call) => call.command === "test")?.args, ["-w", "/srv/clawforge"]);
+  check("a probe that throws once and then answers is asked again", await sudoFor(ctx, "/srv/clawwright/data"), []);
+  check("and writability is judged on the nearest existing ancestor", calls.find((call) => call.command === "test")?.args, ["-w", "/srv/clawwright"]);
 }
 
 // --- the "no passwordless sudo" refusal advises the whole family, not just one path ----------

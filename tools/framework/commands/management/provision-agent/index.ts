@@ -1,4 +1,4 @@
-// `clawforge provision-agent <recipe>` — wires a recipe's MCP server to a dedicated OpenClaw
+// `clawwright provision-agent <recipe>` — wires a recipe's MCP server to a dedicated OpenClaw
 // agent: isolated agent, own workspace prompt files, the recipe's stdio MCP server, and
 // (optionally) a cron job that sends the agent a recurring message.
 //

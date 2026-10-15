@@ -15,7 +15,7 @@ import { DATA_DIR, messageOf, ref, trialFixture, useRecipesRoot, type TrialFixtu
 
 
 
-const root = await useRecipesRoot("clawforge-recipe-trial-sizes-links");
+const root = await useRecipesRoot("clawwright-recipe-trial-sizes-links");
 const MIB = 1024 * 1024;
 
 /** Wraps the fixture transport's exec so `adaptFn` can rewrite specific answers while

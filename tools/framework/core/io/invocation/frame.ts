@@ -11,16 +11,16 @@ import { INVOCATION_VERSION, type AppSelection, type Invocation, type Invocation
 
 export type HostPlatform = "posix" | "win32";
 
-/** How ClawForge is launched. Roots are absolute paths on the frame's host; a launch read
+/** How Clawwright is launched. Roots are absolute paths on the frame's host; a launch read
  *  back from a handed-over Invocation (launchOf) carries only the spelling, so its root is
  *  "" — enough to spell and to re-root, never to navigate. Producers that transition a
  *  frame build it with a real root. */
 export type Launch =
-  | { readonly kind: "system" }                                  // `clawforge` from PATH
-  | { readonly kind: "checkout-shim"; readonly root: string }    // <checkout>/clawforge, bash
-  | { readonly kind: "deployment-shim"; readonly root: string }  // <deployment>/clawforge from init, bash
-  | { readonly kind: "npm-bin"; readonly root: string }          // <deployment>/node_modules/.bin/clawforge(.cmd|.ps1)
-  | { readonly kind: "verbatim"; readonly program: string; readonly mode: InvocationMode }; // a hand-set CLAWFORGE_INVOCATION
+  | { readonly kind: "system" }                                  // `clawwright` from PATH
+  | { readonly kind: "checkout-shim"; readonly root: string }    // <checkout>/clawwright, bash
+  | { readonly kind: "deployment-shim"; readonly root: string }  // <deployment>/clawwright from init, bash
+  | { readonly kind: "npm-bin"; readonly root: string }          // <deployment>/node_modules/.bin/clawwright(.cmd|.ps1)
+  | { readonly kind: "verbatim"; readonly program: string; readonly mode: InvocationMode }; // a hand-set CLAWWRIGHT_INVOCATION
 
 export type Host =
   | { readonly kind: "operator"; readonly platform: HostPlatform }      // this process's machine
@@ -54,9 +54,9 @@ export interface Frame {
 /** The local-package program on Windows: npm's bin wrapper, which cmd resolves through
  *  PATHEXT and PowerShell through its own lookup. The committed shim (SHIM_PROGRAM) is
  *  bash-only and runs in neither; forward slashes fail in cmd. */
-export const SHIM_PROGRAM = "./clawforge";
+export const SHIM_PROGRAM = "./clawwright";
 
-export const WINDOWS_BIN_PROGRAM = "node_modules\\.bin\\clawforge";
+export const WINDOWS_BIN_PROGRAM = "node_modules\\.bin\\clawwright";
 
 export const IN_BASH_NOTE = "in bash";
 
@@ -71,7 +71,7 @@ export const IN_BASH_NOTE = "in bash";
  *  file facts a path is a path, and a hand-set spaced absolute program must spell as typed. */
 export function launchOf(on: Invocation): Launch {
   const program = on.program;
-  if (program === "clawforge") return { kind: "system" };
+  if (program === "clawwright") return { kind: "system" };
   if (program.includes("node_modules/.bin/") || program.includes("node_modules\\.bin\\")) return { kind: "npm-bin", root: "" };
   if (program.startsWith("./") || program.startsWith(".\\")) return { kind: "checkout-shim", root: "" };
   return { kind: "verbatim", program, mode: on.mode };
@@ -92,7 +92,7 @@ export function defaultLaunch(source: { source: "global" } | { source: "checkout
   return source.host === "win32" ? { kind: "npm-bin", root: source.appRoot } : { kind: "deployment-shim", root: source.appRoot };
 }
 
-/** The checkout gate's own frame (tools/clawforge.ts when no hand-over named it): the
+/** The checkout gate's own frame (tools/clawwright.ts when no hand-over named it): the
  *  committed shim at the checkout root, pasted wherever the operator stands. */
 export function checkoutGateFrame(checkoutRoot: string, facts: { host: HostPlatform; msys: boolean; cwd: string; audience?: InvocationAudience }): Frame {
   const launch: Launch = { kind: "checkout-shim", root: checkoutRoot };
@@ -166,17 +166,17 @@ export function rel(from: string, root: string, platform: HostPlatform): string 
 function shimSpelling(root: string, from: string | undefined, platform: HostPlatform): string {
   if (from === undefined || root === "") return SHIM_PROGRAM;
   const path = rel(from, root, platform);
-  return path === "." ? SHIM_PROGRAM : `${path}/clawforge`;
+  return path === "." ? SHIM_PROGRAM : `${path}/clawwright`;
 }
 
 function binSpelling(root: string, from: string | undefined, shell: Shell, host: HostPlatform): string | undefined {
   if (shell === "pwsh" && host === "posix") return undefined; // a POSIX host has no .ps1 wrapper
   if (from === undefined || root === "") {
-    return shell === "posix" ? "node_modules/.bin/clawforge" : WINDOWS_BIN_PROGRAM;
+    return shell === "posix" ? "node_modules/.bin/clawwright" : WINDOWS_BIN_PROGRAM;
   }
   const path = rel(from, root, host);
-  if (shell === "posix") return path === "." ? "node_modules/.bin/clawforge" : `${path}/node_modules/.bin/clawforge`;
-  return path === "." ? WINDOWS_BIN_PROGRAM : `${path.split("/").join("\\")}\\node_modules\\.bin\\clawforge`;
+  if (shell === "posix") return path === "." ? "node_modules/.bin/clawwright" : `${path}/node_modules/.bin/clawwright`;
+  return path === "." ? WINDOWS_BIN_PROGRAM : `${path.split("/").join("\\")}\\node_modules\\.bin\\clawwright`;
 }
 
 /** The program as typed in `shell`, or undefined when the launch has no spelling there —
@@ -184,7 +184,7 @@ function binSpelling(root: string, from: string | undefined, shell: Shell, host:
  *  relative to; undefined spells the launch root itself. */
 export function spell(launch: Launch, shell: Shell, host: HostPlatform, from: string | undefined): string | undefined {
   switch (launch.kind) {
-    case "system": return "clawforge";
+    case "system": return "clawwright";
     case "verbatim": return launch.program;
     case "checkout-shim":
     case "deployment-shim":
@@ -288,7 +288,7 @@ export function resolvesByCwd(launch: Launch, program: string): boolean {
 export function checkoutLaunch(): Launch { return { kind: "checkout-shim", root: "" }; }
 
 export function launchFromModeBoundary(program: string): Launch {
-  return program === "clawforge" ? { kind: "system" } : checkoutLaunch();
+  return program === "clawwright" ? { kind: "system" } : checkoutLaunch();
 }
 export function modeOf(launch: Launch): InvocationMode {
   switch (launch.kind) {
@@ -328,16 +328,16 @@ export interface HandoverFacts {
   readonly checkoutRoot?: string;
 }
 
-const FRAMEWORK_PACKAGE = "@clawforge/framework";
+const FRAMEWORK_PACKAGE = "clawwright";
 
 /** The checkout-gate test, the same shape as the resolver's checkoutGateIn: a directory is
- *  a checkout when tools/framework/package.json names the framework and tools/clawforge.ts
+ *  a checkout when tools/framework/package.json names the framework and tools/clawwright.ts
  *  stands beside it. */
 function gateIn(dir: string, fs: HandoverFacts["fs"]): boolean {
   const manifest = fs.readFile(resolve(dir, "tools", "framework", "package.json"));
   if (manifest === undefined) return false;
   try {
-    return (JSON.parse(manifest) as { name?: unknown }).name === FRAMEWORK_PACKAGE && fs.exists(resolve(dir, "tools", "clawforge.ts"));
+    return (JSON.parse(manifest) as { name?: unknown }).name === FRAMEWORK_PACKAGE && fs.exists(resolve(dir, "tools", "clawwright.ts"));
   } catch {
     return false;
   }
@@ -362,10 +362,10 @@ function packageRootOf(from: string): string | undefined {
  *  operator stands). Everything the facts cannot vouch for is the verbatim launch. */
 export function launchFromHandover(on: Invocation, facts: HandoverFacts): Launch {
   const program = on.program;
-  if (program === "clawforge") return { kind: "system" };
+  if (program === "clawwright") return { kind: "system" };
   const uniform = program.split("\\").join("/");
   const here = resolve(facts.cwd, uniform);
-  if (basename(here) === "clawforge") {
+  if (basename(here) === "clawwright") {
     const dir = dirname(here);
     if (gateIn(dir, facts.fs)) return { kind: "checkout-shim", root: dir };
     if (facts.fs.exists(resolve(dir, "app.ts"))) return { kind: "deployment-shim", root: dir };
@@ -373,7 +373,7 @@ export function launchFromHandover(on: Invocation, facts: HandoverFacts): Launch
   if (facts.checkoutRoot !== undefined) {
     const atRoot = resolve(facts.checkoutRoot, uniform);
     const dir = dirname(atRoot);
-    if (basename(atRoot) === "clawforge" && gateIn(dir, facts.fs)) return { kind: "checkout-shim", root: dir };
+    if (basename(atRoot) === "clawwright" && gateIn(dir, facts.fs)) return { kind: "checkout-shim", root: dir };
   }
   if (on.mode === "local-package" && uniform.includes("node_modules/.bin/")) {
     const root = packageRootOf(dirname(here));
@@ -390,7 +390,7 @@ export function handoverJson(launch: Launch, audience: InvocationAudience = "ter
   return JSON.stringify({ version: INVOCATION_VERSION, program, mode: modeOf(launch), audience });
 }
 
-/** A legacy CLAWFORGE_INVOKED_AS prefix mapped onto the value: a program path (the launcher's
+/** A legacy CLAWWRIGHT_INVOKED_AS prefix mapped onto the value: a program path (the launcher's
  *  relative spelling included), optionally with the hand-written `--app <name>` suffix the old
  *  variable carried. The old variable never said how the deployment was picked; every writer
  *  spelled the suffix by hand for a selection the cwd would not repeat, so `flag`. The mode
@@ -405,11 +405,11 @@ export function parseLegacyInvokedAs(text: string): Invocation | undefined {
     // garbage a hand-written variable picked up on the way: it reads as unset, like the
     // strict parse. Spacing between program and suffix trims away and is kept.
     if (value.startsWith("--") || /\s/.test(value)) return undefined;
-    return { program: value, mode: value === "clawforge" ? "installed" : "checkout", audience: "terminal" };
+    return { program: value, mode: value === "clawwright" ? "installed" : "checkout", audience: "terminal" };
   }
   const program = suffix[1].trim();
   // The same rule for the program of a suffixed value: "--app x --app y" is not a path.
   if (program.startsWith("--") || /\s/.test(program)) return undefined;
-  return { program, mode: program === "clawforge" ? "installed" : "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
+  return { program, mode: program === "clawwright" ? "installed" : "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
 }
 

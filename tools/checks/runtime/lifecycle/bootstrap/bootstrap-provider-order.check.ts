@@ -1,4 +1,4 @@
-// `./clawforge bootstrap` — the provider is configured AFTER declared settings are applied,
+// `./clawwright bootstrap` — the provider is configured AFTER declared settings are applied,
 // never before.
 //
 // Confirmed against OpenClaw's real config schema (github.com/openclaw/openclaw
@@ -236,7 +236,7 @@ function providerHintContext(liveConfig: unknown, targetEnv = ""): Context {
     {
       let output = "";
       await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.bootstrap.run(providerHintContext({ models: { providers: {} } }), ["--no-pull"]));
-      check("no provider configured prints the configure-provider hint", output.includes("./clawforge configure-provider"), true);
+      check("no provider configured prints the configure-provider hint", output.includes("./clawwright configure-provider"), true);
       check("the hint says an agent cannot answer yet", output.includes("cannot answer"), true);
     }
 

@@ -8,8 +8,8 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
-export const FIXTURE_LOCK_PATH = "/srv/clawforge-locks/operation.lock";
-export const FIXTURE_LOCK_HOME = "/srv/clawforge-locks";
+export const FIXTURE_LOCK_PATH = "/srv/clawwright-locks/operation.lock";
+export const FIXTURE_LOCK_HOME = "/srv/clawwright-locks";
 
 export interface PresenceModel {
   readonly parents: Map<string, boolean>;
@@ -68,7 +68,7 @@ export function stubContext(): LockFixture {
     files,
     dirs,
     ctx: {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         async exists(path: string): Promise<boolean> { return dirs.has(path) || files.has(path); },
         async existsEntry(path: string): Promise<boolean> { return dirs.has(path) || files.has(path); },

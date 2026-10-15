@@ -46,7 +46,7 @@ const lines = [
 function runServer(name: string, input: string): Promise<ProcessResult> {
   return runProcess(
     process.execPath,
-    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "control-mcp"],
+    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawwright.ts"), "--app", name, "control-mcp"],
     { cwd: apps.root, input: `${input}\n` },
   );
 }
@@ -437,18 +437,18 @@ function conforms(
   const payload = JSON.stringify({
     healthy: false,
     problems: [
-      { code: "CONFIG_DRIFT", severity: "blocking", detail: "x", nextAction: "./clawforge apply" },
-      { code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock" },
+      { code: "CONFIG_DRIFT", severity: "blocking", detail: "x", nextAction: "./clawwright apply" },
+      { code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawwright lock" },
     ],
-    nextActions: ["./clawforge apply", "./clawforge lock"],
+    nextActions: ["./clawwright apply", "./clawwright lock"],
   });
 
   const envelope = structuredResult({ summary: "s", structured: true, readOnly: true }, payload, "op-1");
   check("a read-only command states it changed nothing", envelope?.changed, false);
   check("the verdict is carried", envelope?.healthy, false);
   check("problems come through whole", envelope?.problems.length, 2);
-  check("warnings are the non-blocking subset", envelope?.warnings, [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock" }]);
-  check("the remedies are a list", envelope?.nextActions, ["./clawforge apply", "./clawforge lock"]);
+  check("warnings are the non-blocking subset", envelope?.warnings, [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawwright lock" }]);
+  check("the remedies are a list", envelope?.nextActions, ["./clawwright apply", "./clawwright lock"]);
   check("the call names itself", envelope?.operationId, "op-1");
   check("and the command's own document is kept unaltered", JSON.stringify(envelope?.result), payload);
 }
@@ -500,7 +500,7 @@ function conforms(
   check("the declaration enumerates the actions to sweep", actionChoices.length, 18);
 
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
-  const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
+  const sweepRoot = await mkdtemp(join(tmpdir(), "clawwright-mcp-sweep-"));
   await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   await mkdir(join(sweepRoot, "recipes", "sidecar", "actions"), { recursive: true });
   await writeFile(join(sweepRoot, "recipes", "sidecar", "recipe.json"), JSON.stringify({ description: "sweep fixture recipe", actions: { announce: { file: "actions/announce.ts", effect: "read", arguments: [] } } }), "utf8");  await writeFile(join(sweepRoot, "recipes", "sidecar", "actions", "announce.ts"), "export function run() { return { ok: true }; }\n", "utf8");  const script = `
@@ -594,12 +594,12 @@ function conforms(
 // commands and gate commands echo the value while succeeding.
 {
   const secret = "zt0k_4f8e2d6c9b1a";
-  const redactionRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-redaction-"));
+  const redactionRoot = await mkdtemp(join(tmpdir(), "clawwright-mcp-redaction-"));
   // mcp-creds now runs requireBootstrapped() (U7) before printing anything, which reaches a
   // real `docker compose ps` — mkdtemp's own suffix can carry uppercase letters, invalid as a
   // Compose project name, so one is pinned explicitly here the same way other real-docker
   // fixtures already do (deployment-names.check.ts, env.check.ts, apply.check.ts, …).
-  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOC_COMPOSE_PROJECT=clawforge-mcp-redaction\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
+  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOC_COMPOSE_PROJECT=clawwright-mcp-redaction\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
   const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});

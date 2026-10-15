@@ -256,7 +256,7 @@ check(
 // --- accept scope policy -------------------------------------------------------------------
 
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-accept-policy-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-accept-policy-"));
   let previous: string | undefined;
   try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
   await mkdir(join(root, "recipes", "demo"), { recursive: true });

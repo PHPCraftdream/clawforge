@@ -1,8 +1,8 @@
-// Help-prose tokens: {clawforge} — the program; {clawforge <argv…>} — a whole command,
+// Help-prose tokens: {clawwright} — the program; {clawwright <argv…>} — a whole command,
 // `--app <name>` as its first words moving into the advice's `app` field; {--name} — this
 // command's own flag; {install <argv…>} — an install line for the shell the LAST argv word
 // names (bash/zsh → posix, pwsh → pwsh; the completion prose). "{" without
-// clawforge/install/-- is plain text (JSON in prose).
+// clawwright/install/-- is plain text (JSON in prose).
 
 import { command } from "./advice.ts";
 import { renderAdviceParts, renderFrameAdvice, renderProgram } from "./render.ts";
@@ -22,9 +22,9 @@ function installShell(last: string | undefined): "posix" | "pwsh" {
 
 /** The token a `{…}` span means, or undefined when the brace is plain text. */
 function recognize(content: string): ProseToken | undefined {
-  if (content === "clawforge") return { kind: "program" };
-  if (content.startsWith("clawforge ")) {
-    const words = content.slice("clawforge ".length).split(" ");
+  if (content === "clawwright") return { kind: "program" };
+  if (content.startsWith("clawwright ")) {
+    const words = content.slice("clawwright ".length).split(" ");
     if (words[0] === "--app" && words.length > 1) {
       return { kind: "command", argv: words.slice(2), app: words[1] };
     }

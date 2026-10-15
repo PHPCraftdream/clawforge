@@ -13,7 +13,7 @@ const noise = (text: string | undefined) => text !== undefined && /Cannot connec
 const FORCE_LOCAL_REFUSAL = "tar: Option --force-local is not supported\n";
 
 // Fixtures live under the OS temp dir only; every group reuses one root, removed in finally.
-const root = await mkdtemp(join(tmpdir(), "clawforge-local-tar-owner-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-local-tar-owner-"));
 try {
   await requires("gnu-userland", "create+list+extract round-trip with spaces in every path", async () => {
     const src = join(root, "claw forge src");

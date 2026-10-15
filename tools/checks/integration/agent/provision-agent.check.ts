@@ -1,4 +1,4 @@
-// `./clawforge provision-agent <recipe>` — covers three layers without a live gateway:
+// `./clawwright provision-agent <recipe>` — covers three layers without a live gateway:
 //   - the pure path/argv builders (exact strings, no I/O);
 //   - collectRecipeFiles (walks a real temp directory, excludes agent/);
 //   - the orchestration logic (ensureAgent/ensureMcpServer/ensureCronJob create-vs-skip
@@ -65,8 +65,8 @@ function liveJob() {
 
 // --- path builders ------------------------------------------------------------------------
 
-check("agent workspace path lives under the data dir's workspace mount", agentWorkspaceTargetDir("/srv/clawforge", "demo-agent"), "/srv/clawforge/workspace/demo-agent");
-check("recipe mirror path lives under the data dir's workspace mount", recipeMirrorTargetDir("/srv/clawforge", "demo-recipe"), "/srv/clawforge/workspace/mcp-demo-recipe");
+check("agent workspace path lives under the data dir's workspace mount", agentWorkspaceTargetDir("/srv/clawwright", "demo-agent"), "/srv/clawwright/workspace/demo-agent");
+check("recipe mirror path lives under the data dir's workspace mount", recipeMirrorTargetDir("/srv/clawwright", "demo-recipe"), "/srv/clawwright/workspace/mcp-demo-recipe");
 
 // --- argv builders -------------------------------------------------------------------------
 
@@ -100,7 +100,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 // --- collectRecipeFiles --------------------------------------------------------------------
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-provision-agent-check-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-provision-agent-check-"));
   try {
     await writeFile(resolve(dir, "server.ts"), "// server");
     await mkdir(resolve(dir, "data", "sub"), { recursive: true });
@@ -121,7 +121,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 // not valid UTF-8. Root-level names also must not turn into directories (server.ts and
 // server.tsx are both ordinary files).
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-binary-check-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-binary-check-"));
   const targetData = resolve(root, "target-data");
   const recipeDir = resolve(root, "recipe");
   try {
@@ -152,7 +152,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 // before their desired child paths are created; stale directories are emptied and removed
 // with a non-recursive rmdir so unknown target contents are never swept away.
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-shape-check-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-shape-check-"));
   const targetData = resolve(root, "target-data");
   const recipeDir = resolve(root, "recipe");
   const binary = Buffer.from([0xff, 0x00, 0x80, 0xc3]);
@@ -199,7 +199,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 // A transport can return an incomplete listing. Empty-tree cleanup must then preserve an
 // unlisted file and refuse the shape change instead of recursively deleting it.
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-incomplete-listing-check-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-incomplete-listing-check-"));
   const targetData = resolve(root, "target-data");
   const recipeDir = resolve(root, "recipe");
   try {
@@ -226,7 +226,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 
 // A failed listing must abort before provisioning can interpret unknown target state as empty.
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-listing-error-check-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-listing-error-check-"));
   const targetData = resolve(root, "target-data");
   const recipeDir = resolve(root, "recipe");
   try {
@@ -262,7 +262,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 // stub, since the point is which paths get written and removed, not the transport.
 
 {
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-recipe-mirror-check-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-recipe-mirror-check-"));
   try {
     await writeFile(resolve(dir, "server.ts"), "// server");
     await mkdir(resolve(dir, "data"), { recursive: true });
@@ -270,11 +270,11 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
     await mkdir(resolve(dir, "agent"), { recursive: true });
     await writeFile(resolve(dir, "agent", "AGENTS.md"), "# prompt");
 
-    const mirrorDir = "/srv/clawforge/workspace/mcp-demo-recipe";
+    const mirrorDir = "/srv/clawwright/workspace/mcp-demo-recipe";
     const written: string[] = [];
     const removed: string[] = [];
     const ctx = {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         description: "local",
         // What a previous run left: one file the recipe still declares, and two it no
@@ -312,12 +312,12 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
 {
   // First run: nothing on the target yet. The listing is empty and nothing is removed —
   // an empty mirror must not read as "everything is stale".
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-recipe-mirror-first-check-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-recipe-mirror-first-check-"));
   try {
     await writeFile(resolve(dir, "server.ts"), "// server");
     const removed: string[] = [];
     const ctx = {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         description: "local",
         async listFiles(): Promise<string[]> {
@@ -346,7 +346,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
   const removed: string[] = [];
   const written: string[] = [];
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       description: "local",
       async listFiles(): Promise<string[]> {
@@ -358,14 +358,14 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
     },
   } as unknown as Context;
   await writeWorkspacePromptFiles(ctx, CONFIG, { "AGENTS.md": "new prompt" }, ["AGENTS.md", "custom.md"]);
-  check("prompt cleanup removes a formerly-owned prompt", removed, ["/srv/clawforge/workspace/demo-agent/custom.md"]);
+  check("prompt cleanup removes a formerly-owned prompt", removed, ["/srv/clawwright/workspace/demo-agent/custom.md"]);
   check("prompt cleanup preserves MEMORY.md", removed.some((path) => path.endsWith("MEMORY.md")), false);
   check("prompt cleanup preserves an untracked custom note", (await (async () => {
     removed.length = 0;
     await writeWorkspacePromptFiles(ctx, CONFIG, { "AGENTS.md": "new prompt" }, ["AGENTS.md"]);
     return removed.some((path) => path.endsWith("custom.md"));
   })()), false);
-  check("prompt cleanup still writes declared prompts", written, ["/srv/clawforge/workspace/demo-agent/AGENTS.md", "/srv/clawforge/workspace/demo-agent/AGENTS.md"]);
+  check("prompt cleanup still writes declared prompts", written, ["/srv/clawwright/workspace/demo-agent/AGENTS.md", "/srv/clawwright/workspace/demo-agent/AGENTS.md"]);
 }
 
 // --- orchestration: ensureAgent / ensureMcpServer / ensureCronJob, via a stubbed Context ---
@@ -551,10 +551,10 @@ if (probeTarget !== undefined) {
   // A one-shot target root with an `outside/` directory beside the data dir, plus a recipe
   // directory Node can read directly. Cleanup removes both sides.
   const stage = async (label: string) => {
-    const recipeDir = await mkdtemp(join(tmpdir(), `clawforge-prov-${label}-recipe-`));
+    const recipeDir = await mkdtemp(join(tmpdir(), `clawwright-prov-${label}-recipe-`));
     const root = process.platform === "win32"
-      ? `/tmp/clawforge-prov-${label}-${randomBytes(4).toString("hex")}`
-      : await mkdtemp(join(tmpdir(), `clawforge-prov-${label}-root-`));
+      ? `/tmp/clawwright-prov-${label}-${randomBytes(4).toString("hex")}`
+      : await mkdtemp(join(tmpdir(), `clawwright-prov-${label}-root-`));
     const dataDir = `${root}/data`;
     const outside = `${root}/outside`;
     await linkTransport.mkdirp(outside);

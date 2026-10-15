@@ -1,6 +1,6 @@
 // Builds tools/framework/ into a publishable npm package.
 //
-// This repo's own ./clawforge runs the framework's TypeScript directly, no build step —
+// This repo's own ./clawwright runs the framework's TypeScript directly, no build step —
 // but Node refuses to type-strip anything it loads from inside node_modules
 // (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING, confirmed by actually installing the raw
 // .ts sources), so installed-as-dependency needs one. Node strips types for the JS build;

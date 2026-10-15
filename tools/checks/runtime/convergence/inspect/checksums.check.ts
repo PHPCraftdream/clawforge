@@ -1,4 +1,4 @@
-// `./clawforge inspect` — how a target directory reaches the checksum shell. The program
+// `./clawwright inspect` — how a target directory reaches the checksum shell. The program
 // text must be a constant and the directory a positional parameter: JSON.stringify's double
 // quotes do not stop a POSIX shell from running $(…), backticks and $VAR inside them, so a
 // hostile component in the target data directory used to be able to execute as the
@@ -129,7 +129,7 @@ const formatHash = "a".repeat(64);
 check("the target parser accepts GNU text-mode checksums", parseChecksumOutput(`${formatHash}  ./page.md\n`)["page.md"], formatHash);
 check("the target parser accepts Windows binary-mode checksums", parseChecksumOutput(`${formatHash} *./page.md\n`)["page.md"], formatHash);
 check("the target parser preserves spaces at the end of a filename", parseChecksumOutput(`${formatHash} *./page.md \n`)["page.md "], formatHash);
-const root = await mkdtemp(join(tmpdir(), "clawforge-inspect-checksums-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-inspect-checksums-"));
 const sh = await shAvailable();
 
 try {

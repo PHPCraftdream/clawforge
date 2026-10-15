@@ -18,7 +18,7 @@ function stubContext(seed: Record<string, string> = {}) {
   const files = new Map(Object.entries(seed));
   const writes: string[] = [];
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async mkdirp(): Promise<void> {},
       async exists(path: string): Promise<boolean> {
@@ -100,14 +100,14 @@ function stubContext(seed: Record<string, string> = {}) {
   const closed = await readOperation(ctx, journal.id);
   check("closing records the outcome", closed?.outcome, "failed");
   check("and when it ended", closed?.finishedAt !== undefined, true);
-  check("every write went to the operations directory", [...files.keys()].every((path) => path.startsWith("/srv/clawforge/clawforge-operations/")), true);
+  check("every write went to the operations directory", [...files.keys()].every((path) => path.startsWith("/srv/clawwright/clawwright-operations/")), true);
 }
 
 // --- the journal never breaks the run it is recording -----------------------------------------
 
 {
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async mkdirp(): Promise<void> {},
       async writeFile(): Promise<void> {
@@ -131,22 +131,22 @@ function stubContext(seed: Record<string, string> = {}) {
 // --- the configuration snapshot ---------------------------------------------------------------
 
 {
-  const { ctx, files } = stubContext({ "/srv/clawforge/config/openclaw.json": '{"gateway":{"mode":"local"}}' });
+  const { ctx, files } = stubContext({ "/srv/clawwright/config/openclaw.json": '{"gateway":{"mode":"local"}}' });
   const where = await snapshotConfig(ctx, "apply-1");
-  check("the live configuration is copied aside", where, "/srv/clawforge/clawforge-operations/apply-1.openclaw.json");
+  check("the live configuration is copied aside", where, "/srv/clawwright/clawwright-operations/apply-1.openclaw.json");
   check("byte for byte", files.get(where!), '{"gateway":{"mode":"local"}}');
 }
 
 {
-  const { ctx, files } = stubContext({ "/srv/clawforge/config/openclaw.json": '{"gateway":{"token":"secret"}}' });
-  const destination = "/srv/clawforge/clawforge-operations/apply-1.openclaw.json";
+  const { ctx, files } = stubContext({ "/srv/clawwright/config/openclaw.json": '{"gateway":{"token":"secret"}}' });
+  const destination = "/srv/clawwright/clawwright-operations/apply-1.openclaw.json";
   files.set(destination, "existing snapshot");
   check("a colliding snapshot is refused", await snapshotConfig(ctx, "apply-1"), undefined);
   check("a colliding snapshot remains unchanged", files.get(destination), "existing snapshot");
 }
 
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-operation-snapshot-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-operation-snapshot-"));
   const live = join(root, "config", "openclaw.json");
   try {
     await mkdir(join(root, "config"));
@@ -161,10 +161,10 @@ function stubContext(seed: Record<string, string> = {}) {
 }
 
 {
-  const destination = "/srv/clawforge/clawforge-operations/failing.openclaw.json";
-  const files = new Map([["/srv/clawforge/config/openclaw.json", "secret"]]);
+  const destination = "/srv/clawwright/clawwright-operations/failing.openclaw.json";
+  const files = new Map([["/srv/clawwright/config/openclaw.json", "secret"]]);
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> { return files.has(path); },
       async readFile(path: string): Promise<string> { return files.get(path)!; },
@@ -183,13 +183,13 @@ function stubContext(seed: Record<string, string> = {}) {
 }
 
 {
-  const destination = "/srv/clawforge/clawforge-operations/existing.openclaw.json";
+  const destination = "/srv/clawwright/clawwright-operations/existing.openclaw.json";
   const files = new Map([
-    ["/srv/clawforge/config/openclaw.json", "secret"],
+    ["/srv/clawwright/config/openclaw.json", "secret"],
     [destination, "do not erase"],
   ]);
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> {
         if (path === destination) throw new Error("temporary stat failure");
@@ -212,13 +212,13 @@ function stubContext(seed: Record<string, string> = {}) {
 }
 
 {
-  const destination = "/srv/clawforge/clawforge-operations/read-failure.openclaw.json";
+  const destination = "/srv/clawwright/clawwright-operations/read-failure.openclaw.json";
   const files = new Map([
-    ["/srv/clawforge/config/openclaw.json", "secret"],
+    ["/srv/clawwright/config/openclaw.json", "secret"],
     [destination, "keep this snapshot"],
   ]);
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> { return path !== destination && files.has(path); },
       async readFile(): Promise<string> { throw new Error("source read failure"); },
@@ -249,7 +249,7 @@ function stubContext(seed: Record<string, string> = {}) {
   const first = await Journal.open(ctx, "apply", "example");
   await first.close("succeeded");
   const second = await Journal.open(ctx, "apply", "example");
-  await second.noteSnapshot("/srv/clawforge/clawforge-operations/x.openclaw.json");
+  await second.noteSnapshot("/srv/clawwright/clawwright-operations/x.openclaw.json");
   await second.close("failed");
 
   const ids = await listOperations(ctx);
@@ -272,10 +272,10 @@ function stubContext(seed: Record<string, string> = {}) {
     startedAt: "2026-01-01T00:00:00.000Z",
     steps: [],
   };
-  const { ctx, files } = stubContext({ "/srv/clawforge/oc-operations/legacy-apply.json": JSON.stringify(legacy) });
+  const { ctx, files } = stubContext({ "/srv/clawwright/oc-operations/legacy-apply.json": JSON.stringify(legacy) });
   check("the old oc operation directory remains listed", await listOperations(ctx), ["legacy-apply"]);
   check("an old oc operation remains readable", (await readOperation(ctx, "legacy-apply"))?.id, "legacy-apply");
-  files.set("/srv/clawforge/clawforge-operations/legacy-apply.json", JSON.stringify({ ...legacy, command: "current" }));
+  files.set("/srv/clawwright/clawwright-operations/legacy-apply.json", JSON.stringify({ ...legacy, command: "current" }));
   check("the current operation directory wins a collision", (await readOperation(ctx, "legacy-apply"))?.command, "current");
 }
 
@@ -296,7 +296,7 @@ function stubContext(seed: Record<string, string> = {}) {
       { id: "restart", status: "skipped", detail: "advisory: for you to do, not this command", at: "2026-01-01T00:00:02.000Z" },
     ],
   };
-  const { ctx } = stubContext({ "/srv/clawforge/clawforge-operations/old-apply.json": JSON.stringify(legacy) });
+  const { ctx } = stubContext({ "/srv/clawwright/clawwright-operations/old-apply.json": JSON.stringify(legacy) });
   const record = await readOperation(ctx, "old-apply");
   check("an old journal with a skipped step still reads back", record?.steps.map((step) => step.status), ["done", "skipped"]);
   check("with its detail intact", record?.steps[1].detail, "advisory: for you to do, not this command");
@@ -335,7 +335,7 @@ function stubContext(seed: Record<string, string> = {}) {
   // outside. The lock, the journal entry, the configuration snapshot and the operationId an
   // MCP caller gets back have to be the same value, or "what happened in operation X" has
   // two answers and neither can be matched to the other.
-  const { ctx } = stubContext({ "/srv/clawforge/config/openclaw.json": "{}" });
+  const { ctx } = stubContext({ "/srv/clawwright/config/openclaw.json": "{}" });
   const chosen = newOperationId("apply");
   const journal = await Journal.open(ctx, "apply", "example", chosen);
   check("a caller's own id is the journal's id", journal.id, chosen);
@@ -410,7 +410,7 @@ async function captureCli(body: () => Promise<void>): Promise<string> {
       { id: "restart", status: "skipped", detail: "advisory: for you to do, not this command", at: "2026-01-01T00:00:02.000Z" },
     ],
   };
-  const { ctx } = stubContext({ "/srv/clawforge/clawforge-operations/old-cli-apply.json": JSON.stringify(legacy) });
+  const { ctx } = stubContext({ "/srv/clawwright/clawwright-operations/old-cli-apply.json": JSON.stringify(legacy) });
   const listing = await captureCli(() => operations(ctx, []));
   check("an old skipped step is never reported as a failed step by the real command", listing.includes("failed step"), false);
   check("the operation itself is still listed", listing.includes("old-cli-apply"), true);

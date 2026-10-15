@@ -1,6 +1,6 @@
 // The checkout gate's own commands (check, new-app, remove-app, list), declared without
 // import-time side effects — nothing here runs or reads state at import time, so the gate
-// script (tools/clawforge.ts), the goldens and the checks can all import the same
+// script (tools/clawwright.ts), the goldens and the checks can all import the same
 // declarations. version/completion stay wired in the gate script itself: completion's
 // declaration closes over the finished command array (see completion.ts).
 
@@ -127,10 +127,10 @@ export const checkoutGateCommands: readonly GateCommand[] = [
     summary: "Framework preflight checks (no instance needed)",
     details:
       "Paths, archives, the argument contract, what a server delivery contains, secret " +
-      "masking — the parts where a mistake is silent. `{clawforge smoke}` covers a live instance " +
+      "masking — the parts where a mistake is silent. `{clawwright smoke}` covers a live instance " +
       "instead.\n" +
       "With no filter, every check runs. One or more substrings narrow that down to checks " +
-      "whose path contains at least one of them, e.g. `{clawforge check gate}` or " +
+      "whose path contains at least one of them, e.g. `{clawwright check gate}` or " +
       "`npm run check -- foundation runtime`. `{--list}` prints the matching paths (and, where " +
       "one is declared, the host capabilities a file needs) without running them. A filter " +
       "matching nothing is refused rather than silently running everything.\n" +
@@ -154,7 +154,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "Bootstrap checks active Docker deployments AND raw listening sockets (ss/netstat) on the target " +
       "before preparing data or pulling an image.\n" +
       "Refuses an existing directory unless it is empty — run this once per deployment, then " +
-      "{clawforge --app <name> bootstrap}.",
+      "{clawwright --app <name> bootstrap}.",
     body: newAppBody,
   }),
   materializeGate({
@@ -169,8 +169,8 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "repository's own git — see new-app's gitInitAdvice), then exits 0 without removing " +
       "anything. {--yes} performs the removal.\n" +
       "Refuses while the deployment still has a bootstrapped instance (running or " +
-      "stopped-but-bootstrapped, read the same way {clawforge list} reads it) — " +
-      "{clawforge --app <name> destroy} first (and --data if the data should go too).\n" +
+      "stopped-but-bootstrapped, read the same way {clawwright list} reads it) — " +
+      "{clawwright --app <name> destroy} first (and --data if the data should go too).\n" +
       "Refuses a name that is not a plain deployment name (the same rule new-app enforces), " +
       "and refuses when the directory is itself a symlink.",
     body: removeAppBody,

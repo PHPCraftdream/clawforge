@@ -1,6 +1,6 @@
 // How this process was invoked, for the commands its messages tell a user to run: the
 // monorepo gate and the committed shim use the checkout spelling (SHIM_PROGRAM, frame.ts);
-// the system-wide command is plain `clawforge`, where the checkout spelling does not even
+// the system-wide command is plain `clawwright`, where the checkout spelling does not even
 // run in cmd.exe or PowerShell. Entry points set the frame once, from the environment or
 // their own constructors (frame.ts), before any command runs; the value is read everywhere
 // through the accessors, never re-derived from strings.
@@ -10,11 +10,11 @@ export { parseLegacyInvokedAs } from "./frame.ts";
 import { frameFromInvocation, handoverOf, type Frame, type HostPlatform } from "./frame.ts";
 
 /** The invocation travels to child gate processes as versioned JSON (see serializeInvocation). */
-export const INVOCATION_ENV = "CLAWFORGE_INVOCATION";
-/** Legacy input: committed shims and launchers written before CLAWFORGE_INVOCATION exist in
+export const INVOCATION_ENV = "CLAWWRIGHT_INVOCATION";
+/** Legacy input: committed shims and launchers written before CLAWWRIGHT_INVOCATION exist in
  *  users' deployments and are read and mapped (parseLegacyInvokedAs); today only the committed-shim
  *  and launcher generators still write it, so older frameworks keep getting right hints. */
-export const INVOKED_AS_ENV = "CLAWFORGE_INVOKED_AS";
+export const INVOKED_AS_ENV = "CLAWWRIGHT_INVOKED_AS";
 
 export const INVOCATION_VERSION = 1;
 
@@ -29,7 +29,7 @@ export interface InvocationApp {
 
 export interface Invocation {
   /** What the user actually types: the checkout spelling for the checkout gate and the
-   *  committed shims, `clawforge` for the system-wide command — the monorepo MCP launcher
+   *  committed shims, `clawwright` for the system-wide command — the monorepo MCP launcher
    *  names its shim two levels up, so this is a path, not only one of the two names. */
   readonly program: string;
   readonly mode: InvocationMode;

@@ -1,4 +1,4 @@
-// `./clawforge apply` — what it runs, what it refuses, and what it does after a step fails.
+// `./clawwright apply` — what it runs, what it refuses, and what it does after a step fails.
 //
 // The step runners themselves are the commands this framework already has and are covered
 // where they live. What is new here, and what a coder is trusting when they type this, is
@@ -70,7 +70,7 @@ check("apply still recognizes dry-run after an option value", dryRunGiven(["--ex
 }
 
 function action(id: string, advisory = false): PlanAction {
-  return { id, summary: id, command: `./clawforge ${id}`, because: [], ...(advisory ? { advisory: true } : {}) };
+  return { id, summary: id, command: `./clawwright ${id}`, because: [], ...(advisory ? { advisory: true } : {}) };
 }
 
 /** runSteps dispatches by step id to the real commands, so a check cannot substitute its
@@ -225,7 +225,7 @@ function inspectionWith(problems: Problem[], running = true): Inspection {
   // steps fail was half a fix, and half is worse than none here: an unhealthy gateway with
   // nothing for the plan to do reported success and exited zero, which is precisely the
   // claim this command's help makes and the reason it re-inspects at all.
-  const noopOutcome = { deployment: "example", operationId: "(none)", changed: false, healthy: false, steps: [], problems: [{ code: "GATEWAY_UNHEALTHY", detail: "the runtime reports the container \"unhealthy\"" }], nextActions: ["./clawforge logs --tail 100"] };
+  const noopOutcome = { deployment: "example", operationId: "(none)", changed: false, healthy: false, steps: [], problems: [{ code: "GATEWAY_UNHEALTHY", detail: "the runtime reports the container \"unhealthy\"" }], nextActions: ["./clawwright logs --tail 100"] };
   check("a run with nothing to do still fails on a blocking finding", blockingRemainder(noopOutcome.problems).length, 1);
   check("and passes when the finding is only a warning", blockingRemainder([{ code: "LOCK_MISSING", detail: "none" }]).length, 0);
 }

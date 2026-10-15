@@ -17,7 +17,7 @@ import type { RecipeRef } from "#framework/core/values/plan.ts";
 
 export const DEPLOYMENT_NAME = "example-deployment";
 /** Synthetic POSIX data dir — never a real path on this machine. */
-export const DATA_DIR = "/srv/clawforge-recipe-trial-check";
+export const DATA_DIR = "/srv/clawwright-recipe-trial-check";
 /** What the stub PathBridge answers for any definition: a canonical POSIX target path. */
 export const TARGET_DEFINITION = "/srv/recipes/trial-target/compose.yml";
 export const SECRET_ENV: Record<string, string> = { OC_PASSWORD: "trial-secret-env", ECRET: "fixture-distinct-value" };
@@ -115,7 +115,7 @@ export interface TrialFixture {
 /** The live project name recipeProjectName() would derive, recomputed here from the
  *  documented inputs so the expectation is independent of the product function. */
 export function liveProjectFor(name: string): string {
-  return `clawforge-recipe-${createHash("sha256").update(JSON.stringify([DEPLOYMENT_NAME, name])).digest("hex")}`;
+  return `clawwright-recipe-${createHash("sha256").update(JSON.stringify([DEPLOYMENT_NAME, name])).digest("hex")}`;
 }
 
 /** The trial hash prefix for a recipe, recomputed the same independent way. */
@@ -345,7 +345,7 @@ export function trialFixture(): TrialFixture {
           }
           if (args[2] === "recipe-trial-mount-realpath") {
             const paths = args.slice(3);
-            const scratchHome = paths.find((path) => path.includes(".clawforge-recipe-trial-"))?.split("/data")[0] ?? "";
+            const scratchHome = paths.find((path) => path.includes(".clawwright-recipe-trial-"))?.split("/data")[0] ?? "";
             if (fixture.failMissingScratchBind && paths.some((path) => path.startsWith(`${scratchHome}/data/`))
               && ![...dirs].some((path) => path.startsWith(`${scratchHome}/data/`)))
               return { code: 1, stdout: "", stderr: "No such file or directory" };

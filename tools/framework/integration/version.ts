@@ -37,7 +37,7 @@ function real(path: string): string {
 export function classifyCopy(packageDir: string, appRoot?: string): { source: VersionSource; path: string } {
   const dir = real(packageDir);
   const tools = dirname(dir);
-  if (basename(tools) === "tools" && existsSync(resolve(tools, "clawforge.ts"))) return { source: "checkout", path: dirname(tools) };
+  if (basename(tools) === "tools" && existsSync(resolve(tools, "clawwright.ts"))) return { source: "checkout", path: dirname(tools) };
   if (appRoot !== undefined && dir !== real(appRoot) && isWithin(real(appRoot), dir)) return { source: "local", path: dir };
   return { source: "global", path: dir };
 }
@@ -56,7 +56,7 @@ export const VERSION_ARGUMENTS = [
 export function makeVersionGateCommand(appRoot?: string): GateCommand {
   return materializeGate({
     name: VERSION_COMMAND_NAME,
-    summary: `Print clawforge's own version (also: ${VERSION_ALIASES.join(", ")})`,
+    summary: `Print clawwright's own version (also: ${VERSION_ALIASES.join(", ")})`,
     details:
       "Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. " +
       "{--verbose} / {--json} also say which copy runs: global, local (the app's own dependency) or checkout, and its path.",
@@ -69,9 +69,9 @@ export function makeVersionGateCommand(appRoot?: string): GateCommand {
         const pkg = await frameworkPackage();
         if (pkg?.version === undefined) die("cannot determine the framework version — package.json is missing or unreadable");
         const copy = classifyCopy(pkg.dir, appRoot);
-        if (plan.json === true) emit(`${JSON.stringify({ name: "clawforge", version: pkg.version, ...copy })}`+"\n");
-        else if (plan.verbose === true) emit(`clawforge ${pkg.version}`+`\nsource: ${copy.source}\npath: ${copy.path}\n`);
-        else emit(`clawforge ${pkg.version}`+"\n");
+        if (plan.json === true) emit(`${JSON.stringify({ name: "clawwright", version: pkg.version, ...copy })}`+"\n");
+        else if (plan.verbose === true) emit(`clawwright ${pkg.version}`+`\nsource: ${copy.source}\npath: ${copy.path}\n`);
+        else emit(`clawwright ${pkg.version}`+"\n");
         return 0;
       },
     }),

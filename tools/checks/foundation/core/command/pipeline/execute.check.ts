@@ -88,7 +88,7 @@ async function capture(body: () => Promise<unknown>): Promise<{ output: string; 
   {
     // No .env at all: the prepare refusal is the answer, not the settings parser's, and it
     // lands before the pipeline builds the deployment scope (no transport call either).
-    const emptyDir = await mkdtemp(join(tmpdir(), "clawforge-pipeline-noenv-"));
+    const emptyDir = await mkdtemp(join(tmpdir(), "clawwright-pipeline-noenv-"));
     useDeployment(emptyDir);
     const transport = fixture.transport();
     const execution = await executeCommand(app, "recover-env", { kind: "argv", argv: [] }, { surface: "terminal", transport });
@@ -306,8 +306,8 @@ try {
     const document = /\{[\s\S]*\}/.exec(output)?.[0] ?? "";
     const parsed = JSON.parse(document) as { error?: { message?: string }; nextActions?: string[]; next?: Array<{ kind?: string; argv?: string[]; note?: string }> };
     checkTrue("a refusal with advice names the failure in its --json document", (parsed.error?.message ?? "").includes(["this", "deployment", "has", "never", "been", "bootstrapped"].join(" ")));
-    checkTrue("the --json document renders the refusal's remedy", Array.isArray(parsed.nextActions) && parsed.nextActions[0] === "./clawforge bootstrap --token ***");
-    checkTrue("the --json document carries the refusal's structured remedy", JSON.stringify(parsed.next) === JSON.stringify([{ kind: "clawforge", argv: ["bootstrap", "--token", "***"] }]));
+    checkTrue("the --json document renders the refusal's remedy", Array.isArray(parsed.nextActions) && parsed.nextActions[0] === "./clawwright bootstrap --token ***");
+    checkTrue("the --json document carries the refusal's structured remedy", JSON.stringify(parsed.next) === JSON.stringify([{ kind: "clawwright", argv: ["bootstrap", "--token", "***"] }]));
   }
 
   {

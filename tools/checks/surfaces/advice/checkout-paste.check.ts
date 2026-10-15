@@ -12,7 +12,7 @@ import { runProcess } from "#checks/kit/spawn.ts";
 
 const bash = await bashCommand();
 if (bash === undefined) throw new Error("required Bash selection disappeared");
-const root = await mkdtemp(join(tmpdir(), "clawforge-r3a-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-r3a-"));
 const checkout = join(root, "checkout $ O'Brien");
 const q = (s: string): string => `'${s.replaceAll("'", "'\\''")}'`;
 const forward = (s: string): string => s.replaceAll("\\", "/");
@@ -20,7 +20,7 @@ const timeoutMs = 60_000;
 try {
   await mkdir(checkout);
   await cp(join(monorepoRoot, "tools", "framework"), join(checkout, "tools", "framework"), { recursive: true, filter: (p) => !p.includes(`${String.fromCharCode(92)}dist`) && !p.includes("/dist") });
-  for (const file of ["clawforge", "package.json", "tools/clawforge.ts"]) {
+  for (const file of ["clawwright", "package.json", "tools/clawwright.ts"]) {
     await mkdir(dirname(join(checkout, file)), { recursive: true });
     await cp(join(monorepoRoot, file), join(checkout, file));
   }
@@ -52,7 +52,7 @@ export default {name:'witness',description:'witness',commands:materializeCommand
     return runProcess(bash, [forward(script)], { cwd, timeoutMs, env: bashEnvironment(bash) });
   };
   const cwd = join(checkout, "apps", "demo");
-  const produce = await paste(`${q(forward(join(checkout, "clawforge")))} --app aux status produce`, cwd);
+  const produce = await paste(`${q(forward(join(checkout, "clawwright")))} --app aux status produce`, cwd);
   process.stdout.write(`produce ${produce.code}: ${produce.stdout}${produce.stderr}\n`);
   checkTrue("R3-A-1: real shim produces advice", produce.code === 0);
   const row = JSON.parse(produce.stdout.split(/\r?\n/).find((s) => s.startsWith("ADVICE" + String.fromCharCode(32)))?.slice(7) ?? "null") as {line: string; note?: string};

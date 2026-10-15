@@ -1,4 +1,4 @@
-name: Publish ClawForge
+name: Publish Clawwright
 
 # The first release is made with the NPM_TOKEN secret. The OIDC path is prepared for a
 # later Trusted Publisher and stays unavailable until its repository variable is enabled.
@@ -73,7 +73,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-tarball
-          path: tools/framework/clawforge-framework-*.tgz
+          path: tools/framework/clawwright-*.tgz
           if-no-files-found: error
 
   publish-token:
@@ -102,11 +102,11 @@ jobs:
         working-directory: release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public clawforge-framework-*.tgz
+        run: npm publish --access public clawwright-*.tgz
 
   publish-trusted-publisher:
     needs: verify
-    if: ${{ inputs.publish_mode == 'trusted-publisher' && vars.CLAWFORGE_ENABLE_TRUSTED_PUBLISHER == 'true' }}
+    if: ${{ inputs.publish_mode == 'trusted-publisher' && vars.CLAWWRIGHT_ENABLE_TRUSTED_PUBLISHER == 'true' }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -127,4 +127,4 @@ jobs:
 
       - name: Publish with npm Trusted Publisher
         working-directory: release
-        run: npm publish --provenance --access public clawforge-framework-*.tgz
+        run: npm publish --provenance --access public clawwright-*.tgz

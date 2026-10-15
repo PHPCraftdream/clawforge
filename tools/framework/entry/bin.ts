@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The installed-mode gate — the package's own bin entry once tools/framework/ is installed
-// as an npm dependency in a consumer repo, as opposed to tools/clawforge.ts (the monorepo
+// as an npm dependency in a consumer repo, as opposed to tools/clawwright.ts (the monorepo
 // gate, several deployments side by side under apps/<name>).
 //
 // Exactly one app here: the consumer's own project root. No --app/OC_APP selection, no
@@ -83,7 +83,7 @@ const launchArgv = [...entry.launchArgv];
 delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver, frame);
 resolveFrameworkFromSelf();
 // The retry already diagnosed this copy before re-executing it.
-if (process.env.CLAWFORGE_TYPE_STRIPPING_RETRY !== "1") warnForEntry(import.meta.url);
+if (process.env.CLAWWRIGHT_TYPE_STRIPPING_RETRY !== "1") warnForEntry(import.meta.url);
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
 // consumer repo. `check` is absent: it needs this repository's own test suite, unshipped. One
@@ -146,7 +146,7 @@ function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,
     ["--experimental-strip-types", fileURLToPath(import.meta.url), ...launchArgv],
-    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", [INVOCATION_ENV]: serializeInvocation(handoverOf(frame)), ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
+    { stdio: "inherit", env: { ...process.env, CLAWWRIGHT_TYPE_STRIPPING_RETRY: "1", [INVOCATION_ENV]: serializeInvocation(handoverOf(frame)), ...(handedOver ? { CLAWWRIGHT_DELEGATED: "1" } : {}) } },
   );
   process.exit(result.status ?? 1);
 }
@@ -158,7 +158,7 @@ try {
 } catch (error) {
   const message = (error as Error).message;
   const cannotReadTypeScript = message.includes("Unknown file extension") || message.includes("experimental-strip-types");
-  if (cannotReadTypeScript && process.env.CLAWFORGE_TYPE_STRIPPING_RETRY !== "1") retryWithTypeStripping();
+  if (cannotReadTypeScript && process.env.CLAWWRIGHT_TYPE_STRIPPING_RETRY !== "1") retryWithTypeStripping();
 
   reportError(`${CANNOT_LOAD} ${appFile}: ${message}`, frame);
   if (cannotReadTypeScript) {

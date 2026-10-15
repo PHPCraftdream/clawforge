@@ -91,10 +91,10 @@ const previousDeployment = (() => {
 // root. The deployment is a real temporary directory WITH config/ (scaffold.ts creates
 // that for every real deployment; recording is live only then), and it is deleted after.
 const tag = randomBytes(4).toString("hex");
-const tempDeployment = await mkdtemp(join(tmpdir(), `clawforge-pp-lifetime-deployment-${tag}-`));
+const tempDeployment = await mkdtemp(join(tmpdir(), `clawwright-pp-lifetime-deployment-${tag}-`));
 await mkdir(resolve(tempDeployment, "config"), { recursive: true });
-const tempRecipesA = await mkdtemp(join(tmpdir(), `clawforge-pp-lifetime-recipes-a-${tag}-`));
-const tempRecipesB = await mkdtemp(join(tmpdir(), `clawforge-pp-lifetime-recipes-b-${tag}-`));
+const tempRecipesA = await mkdtemp(join(tmpdir(), `clawwright-pp-lifetime-recipes-a-${tag}-`));
+const tempRecipesB = await mkdtemp(join(tmpdir(), `clawwright-pp-lifetime-recipes-b-${tag}-`));
 await mkdir(join(tempRecipesA, "lifetime-sidecar"), { recursive: true });
 await writeFile(
   join(tempRecipesA, "lifetime-sidecar", "recipe.json"),
@@ -141,7 +141,7 @@ try {
     if (transport === undefined) {
       skip("archive/verify lifetime checks (no local POSIX filesystem and no WSL distribution with a shell)");
     } else {
-    const PARENT = `/tmp/clawforge-pp-lifetime-${tag}`;
+    const PARENT = `/tmp/clawwright-pp-lifetime-${tag}`;
     const DATA_NAME = "data";
     const DATA = `${PARENT}/${DATA_NAME}`;
     const ARCHIVES = `${PARENT}/archives`;
@@ -375,7 +375,7 @@ try {
   // with a side effect that turns the ledger's own path into a directory AFTER the policy
   // read, so the recording genuinely fails against real fs semantics.
 
-  const stubData = `/tmp/clawforge-pp-lifetime-${tag}/stub-data`;
+  const stubData = `/tmp/clawwright-pp-lifetime-${tag}/stub-data`;
   const calls = { exec: 0, mkdirp: 0, write: 0 };
   const guardTransport = {
     async exec() {
@@ -430,7 +430,7 @@ try {
 
   // --- recording without an initialized deployment is quiet, not written ---------------------------
 
-  useDeployment(join(tmpdir(), `clawforge-pp-lifetime-absent-${tag}`));
+  useDeployment(join(tmpdir(), `clawwright-pp-lifetime-absent-${tag}`));
   await recordPrivateWrite("somewhere/else");
   check(
     "recording into a deployment without config/ writes nothing",

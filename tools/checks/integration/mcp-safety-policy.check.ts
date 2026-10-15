@@ -60,7 +60,7 @@ function runServer(script: string, input: string): Promise<{ code: number | null
 
 // Exercise the actual dispatcher, with stubbed command bodies and local-only context.
 {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-policy-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-mcp-policy-"));
   await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   const url = (name: string): string => new URL(`../../framework/${name}.ts`, import.meta.url).href;
   const script = `

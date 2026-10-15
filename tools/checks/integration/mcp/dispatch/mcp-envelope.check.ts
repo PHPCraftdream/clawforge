@@ -24,9 +24,9 @@ import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
   const lookup = (name: string) => (name === "lock" ? { summary: "s", structured: true, arguments: [{ name: "check", description: "c", kind: "flag" as const }, { name: "json", description: "j", kind: "flag" as const }] } : undefined);
   const payload = JSON.stringify({
     healthy: false,
-    problems: [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock", next: { kind: "clawforge", argv: ["lock"] } }],
-    nextActions: ["./clawforge lock"],
-    next: [{ kind: "clawforge", argv: ["lock"] }, { kind: "manual", text: "reconnect the MCP client" }, { kind: "clawforge", argv: ["deploy", "--host", "x"] }],
+    problems: [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawwright lock", next: { kind: "clawwright", argv: ["lock"] } }],
+    nextActions: ["./clawwright lock"],
+    next: [{ kind: "clawwright", argv: ["lock"] }, { kind: "manual", text: "reconnect the MCP client" }, { kind: "clawwright", argv: ["deploy", "--host", "x"] }],
   });
   const envelope = structuredResult({ summary: "s", structured: true, readOnly: true }, payload, "op-1", [], undefined, lookup);
   check("the remedies come through as tool steps where a tool exists", envelope?.nextSteps, [{ tool: "lock", arguments: {} }]);
@@ -45,7 +45,7 @@ import { createDeploymentFixture } from "#checks/kit/deployment-fixture.ts";
 
 {
   // The advice's own note rides the tool step, when the document's advice carries one.
-  const payload = JSON.stringify({ next: [{ kind: "clawforge", argv: ["lock"], note: "write the lock after the check" }] });
+  const payload = JSON.stringify({ next: [{ kind: "clawwright", argv: ["lock"], note: "write the lock after the check" }] });
   const noted = structuredResult({ summary: "s", structured: true, readOnly: true }, payload, "op-note", [], undefined, (name: string) => (name === "lock" ? { summary: "s", arguments: [] } : undefined));
   check("a document's note rides the tool step", noted?.nextSteps, [{ tool: "lock", arguments: {}, note: "write the lock after the check" }]);
 }
@@ -147,7 +147,7 @@ for (const { argv, args } of validRecipes) {
 let eligible = 0;
 let emitted = 0;
 for (const { label, advice } of ADVICE_ROWS) {
-  if (advice.kind !== "clawforge" || advice.app !== undefined || advice.argv.some((word) => /<[^>]+>/.test(word))) continue;
+  if (advice.kind !== "clawwright" || advice.app !== undefined || advice.argv.some((word) => /<[^>]+>/.test(word))) continue;
   const declared = shippedLookup(advice.argv[0]);
   const body = declared === undefined ? undefined : specOf(declared);
   if (body === undefined) continue;

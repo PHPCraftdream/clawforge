@@ -30,7 +30,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if " +
       "tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is " +
       "0.0.0.0 or ::.\n" +
-      "The same one-line summary appears in `{clawforge status}`. {--json} emits the same facts " +
+      "The same one-line summary appears in `{clawwright status}`. {--json} emits the same facts " +
       "structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.",
     ...EXPOSE,
   },
@@ -159,7 +159,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "when the route shape cannot be parsed reliably, nothing is turned off and the exact " +
       "manual command is printed instead.\n" +
       "Refuses the whole run outright while the gateway is published on every " +
-      "interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and {clawforge up}, or pass " +
+      "interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and {clawwright up}, or pass " +
       "{--keep-exposure} if that is already handled elsewhere.\n" +
       "A contain failure (most commonly, " +
       "this account is not the tailscale operator on the target — the report names the fix) is " +
@@ -173,8 +173,8 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "container so it actually takes effect (a repo-env value like this one is fixed at " +
       "container-creation time);\n" +
       "every MCP client paired against the old token needs " +
-      "{clawforge mcp-creds} again.\n" +
-      "audit — the same security gate `{clawforge doctor}`/`{clawforge accept}` " +
+      "{clawwright mcp-creds} again.\n" +
+      "audit — the same security gate `{clawwright doctor}`/`{clawwright accept}` " +
       "run, plus `openclaw doctor --lint`, both reported here rather than gating the run.\n" +
       "collect " +
       "— a bounded log tail of whatever is running by then, both audit outputs and a short " +

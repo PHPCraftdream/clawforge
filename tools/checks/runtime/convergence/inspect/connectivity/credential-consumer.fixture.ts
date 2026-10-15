@@ -42,7 +42,7 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
   hostPlatform.current = "linux";
   const fixture = await setupFixtureDeployment();
   try {
-    await writeFile(resolve(fixture.deployment, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawforge/data\nOC_BACKUP_DIR=/srv/clawforge/backups\nOC_COMPOSE_PROJECT=credential-fixture\nOPENCLAW_GATEWAY_TOKEN=fixture-gateway-token\n");
+    await writeFile(resolve(fixture.deployment, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawwright/data\nOC_BACKUP_DIR=/srv/clawwright/backups\nOC_COMPOSE_PROJECT=credential-fixture\nOPENCLAW_GATEWAY_TOKEN=fixture-gateway-token\n");
     const endpoints = [...credentialCases.map(({ url }) => url), "socks5h://fictional-proxy-user:FAKE PROXY SUFFIX@proxy.example:9050/connect?region=demo&auth=FAKE_PROXY_TOKEN"];
     const base = fixture.stubContext({
       targetEnv: "ZAI_API_KEY=k\n",

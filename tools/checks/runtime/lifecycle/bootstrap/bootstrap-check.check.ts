@@ -1,4 +1,4 @@
-// `./clawforge bootstrap --check` — read-only prerequisite report.
+// `./clawwright bootstrap --check` — read-only prerequisite report.
 //
 // Covers the pure parsers (prereqs.ts), the report format and exit-code contract (check.ts),
 // and proves the flag itself is exempt from both the NOT_BOOTSTRAPPED guard and instance
@@ -208,7 +208,7 @@ function healthyExecHandler(command: string, args: string[]): { code: number; st
     },
   });
   const results = await runPrereqProbes(ctx);
-  check("an unreadable identity still produces a ready line", results[2]?.next, "sudo install -d /srv/app/data  (then hand it to whoever runs ./clawforge bootstrap)");
+  check("an unreadable identity still produces a ready line", results[2]?.next, "sudo install -d /srv/app/data  (then hand it to whoever runs ./clawwright bootstrap)");
 }
 
 {

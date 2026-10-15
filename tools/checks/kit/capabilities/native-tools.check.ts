@@ -43,7 +43,7 @@ await requires("windows-host", "native Bash rejects Windows WSL launchers", asyn
 });
 
 async function independentBash(binary: string): Promise<boolean> {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-independent-native-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-independent-native-"));
   try {
     const printer = join(root, "native.cjs");
     await writeFile(printer, "const fs=require('node:fs');fs.writeFileSync('native-owned',process.argv[2]);process.stdout.write(JSON.stringify(process.argv.slice(2)));");
@@ -108,7 +108,7 @@ await requires("windows-host", "Windows native consumer", () => requires("bash",
   const binary = await bashCommand();
   checkTrue("consumer receives an absolute Bash executable", binary !== undefined && isAbsolute(binary));
   if (binary === undefined) return;
-  const root = await mkdtemp(join(tmpdir(), "clawforge native consumer $ quote'-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright native consumer $ quote'-"));
   try {
     const printer = join(root, "argv.cjs");
     await writeFile(printer, "process.stdout.write(JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd()}));");
@@ -143,7 +143,7 @@ const tar = await gnuTarCommand();
 checkTrue("Windows regression host supplies verified GNU tar", tar !== undefined);
 if (tar !== undefined) {
   checkTrue("GNU tar consumer receives an absolute executable", isAbsolute(tar));
-  const root = await mkdtemp(join(tmpdir(), "clawforge tar consumer $ quote'-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright tar consumer $ quote'-"));
   try {
     const source = join(root, "source");
     const output = join(root, "output");
@@ -177,7 +177,7 @@ await requires("windows-host", "cache follows real noninteractive Bash environme
     });
     return;
   }
-  const root = await mkdtemp(join(tmpdir(), "clawforge-bash-env-cache-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-bash-env-cache-"));
   try {
     const startup = join(root, "reject.sh");
     await writeFile(startup, "exit 97\n");
@@ -200,7 +200,7 @@ await requires("windows-host", "cache follows real noninteractive Bash environme
 });
 
 await requires("posix-host", "empty PATH components use captured cwd", async () => {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-posix-candidates-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-posix-candidates-"));
   try {
     const other = join(root, "other");
     await mkdir(other);

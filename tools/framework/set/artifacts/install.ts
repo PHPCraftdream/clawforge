@@ -57,7 +57,7 @@ export interface InstalledSet {
 }
 
 export function installedSetFile(ctx: Context): string {
-  return `${ctx.settings.dataDir}/clawforge-installed-set.json`;
+  return `${ctx.settings.dataDir}/clawwright-installed-set.json`;
 }
 
 function legacyInstalledSetFile(ctx: Context): string {
@@ -203,7 +203,7 @@ export async function storeArtifactForRollback(artifact: ArtifactPath, verified:
     }, `storing a rollback copy of ${destination}`);
     return destination;
   }
-  const temporary = resolve(directory, `.clawforge-artifact-${randomBytes(8).toString("hex")}.tmp`);
+  const temporary = resolve(directory, `.clawwright-artifact-${randomBytes(8).toString("hex")}.tmp`);
   try {
     await copyFile(path, temporary);
     await withUnpackedArtifact(temporary, async (_staging, copied) => {

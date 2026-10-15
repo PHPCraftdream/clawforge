@@ -32,7 +32,7 @@ for (const patch of [
 assert.equal(approveModel({ ...approval, pluginVersion: "1.2.3-rc.1+build.9" }).pluginVersion, "1.2.3-rc.1+build.9");
 typeAssert("model approval rejects mutable, credentialed and unbounded inputs");
 
-const root = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), "clawforge-model-check-")));
+const root = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), "clawwright-model-check-")));
 fs.chmodSync(root, 0o700);
 const rootIdentity = fs.lstatSync(root, { bigint: true });
 const basenameInRoot = (p: string): string => {

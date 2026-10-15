@@ -1,7 +1,7 @@
-// `clawforge backup list` — read-only inventory: every backup archive in
+// `clawwright backup list` — read-only inventory: every backup archive in
 // ctx.settings.backupDir, and every `<dataDir>.replaced-*` copy restore left next to the
 // data directory, both from the target through ctx.transport. Marks which archive a bare
-// `clawforge restore` would pick by default.
+// `clawwright restore` would pick by default.
 //
 // What is not shown: WHY an archive was created (backup/pull/upgrade — BackupPurpose,
 // core/app.ts). That is a runtime option passed to createBackup for the afterBackup hook;

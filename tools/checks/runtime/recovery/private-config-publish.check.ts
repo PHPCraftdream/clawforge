@@ -7,7 +7,7 @@ import type { Context } from "#framework/core/context.ts";
 import { publishPrivateTargetFile } from "#framework/security/privacy/private-target-file.ts";
 import { LocalTransport } from "#framework/runtime/transport/transport.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-private-config-publish-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-private-config-publish-"));
 const path = join(root, "openclaw.json");
 const previous = '{"credential":"fixture-before"}';
 const updated = '{"credential":"fixture-after"}';

@@ -2,7 +2,7 @@
 // Two reachability holes, driven through the REAL surfaces rather than by calling
 // the underlying functions — that is the whole point of the regression:
 //
-//   (1) the bootstrap order. `./clawforge recover-env` dispatched through the real
+//   (1) the bootstrap order. `./clawwright recover-env` dispatched through the real
 //       entry/cli.ts runApp with no OC_DATA_DIR in .env must REACH recovery — its own
 //       refusal is the answer, never the settings parser's "OC_DATA_DIR is not set in
 //       .env" that every other command still gets. The recovery-first bootstrap is then
@@ -111,7 +111,7 @@ function recoveryTransport(
 const previous = (() => {
   try { return deploymentDir(); } catch { return undefined; }
 })();
-const deployDir = await mkdtemp(join(tmpdir(), "clawforge-recover-env-dispatch-"));
+const deployDir = await mkdtemp(join(tmpdir(), "clawwright-recover-env-dispatch-"));
 useDeployment(deployDir);
 
 const recoverDeclaration = operateCommands["recover-env"];
@@ -158,7 +158,7 @@ try {
     check("listing sentinel is an unknown read", listed.error instanceof TargetReadUnknownError, true);
     check("listing sentinel retains its cause", listed.error instanceof Error && listed.error.cause === sentinel, true);
     check("listing sentinel retains its message", listed.error instanceof Error ? listed.error.message.split(" ") : [], ["could", "not", "list", "recovery", "containers", "on", "the", "target:", "recovery-list-sentinel"]);
-    check("listing unknown carries recovery diagnostic advice", listed.error instanceof UserError ? listed.error.advice.map((step) => ({ kind: step.kind, argv: "argv" in step ? step.argv : undefined })) : [], [{ kind: "clawforge", argv: ["recover-env", "--dry-run"] }]);
+    check("listing unknown carries recovery diagnostic advice", listed.error instanceof UserError ? listed.error.advice.map((step) => ({ kind: step.kind, argv: "argv" in step ? step.argv : undefined })) : [], [{ kind: "clawwright", argv: ["recover-env", "--dry-run"] }]);
     const nonzeroList = await probe(failed);
     check("nonzero listing is unknown", nonzeroList.error instanceof TargetReadUnknownError, true);
     check("nonzero listing message", nonzeroList.error instanceof Error ? nonzeroList.error.message.split(" ") : [], ["could", "not", "list", "recovery", "containers", "on", "the", "target:", "docker", "ps", "exited", "with", "code", "17"]);

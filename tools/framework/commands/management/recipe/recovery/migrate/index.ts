@@ -15,7 +15,7 @@ export function backupRoot(dataDir: string): string {
     || dataDir.split("/").some((part) => part === "." || part === "..")) {
     throw new Error("recipe migration requires a safe absolute target data directory");
   }
-  return posix.join(posix.dirname(dataDir.replace(/\/$/, "")), ".clawforge-recipe-recovery", randomUUID());
+  return posix.join(posix.dirname(dataDir.replace(/\/$/, "")), ".clawwright-recipe-recovery", randomUUID());
 }
 
 export interface MigrationCommandOptions {

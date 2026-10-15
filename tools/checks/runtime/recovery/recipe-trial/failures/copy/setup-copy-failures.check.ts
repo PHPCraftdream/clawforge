@@ -8,7 +8,7 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { messageOf, ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-setup-copy-failures");
+const root = await useRecipesRoot("clawwright-recipe-trial-setup-copy-failures");
 try {
   await root.write("subject", { description: "A recipe with declared privatePaths", privatePaths: ["state"] });
 
@@ -29,7 +29,7 @@ try {
     const message = await messageOf("a failing second private write refuses the run", () =>
       runTrialAction(fixture.ctx, ref("subject")));
     checkTrue("the refusal surfaces the write failure", /fixture.private.write.failure/.test(message));
-    checkTrue("the scratch home is still removed", fixture.removed.some((p) => p.includes(".clawforge-recipe-trial-")));
+    checkTrue("the scratch home is still removed", fixture.removed.some((p) => p.includes(".clawwright-recipe-trial-")));
     checkTrue("nothing was built", fixture.docker.every((argv) => !argv.includes("build")));
     checkTrue("nothing was started", fixture.docker.every((argv) => !argv.includes("up")));
     check("exactly one private write landed before the failure", writes, 2);
@@ -52,7 +52,7 @@ try {
       runTrialAction(fixture.ctx, ref("subject")));
     checkTrue("the refusal names the copy failure", /could.not.copy.privatePaths/.test(message));
     checkTrue("the refusal carries the copy's stderr", /fixture.copy.failure/.test(message));
-    checkTrue("the scratch home is still removed", fixture.removed.some((p) => p.includes(".clawforge-recipe-trial-")));
+    checkTrue("the scratch home is still removed", fixture.removed.some((p) => p.includes(".clawwright-recipe-trial-")));
     checkTrue("nothing was built", fixture.docker.every((argv) => !argv.includes("build")));
     checkTrue("nothing was started", fixture.docker.every((argv) => !argv.includes("up")));
     check("the copy ran once", fixture.copyArgv.length, 1);

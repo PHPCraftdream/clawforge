@@ -506,7 +506,7 @@ export function coherenceSummary(problems: readonly Problem[]): string {
 }
 
 async function loadArtifact(path: string): Promise<LoadedSet> {
-  const staging = await mkdtemp(join(tmpdir(), "clawforge-set-load-"));
+  const staging = await mkdtemp(join(tmpdir(), "clawwright-set-load-"));
   let verified: VerifiedArtifact;
   let base: PortableContentBase;
   // One staging lifetime: verify first (integrity), then build the model over the unpacked

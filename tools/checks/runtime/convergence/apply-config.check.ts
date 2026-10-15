@@ -21,7 +21,7 @@ import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import type { AppDefinition, AppCommand } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 
-check("a real run stages under the shared name the container reads", stagedFileName(false), "clawforge-desired.json");
+check("a real run stages under the shared name the container reads", stagedFileName(false), "clawwright-desired.json");
 check("a dry run does not", stagedFileName(true) === stagedFileName(false), false);
 
 // Two dry runs at once are as ordinary as one dry run beside a real one — neither takes a
@@ -31,18 +31,18 @@ check("two dry runs do not collide with each other", stagedFileName(true) === st
 // Still recognisable in a directory listing, and still JSON to anything that reads by
 // extension.
 const dry = stagedFileName(true);
-check("the dry-run name says what it is", dry.startsWith("clawforge-desired.dry-"), true);
+check("the dry-run name says what it is", dry.startsWith("clawwright-desired.dry-"), true);
 check("and stays a .json file", dry.endsWith(".json"), true);
 
 // --- the run that leaves a file behind is the one that failed ---------------------------------
 //
 // Cleaning up only after a successful run meant every rejected payload left an
-// clawforge-desired.dry-<hex>.json in the config directory. Those accumulate, travel into an
+// clawwright-desired.dry-<hex>.json in the config directory. Those accumulate, travel into an
 // archive, and get the snapshot refused by the share allow-list — the same failure the
 // operation journal caused, arriving by a different route.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-config-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify([{ path: "gateway.mode", value: "local" }]));
@@ -50,7 +50,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 
     const written = new Set<string>();
     const ctx = {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         async writeFile(path: string): Promise<void> {
           written.add(path);
@@ -89,7 +89,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 }
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-map-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-config-map-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
@@ -98,7 +98,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     let writes = 0;
     let oneOffs = 0;
     const ctx = {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         async writeFile(path: string): Promise<void> {
           writes += 1;
@@ -138,7 +138,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 // declaration is written, so the stub context answers for the transport alone.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-dump-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-config-dump-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     useDeployment(deployment);
@@ -154,7 +154,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 }`;
     let targetHasConfig = true;
     const ctx = {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         async exists(path: string): Promise<boolean> {
           return targetHasConfig && path.endsWith("openclaw.json");
@@ -228,7 +228,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     } catch (error) {
       missing = (error as Error).message;
     }
-    check("a target with no live config is refused even under --force", missing.includes(missingLiveConfigRefusal("/srv/clawforge")), true);
+    check("a target with no live config is refused even under --force", missing.includes(missingLiveConfigRefusal("/srv/clawwright")), true);
     check("and the declaration survives the refused dump", await readFile(desiredState, "utf8"), beforeMissing);
   } finally {
     await rm(deployment, { recursive: true, force: true });
@@ -245,7 +245,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 // the same flags refuse the same way whichever order they arrive in.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-flags-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-config-flags-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     // gateway.extra is deliberately outside RECOVERABLE_PATHS: the file's whole value is the
@@ -255,7 +255,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     useDeployment(deployment);
 
     const ctx = {
-      settings: { dataDir: "/srv/clawforge" },
+      settings: { dataDir: "/srv/clawwright" },
       transport: {
         async exists(path: string): Promise<boolean> {
           return path.endsWith("openclaw.json");
@@ -340,7 +340,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 
 // --- the restart advice is suppressed exactly when a caller starts/restarts itself -----------
 
-check("by default (a bare ./clawforge apply-config), the restart advice is printed", appliedHeadline(true), "desired state applied — restart to pick it up: ./clawforge restart");
+check("by default (a bare ./clawwright apply-config), the restart advice is printed", appliedHeadline(true), "desired state applied — restart to pick it up: ./clawwright restart");
 check("with restartAdvice: false, it is not — the caller starts/restarts itself", appliedHeadline(false).includes(RESTART_ADVICE), false);
 check("...but the headline still confirms the write happened", appliedHeadline(false), "desired state applied");
 

@@ -35,7 +35,7 @@ import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 
 // --- the destructive gate command over real stdio ----------------------------------------------
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-gate-confirm-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-gate-confirm-"));
 const EOL = "\n";
 try {
   const marker = join(root, "removed.marker");

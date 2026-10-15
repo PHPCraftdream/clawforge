@@ -1,4 +1,4 @@
-// `./clawforge plan` — the recovery group: the operator-side steps a plan emits before it
+// `./clawwright plan` — the recovery group: the operator-side steps a plan emits before it
 // repairs the instance.
 //
 // The instance-side half of the order (secrets, config, restart, recipes) is pinned in
@@ -66,10 +66,10 @@ function ids(problems: Problem[], running = true): string[] {
   // executable step picked a side and rewrote deliberate edits; the step
   // names both directions instead and leaves the choice with the reader.
   check("the .env step is advisory — a divergence alone never plans a write to .env", [recover?.advisory, recover?.command], [true, undefined]);
-  check("it names both directions", [(recover?.summary ?? "").includes("--adopt-runtime"), (recover?.summary ?? "").includes("./clawforge up")], [true, true]);
+  check("it names both directions", [(recover?.summary ?? "").includes("--adopt-runtime"), (recover?.summary ?? "").includes("./clawwright up")], [true, true]);
   // The declaration is absent whenever this step is planned, so the dump's own --force
   // refusal — which protects an EXISTING declaration — has nothing to refuse.
-  check("the declaration dump is the executable one, run as the command it names", [dump?.advisory ?? false, dump?.command], [false, "./clawforge apply-config --dump"]);
+  check("the declaration dump is the executable one, run as the command it names", [dump?.advisory ?? false, dump?.command], [false, "./clawwright apply-config --dump"]);
   // STORE_INCOMPLETE only fires when the store file exists, so the dump it plans would hit
   // the refusal every time; passing --force for it would overwrite a store whose contents
   // only the reader can judge. Advisory is how a plan says "decision, not repair".
@@ -103,7 +103,7 @@ function action(advisory: boolean): PlanAction {
   return { id: "x", summary: "x", because: [], advisory: advisory ? true : undefined };
 }
 
-check("with at least one executable step, apply is the next step", planNextStepLine([action(false)]), "apply it: ./clawforge apply");
+check("with at least one executable step, apply is the next step", planNextStepLine([action(false)]), "apply it: ./clawwright apply");
 check(
   "with only advisory steps, apply is never suggested",
   planNextStepLine([action(true), action(true)]).includes("apply it"),
@@ -111,20 +111,20 @@ check(
 );
 check(
   "...and it says what apply would do instead: nothing",
-  planNextStepLine([action(true)]).includes("./clawforge apply would run nothing"),
+  planNextStepLine([action(true)]).includes("./clawwright apply would run nothing"),
   true,
 );
 check(
   "a mix of advisory and executable steps still points at apply",
   planNextStepLine([action(true), action(false)]),
-  "apply it: ./clawforge apply",
+  "apply it: ./clawwright apply",
 );
 
 // The plan reads the remedies' argv, not their rendered text: under `--app demo` a problem's
 // nextAction renders with `--app demo` (the renderer's rule), and a plan that parsed the
 // sentence would find no recipe and no orphan. It must still find both. (design 1.4)
 {
-  setInvocation({ program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" });
+  setInvocation({ program: "./clawwright", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" });
   try {
     const actions = planActions(inspectionWith([
       problem("RECIPE_MIRROR_DRIFT", "demo differs", command(["provision-agent", "demo-recipe"])),
@@ -132,9 +132,9 @@ check(
     ]));
     check("under --app demo the recipe step is still found", actions.some((step) => step.id === "provision-agent:demo-recipe"), true);
     check("under --app demo the orphan step is still found", actions.some((step) => step.id === "remove-owned:cron-job:demo-refresh"), true);
-    check("the orphan step runs the set forget command", actions.find((step) => step.id === "remove-owned:cron-job:demo-refresh")?.command, "./clawforge --app demo set forget --kind cron-job --name demo-refresh");
+    check("the orphan step runs the set forget command", actions.find((step) => step.id === "remove-owned:cron-job:demo-refresh")?.command, "./clawwright --app demo set forget --kind cron-job --name demo-refresh");
   } finally {
-    setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+    setInvocation({ program: "./clawwright", mode: "checkout", audience: "terminal" });
   }
 }
 

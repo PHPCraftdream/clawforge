@@ -47,7 +47,7 @@ interface Answers {
 
 function stubContext(answers: Answers): Context {
   return {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     runtime: {
       async runOneOff(service: string, args: string[]): Promise<ExecResult> {
         // The recipe's own server: started the way the gateway would start it.
@@ -295,7 +295,7 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
 // genuinely declares none. An unreadable root must fail loudly instead.
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-accept-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-accept-check-"));
   await writeFile(resolve(deployment, "recipes"), "not a directory");
   useDeployment(deployment);
   try {
@@ -317,7 +317,7 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
 // use, so it declares no checks; `accept` used to throw a raw TypeError on it ---------------------
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-accept-null-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-accept-null-check-"));
   await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
   await writeFile(resolve(deployment, "recipes", "demo", "acceptance.json"), "null");
   useDeployment(deployment);

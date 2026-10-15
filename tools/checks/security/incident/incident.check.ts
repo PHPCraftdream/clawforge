@@ -1,4 +1,4 @@
-// `./clawforge incident` — contain/preserve/rotate/audit/collect, each phase exercised directly
+// `./clawwright incident` — contain/preserve/rotate/audit/collect, each phase exercised directly
 // through its exported function against a stub context, plus runPhases for the two guarantees
 // that only show up in the orchestration: preserve runs (and writes) before rotate can destroy
 // what it captures, and preserve/collect's evidence is written unconditionally even when rotate
@@ -34,7 +34,7 @@ import { shellQuote } from "#framework/core/io/shell.ts";
 import { tailscaleServeOffCommand } from "#framework/commands/operate/expose/tailscale.ts";
 
 async function withDeployment<T>(body: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(resolve(tmpdir(), "clawforge-incident-check-"));
+  const dir = await mkdtemp(resolve(tmpdir(), "clawwright-incident-check-"));
   await mkdir(resolve(dir, "config"), { recursive: true });
   await mkdir(resolve(dir, "secrets"), { recursive: true });
   useDeployment(dir);

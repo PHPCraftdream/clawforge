@@ -111,7 +111,7 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
 {
   const files = new Map<string, string>();
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> {
         return files.has(path);
@@ -144,7 +144,7 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
   // Kept beside the id because the machine that built the artifact may be long gone: a
   // mismatch has to be describable without it.
   check("and what it required", recorded?.requires.framework, "0.1.0");
-  check("stored beside the instance's data, not inside the set", installedSetFile(ctx), "/srv/clawforge/clawforge-installed-set.json");
+  check("stored beside the instance's data, not inside the set", installedSetFile(ctx), "/srv/clawwright/clawwright-installed-set.json");
 
   // Tolerant reading is for OBSERVATION only: recordInstalledSet() never sees it, because
   // proceeding on it would overwrite the corrupt marker and discard the rollback chain it
@@ -160,7 +160,7 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
   check("the refused install did not touch the corrupt marker", files.get(installedSetFile(ctx)), "not json at all");
 
   files.clear();
-  files.set("/srv/clawforge/oc-installed-set.json", JSON.stringify({
+  files.set("/srv/clawwright/oc-installed-set.json", JSON.stringify({
     id: "a".repeat(64),
     name: "legacy",
     installedAt: "2026-01-01T00:00:00.000Z",
@@ -176,7 +176,7 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
 {
   const files = new Map<string, string>();
   const ctx = {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> {
         return files.has(path);
@@ -236,7 +236,7 @@ function atomicCtx(
   failWrite = false,
 ): Context {
   return {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> { return files.has(path); },
       async readFile(path: string): Promise<string> {
@@ -299,7 +299,7 @@ function atomicCtx(
 
   // A publish killed outright leaves its staged sibling behind — a stray that must be
   // invisible to every reader of the real name, not read as a corrupt marker.
-  files.set(`${installedSetFile(ctx)}.clawforge-staged-deadbeefdeadbeef`, "{\"id\":\"par");
+  files.set(`${installedSetFile(ctx)}.clawwright-staged-deadbeefdeadbeef`, "{\"id\":\"par");
   check("a leftover staged sibling from a killed publish does not read as a corrupt marker", (await readInstalledSetStrict(ctx))?.id, id);
   check("and the tolerant reader still sees the real marker", (await readInstalledSet(ctx))?.id, id);
 }

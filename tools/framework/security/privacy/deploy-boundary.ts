@@ -54,17 +54,17 @@ export const FRAMEWORK_EXCLUDES = [
   "*.tsbuildinfo",
 ];
 
-/** Records a remote directory as CREATED for a ClawForge deployment. `mkdir -p` proves a
+/** Records a remote directory as CREATED for a Clawwright deployment. `mkdir -p` proves a
  *  path can exist, never that it was made for this deployment or that nothing else owns
  *  it — so deploy writes this marker the first time it takes a root over and refuses any
  *  root carrying someone else's. */
-export const MARKER_FILE = ".clawforge-deploy-marker";
-export const MARKER_PREFIX = "clawforge-deploy-root-v1 name=";
+export const MARKER_FILE = ".clawwright-deploy-marker";
+export const MARKER_PREFIX = "clawwright-deploy-root-v1 name=";
 
 /** Verifies that the root ownership marker survived the framework mirror byte-for-byte. */
 export function markerVerifyScript(markerPath: string, line1: string, line2: string): string {
   return [
-    "# clawforge-root-marker-verify",
+    "# clawwright-root-marker-verify",
     `printf '%s\\n' ${quoted(line1)} ${quoted(line2)} | cmp -s - ${quoted(markerPath)}`,
   ].join("\n");
 }
@@ -215,7 +215,7 @@ export function quoted(value: string): string {
 /** Creates one directory at a time, refusing links before any remote write. */
 export function directoryPrepareScript(path: string, sudo: boolean): string {
   return [
-    sudo ? "# clawforge-root-prepare" : "# clawforge-child-prepare",
+    sudo ? "# clawwright-root-prepare" : "# clawwright-child-prepare",
     `p=${quoted(path)}`,
     "rest=${p#/}",
     "current=/",
@@ -244,7 +244,7 @@ export function directoryPrepareScript(path: string, sudo: boolean): string {
 /** Checks every existing component immediately before a remote receiver starts. */
 export function directoryGuardScript(path: string): string {
   return [
-    "# clawforge-destination-guard",
+    "# clawwright-destination-guard",
     `p=${quoted(path)}`,
     "rest=${p#/}",
     "current=/",
@@ -304,7 +304,7 @@ export function guardedRsyncPath(root: string, destination: string): string {
  *  never mistakes the tree's own data for structure. Exported for root-boundary.check.ts. */
 export function rootProbeScript(remotePath: string, markerPath: string): string {
   return [
-    "# clawforge-root-probe",
+    "# clawwright-root-probe",
     `p=${quoted(remotePath)}`,
     `m=${quoted(markerPath)}`,
     "say() { printf '%s\\n' \"$1\"; }",
@@ -350,14 +350,14 @@ export function markerWriteScript(markerPath: string, line1: string, line2: stri
     'const fd = fs.openSync(marker, flags, 0o600);',
     'try { fs.writeFileSync(fd, content); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }',
   ].join("\n");
-  return `# clawforge-root-marker-write\nnode -e ${quoted(script)} --`;
+  return `# clawwright-root-marker-write\nnode -e ${quoted(script)} --`;
 }
 
 /** What an adopted root actually holds, listed BEFORE the destructive sync — taking over an
  *  existing tree must be explicit, with the affected inventory on screen. */
 export function rootInventoryScript(remotePath: string): string {
   return [
-    "# clawforge-root-inventory",
+    "# clawwright-root-inventory",
     `p=${quoted(remotePath)}`,
     "say() { printf '%s\\n' \"$1\"; }",
     'say "entries=$(find "$p" -mindepth 1 | wc -l)"',

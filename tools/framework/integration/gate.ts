@@ -2,7 +2,7 @@
 //
 // `check` describes the framework, `new-app`/`init` create the thing every other command
 // needs — none can be an AppCommand (that type takes a Context, built from a deployment's
-// .env). Dispatched by the gate (tools/clawforge.ts, framework/entry/bin.ts), not cli.ts's
+// .env). Dispatched by the gate (tools/clawwright.ts, framework/entry/bin.ts), not cli.ts's
 // dispatcher, but still declared like a capability of the gate: one declaration feeds
 // dispatch, `--help` and the MCP tool list, so help text lives in the declaration, not as
 // literal strings at each call site.
@@ -32,7 +32,7 @@ export { closestCommand } from "../core/command/index.ts";
 /** Fixed parts of the gate's own screen and refusals, exported so checks assert the same
  *  text the product prints instead of restating it. */
 export const FULL_LIST_NOTE = "The full command list appears inside an initialised app folder";
-export const CHECKOUT_NOTE = "This is a ClawForge checkout";
+export const CHECKOUT_NOTE = "This is a Clawwright checkout";
 export const NO_APP_TS_HERE = "there is no app.ts here";
 export const RUNS_INSIDE_NOTE = "runs inside an app folder";
 export function emptyDirNote(deploymentDir: string): string {
@@ -162,7 +162,7 @@ export function refuseUnknownTokens(entry: RegistryEntry | undefined, args: read
 export interface HelpContext {
   /** Names of the deployment's commands, known without an app.ts. */
   readonly deploymentCommands: readonly string[];
-  /** The ClawForge checkout the directory is in, if any: `init` is refused there. */
+  /** The Clawwright checkout the directory is in, if any: `init` is refused there. */
   readonly checkout?: string;
   /** Renders a deployment command's --help body from its declaration, without a
    *  deployment (built from openclawCommands, as the checkout root does). Required:
@@ -193,7 +193,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   }
   const target = first === "help" ? argv[1] : undefined;
   if (target === undefined || target === "--help" || target === "-h" || target === "help") {
-    log("clawforge — manage self-hosted OpenClaw deployments");
+    log("clawwright — manage self-hosted OpenClaw deployments");
     info("");
     info(usageTopLine());
     info("");
@@ -260,7 +260,7 @@ export function checkoutInlineNotes(): Advice[] {
 export function outsideAppNote(name: string, checkout: string | undefined): string {
   return checkout === undefined
     ? `"${name}" ${RUNS_INSIDE_NOTE} — ${NO_APP_TS_HERE}; run: ${commandLine(["init"])}`
-    : `"${name}" ${RUNS_INSIDE_NOTE} — this is a ClawForge checkout; run it from apps/<name> or with ${renderAdvice(CHECKOUT_ROOT_GATE)} at the checkout root`;
+    : `"${name}" ${RUNS_INSIDE_NOTE} — this is a Clawwright checkout; run it from apps/<name> or with ${renderAdvice(CHECKOUT_ROOT_GATE)} at the checkout root`;
 }
 
 function deploymentHelpNote(name: string, checkout: string | undefined): void {
@@ -271,7 +271,7 @@ function deploymentHelpNote(name: string, checkout: string | undefined): void {
 /** The monorepo gate's own commands, which are real in any folder of a checkout — just run
  *  from its root. A subfolder's help must not call them unknown. Derived from
  *  entry/checkout-gate.ts, where the declarations live — there is no hand list left to
- *  keep in step with tools/clawforge.ts. */
+ *  keep in step with tools/clawwright.ts. */
 export { CHECKOUT_GATE_COMMANDS } from "../entry/checkout-gate.ts";
 import { CHECKOUT_GATE_COMMANDS } from "../entry/checkout-gate.ts";
 
@@ -428,7 +428,7 @@ export const CONTROL_MCP_DETAILS = [
   "commands instead of OpenClaw's channels — status, backup, secrets, and the",
   "rest, with arguments checked against the same declarations --help reads.",
   "Destructive commands (push, restore, deploy) need confirm: true.",
-  "Registered for a client automatically by {clawforge mcp-setup}; not meant to be run",
+  "Registered for a client automatically by {clawwright mcp-setup}; not meant to be run",
   "by hand outside of testing.",
 ].join("\n");
 

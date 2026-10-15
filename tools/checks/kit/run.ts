@@ -2,7 +2,7 @@
 // child process (kit/spawn.ts), with bounded parallelism. These need no instance, no target
 // and no network: they cover the parts of the framework where a mistake is silent — path
 // translation, archive safety, the argument contract, the composition of a deployment.
-// `./clawforge smoke` covers a live instance instead.
+// `./clawwright smoke` covers a live instance instead.
 
 import { availableParallelism } from "node:os";
 import { createHash } from "node:crypto";
@@ -176,7 +176,7 @@ export interface CheckoutSnapshot {
 // check writes it (build-output and the release pack checks build into OS temp). The excludes
 // prune before git walks — the .check-timings.json entry keeps the git-status excludes consistent —
 // so the ignored pass stays as cheap as the tracked one. .check-timings.json is the runner's own
-// telemetry file, written by nested `clawforge check` children during a run, so it must not read as
+// telemetry file, written by nested `clawwright check` children during a run, so it must not read as
 // a checkout change.
 const IGNORED_STATUS_EXCLUDES = ["node_modules", "apps", "worktrees", ".rush", ".check-timings.json"];
 

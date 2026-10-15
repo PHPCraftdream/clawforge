@@ -33,7 +33,7 @@ function ownerAlias(trustee: string, owner: string): string {
 }
 
 async function savedAces(file: string): Promise<{ daclProtected: boolean; aces: { type: string; flags: string; rights: string; trustee: string }[] }> {
-  const saved = join(tmpdir(), `clawforge-store-check-dacl-${randomBytes(6).toString("hex")}.txt`);
+  const saved = join(tmpdir(), `clawwright-store-check-dacl-${randomBytes(6).toString("hex")}.txt`);
   const result = await icacls([file, "/save", saved]);
   if (result.code !== 0) throw new Error(`icacls /save failed: ${result.stdout.trim()}`);
   try {
@@ -70,7 +70,7 @@ try {
   // isRunning() the cases control. The live config exists and declares provider zai, so
   // ZAI_API_KEY is genuinely required both by --apply's prospective list and by the
   // status listing.
-  const targetEnv = "/srv/clawforge/data/config/.env";
+  const targetEnv = "/srv/clawwright/data/config/.env";
   let targetEnvContent = "";
   // The live gateway config the transport answers with. The repo-env delivery block swaps a
   // provider-free config in: a declared provider makes ZAI_API_KEY a required store value,
@@ -84,7 +84,7 @@ try {
   const lockFiles = new Map<string, string>();
   const lockDirs = new Set<string>();
   const applyCtx = {
-    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    settings: { dataDir: "/srv/clawwright/data", env: {} },
     applicationSecrets: async () => [{
       name: "REPO_SECRET",
       location: "repo-env" as const,
@@ -192,7 +192,7 @@ try {
     () => secrets(applyCtx, ["--apply", "--store", "hint"]),
   );
   checkTrue("a running instance is told to restart, not to run up", runningOutput.includes(renderAdvice(command(["restart"]))));
-  check("the running hint does not name ./clawforge up", runningOutput.includes(renderAdvice(command(["up"]))), false);
+  check("the running hint does not name ./clawwright up", runningOutput.includes(renderAdvice(command(["up"]))), false);
   checkTrue("the running hint says the file is written but has not been read", runningOutput.includes(HAS_NOT_READ));
   check("the values were installed before the hint is given", targetEnvContent, "ZAI_API_KEY=zai-value\n");
 
@@ -205,7 +205,7 @@ try {
     () => secrets(applyCtx, ["--apply", "--store", "hint"]),
   );
   checkTrue("a stopped instance is told to start, not to restart", stoppedOutput.includes(renderAdvice(command(["up"]))));
-  check("the stopped hint does not name ./clawforge restart", stoppedOutput.includes(renderAdvice(command(["restart"]))), false);
+  check("the stopped hint does not name ./clawwright restart", stoppedOutput.includes(renderAdvice(command(["restart"]))), false);
 
   // The same contract on the status listing's own hint (the missing-secrets branch):
   // which command applies the change depends on whether an instance is running at all.
@@ -420,7 +420,7 @@ try {
     targetEnvContent = "ZAI_API_KEY=zai-value\n";
     // A repo-env apply and nothing else: applyStore refuses a store missing a required
     // prospective value, but a store supplying ZAI_API_KEY would also run the target-env
-    // branch, whose running-instance hint names ./clawforge restart — the very suggestion
+    // branch, whose running-instance hint names ./clawwright restart — the very suggestion
     // this block pins as absent. With neither the live config nor the desired-state
     // declaration naming a provider, REPO_SECRET (optional, repo-env) is the only
     // requirement, and the store's single value satisfies it.

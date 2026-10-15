@@ -1,4 +1,4 @@
-// `./clawforge recipe` (list) is service/recipe.ts's listRecipes/listBrokenRecipes/
+// `./clawwright recipe` (list) is service/recipe.ts's listRecipes/listBrokenRecipes/
 // listAgentBundleRecipes, all three built on listRecipeDirectories(). A recipes root that
 // exists but is not a directory (a file, ENOTDIR) used to be caught by each function's own
 // `catch { return []; }` and read as "no recipes yet" — indistinguishable from a genuinely
@@ -20,7 +20,7 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
   return "";
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-list-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-list-check-"));
 const notADirectory = resolve(root, "recipes");
 await writeFile(notADirectory, "not a directory");
 useRecipesDir(notADirectory);

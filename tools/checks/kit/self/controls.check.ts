@@ -18,7 +18,7 @@ import { CONTROLS } from "../../controls/controls.ts";
 import type { CapabilityProbe } from "../capabilities/capabilities.ts";
 import type { ControlDecl } from "../../controls/controls.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-controls-self-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-controls-self-"));
 try {
   await writeFile(join(root, "package.json"), "{}\n");
   await writeFile(join(root, "product-a.ts"), "export const value = 1;\n");
@@ -183,7 +183,7 @@ await writeFile(fileURLToPath(new URL("./executed.marker", import.meta.url)), "r
 
   // A tracked file deleted from the working tree is listed by git ls-files but must not
   // crash the copy: it is skipped, the surviving file keeps its mode.
-  const repoRoot = await mkdtemp(join(tmpdir(), "clawforge-controls-self-repo-"));
+  const repoRoot = await mkdtemp(join(tmpdir(), "clawwright-controls-self-repo-"));
   try {
     await writeFile(join(repoRoot, "package.json"), "{}\n");
     await writeFile(join(repoRoot, "survivor.txt"), "survives\n");
@@ -197,7 +197,7 @@ await writeFile(fileURLToPath(new URL("./executed.marker", import.meta.url)), "r
     );
     await rm(join(repoRoot, "deleted.txt"));
     await chmod(join(repoRoot, "survivor.txt"), 0o640);
-    const copy = await mkdtemp(join(tmpdir(), "clawforge-controls-self-copy-"));
+    const copy = await mkdtemp(join(tmpdir(), "clawwright-controls-self-copy-"));
     try {
       await copyRepo(repoRoot, copy);
       const copied = await readFile(join(copy, "survivor.txt"), "utf8");

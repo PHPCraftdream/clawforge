@@ -1,4 +1,4 @@
-// `./clawforge restart` — the command that exists because `up` cannot do this.
+// `./clawwright restart` — the command that exists because `up` cannot do this.
 //
 // Applying a desired state edits openclaw.json inside a bind mount, which changes nothing
 // the runtime compares, so `up` reports success and leaves the old settings live. This
@@ -84,7 +84,7 @@ async function run(ctx: Context): Promise<string | undefined> {
 {
   const { ctx, seen } = makeCtx({ running: false, config: {} });
   const message = await run(ctx);
-  check("a stopped instance is refused rather than silently started", message?.includes("./clawforge up"), true);
+  check("a stopped instance is refused rather than silently started", message?.includes("./clawwright up"), true);
   check("nothing is restarted when there is nothing running", seen.restarted, false);
 }
 

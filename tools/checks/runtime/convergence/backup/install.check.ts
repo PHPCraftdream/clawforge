@@ -1,4 +1,4 @@
-// `./clawforge backup install` / `backup uninstall` — mirrors watch/install.check.ts's own
+// `./clawwright backup install` / `backup uninstall` — mirrors watch/install.check.ts's own
 // idempotent install/uninstall cycle against a stub crontab + the real instance lock, proving
 // backup's schedule uses its OWN marker ("backup", not "watch") so the two jobs — and a
 // watch entry already installed for the same deployment — never disturb each other.
@@ -42,10 +42,10 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
     description: "ssh:user@host",
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       calls.push({ command, args });
-      if (command === "sh" && args[2] === "clawforge-scheduler-root") {
+      if (command === "sh" && args[2] === "clawwright-scheduler-root") {
         return { code: 0, stdout: `${args[3]}\n`, stderr: "" };
       }
-      if (command === "sh" && args[2] === "clawforge-crontab-update") {
+      if (command === "sh" && args[2] === "clawwright-crontab-update") {
         calls.push({ command: "crontab", args: ["-l"] });
         const transaction = stubCrontabTransaction(args, current, listingFailure);
         if (transaction.wrote) calls.push({ command: "crontab", args: ["-"] });
@@ -70,12 +70,12 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
 }
 
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-backup-install-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-backup-install-check-"));
 useDeployment(root);
 const name = deploymentName();
 
 try {
-  const WATCH_ENTRY = `*/5 * * * * cd /opt/openclaw && ./clawforge watch check >/dev/null 2>&1 ${jobMarker("watch", name)}`;
+  const WATCH_ENTRY = `*/5 * * * * cd /opt/openclaw && ./clawwright watch check >/dev/null 2>&1 ${jobMarker("watch", name)}`;
   const FOREIGN = "0 3 * * * /usr/bin/foreign-backup.sh";
   const { transport, calls, crontab } = crontabTransport(`${FOREIGN}\n${WATCH_ENTRY}\n`);
   const ctx = {

@@ -122,7 +122,7 @@ async function grantWindowsAcl(file: string, directory = false): Promise<string>
 async function savedAces(
   file: string,
 ): Promise<{ daclProtected: boolean; aces: { type: string; flags: string; rights: string; trustee: string }[] }> {
-  const saved = join(tmpdir(), `clawforge-dacl-${randomBytes(6).toString("hex")}.txt`);
+  const saved = join(tmpdir(), `clawwright-dacl-${randomBytes(6).toString("hex")}.txt`);
   try {
     const result = await runTool(systemTool("icacls.exe"), [file, "/save", saved], 15_000);
     if (result.code !== 0) {

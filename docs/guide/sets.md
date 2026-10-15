@@ -3,12 +3,12 @@
 ## Installing, trying and rolling back sets
 
 ```bash
-./clawforge set build --name onboarding
-./clawforge set validate --set sets/<name>-<id>.tar.gz
-./clawforge plan --set sets/<name>-<id>.tar.gz
-./clawforge apply --set sets/<name>-<id>.tar.gz
-./clawforge set try --set sets/<name>-<id>.tar.gz
-./clawforge rollback --previous-set
+./clawwright set build --name onboarding
+./clawwright set validate --set sets/<name>-<id>.tar.gz
+./clawwright plan --set sets/<name>-<id>.tar.gz
+./clawwright apply --set sets/<name>-<id>.tar.gz
+./clawwright set try --set sets/<name>-<id>.tar.gz
+./clawwright rollback --previous-set
 ```
 
 Installation verifies the archive inventory and each file checksum before changing the
@@ -17,7 +17,7 @@ not depend on the original download path. Reinstalling the same id preserves its
 set. A dry run never records an installed id. Set rollback reuses apply and preserves
 agent memory; configuration-file rollback remains available through `--operation`.
 
-Ownership is recorded at creation in `clawforge-managed.json`. Existing foreign objects are
+Ownership is recorded at creation in `clawwright-managed.json`. Existing foreign objects are
 never adopted or removed automatically. Removing a recipe schedules removal of its owned
 MCP registrations and cron jobs. Agent deletion is advisory because it also removes state;
 an explicit `set forget --kind agent --name <id>` is required. Prompt deletion uses the
@@ -43,11 +43,11 @@ without model calls; live full-agent acceptance and SSH set-try are not claimed.
 ## Semantic diff and acceptance evidence
 
 ```bash
-./clawforge set diff sets/<A>.tar.gz sets/<B>.tar.gz
-./clawforge set diff --from sets/<A>.tar.gz --to sets/<B>.tar.gz --json
-./clawforge accept --set sets/<B>.tar.gz --json
-./clawforge set receipts --set-id <set-id>
-./clawforge set receipts --set-id <set-id> --receipt <receipt-id> --json
+./clawwright set diff sets/<A>.tar.gz sets/<B>.tar.gz
+./clawwright set diff --from sets/<A>.tar.gz --to sets/<B>.tar.gz --json
+./clawwright accept --set sets/<B>.tar.gz --json
+./clawwright set receipts --set-id <set-id>
+./clawwright set receipts --set-id <set-id> --receipt <receipt-id> --json
 ```
 
 Diff verifies both artifacts before comparing their requirements, configuration paths,

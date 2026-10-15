@@ -16,7 +16,7 @@ Existing names match `^[a-z][a-z0-9-]*$`, at most 64 characters; `new` and `impo
 also refuse Windows device names (`con`, `prn`, `aux`, `nul`, `com1`–`com9`,
 `lpt1`–`lpt9`).
 
-`recipeStack` uses `clawforge-recipe-<sha256>` over JSON serialization of the validated
+`recipeStack` uses `clawwright-recipe-<sha256>` over JSON serialization of the validated
 `[gateway namespace, recipe name]` pair. The gateway namespace matches
 `^[a-z0-9][a-z0-9_-]*$`. It enables ownership verification and checks both historical
 project identities. The loader constructs the `compose.yml` path but does **not**
@@ -368,12 +368,12 @@ refused by graph scanning. Ordinary relative imports are tracked but do **not** 
 same containment checks as `#imports`: freshness is not code isolation.
 
 Module evaluation defaults to a 30000ms deadline (positive
-`CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS` overrides it); graph hashing occurs before that race.
+`CLAWWRIGHT_HOOK_IMPORT_TIMEOUT_MS` overrides it); graph hashing occurs before that race.
 Late code cannot be cancelled. `quiesce.ts` and `resume.ts` are separate presence-based
 lifecycle hooks, selecting named export or default, receiving `(ctx, recipe)` and ignoring
 returns. Quiesce must pair with resume; attempted failed quiesces still schedule resume
 compensation. Their calls default to 30000ms, overridable with positive
-`CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS`; import precedes the call deadline. The enclosing
+`CLAWWRIGHT_RECIPE_HOOK_TIMEOUT_MS`; import precedes the call deadline. The enclosing
 data operation holds the lock. See [private snapshot operations](recipes.md#private-files-privatepaths-and-privatefiles).
 
 ## Examples

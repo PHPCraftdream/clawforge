@@ -1,4 +1,4 @@
-// Pure in-memory tokenization model for the three shells ClawForge spells lines for
+// Pure in-memory tokenization model for the three shells Clawwright spells lines for
 // (stage-7 S1.2a, moved from S1.6 per O6). It answers "what words does a paste of this
 // line yield in this shell" without a shell — so paste-shape reasoning (e.g. the
 // renderer's `cd <path> && cmd` prefix) can be asserted in checks, not guessed.

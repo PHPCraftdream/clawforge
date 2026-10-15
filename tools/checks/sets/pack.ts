@@ -17,7 +17,7 @@ import type { SetManifest } from "#framework/set/artifacts/model.ts";
  *  owns `out` (a path inside the deployment keeps its lifetime simple). */
 export async function packArtifact(tree: string, manifest: SetManifest, out: string, selected?: ArtifactTools): Promise<void> {
   const tools = selected ?? await artifactTools();
-  const contents = await mkdtemp(join(tmpdir(), "clawforge-set-parity-contents-"));
+  const contents = await mkdtemp(join(tmpdir(), "clawwright-set-parity-contents-"));
   try {
     await writeFile(resolve(contents, "set.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     for (const rel of Object.keys(manifest.files)) {

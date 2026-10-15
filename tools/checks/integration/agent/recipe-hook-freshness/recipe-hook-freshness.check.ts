@@ -23,7 +23,7 @@ const { freshRoot, outerRecipes } = scratchDeployment();
 // module for recipe A (cache poisoning), neither on first load, nor after the other
 // recipe's hook ran, nor after only one of the two hooks is edited on disk.
 {
-  const crossRoot = resolve(tmpdir(), `clawforge-recipe-hook-cross-${Date.now()}`);
+  const crossRoot = resolve(tmpdir(), `clawwright-recipe-hook-cross-${Date.now()}`);
   try {
     await mkdir(crossRoot, { recursive: true });
     await mkdir(resolve(crossRoot, "fresh-a"), { recursive: true });

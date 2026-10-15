@@ -175,14 +175,14 @@ try {
 
   // --- reconcile re-reads the deployment .env from disk, not the process-start snapshot --
 
-  const root = await mkdtemp(join(tmpdir(), "clawforge-reconcile-check-"));
+  const root = await mkdtemp(join(tmpdir(), "clawwright-reconcile-check-"));
   const previousReconcile = (() => { try { return deploymentDir(); } catch { return undefined; } })();
   useDeployment(root);
   try {
-    const dataDir = "/srv/clawforge-reconcile-data";
+    const dataDir = "/srv/clawwright-reconcile-data";
     const OLD = "stale-synthetic-value";
     const NEW = "rotated-synthetic-value";
-    const NAME = "CLAWFORGE_RECONCILE_PROBE";
+    const NAME = "CLAWWRIGHT_RECONCILE_PROBE";
     // .env on disk already holds the rotation; the runtime was built before it happened.
     await writeFile(join(root, ".env"), `OC_DATA_DIR=${dataDir}\nOPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:pinned\n${NAME}=${NEW}\n`, "utf8");
     const staleSettings = {
@@ -236,8 +236,8 @@ try {
 
 // Compose parses the values independently of the serializer; no daemon is needed.
 await requires("docker", "Compose parser preserves literal values and deployment precedence", async () => {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-compose-env-check-"));
-  const probe = "CLAWFORGE_COMPOSE_ENV_PROBE";
+  const root = await mkdtemp(join(tmpdir(), "clawwright-compose-env-check-"));
+  const probe = "CLAWWRIGHT_COMPOSE_ENV_PROBE";
   const expected = {
     QUOTE: "a'b", TRAIL: "ends\\", BOTH: "a\\'b", SLASHES: "two\\\\", DOLLAR: "left$UNSET_X-right",
     HASH: "left # right", SPACE: " two ", DOUBLE: 'say "hello"', TAB: "one\ttwo", DOLLAR_SLASH: "\\$HOME", EMPTY: "",

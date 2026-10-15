@@ -1,4 +1,4 @@
-// `./clawforge verify --json` and the isCaptured() MCP path — the structured counterpart of
+// `./clawwright verify --json` and the isCaptured() MCP path — the structured counterpart of
 // verify.check.ts's text-mode assertions, split into its own file to stay under the
 // directory's own layout limit. Self-contained (no import from another *.check.ts — see
 // local-store.check.ts's own note on why): a minimal stub transport it builds itself, not a

@@ -17,8 +17,8 @@ const capture = {
     },
   },
 } as unknown as Context;
-const lineA = cronLine(5, { cwd: "/owner's project", command: "./clawforge", args: ["--app", "app-a", "watch", "check"] }, "watch", "app-a");
-const lineB = cronLine(1440, { cwd: "/instance-b", command: "./clawforge", args: ["--app", "app-b", "backup"] }, "backup", "app-b");
+const lineA = cronLine(5, { cwd: "/owner's project", command: "./clawwright", args: ["--app", "app-a", "watch", "check"] }, "watch", "app-a");
+const lineB = cronLine(1440, { cwd: "/instance-b", command: "./clawwright", args: ["--app", "app-b", "backup"] }, "backup", "app-b");
 await updateCrontab(capture, "watch", "app-a", lineA);
 await updateCrontab({ ...capture, settings: { ...capture.settings, dataDir: "/instance-b" } }, "backup", "app-b", lineB);
 const [a, b] = invocations;
@@ -30,7 +30,7 @@ set -u
 fail() { printf 'scheduler fixture: %s\\n' "$*" >&2; exit 1; }
 command -v flock >/dev/null 2>&1 || fail 'flock unavailable; account-lock regression cannot run'
 real_flock=$(command -v flock)
-root=$(mktemp -d /tmp/clawforge-scheduler-check.XXXXXXXXXX) || exit 1
+root=$(mktemp -d /tmp/clawwright-scheduler-check.XXXXXXXXXX) || exit 1
 pid_a= pid_b=
 cleanup() {
   [ -z "$pid_a" ] || kill "$pid_a" 2>/dev/null || :
@@ -84,7 +84,7 @@ chmod 700 "$root/bin/flock" "$root/bin/crontab" || exit 1
 script=$1 pattern_a=$2 line_a=$3 pattern_b=$4 line_b=$5
 expect() { IFS= read -r event <&3; [ "$event" = "$1" ] || fail "expected $1, got $event"; }
 run() { TEST_ID=$1 TEST_PAUSE=$2 TEST_FAILURE=$3 sh -c "$script" fixture "$4" "$5" "$6"; }
-printf '0 3 * * * /usr/bin/foreign\\n\\n# note: # clawforge-watch:app-a\\n' > "$root/table"
+printf '0 3 * * * /usr/bin/foreign\\n\\n# note: # clawwright-watch:app-a\\n' > "$root/table"
 cp "$root/table" "$root/foreign"
 run a read '' "$pattern_a" "$line_a" install > "$root/a.out" 2> "$root/a.err" & pid_a=$!
 expect a:lock; expect a:read
@@ -151,8 +151,8 @@ expect remove:lock; expect remove:read; expect remove:write
 printf 'empty table round trip\\n'
 `;
 
-const targetScript = a[1].replace("lock_dir=/tmp/clawforge-crontab-$uid", "lock_dir=$TEST_LOCK_DIR");
-const args = ["-c", fixture, "clawforge-scheduler-fixture", targetScript, a[3], lineA, b[3], lineB];
+const targetScript = a[1].replace("lock_dir=/tmp/clawwright-crontab-$uid", "lock_dir=$TEST_LOCK_DIR");
+const args = ["-c", fixture, "clawwright-scheduler-fixture", targetScript, a[3], lineA, b[3], lineB];
 const viaWsl = process.platform === "win32" && process.argv.includes("--wsl");
 const result = await spawnLocal(viaWsl ? "wsl.exe" : "sh", viaWsl ? ["--exec", "sh", ...args] : args, { allowFailure: true, timeoutMs: 25_000 });
 check("isolated target transaction fixture succeeds", { code: result.code, stderr: result.code === 0 ? "" : result.stderr }, { code: 0, stderr: "" });

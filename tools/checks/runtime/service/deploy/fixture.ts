@@ -51,5 +51,5 @@ export function probeReply(args: string[], over: { marker?: string; empty?: "yes
   return { code: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
 }
 
-export const isRootProbe = (args: string[]) => (args.at(-1) ?? "").includes("clawforge-root-probe");
-export const markerLine = (name: string) => `clawforge-deploy-root-v1 name=${name}`;
+export const isRootProbe = (args: string[]) => (args.at(-1) ?? "").includes("clawwright-root-probe");
+export const markerLine = (name: string) => `clawwright-deploy-root-v1 name=${name}`;

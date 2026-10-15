@@ -1,4 +1,4 @@
-// `./clawforge apply` with recovery steps in a real run: the journal and the one operation id,
+// `./clawwright apply` with recovery steps in a real run: the journal and the one operation id,
 // the --force refusals of the declaration and store dumps, --dry-run writing nothing, and the
 // step renderer apply's dry run shares with `plan`.
 
@@ -26,7 +26,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 // recover-env is the one runner that can genuinely succeed in this harness (it needs a real
 // .env and a stub runtime answer, no instance), so it is the vehicle for the claims the
 // other sections cannot reach: a "done" step, and the steps landing in the journal under
-// ONE operation id that ./clawforge operations reads back.
+// ONE operation id that ./clawwright operations reads back.
 
 /** A transport backed by the real filesystem, rooted at nothing — every path it is given is
  *  already absolute. Enough of the contract for the journal and the operations command. */
@@ -51,7 +51,7 @@ function localTransport(): {
 }
 
 {
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-recovery-check-"));
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-recovery-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
     await mkdir(resolve(deployment, "secrets"), { recursive: true });
@@ -59,7 +59,7 @@ function localTransport(): {
     // only that the line survives the merge untouched. The port both sides carry differently
     // is the direction-ambiguous case: a planned run must not choose a direction for it.
     const envBefore = [
-      "OC_DATA_DIR=/srv/clawforge/data",
+      "OC_DATA_DIR=/srv/clawwright/data",
       "OPENCLAW_GATEWAY_PORT=9999",
       "OC_COMPOSE_PROJECT=recovery-check",
       "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",
@@ -79,7 +79,7 @@ function localTransport(): {
       runtime: {
         isRunning: async () => true,
         runningConnectionFacts: async () => ({
-          dataDir: "/srv/clawforge/data",
+          dataDir: "/srv/clawwright/data",
           port: "18790",
           composeProject: "recovery-check",
           image: "ghcr.io/openclaw/openclaw:extended-stable",
@@ -91,10 +91,10 @@ function localTransport(): {
     // for real — the declaration and the store both EXIST here, which is exactly the state
     // the finding warns about and the command refuses to overwrite.
     const actions: PlanAction[] = [
-      { id: "recover-env", summary: "recover-env", command: "./clawforge recover-env", because: ["ENV_STALE"] },
+      { id: "recover-env", summary: "recover-env", command: "./clawwright recover-env", because: ["ENV_STALE"] },
       { id: "reconnect-mcp", summary: "reconnect-mcp", because: ["MCP_RESTART_REQUIRED"], advisory: true },
-      { id: "apply-config-dump", summary: "apply-config-dump", command: "./clawforge apply-config --dump", because: ["DECLARATION_MISSING"] },
-      { id: "up", summary: "up", command: "./clawforge up", because: ["GATEWAY_DOWN"] },
+      { id: "apply-config-dump", summary: "apply-config-dump", command: "./clawwright apply-config --dump", because: ["DECLARATION_MISSING"] },
+      { id: "up", summary: "up", command: "./clawwright up", because: ["GATEWAY_DOWN"] },
     ];
 
     const journal = await Journal.open(ctx, "apply", "recovery-check");
@@ -131,7 +131,7 @@ function localTransport(): {
     await withOutputSink(
       () => {},
       async () => {
-        storeRefusal = await runSteps(ctx, [{ id: "secrets-dump", summary: "secrets-dump", command: "./clawforge secrets --dump", because: ["STORE_INCOMPLETE"] }]);
+        storeRefusal = await runSteps(ctx, [{ id: "secrets-dump", summary: "secrets-dump", command: "./clawwright secrets --dump", because: ["STORE_INCOMPLETE"] }]);
       },
     );
     check("the store refusal is a failed step too", storeRefusal.map((step) => [step.id, step.status]), [["secrets-dump", "failed"]]);
@@ -154,7 +154,7 @@ function localTransport(): {
     const storePath = join(deployment, "secrets", "local.env");
     const declarationPath = join(deployment, "config", "desired-state.json");
     const staleEnv = [
-      "OC_DATA_DIR=/srv/clawforge/data",
+      "OC_DATA_DIR=/srv/clawwright/data",
       "OPENCLAW_GATEWAY_PORT=9999",
       "OC_COMPOSE_PROJECT=folder-check",
       "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable",
@@ -168,7 +168,7 @@ function localTransport(): {
 
     const spec = { targetEnv: "ZAI_API_KEY=k\nOPENCLAW_GATEWAY_TOKEN=stored-gateway-token\n", mirrorChecksums: goodChecksums };
     const base = stubContext(spec);
-    const ctx = { ...base, runtime: { ...base.runtime, runningConnectionFacts: async () => ({ dataDir: "/srv/clawforge/data", port: "18790", composeProject: "folder-check", image: "ghcr.io/openclaw/openclaw:extended-stable" }) } } as unknown as Context;
+    const ctx = { ...base, runtime: { ...base.runtime, runningConnectionFacts: async () => ({ dataDir: "/srv/clawwright/data", port: "18790", composeProject: "folder-check", image: "ghcr.io/openclaw/openclaw:extended-stable" }) } } as unknown as Context;
 
     const envBefore = await readFile(envPath, "utf8");
     const storeBefore = await readFile(storePath, "utf8");
@@ -221,8 +221,8 @@ function localTransport(): {
 
 {
   const mixed: PlanAction[] = [
-    { id: "secrets", summary: "install the missing secrets on the target", command: "./clawforge secrets --apply", because: ["SECRET_MISSING"] },
-    { id: "lock", summary: "review the difference from the lock, then run ./clawforge lock to re-pin it deliberately", because: ["LOCK_DRIFT"], advisory: true },
+    { id: "secrets", summary: "install the missing secrets on the target", command: "./clawwright secrets --apply", because: ["SECRET_MISSING"] },
+    { id: "lock", summary: "review the difference from the lock, then run ./clawwright lock to re-pin it deliberately", because: ["LOCK_DRIFT"], advisory: true },
   ];
   let out = "";
   await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions(mixed); });

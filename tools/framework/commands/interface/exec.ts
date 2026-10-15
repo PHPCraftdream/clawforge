@@ -1,4 +1,4 @@
-// `clawforge exec …` — runs an arbitrary command in the same sidecar `clawforge cli` uses:
+// `clawwright exec …` — runs an arbitrary command in the same sidecar `clawwright cli` uses:
 // the OpenClaw image, the gateway's network namespace, the same data mounts — but any
 // command, not just the app's own CLI entrypoint. For diagnostics `cli` cannot reach: reading
 // a file bundled in the image, a curl probe against something only reachable from inside that

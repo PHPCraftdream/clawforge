@@ -26,7 +26,7 @@ await requires("docker", "live image recreate behavior", async () => {
     return;
   }
   const previousLive = (() => { try { return deploymentDir(); } catch { return undefined; } })();
-  const scratch = await mkdtemp(join(tmpdir(), "clawforge-recreate-live-"));
+  const scratch = await mkdtemp(join(tmpdir(), "clawwright-recreate-live-"));
   // The deployment directory's basename becomes the compose project name, and mkdtemp's random
   // suffix may contain uppercase — compose project names must be lowercase — so the deployment
   // is its own subdirectory named from lowercase hex instead.
@@ -38,7 +38,7 @@ await requires("docker", "live image recreate behavior", async () => {
   const dataDir = `${deployDir}/data`;
   const definitionPath = join(scratch, "compose.json");
   const envPath = join(deployDir, ".env");
-  const NAME = "CLAWFORGE_PROBE_VAR";
+  const NAME = "CLAWWRIGHT_PROBE_VAR";
   const OLD = "old-synthetic-value";
   const NEW = "new-synthetic-value";
   const envBody = (probeValue: string) =>
@@ -55,7 +55,7 @@ await requires("docker", "live image recreate behavior", async () => {
   }));
   await writeFile(envPath, envBody(OLD), "utf8");
   useDeployment(deployDir);
-  // LocalTransport directly: bypasses ./clawforge's own LOCAL_TARGET_UNSUPPORTED refusal
+  // LocalTransport directly: bypasses ./clawwright's own LOCAL_TARGET_UNSUPPORTED refusal
   // to exec `docker` on whatever host has it on PATH, gated on above.
   const local = new LocalTransport();
   // DockerRuntime composes the framework's own docker-compose.yml (the real gateway

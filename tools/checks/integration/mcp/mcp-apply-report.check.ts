@@ -12,7 +12,7 @@ import { CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-apply-report-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-mcp-apply-report-"));
 try {
   await mkdir(join(root, "config"));
   const token = 'synthetic-mcp-"failure' + String.fromCharCode(92) + "token";

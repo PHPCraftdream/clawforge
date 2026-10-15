@@ -17,7 +17,7 @@ useDeployment("/fixture/deployment");
 // forever, carrying OPENCLAW_GATEWAY_TOKEN in plain text. #sweepStaleComposeEnvs removes only
 // ones whose recorded owner (pid, machine) is provably gone: this machine, and a pid that does
 // not exist. A live pid, an unreadable/missing owner (a sibling call still mid-write toward its
-// own would look the same for an instant), or a different machine's own clawforge are each
+// own would look the same for an instant), or a different machine's own clawwright are each
 // left alone — in-memory stub only, no docker and no network.
 {
   const DATA_DIR = "/srv/compose-sweep/data";

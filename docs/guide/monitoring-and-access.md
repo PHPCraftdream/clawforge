@@ -3,10 +3,10 @@
 ## Reaching a loopback-bound gateway: `expose`
 
 The gateway is published on `OC_BIND_ADDRESS` (default `127.0.0.1`) so it is reachable only
-from this host — see `.env.example`. `./clawforge expose` covers the ways to reach it from
+from this host — see `.env.example`. `./clawwright expose` covers the ways to reach it from
 somewhere else anyway, narrowest scope first:
 
-* `./clawforge expose ssh` — for `OC_TARGET_LOCATION=ssh` deployments, prints the exact
+* `./clawwright expose ssh` — for `OC_TARGET_LOCATION=ssh` deployments, prints the exact
   `ssh -N -L <localPort>:127.0.0.1:<gatewayPort> <OC_SSH_HOST>` tunnel and the
   `http://127.0.0.1:<localPort>` URL it opens (`--local-port` to pick a different local port);
   `--run` opens it in the foreground through the local `ssh` client until Ctrl+C — that needs
@@ -14,28 +14,28 @@ somewhere else anyway, narrowest scope first:
   An SSH client failure returns that client's exit code through the CLI.
   `wsl`/`local` targets are told no tunnel is needed: Docker Desktop's WSL2 integration already
   forwards the published port to this machine's own loopback.
-* `./clawforge expose tailscale` — probes, on the target, whether `tailscale` exists and is
+* `./clawwright expose tailscale` — probes, on the target, whether `tailscale` exists and is
   logged in, then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>`
   command: a tailnet-only HTTPS proxy, reachable to tailnet members only. `--apply` runs it on
   the target through the transport — mutating, so it takes the instance lock and needs MCP
   confirmation like any other mutating command. `tailscale funnel` (the public-internet
   sibling) is refused outright, with the reason, whether or not `--apply` is given — this
   framework's whole security posture keeps the gateway off public ports.
-* `./clawforge expose status` — the bind address and port actually published right now, read
+* `./clawwright expose status` — the bind address and port actually published right now, read
   back from the running container rather than trusted from `.env` (which can be stale the
   moment `OC_BIND_ADDRESS` is edited without a recreate), whether that is loopback-only, and a
   summary of `tailscale serve status` when tailscale is present. Warns loudly when the bind
   address is `0.0.0.0` or `::` — reachable from every interface on the host, not just loopback.
-  If it differs from `OC_BIND_ADDRESS`, run `./clawforge up` to recreate the container and
+  If it differs from `OC_BIND_ADDRESS`, run `./clawwright up` to recreate the container and
   apply `.env`; `restart` preserves existing port bindings. To adopt the running bind instead,
   explicitly edit `OC_BIND_ADDRESS` in `.env`; `recover-env --adopt-runtime` does not adopt it.
-  The same one-line summary appears in `./clawforge status`.
+  The same one-line summary appears in `./clawwright status`.
 
 ## Health monitoring: `watch`
 
 An operator finds out the instance stopped doing its job without polling by hand.
 
-* `./clawforge watch check` — one probe cycle. Reuses exactly the findings `inspect`/`doctor`
+* `./clawwright watch check` — one probe cycle. Reuses exactly the findings `inspect`/`doctor`
   already compute — `GATEWAY_DOWN`, `GATEWAY_UNHEALTHY`, `NOT_BOOTSTRAPPED`,
   `EGRESS_UNREACHABLE` — and none of the rest (`CONFIG_DRIFT` and similar are real findings,
   but not about whether the instance is serving; `PROVIDER_MISSING` is excluded too — its
@@ -68,7 +68,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   token) and is never printed by this command, on any path, including failure. `watch install`
   writes its crontab line with `>/dev/null 2>&1` on purpose (cron's own mail-on-output default
   would otherwise spam an operator every cycle) — this is what makes the diagnostics above the
-  only trace of a cron-run failure between cycles; run `./clawforge watch test` (below) to
+  only trace of a cron-run failure between cycles; run `./clawwright watch test` (below) to
   prove delivery works before relying on it.
   Cycles serialize on the machine storing this history, from reading the previous state
   through alert delivery and atomic publication. A competing cycle fails explicitly with
@@ -150,7 +150,7 @@ An operator finds out the instance stopped doing its job without polling by hand
     target worth asking (`TARGET_UNREACHABLE`, `NOT_BOOTSTRAPPED`) — but unlike it, still read
     while the gateway is merely down, since a full disk is a common reason for that.
 
-    `./clawforge doctor`/`inspect` also report a `DISK_LOW` — same code string, a different
+    `./clawwright doctor`/`inspect` also report a `DISK_LOW` — same code string, a different
     mechanism: a warning-only `ProblemCode` (never `down`, never blocking `doctor`'s exit
     code), checked against `OC_DISK_MIN_FREE_MB` (default 1024 MB, `0` disables it) at the
     data directory **and** the backup directory, on demand rather than on watch's schedule.
@@ -158,7 +158,7 @@ An operator finds out the instance stopped doing its job without polling by hand
     one is not wired into watch's own liveness codes above. See
     [Data, backups and state](data-and-backups.md#backup-and-restore) for `BACKUP_MISSING`/
     `BACKUP_STALE`, doctor's other new upkeep findings.
-* `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
+* `./clawwright watch install` / `watch uninstall` — print (and, with `--apply`, install through
   the transport) a crontab entry that runs `watch check` every `--interval` (default `5m`; a
   bare number is minutes, or use `30m`/`6h`/`1d` — `backup install` takes the same durations
   but requires the explicit unit):
@@ -169,15 +169,15 @@ An operator finds out the instance stopped doing its job without polling by hand
   nearest valid values in the same spelling, rather than silently degrading to
   an uneven `*/N`. Marked so a re-run replaces only its own line and
   `uninstall` removes only it. Only where an unattended cron can be trusted to find this
-  tooling's own node and checkout: a real SSH host (`./clawforge deploy` already mirrored the
+  tooling's own node and checkout: a real SSH host (`./clawwright deploy` already mirrored the
   checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place
   (a `local` target is refused on Windows) — there this prints, and on an actual
   Windows host can also run with `--apply`, the equivalent `schtasks /create` command instead:
-  the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- '<dir>'; exec './clawforge' …"` line a human would run (built from the
+  the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- '<dir>'; exec './clawwright' …"` line a human would run (built from the
   configured `OC_WSL_DISTRO`). schtasks accepts at most 261 characters for the action: a longer
   one is refused (nothing is created) — shorten the deployment path or app name. `/f` replaces
-  the same named task (`clawforge-<identity>-watch`) on a re-run, Task Scheduler's own
-  counterpart to the crontab marker (`# clawforge-watch:<identity>`). Identity is a SHA-256
+  the same named task (`clawwright-<identity>-watch`) on a re-run, Task Scheduler's own
+  counterpart to the crontab marker (`# clawwright-watch:<identity>`). Identity is a SHA-256
   of the canonical physical deployment root and execution location, not its human basename
   or Compose project name: `/srv/team-a/deployment` and `/srv/team-b/deployment` coexist.
   SSH resolves `<remotePath>/apps/<deployment>` on the target, so operator and target-local
@@ -200,7 +200,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   entire crontab read, merge and write. Backup and watch share it across all deployments;
   each command also keeps its instance lock. The target needs `flock` (util-linux) and a
   root-owned sticky `/tmp` (mode `1777`). The account-owned lock directory
-  `/tmp/clawforge-crontab-<uid>` must have mode `0700`; symlinks and unsafe ownership or
+  `/tmp/clawwright-crontab-<uid>` must have mode `0700`; symlinks and unsafe ownership or
   permissions are refused. Contention waits up to 30 seconds, then reports a retryable
   error. Kernel locks release when the target transaction process and its children exit,
   including after a crash; the stable directory must not be deleted during updates.
@@ -216,7 +216,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   a separate ad-hoc history; they do not overwrite or claim to update the remote schedule.
   To inspect that ad-hoc trace, read that local JSON file; `watch status` reports the
   scheduled source, not this separate history.
-* `./clawforge watch status` — the persisted last state, when it last changed, and whether a
+* `./clawwright watch status` — the persisted last state, when it last changed, and whether a
   webhook/heartbeat is configured — plus the heartbeat's own last successful ping time, and
   its last failure if the most recent ping did not succeed. Never either URL itself.
   SSH status reads the remote scheduled history through transport, including errors and
@@ -235,7 +235,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   interval was ever recorded — a state file from before this field existed, or a schedule
   wired up by hand outside `watch install`. Three missed intervals rather than one: a single
   slow cycle or scheduler jitter should not cry wolf.
-* `./clawforge watch test` — sends one webhook message, clearly marked as a test (never
+* `./clawwright watch test` — sends one webhook message, clearly marked as a test (never
   shaped like a real transition — a receiving chat cannot mistake it for one) in the
   configured format, and one heartbeat ping, through whichever of `OC_WATCH_WEBHOOK`/
   `OC_WATCH_HEARTBEAT_URL` is set — so delivery can be proven correct *before* a real outage
@@ -247,7 +247,7 @@ An operator finds out the instance stopped doing its job without polling by hand
 ## Incident response: `incident`
 
 OpenClaw's own incident runbook, run by the framework because each step needs something only
-it can reach: `./clawforge incident` runs five phases in order, contain → preserve → rotate →
+it can reach: `./clawwright incident` runs five phases in order, contain → preserve → rotate →
 audit → collect, and attempts every phase after a failure so the operator gets the fullest
 report and the freshest evidence it can produce. Preserve, rotate, audit or collect failures
 produce a non-zero exit after the remaining phases have been attempted.
@@ -257,7 +257,7 @@ produce a non-zero exit after the remaining phases have been attempted.
   own route on that host. When the route shape cannot be parsed reliably, nothing is turned
   off and the exact manual command is printed instead. The whole run refuses outright, before
   the lock and before any mutation, while the gateway is published on every interface
-  (`0.0.0.0`/`::`) — fix that first (`OC_BIND_ADDRESS=127.0.0.1` and `./clawforge up`), or pass
+  (`0.0.0.0`/`::`) — fix that first (`OC_BIND_ADDRESS=127.0.0.1` and `./clawwright up`), or pass
   `--keep-exposure` if it is already handled elsewhere. A contain failure (most commonly: this
   account is not the tailscale operator on the target) is reported as a note, never thrown —
   rotate runs regardless, since leaving a stale token in place is worse than leaving a stale
@@ -273,8 +273,8 @@ produce a non-zero exit after the remaining phases have been attempted.
 * **rotate** — a fresh `OPENCLAW_GATEWAY_TOKEN`, written to `.env` and recreated into the
   running container so it actually takes effect (a repo-env value like this one is fixed at
   container-creation time; a plain restart would not apply it). Every MCP client paired
-  against the old token needs `./clawforge mcp-creds` again afterwards.
-* **audit** — the same security gate `./clawforge doctor`/`./clawforge accept` run (see
+  against the old token needs `./clawwright mcp-creds` again afterwards.
+* **audit** — the same security gate `./clawwright doctor`/`./clawwright accept` run (see
   [Security gate: suppressions](#security-gate-suppressions) below), plus
   `openclaw doctor --lint`, both reported here rather than gating the run.
 * **collect** — a bounded log tail of whatever is running by then, both audit outputs and a
@@ -295,11 +295,11 @@ every phase's actions and notes, preserve's confirmed `files`, any evidence-phas
 the security findings, and where the evidence went — as one JSON object.
 
 After a real incident: rotate already invalidated every existing MCP pairing, so run
-`./clawforge mcp-creds` (or `mcp-setup`) again for each client before trusting it to reconnect.
+`./clawwright mcp-creds` (or `mcp-setup`) again for each client before trusting it to reconnect.
 
 ## Security gate: suppressions
 
-`./clawforge doctor` and `./clawforge accept` (and, informationally, `incident`'s own audit
+`./clawwright doctor` and `./clawwright accept` (and, informationally, `incident`'s own audit
 phase) run a security gate on top of the usual convergence checks: OpenClaw's own
 `security audit --json` and `secrets audit --json` inside the instance, plus host-side checks
 the container cannot see for itself — the gateway published on every interface, a Linux

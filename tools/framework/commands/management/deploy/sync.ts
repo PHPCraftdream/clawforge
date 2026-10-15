@@ -139,7 +139,7 @@ export async function syncTrees(
   ], { env: RSYNC_ENV });
 
   // rsync from a Windows-mounted filesystem loses the executable bit.
-  await runRemote(ctx, target, `chmod +x ${quoted(`${remotePath}/clawforge`)}`);
+  await runRemote(ctx, target, `chmod +x ${quoted(`${remotePath}/clawwright`)}`);
 }
 
 /** Either leaves the files synced with a hint for a manual bootstrap, or bootstraps the

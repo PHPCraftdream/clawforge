@@ -9,7 +9,7 @@ import { runTrialAction } from "#framework/commands/management/recipe/recovery/t
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 import { messageOf, ref, trialFixture, useRecipesRoot } from "../../fixture.ts";
 
-const root = await useRecipesRoot("clawforge-recipe-trial-merged-mount");
+const root = await useRecipesRoot("clawwright-recipe-trial-merged-mount");
 try {
   await root.write("subject", {
     description: "A recipe whose merge introduces a live bind",

@@ -1,4 +1,4 @@
-// `./clawforge inspect`/`doctor` — the JSON rendering, doctor's exit contract (blocking
+// `./clawwright inspect`/`doctor` — the JSON rendering, doctor's exit contract (blocking
 // fails, a warning does not), and the lock/declaration-integrity findings (LOCK_MISSING,
 // LOCK_DRIFT, an unreadable or malformed desired-state.json). Split out of
 // inspect.check.ts; see fixture.ts for the shared stub and on-disk deployment,
@@ -37,7 +37,7 @@ try {
     const rendered = renderJson(inspection) as Record<string, unknown>;
     check("the JSON leads with the verdict", rendered.healthy, false);
     check("problems are carried whole", (rendered.problems as unknown[]).length, 1);
-    check("and the remedies are a list, not prose to parse", rendered.nextActions, ["./clawforge provision-agent demo"]);
+    check("and the remedies are a list, not prose to parse", rendered.nextActions, ["./clawwright provision-agent demo"]);
     check("the deployment names itself", rendered.deployment, inspection.declared.deployment);
   }
   // --- doctor: the same inspection, read as a verdict -------------------------------------
@@ -71,7 +71,7 @@ try {
     check("a blocking problem fails the command", broken.failed, true);
     const payload = JSON.parse(broken.output) as { problems: { code: string }[]; nextActions: string[] };
     check("the report is produced before it fails, not instead of it", payload.problems.map((entry) => entry.code), ["SECRET_MISSING"]);
-    check("and it carries what to run", payload.nextActions, ["./clawforge secrets --apply"]);
+    check("and it carries what to run", payload.nextActions, ["./clawwright secrets --apply"]);
   }
   // --- the lock, and the other half of doctor's exit contract ------------------------------
   //
@@ -117,7 +117,7 @@ try {
     // same drift without further setup. What it must answer with is each problem's own
     // remedy, through the same nextActions() aggregator inspect uses — so the two commands
     // cannot disagree about what to do next for the same drift. The old code hardcoded
-    // ["./clawforge lock"], regardless of what each problem said.
+    // ["./clawwright lock"], regardless of what each problem said.
     let output = "";
     let failure = "";
     try {
@@ -134,8 +134,8 @@ try {
     const payload = JSON.parse(output) as { problems: Problem[]; nextActions: string[] };
     check("lock --check reports the drift the inspection saw", payload.problems.map((entry) => entry.code), ["LOCK_DRIFT"]);
     check("its next actions are the problems' own remedies", payload.nextActions, nextActions(payload.problems));
-    check("and they are the drift's real remedy", payload.nextActions, ["./clawforge plan"]);
-    check("not the old blanket answer", payload.nextActions.includes("./clawforge lock"), false);
+    check("and they are the drift's real remedy", payload.nextActions, ["./clawwright plan"]);
+    check("not the old blanket answer", payload.nextActions.includes("./clawwright lock"), false);
   }
 
   // --- plugins/skills, end to end: the same "cli" container inspect already reads from -----

@@ -1,4 +1,4 @@
-// `./clawforge watch check`'s alert webhook, one layer down from check.check.ts's own
+// `./clawwright watch check`'s alert webhook, one layer down from check.check.ts's own
 // coverage of runWatchCycle's transition matrix:
 //
 // - detectWebhookFormat (through resolveWebhookTarget): autodetected from the URL host
@@ -143,7 +143,7 @@ function ctxWith(env: Record<string, string>): Context {
 
 // --- postWebhookAlert(): each format's own payload shape --------------------------------
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-watch-webhook-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-watch-webhook-check-"));
 useDeployment(root);
 const originalFetch = globalThis.fetch;
 

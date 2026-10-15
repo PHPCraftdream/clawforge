@@ -1,4 +1,4 @@
-// `clawforge status` — what is running and whether it is actually healthy.
+// `clawwright status` — what is running and whether it is actually healthy.
 //
 // One addition came out of a real bug: the
 // runtime's own health verdict is shown next to the HTTP probes, because the two can

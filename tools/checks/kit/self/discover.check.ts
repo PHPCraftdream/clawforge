@@ -62,7 +62,7 @@ check(
 }
 
 // A real deployment can share the old cleanup's naming shape and contain private config. It
-// lives under isolatedAppsRoot (the CLAWFORGE_CHECKS_APPS_DIR seam appsRootFor honors), so
+// lives under isolatedAppsRoot (the CLAWWRIGHT_CHECKS_APPS_DIR seam appsRootFor honors), so
 // the checkout's own apps/ is never created or touched — the preservation invariant is about
 // runChecks, not about where the deployment physically sits.
 {
@@ -99,7 +99,7 @@ function sample(ms: number, at = 1_000): TimingSample {
 
 const roots: string[] = [];
 async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(join(await realpath(tmpdir()), "clawforge-check-timings-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "clawwright-check-timings-"));
   roots.push(root);
   return root;
 }

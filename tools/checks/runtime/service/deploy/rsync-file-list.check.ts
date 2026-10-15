@@ -39,7 +39,7 @@ async function fileList(root: string, target: string, excludes: readonly string[
 }
 
 const frameworkKept = [
-  "clawforge",
+  "clawwright",
   "tools/framework/service/recipe.ts",
   "tools/checks/integration/apps/app-hooks.check.ts",
   "tools/checks/integration/build/source.ts",
@@ -91,7 +91,7 @@ check("both mirrors hide dependencies and worktrees", ["node_modules/", "worktre
 check("only the framework hides root apps", FRAMEWORK_EXCLUDES.includes("/apps/") && !EXCLUDES.includes("/apps/"), true);
 
 await requires("rsync", "rsync exercised over both payloads", async () => {
-  const scratch = await mkdtemp(join(tmpdir(), "clawforge-rsync-list-"));
+  const scratch = await mkdtemp(join(tmpdir(), "clawwright-rsync-list-"));
   try {
     const framework = join(scratch, "framework");
     await sourceTree(framework, frameworkKept.concat(frameworkOmitted));

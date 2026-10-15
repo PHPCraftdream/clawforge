@@ -45,7 +45,7 @@ const PLACEHOLDER = "—";
  *  its business, not the token's (help-prose.check.ts's rule, design 4.2's P4). */
 const PLACEHOLDER_WORD = /^<.*>$/;
 const EXAMPLE = "x";
-const CLAWFORGE_KIND = "clawforge";
+const CLAWWRIGHT_KIND = "clawwright";
 
 /** The app an invocation carries for the `--app` rule, or undefined when it says nothing: a
  *  selection the cwd already made (`cwd`) or the default (`default`). A flagged `openclaw` is
@@ -119,7 +119,7 @@ const commandWords = (line: string): readonly string[] =>
 /** P1 — `--app`: between the program and the command word sits exactly one `--app <name>` or
  *  none, and the name is the rule's. */
 for (const { label, advice } of ADVICE_ROWS) {
-  if (advice.kind !== CLAWFORGE_KIND) continue;
+  if (advice.kind !== CLAWWRIGHT_KIND) continue;
   for (const column of MATRIX_COLUMNS) {
     if (!("invocation" in column)) continue;
     const where = `${label} under ${column.label}`;
@@ -155,19 +155,19 @@ for (const { label, advice } of ADVICE_ROWS) {
   }
 }
 
-/** P2 — the bare program (`clawforge`): no `./` and no single quote anywhere in a clawforge
+/** P2 — the bare program (`clawwright`): no `./` and no single quote anywhere in a clawwright
  *  cell, because it is typed in cmd.exe and PowerShell as often as in bash. */
-const SHIM_SPELLING = "./clawforge";
+const SHIM_SPELLING = "./clawwright";
 const SINGLE_QUOTE = "'";
-const bareColumns = MATRIX_COLUMNS.filter((column) => "invocation" in column && column.invocation.program === "clawforge");
-// 4, not 3: S1.4 added the producer "system-wide inside apps/demo (cwd selection)", whose handover program is also the bare `clawforge` (each new bare-program producer joins the cmd/pwsh-typed rule).
+const bareColumns = MATRIX_COLUMNS.filter((column) => "invocation" in column && column.invocation.program === "clawwright");
+// 4, not 3: S1.4 added the producer "system-wide inside apps/demo (cwd selection)", whose handover program is also the bare `clawwright` (each new bare-program producer joins the cmd/pwsh-typed rule).
 checkTrue("the matrix has bare-program columns", bareColumns.length === 4);
 for (const { label, advice } of ADVICE_ROWS) {
   for (const column of bareColumns) {
     if (!("invocation" in column)) continue;
     const where = `${label} under ${column.label}`;
     const line = renderAdvice(advice, column.invocation);
-    if (advice.kind === CLAWFORGE_KIND) {
+    if (advice.kind === CLAWWRIGHT_KIND) {
       // The note is prose the product writes, not the command: it is not typed anywhere.
       const commandLine = withoutNote(line, advice);
       checkTrue(`${where}: no ${SHIM_SPELLING}`, !commandLine.includes(SHIM_SPELLING));
@@ -184,7 +184,7 @@ for (const { label, advice } of ADVICE_ROWS) {
 // these two the branch could be replaced wholesale and no cell would change.
 const NEEDS_QUOTING = "two words";
 const PATH_SPELLING: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" };
-const BARE_PROGRAM: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
+const BARE_PROGRAM: Invocation = { program: "clawwright", mode: "installed", audience: "terminal" };
 check(
   `a path spelling quotes POSIX-style`,
   renderAdvice(command(["status", "--reason", NEEDS_QUOTING]), PATH_SPELLING),
@@ -196,7 +196,7 @@ await requires("posix-host", "a posix host's bare program pastes into sh, which 
 check(
   "a bare program quotes by the host's paste shell",
   renderAdvice(command(["status", "--reason", NEEDS_QUOTING]), BARE_PROGRAM),
-  `clawforge status --reason ${HOST_QUOTE}two words${HOST_QUOTE}`,
+  `clawwright status --reason ${HOST_QUOTE}two words${HOST_QUOTE}`,
 );
 
 /** The `--app` name is a word the user pastes like any other, so it quotes by the same rule
@@ -209,7 +209,7 @@ check(
 check(
   "an app name that needs quoting is quoted under the bare program",
   renderAdvice(command(["status"], { app: NEEDS_QUOTING }), BARE_PROGRAM),
-  `clawforge --app ${HOST_QUOTE}two words${HOST_QUOTE} status`,
+  `clawwright --app ${HOST_QUOTE}two words${HOST_QUOTE} status`,
 );
 check(
   "an inherited app name that needs quoting is quoted",
@@ -225,7 +225,7 @@ check(
 const POSIX_ACTIVE = /[`$\\]/;
 const QUOTED_SPAN = /"(?:[^"\\]|\\.)*"/g;
 for (const { label, advice } of ADVICE_ROWS) {
-  if (advice.kind !== CLAWFORGE_KIND) continue;
+  if (advice.kind !== CLAWWRIGHT_KIND) continue;
   for (const column of bareColumns) {
     if (!("invocation" in column)) continue;
     const line = withoutNote(renderAdvice(advice, column.invocation), advice);
@@ -239,46 +239,46 @@ for (const { label, advice } of ADVICE_ROWS) {
 // rule above is pinned on renderArgument directly, not only on the golden rows: a renderer
 // that regressed to double-quoting them would pass the scan alone. It never throws: it runs
 // while an error is being reported.
-check("renderArgument single-quotes $ under the bare program", renderArgument("a$b", "clawforge"), "'a$b'");
-check("renderArgument single-quotes a backtick under the bare program", renderArgument("a`b", "clawforge"), "'a`b'");
-check("renderArgument single-quotes a backslash under the bare program", renderArgument("a\\b", "clawforge"), "'a\\b'");
+check("renderArgument single-quotes $ under the bare program", renderArgument("a$b", "clawwright"), "'a$b'");
+check("renderArgument single-quotes a backtick under the bare program", renderArgument("a`b", "clawwright"), "'a`b'");
+check("renderArgument single-quotes a backslash under the bare program", renderArgument("a\\b", "clawwright"), "'a\\b'");
 /** cmd.exe expands %VAR% even inside double quotes (review R-A F1) and no quoting
  *  neutralises it under the bare program; render.ts keeps % in SAFE_WORD because POSIX and
  *  PowerShell treat it literally — the accepted limit, documented at SAFE_WORD. Deployment
  *  names cannot carry % (safeName), so what must hold is that no golden advice word does:
  *  this fails the moment a new row builds one from free text. */
 for (const { label, advice } of ADVICE_ROWS) {
-  if (advice.kind !== CLAWFORGE_KIND) continue;
+  if (advice.kind !== CLAWWRIGHT_KIND) continue;
   for (const word of [advice.app ?? "", ...advice.argv]) {
     checkTrue(`${label}: no % in an advice word (cmd expands it even quoted)`, !word.includes("%"));
   }
 }
 check(
   "renderArgument keeps % bare under the bare program — the accepted cmd limit (see SAFE_WORD)",
-  renderArgument("a%b", "clawforge"),
+  renderArgument("a%b", "clawwright"),
   "a%b",
 );
 check("renderArgument still POSIX-quotes under a path spelling", renderArgument("a$b", SHIM_PROGRAM), "'a$b'");
-check("renderArgument quotes an inert word by the host's paste shell under the bare program", renderArgument("two words", "clawforge"), `${HOST_QUOTE}two words${HOST_QUOTE}`);
-check("renderAdvice single-quotes a shell-active word under the bare program", renderAdvice(command(["status", "--reason", "a$b`c"]), BARE_PROGRAM), "clawforge status --reason 'a$b`c'");
+check("renderArgument quotes an inert word by the host's paste shell under the bare program", renderArgument("two words", "clawwright"), `${HOST_QUOTE}two words${HOST_QUOTE}`);
+check("renderAdvice single-quotes a shell-active word under the bare program", renderAdvice(command(["status", "--reason", "a$b`c"]), BARE_PROGRAM), "clawwright status --reason 'a$b`c'");
 
 /** The program itself quotes by the same rule (review R9-A R9-4): a hand-set
- *  CLAWFORGE_INVOCATION whose program carries a space must render a line that pastes.
+ *  CLAWWRIGHT_INVOCATION whose program carries a space must render a line that pastes.
  *  A path spelling is the verbatim launch now, so the rule is the frame's shells':
  *  POSIX single quotes on a POSIX host, the common double quotes under cmd/pwsh. */
-const SPACED_PROGRAM: Invocation = { program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" };
+const SPACED_PROGRAM: Invocation = { program: "<programs dir>/clawwright", mode: "checkout", audience: "terminal" };
 await requires("posix-host", "the spaced program's POSIX quoting", () => {
   check(
     "a spaced program renders single-quoted under a path spelling on posix",
     renderAdvice(command(["status"]), SPACED_PROGRAM),
-    `'<programs dir>/clawforge' status`,
+    `'<programs dir>/clawwright' status`,
   );
 });
 await requires("windows-host", "the spaced program's cmd/pwsh quoting", () => {
   check(
     "a spaced program renders double-quoted under a path spelling on windows",
     renderAdvice(command(["status"]), SPACED_PROGRAM),
-    `"<programs dir>/clawforge" status`,
+    `"<programs dir>/clawwright" status`,
   );
 });
 /** The three shipped spellings are safe words and must stay byte-identical — the npm bin
@@ -287,13 +287,13 @@ const WRAPPER_PROGRAM: Invocation = { program: WINDOWS_BIN_PROGRAM, mode: "local
 check(
   "the shipped program spellings render bare",
   [renderAdvice(command(["status"]), PATH_SPELLING), renderAdvice(command(["status"]), BARE_PROGRAM), renderAdvice(command(["status"]), WRAPPER_PROGRAM)],
-  [`${SHIM_PROGRAM} status`, "clawforge status", `${WINDOWS_BIN_PROGRAM} status`],
+  [`${SHIM_PROGRAM} status`, "clawwright status", `${WINDOWS_BIN_PROGRAM} status`],
 );
 
 /** The entry's own fact, rendered: what the gate records for a hand-over and an OC_APP
  *  export decides the `--app` of every advice line pasted afterwards. Two deployments under
  *  a fake root; the gate's program, cwd and environment vary per case. */
-const TREE_ROOT = "/clawforge-tree";
+const TREE_ROOT = "/clawwright-tree";
 const treeFs: FsProbe = {
   exists: (path) => path.replaceAll("\\", "/").endsWith("/app.ts") || path.replaceAll("\\", "/").endsWith("/apps"),
   isDirectory: () => true,
@@ -305,7 +305,7 @@ function adviceAfterEntry(argv: string[], options: { cwd: string; ocApp?: string
   const decision = resolveCheckoutEntry({
     root: TREE_ROOT, cwd: options.cwd, argv, ocApp: options.ocApp,
     handedOver: options.handedProgram !== undefined,
-    launch: options.handedProgram === undefined ? undefined : launchOf({ program: options.handedProgram, mode: options.handedProgram === "clawforge" ? "installed" : "checkout", audience: "mcp" }),
+    launch: options.handedProgram === undefined ? undefined : launchOf({ program: options.handedProgram, mode: options.handedProgram === "clawwright" ? "installed" : "checkout", audience: "mcp" }),
     handedProgram: options.handedProgram,
     fs: treeFs, gateCommands: [], deploymentCommands: ["bootstrap", "up"], variadicCommands: [],
   });
@@ -315,13 +315,13 @@ function adviceAfterEntry(argv: string[], options: { cwd: string; ocApp?: string
 const DEMO_DIR = `${TREE_ROOT}/apps/demo`;
 check(
   "an MCP launcher's hand-over keeps its --app: its program is the checkout gate, not the cwd",
-  adviceAfterEntry(["--app", "demo", "bootstrap"], { cwd: DEMO_DIR, handedProgram: "../../clawforge" }),
-  "../../clawforge --app demo bootstrap",
+  adviceAfterEntry(["--app", "demo", "bootstrap"], { cwd: DEMO_DIR, handedProgram: "../../clawwright" }),
+  "../../clawwright --app demo bootstrap",
 );
 check(
   "a hand-over by the bare program inside the deployment names no --app: the cwd selects it",
-  adviceAfterEntry(["--app", "demo", "bootstrap"], { cwd: DEMO_DIR, handedProgram: "clawforge" }),
-  "clawforge bootstrap",
+  adviceAfterEntry(["--app", "demo", "bootstrap"], { cwd: DEMO_DIR, handedProgram: "clawwright" }),
+  "clawwright bootstrap",
 );
 check(
   "--app openclaw is kept while OC_APP is exported: the pasted line would otherwise follow the environment",
@@ -336,40 +336,40 @@ check(
 
 /** Prose tokens go through the same renderer as advice: the invocation handed in decides the
  *  program (quoted by the argument rule) and the `--app`, never the process's global one. */
-const FLAGGED_DEMO: Invocation = { program: "../../clawforge", mode: "checkout", audience: "mcp", app: { name: "demo", selectedBy: "flag" } };
+const FLAGGED_DEMO: Invocation = { program: "../../clawwright", mode: "checkout", audience: "mcp", app: { name: "demo", selectedBy: "flag" } };
 setInvocation(PATH_SPELLING);
-check("a {clawforge ...} token renders under the invocation it is given", renderProse("run {clawforge up}", frameOf(FLAGGED_DEMO)).split(" "), ["run", "../../clawforge", "--app", "demo", "up"]);
+check("a {clawwright ...} token renders under the invocation it is given", renderProse("run {clawwright up}", frameOf(FLAGGED_DEMO)).split(" "), ["run", "../../clawwright", "--app", "demo", "up"]);
 await requires("posix-host", "the spaced program's POSIX quoting in prose", () => {
   check(
-    "the {clawforge} program token is quoted like the advice program on posix",
-    renderProse("run {clawforge}", frameOf({ program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" })),
-    "run '<programs dir>/clawforge'",
+    "the {clawwright} program token is quoted like the advice program on posix",
+    renderProse("run {clawwright}", frameOf({ program: "<programs dir>/clawwright", mode: "checkout", audience: "terminal" })),
+    "run '<programs dir>/clawwright'",
   );
 });
 await requires("windows-host", "the spaced program's cmd/pwsh quoting in prose", () => {
   check(
-    "the {clawforge} program token is quoted like the advice program on windows",
-    renderProse("run {clawforge}", frameOf({ program: "<programs dir>/clawforge", mode: "checkout", audience: "terminal" })),
-    'run "<programs dir>/clawforge"',
+    "the {clawwright} program token is quoted like the advice program on windows",
+    renderProse("run {clawwright}", frameOf({ program: "<programs dir>/clawwright", mode: "checkout", audience: "terminal" })),
+    'run "<programs dir>/clawwright"',
   );
 });
-check("a plain program stays bare in the {clawforge} token", renderProse("run {clawforge}", frameOf(BARE_PROGRAM)).split(" "), ["run", "clawforge"]);
+check("a plain program stays bare in the {clawwright} token", renderProse("run {clawwright}", frameOf(BARE_PROGRAM)).split(" "), ["run", "clawwright"]);
 
 // The prose DEFAULT path (no frame argument) renders through the INSTALLED frame: the
 // entry's install (installFrame, S1.3) carries the real roots/places, so the O4 relative
 // spelling and the case-4 --project-root selector must hold without a hand-built frame.
-const PROSE_ROOT = "/clawforge-prose-check";
+const PROSE_ROOT = "/clawwright-prose-check";
 {
   const previous = invocation();
   installFrame(checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/docs` }));
-  check("prose default renders from the installed frame's roots", commandLine(["status"]).split(" "), ["../clawforge", "status"]);
+  check("prose default renders from the installed frame's roots", commandLine(["status"]).split(" "), ["../clawwright", "status"]);
   setInvocation(previous);
 }
 {
   const previous = invocation();
   const demo = { ...checkoutGateFrame(PROSE_ROOT, { host: "posix", msys: false, cwd: `${PROSE_ROOT}/apps/demo` }), app: { state: "selected", name: "demo", by: "flag" } as const };
   installFrame(demo);
-  const prose = renderProse("run {clawforge --app X destroy}");
+  const prose = renderProse("run {clawwright --app X destroy}");
   check("prose default names another deployment with --project-root only for installed entries; checkout retains its rooted shim", prose.split(" "), ["run", SHIM_PROGRAM, "--app", "X", "destroy", "", "(from", "the", "checkout", "root)"]);
   setInvocation(previous);
 }
@@ -383,7 +383,7 @@ const PROSE_ROOT = "/clawforge-prose-check";
     renderCommandHelp("status", { summary: "status", arguments: [{ kind: "flag", name: "x", description: "d" } as CommandArgument] }, frame);
   });
   const usage = (printed.split("Usage: ")[1] ?? "").split(" ").slice(0, 2);
-  check("help usage renders from the installed-style Frame's cwd", usage, ["../clawforge", "status"]);
+  check("help usage renders from the installed-style Frame's cwd", usage, ["../clawwright", "status"]);
   setInvocation(previous);
 }
 
@@ -473,7 +473,7 @@ function parseProblem(parse: () => unknown, declared: readonly CommandArgument[]
  *  for every entry: a spec command parses its call shape, a gate/dispatcher command tokenizes
  *  its declared arguments — `help`'s positional and `control-mcp`'s empty list fall out of that. */
 for (const { label, advice } of ADVICE_ROWS) {
-  if (advice.kind !== CLAWFORGE_KIND) continue;
+  if (advice.kind !== CLAWWRIGHT_KIND) continue;
   const filled = advice.argv.map((word) => (PLACEHOLDER_WORD.test(word) ? EXAMPLE : word));
   const [word, ...allRest] = filled;
   if (word === undefined) {
@@ -494,14 +494,14 @@ for (const { label, advice } of ADVICE_ROWS) {
 
 /** A row naming a deployment the cwd's selection does not, under a cwd-resolving program,
  *  is refused as an app conflict when pasted where the run stands (rf6-fix33): from
- *  apps/alpha with the global hand-over, new-app's next step used to print `clawforge --app
+ *  apps/alpha with the global hand-over, new-app's next step used to print `clawwright --app
  *  delta bootstrap --check`, and pasting it in apps/alpha refused it. The conflict refusal's
  *  own remedy is the checkout root, so the row must be spelled from there, note included.
  *  Pasted at the root, its argv runs the named deployment. */
 {
-  setInvocation({ program: "clawforge", mode: "installed", audience: "terminal", app: { name: "alpha", selectedBy: "cwd" } });
+  setInvocation({ program: "clawwright", mode: "installed", audience: "terminal", app: { name: "alpha", selectedBy: "cwd" } });
   const line = renderAdvice(command(["bootstrap", "--check"], { app: "delta" }));
-  check("a row naming another deployment than the cwd's spells the checkout root's program", line.split(" ").slice(0, 5), ["clawforge", "--app", "delta", "bootstrap", "--check"]);
+  check("a row naming another deployment than the cwd's spells the checkout root's program", line.split(" ").slice(0, 5), ["clawwright", "--app", "delta", "bootstrap", "--check"]);
   const note = line.slice(line.lastIndexOf("(") + 1, -1);
   check("...and says where it pastes", note.split(" "), ["from", "the", "checkout", "root"]);
   // The two paste-side assertions this block used to drive by hand (the row's argv runs
@@ -518,7 +518,7 @@ for (const { label, advice } of ADVICE_ROWS) {
 
 /** The prose half of that block, restored as a direct pin: the two spellings a decision
  *  can arrive from (gate command, run) carry the same typed --app into the frame
- *  (clawforge.ts completes the frame from the decision; C181 holds the resolver side),
+ *  (clawwright.ts completes the frame from the decision; C181 holds the resolver side),
  *  so the prose rendered under either frame is the same bytes and names the app once. */
 {
   const checkHelp = checkoutGateCommands.find((gate) => gate.name === "check")?.details ?? "";
@@ -547,7 +547,7 @@ function parsedValues(declared: Declared, argv: readonly string[]): Record<strin
  *  the law toolArguments exists for. A row without a step stays on the placeholder. */
 for (const { label, advice } of ADVICE_ROWS) {
   const cell = toolFormCell(advice);
-  if (advice.kind !== CLAWFORGE_KIND || advice.app !== undefined) {
+  if (advice.kind !== CLAWWRIGHT_KIND || advice.app !== undefined) {
     checkTrue(`${label}: no local tool, no step`, cell === PLACEHOLDER);
     continue;
   }
@@ -577,14 +577,14 @@ for (const { label, advice } of ADVICE_ROWS) {
 
 /** Entry refusals whose sentence names a place (rf6-fix29, re-rooted by rf6-fix30): for
  *  every layout × argv of the entry matrix that refuses with a sentence naming the checkout
- *  root, a clawforge row spells the checkout root's program FOR ITS COLUMN — the frame the
+ *  root, a clawwright row spells the checkout root's program FOR ITS COLUMN — the frame the
  *  sentence names — and pasted at the root every row resolves to the gate. A shell row is
  *  one spelling everywhere (the bash shim's own). The gate's inline notes answer to the
  *  same law. */
 const PLACE_MARKERS: readonly string[] = [FROM_CHECKOUT_ROOT, CHECKOUT_ROOT_NOTE, APP_CONFLICT_FROM_ROOT];
 const PLACE_COLUMNS = MATRIX_COLUMNS.filter((column): column is InvocationColumn => "invocation" in column);
 const checkPlaceRow = (label: string, advice: Advice): void => {
-  if (advice.kind !== CLAWFORGE_KIND) {
+  if (advice.kind !== CLAWWRIGHT_KIND) {
     const spellings = PLACE_COLUMNS.map((column) => renderAdvice(advice, column.invocation));
     checkTrue(`${label}: one spelling under every invocation — the sentence fixes the frame`, new Set(spellings).size === 1);
     // A manual row is prose (the takeover note); only a shell row is pinned to the shim.
@@ -619,14 +619,14 @@ for (const { label, error } of entryDecisionRefusals()) {
 for (const { label, advice } of gateInlineNoteAdvice()) checkPlaceRow(label, advice);
 
 /** The same refusals as the installed command builds them (bin.ts sets the invocation from
- *  defaultInvocation before any refusal): the root-spelled row renders `clawforge …`, and
+ *  defaultInvocation before any refusal): the root-spelled row renders `clawwright …`, and
  *  the bash shim row survives beside it because it differs — while the shim copy's own
  *  build already is the root spelling and drops it. */
 const shimNoteSuffix = `  (${IN_BASH_NOTE})`;
 for (const { label, error } of installedFrameRefusals()) {
   check(`${label}: the installed frame keeps the bash shim row`, error.advice.length, 2);
   const [row, shimRow] = error.advice;
-  check(`${label}: row 1 spells the installed command at the root`, renderAdvice(row!, { program: "clawforge", mode: "installed", audience: "terminal" }).split(" ")[0], "clawforge");
+  check(`${label}: row 1 spells the installed command at the root`, renderAdvice(row!, { program: "clawwright", mode: "installed", audience: "terminal" }).split(" ")[0], "clawwright");
   const shimRender = renderAdvice(shimRow!, SHIM_TARGET);
   checkTrue(`${label}: row 2 is the bash shim with its note`, shimRender.startsWith(SHIM_PROGRAM) && shimRender.endsWith(shimNoteSuffix));
 }

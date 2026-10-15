@@ -1,4 +1,4 @@
-// `clawforge cli …` — runs the OpenClaw CLI in a throwaway container that shares the gateway's
+// `clawwright cli …` — runs the OpenClaw CLI in a throwaway container that shares the gateway's
 // network namespace and data mounts.
 
 import { die, dieWithExitCode } from "#src/core/io/log.ts";

@@ -149,7 +149,7 @@ check("consent token is a symbol", typeof RECONCILE_LARGE_REMOVAL_CONSENT, "symb
 for (const impostor of ["confirm", "--confirm", "yes"] as unknown as symbol[]) {
   checkTrue(`string consent form refused: ${String(impostor)}`, bounds(3, 4, { largeRemovalConsent: impostor }).refused);
 }
-for (const symbol of [Symbol("confirm"), Symbol.for("confirm"), Symbol("clawforge.reconcile.large-removal-consent.v1")]) {
+for (const symbol of [Symbol("confirm"), Symbol.for("confirm"), Symbol("clawwright.reconcile.large-removal-consent.v1")]) {
   checkTrue(`impostor symbol refused: ${String(symbol)}`, bounds(3, 4, { largeRemovalConsent: symbol }).refused);
 }
 

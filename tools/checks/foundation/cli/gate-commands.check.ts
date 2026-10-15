@@ -223,9 +223,9 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const expected = await frameworkVersion();
   check("version exits 0", code, 0);
   check(
-    "version prints clawforge <version>, read through the same helper inspect/set build use",
+    "version prints clawwright <version>, read through the same helper inspect/set build use",
     written.join("").trim(),
-    `clawforge ${expected}`,
+    `clawwright ${expected}`,
   );
 }
 
@@ -237,7 +237,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("version --json exits 0", code, 0);
   const info = JSON.parse(written.join("")) as Record<string, unknown>;
   check("version --json emits name, version, source and path", Object.keys(info), ["name", "version", "source", "path"]);
-  check("naming this copy", [info.name, info.version, info.source], ["clawforge", expected, "checkout"]);
+  check("naming this copy", [info.name, info.version, info.source], ["clawwright", expected, "checkout"]);
 }
 
 {
@@ -260,7 +260,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const code = await withOutputSink((chunk) => written.push(chunk), async () =>
     runGateCommand([command], ["completion", "bash"]));
   check("completion bash exits 0", code, 0);
-  check("completion bash prints a bash function", written.join("").includes("_clawforge_complete()"), true);
+  check("completion bash prints a bash function", written.join("").includes("_clawwright_complete()"), true);
 }
 
 {
@@ -408,7 +408,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
 
 {
   // The names every surface reads are derived from the declarations (entry/checkout-gate.ts):
-  // there is no second hand list to keep in step with tools/clawforge.ts.
+  // there is no second hand list to keep in step with tools/clawwright.ts.
   check("CHECKOUT_GATE_COMMANDS is the declarations' names, sorted", CHECKOUT_GATE_COMMANDS, checkoutGateCommands.map((command) => command.name).sort());
   for (const command of checkoutGateCommands) {
     check(`${command.name} declares the arguments its run parses`, command.arguments !== undefined, true);

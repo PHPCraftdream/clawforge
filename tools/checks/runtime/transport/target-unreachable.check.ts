@@ -66,7 +66,7 @@ check("isWrapperFailureCode: 256 (impossible for a real guest exit) is one", isW
 // --- Part B: a real wsl.exe call against a distro that cannot exist -------------------------
 
 {
-  const distro = "clawforge-check-definitely-missing-distro";
+  const distro = "clawwright-check-definitely-missing-distro";
   const transport = new WslTransport(distro);
   let error: unknown;
   try {
@@ -95,8 +95,8 @@ function stubUnreachableContext(): Context {
   return {
     settings: {
       image: "ghcr.io/openclaw/openclaw@sha256:abc",
-      dataDir: "/srv/clawforge/data",
-      backupDir: "/srv/clawforge/backups",
+      dataDir: "/srv/clawwright/data",
+      backupDir: "/srv/clawwright/backups",
       serviceUrl: "http://127.0.0.1:18789",
     },
     transport: {
@@ -124,7 +124,7 @@ function stubUnreachableContext(): Context {
 const previousDeployment = selectedDeployment();
 // A path that does not exist on disk: declaredState() reads it with the same ENOENT
 // tolerance it gives a genuinely empty deployment, so nothing here needs a real fixture.
-useDeployment(resolve(monorepoRoot, "apps", "clawforge-check-target-unreachable"));
+useDeployment(resolve(monorepoRoot, "apps", "clawwright-check-target-unreachable"));
 
 try {
   {
@@ -241,8 +241,8 @@ try {
     // The context stage must survive the stub (a real unreachable target's does): a scratch
     // deployment with a .env satisfies buildSettings, the stub answers the path bridge's
     // reads, and only the journal read refuses.
-    const scratch = await mkdtemp(join(tmpdir(), "clawforge-unreachable-json-"));
-    await writeFile(join(scratch, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawforge/data\n", "utf8");
+    const scratch = await mkdtemp(join(tmpdir(), "clawwright-unreachable-json-"));
+    await writeFile(join(scratch, ".env"), "OC_TARGET_LOCATION=local\nOC_DATA_DIR=/srv/clawwright/data\n", "utf8");
     const contextTolerant = stubUnreachableContext();
     (contextTolerant.transport as { readFile: (path: string) => Promise<string> }).readFile = async () => "";
     useDeployment(scratch);

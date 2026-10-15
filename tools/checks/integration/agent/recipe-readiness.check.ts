@@ -46,7 +46,7 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
   const files = new Map<string, string>();
   const dirs = new Set<string>();
   const ctx = {
-    settings: { env, dataDir: "/srv/clawforge-recipe-readiness-check" },
+    settings: { env, dataDir: "/srv/clawwright-recipe-readiness-check" },
     transport: {
       description: "stub",
       async exec(command: string, args: string[]) {
@@ -137,7 +137,7 @@ function stubStack(calls: string[], states: () => Record<string, StackServiceSta
   };
 }
 
-const scratch = resolve(tmpdir(), `clawforge-recipe-readiness-check-${Date.now()}`);
+const scratch = resolve(tmpdir(), `clawwright-recipe-readiness-check-${Date.now()}`);
 
 async function writeRecipe(name: string, json: unknown): Promise<void> {
   const dir = resolve(scratch, name);
@@ -288,7 +288,7 @@ try {
     };
     const runtime = new DockerRuntime(
       transport as unknown as Transport,
-      { env: {}, dataDir: "/srv/clawforge-recipe-readiness-check" } as unknown as Settings,
+      { env: {}, dataDir: "/srv/clawwright-recipe-readiness-check" } as unknown as Settings,
       { toTarget: async (path: string) => path } as unknown as PathBridge,
       { service: "app" },
     );

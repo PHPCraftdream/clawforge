@@ -99,7 +99,7 @@ const SELF_CASES: SelfCase[] = [
   },
   {
     name: "bare relative string-literal target",
-    source: `await writeFile("tools/clawforge.ts", "x");`,
+    source: `await writeFile("tools/clawwright.ts", "x");`,
     createApp: false,
     writes: ["writeFile[ANCHORED]"],
   },
@@ -147,7 +147,7 @@ const SELF_CASES: SelfCase[] = [
   },
   {
     name: "clean apps-dir env redirect + createApp",
-    source: `const sc = await mkdtemp(join(tmpdir(), "sc-"));\nprocess.env["CLAWFORGE_CHECKS_APPS_DIR"] = join(sc, "apps");\nawait createApp("x");`,
+    source: `const sc = await mkdtemp(join(tmpdir(), "sc-"));\nprocess.env["CLAWWRIGHT_CHECKS_APPS_DIR"] = join(sc, "apps");\nawait createApp("x");`,
     createApp: false,
     writes: [],
   },
@@ -453,7 +453,7 @@ const fallbackProbe = `import * as fs from 'node:fs'; const get=fs.writeFile.bin
 check("R3 fallback fail-before", analyze(closeCalleeSyntax(fallbackProbe, false)).writes, []);
 check("R3 fallback pass-after", analyze(fallbackProbe).writes.map(h => [h.classification, h.approximation]), [["UNKNOWN", true]]);
 check("R3 body reader", inspectBody("console.log('read');"), "readonly");
-check("R3 source root evaluator", sourcePath("join(monorepoRoot,'tools','clawforge.ts')", { root: repoRoot, file: resolve(repoRoot,"probe.ts") }), resolve(repoRoot,"tools","clawforge.ts"));
+check("R3 source root evaluator", sourcePath("join(monorepoRoot,'tools','clawwright.ts')", { root: repoRoot, file: resolve(repoRoot,"probe.ts") }), resolve(repoRoot,"tools","clawwright.ts"));
 
 // Follow-up witnesses: exact reference-site and tainted-callee classifications.
 for (const [name, expression] of [

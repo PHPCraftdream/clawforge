@@ -7,7 +7,7 @@ import { loadRecipe, parseRecipeDefinition, useRecipesDir, clearRecipesDir } fro
 import { readName } from "#framework/core/values/names.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-actions-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-recipe-actions-"));
 const name = readName("recipe", "alpha");
 const manifest = join(root, "alpha", "recipe.json");
 useRecipesDir(root);

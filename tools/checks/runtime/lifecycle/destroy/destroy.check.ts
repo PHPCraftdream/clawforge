@@ -1,4 +1,4 @@
-// `./clawforge destroy` — dry run by default; a real run needs --yes AND --confirm-name,
+// `./clawwright destroy` — dry run by default; a real run needs --yes AND --confirm-name,
 // refuses an unsafe target shape or a symlinked target, and removes containers/network/
 // volumes plus whichever of --data/--backups/--snapshots was asked for, in that order,
 // under the REAL instance lock (guardedWith()/takeLock()) — the same shared fixture
@@ -318,7 +318,7 @@ for (const [name, setup, expected] of [
 }
 
 await requires("linux-host", "the target-side safe-destroy script against a real POSIX tree", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "clawforge-destroy-check-"));
+  const temporary = mkdtempSync(join(tmpdir(), "clawwright-destroy-check-"));
   const root = realpathSync(temporary);
   try {
     const safe = join(root, "safe");
@@ -374,7 +374,7 @@ await requires("linux-host", "the target-side safe-destroy script against a real
     check("verified sibling was removed", existsSync(target), false);
   } finally {
     const resolved = resolve(root);
-    if (resolved.startsWith(`${resolve(tmpdir())}${sep}`) && resolved.includes("clawforge-destroy-check-")) {
+    if (resolved.startsWith(`${resolve(tmpdir())}${sep}`) && resolved.includes("clawwright-destroy-check-")) {
       rmSync(resolved, { recursive: true, force: true });
     }
   }

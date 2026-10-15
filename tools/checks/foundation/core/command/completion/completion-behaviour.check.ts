@@ -123,7 +123,7 @@ const norm = (values: readonly string[]): string[] => [...new Set(values)].sort(
   }
 
   // --app's values come from whichever of the system-wide command or the checkout shim was typed,
-  // asked for lazily from inside the completer — never a hard-wired ./clawforge, never polling
+  // asked for lazily from inside the completer — never a hard-wired ./clawwright, never polling
   // targets, and hidden directories (.r28) are not deployments, so they are filtered out.
   // The exact interpreter lines (the lazy `list --json` call, the hidden-directory filters)
   // are held byte for byte by expected/completion-scripts.txt — same renderer, same output.
@@ -155,7 +155,7 @@ const norm = (values: readonly string[]): string[] => [...new Set(values)].sort(
   // it nowhere, and bash/zsh emit the interpreter's --app snippets only where the gate declares
   // one — so an installed script names it neither as a candidate nor in the lazy `list --json`
   // call that would fill it. pwsh keeps ONE fixed interpreter body (section 4): its --app branch
-  // and that call live in it, guarded at run time by $clawforgeApp, so what the declarations
+  // and that call live in it, guarded at run time by $clawwrightApp, so what the declarations
   // reach it through — the flag line and the five data tables — is what must be free of --app.
   check("the installed top level carries no --app", installed.top.includes("--app"), false);
   for (const shell of ["bash", "zsh"] as const) {
@@ -165,14 +165,14 @@ const norm = (values: readonly string[]): string[] => [...new Set(values)].sort(
     // expected/completion-scripts.txt's installed sections, byte for byte.
     check(`${shell}: the installed script mentions no --app`, /--app\b/.test(text), false);
   }
-  const flagLineMarker = "$clawforgeApp = ";
+  const flagLineMarker = "$clawwrightApp = ";
   const pwshInstalled = renderCompletion("pwsh", installed);
   const appFlagLine = pwshInstalled.split("\n").find((line) => line.includes(flagLineMarker));
-  check("pwsh: the installed script's --app flag line is false", appFlagLine, "$clawforgeApp = $false");
+  check("pwsh: the installed script's --app flag line is false", appFlagLine, "$clawwrightApp = $false");
   check("pwsh: the installed script's data block names no --app",
-    /"--app"/.test(pwshInstalled.slice(0, pwshInstalled.indexOf("$clawforgeCompleter"))), false);
+    /"--app"/.test(pwshInstalled.slice(0, pwshInstalled.indexOf("$clawwrightCompleter"))), false);
   const pwshCheckoutAppLine = renderCompletion("pwsh", data).split("\n").find((line) => line.includes(flagLineMarker));
-  check("pwsh: --app's flag line is true where the gate has one", pwshCheckoutAppLine, "$clawforgeApp = $true");
+  check("pwsh: --app's flag line is true where the gate has one", pwshCheckoutAppLine, "$clawwrightApp = $true");
 }
 
 // --- 2. the reference model, scenario by scenario (R32-02 / R31-07 / R33-10) ------------------
@@ -371,10 +371,10 @@ function bashDriver(scriptPath: string): string {
     `source ${quote(scriptPath.replaceAll("\\", "/"))}`,
     "reply() {",
     '  local index="$1" cword="$2"; shift 2',
-    '  COMP_WORDS=("clawforge" "$@")',
+    '  COMP_WORDS=("clawwright" "$@")',
     "  COMP_CWORD=$((cword + 1))",
     "  COMPREPLY=()",
-    "  _clawforge_complete",
+    "  _clawwright_complete",
     '  printf \'%s\\t%s\\n\' "$index" "${COMPREPLY[*]}"',
     "}",
     runs,
@@ -393,7 +393,7 @@ function pwshDriver(scriptPath: string): string {
   // hold the completer to the parser's ordinal comparison. An empty word before the cursor is
   // typed as '' — the only way to write one.
   const runs = scenarios
-    .map((scenario, index) => `Reply ${index} 'clawforge ${scenario.words.map((word, at) => (word === "" && at < scenario.cword ? "''''" : word)).join(" ")}'`)
+    .map((scenario, index) => `Reply ${index} 'clawwright ${scenario.words.map((word, at) => (word === "" && at < scenario.cword ? "''''" : word)).join(" ")}'`)
     .join("\n");
   return [
     `. ${quote(scriptPath.replaceAll("\\", "/"))}`,
@@ -406,8 +406,8 @@ function pwshDriver(scriptPath: string): string {
     `  Write-Output ("$n" + [char]9 + (($names | Sort-Object -Unique) -join ','))`,
     "}",
     runs,
-    // The checkout shim: the completer registers both spellings, and ./clawforge must complete.
-    "Reply shim './clawforge sta'",
+    // The checkout shim: the completer registers both spellings, and ./clawwright must complete.
+    "Reply shim './clawwright sta'",
     "",
   ].join("\n");
 }
@@ -420,7 +420,7 @@ function pwshDriver(scriptPath: string): string {
 // of each line is pinned LITERALLY below — not by calling installLine, which would make the
 // expectation a tautology a spelling regression passes.
 
-const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawforge", mode: "local-package", audience: "terminal" };
+const WRAPPER_FRAME: Invocation = { program: "node_modules\\.bin\\clawwright", mode: "local-package", audience: "terminal" };
 
 // the note marker an Install line must not carry inside its executable part ("  (");
 // built from code points so the measurement reads it as data, not held prose
@@ -502,21 +502,21 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
     const rendered = renderCompletion("bash", data);
     const install = rendered.split("\n")[1]!.slice("# Install: ".length);
     const installProgram = install.slice('eval "$('.length, -2).split(" ")[0];
-    check("bash: the Install: line's program is the forward-slash wrapper", installProgram, "node_modules/.bin/clawforge");
-    const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
+    check("bash: the Install: line's program is the forward-slash wrapper", installProgram, "node_modules/.bin/clawwright");
+    const dir = await mkdtemp(join(tmpdir(), "clawwright-install-"));
     try {
       await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
       const scriptPath = join(dir, "completion.sh");
       await writeFile(scriptPath, rendered, "utf8");
-      const wrapper = join(dir, "node_modules", ".bin", "clawforge");
+      const wrapper = join(dir, "node_modules", ".bin", "clawwright");
       await writeFile(wrapper, `#!/bin/sh\ncat '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
       await chmod(wrapper, 0o755);
       const driverPath = join(dir, "driver.sh");
       await writeFile(driverPath, [
         `install=${quote(install)}`,
         'eval "$install"',
-        "complete -p clawforge",
-        "complete -p ./clawforge",
+        "complete -p clawwright",
+        "complete -p ./clawwright",
         "",
       ].join("\n"), "utf8");
       const proc = spawnSync(bash, [driverPath], { timeout: 120_000, encoding: "utf8", cwd: dir, env: bashEnvironment(bash) });
@@ -527,7 +527,7 @@ await requires("bash", "the bash Install: line, pasted in a real bash", async ()
       }
       check("bash: the pasted Install: line exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
       const registered = (proc.stdout ?? "").split("\n").map((row) => row.trim()).filter((row) => row !== "").map((row) => row.split(" ").slice(-2)).sort();
-      check("bash: the paste registered both completer names", registered, [["_clawforge_complete", "./clawforge"], ["_clawforge_complete", "clawforge"]]);
+      check("bash: the paste registered both completer names", registered, [["_clawwright_complete", "./clawwright"], ["_clawwright_complete", "clawwright"]]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -548,8 +548,8 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
     const rendered = renderCompletion("pwsh", data);
     const install = rendered.split("\n")[1]!.slice("# Install: ".length);
     const pwshInstallProgram = install.split(" ")[0];
-    check("pwsh: the Install: line's program is npm's Windows wrapper", pwshInstallProgram, "node_modules\\.bin\\clawforge");
-    const dir = await mkdtemp(join(tmpdir(), "clawforge-install-"));
+    check("pwsh: the Install: line's program is npm's Windows wrapper", pwshInstallProgram, "node_modules\\.bin\\clawwright");
+    const dir = await mkdtemp(join(tmpdir(), "clawwright-install-"));
     try {
       await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
       // The stub serves a SHORT script: Out-String truncates redirected output at the host's
@@ -557,15 +557,15 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
       // a pre-existing trait of the pipeline, not of the spelling this pins. Under test is the
       // spelled path resolving to the wrapper and the pipeline registering the completer.
       const scriptPath = join(dir, "completion.ps1");
-      await writeFile(scriptPath, `$clawforgeTop = @('completion', 'help')\n`, "utf8");
-      await writeFile(join(dir, "node_modules", ".bin", "clawforge.ps1"), `Get-Content '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
-      const wrapper = join(dir, "node_modules", ".bin", "clawforge");
+      await writeFile(scriptPath, `$clawwrightTop = @('completion', 'help')\n`, "utf8");
+      await writeFile(join(dir, "node_modules", ".bin", "clawwright.ps1"), `Get-Content '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
+      const wrapper = join(dir, "node_modules", ".bin", "clawwright");
       await writeFile(wrapper, `#!/bin/sh\ncat '${scriptPath.replaceAll("\\", "/")}'\n`, "utf8");
       await chmod(wrapper, 0o755);
       const driverPath = join(dir, "driver.ps1");
       await writeFile(driverPath, [
         install,
-        "if ($clawforgeTop.Count -gt 0) { 'registered' }",
+        "if ($clawwrightTop.Count -gt 0) { 'registered' }",
         "",
       ].join("\n"), "utf8");
       const proc = spawnSync(pwsh, ["-NoProfile", "-NonInteractive", "-File", driverPath], { timeout: 420_000, encoding: "utf8", cwd: dir });
@@ -585,13 +585,13 @@ await requires("pwsh", "the pwsh Install: line, pasted in a real PowerShell", as
 await requires("bash", "the generated bash script, sourced by a real bash", async () => {
   const bash = await bashCommand();
   if (bash === undefined) throw new Error("required Bash selection disappeared");
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-completion-"));
   try {
     const scriptPath = join(dir, "completion.sh");
     await writeFile(scriptPath, renderCompletion("bash", data), "utf8");
-    // A stub `clawforge` on PATH answers --app's lazy `list --json` deterministically — the
+    // A stub `clawwright` on PATH answers --app's lazy `list --json` deterministically — the
     // hidden name included, which the script must filter out.
-    const stub = join(dir, "clawforge");
+    const stub = join(dir, "clawwright");
     await writeFile(stub, `#!/bin/sh\necho '${STUB_JSON}'\n`, "utf8");
     await chmod(stub, 0o755);
     const driverPath = join(dir, "driver.sh");
@@ -606,8 +606,8 @@ await requires("bash", "the generated bash script, sourced by a real bash", asyn
     assertShellAnswers("bash", answers, bashDivergent);
     check("bash: the generated script parses (bash -n)", spawnSync(bash, ["-n", scriptPath], { timeout: 15_000, env: bashEnvironment(bash) }).status, 0);
     // zsh loads this SAME completer body through bashcompinit, so the two scripts cannot drift:
-    // everything from `_clawforge_lookup()` to the end is one text, byte for byte.
-    const body = (text: string): string => text.slice(text.indexOf("_clawforge_lookup()"));
+    // everything from `_clawwright_lookup()` to the end is one text, byte for byte.
+    const body = (text: string): string => text.slice(text.indexOf("_clawwright_lookup()"));
     check("zsh's completer body equals bash's byte for byte",
       body(renderCompletion("zsh", data)), body(renderCompletion("bash", data)));
   } finally {
@@ -620,14 +620,14 @@ await requires("pwsh", "the generated pwsh script, driven by a real PowerShell",
   // (5.1) on a Windows host without it.
   const pwsh = await pwshCommand();
   if (pwsh === undefined) return;
-  const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
+  const dir = await mkdtemp(join(tmpdir(), "clawwright-completion-"));
   try {
     const scriptPath = join(dir, "completion.ps1");
     await writeFile(scriptPath, renderCompletion("pwsh", data), "utf8");
     // A PowerShell resolves a bare command name to the .ps1 whose directory LEADS PATH, and
     // `& $tokens[0] …` cannot reach a .cmd stub on Windows — so the stub is a .ps1 and the
     // directory is first in the child's PATH. Its JSON sits on one line, as the model expects.
-    await writeFile(join(dir, "clawforge.ps1"), `Write-Output '${STUB_JSON}'\n`, "utf8");
+    await writeFile(join(dir, "clawwright.ps1"), `Write-Output '${STUB_JSON}'\n`, "utf8");
     const driverPath = join(dir, "driver.ps1");
     await writeFile(driverPath, pwshDriver(scriptPath), "utf8");
     const proc = spawnSync(pwsh, ["-NoProfile", "-NonInteractive", "-File", driverPath], {
@@ -637,7 +637,7 @@ await requires("pwsh", "the generated pwsh script, driven by a real PowerShell",
     check("pwsh: the driver exited 0", [proc.status, (proc.stderr ?? "").trim()], [0, ""]);
     const answers = replies(proc.stdout, ",");
     assertShellAnswers("pwsh", answers, pwshDivergent);
-    check("pwsh: the checkout shim ./clawforge completes too",
+    check("pwsh: the checkout shim ./clawwright completes too",
       norm(answers.get("shim") ?? []).includes("status"), true);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -652,19 +652,19 @@ check("bash and pwsh record the same divergent scenarios",
 // --- 4. interpreter invariance: two different tables, one grammar ---------------------------
 //
 // "Differs only in the data block" means precisely this: the `case` arms bash emits inside
-// `_clawforge_lookup` (the "top", "first <command>", "after <command> <word>" and
-// "values <command+scope+option>" rows), and what pwsh emits as `$clawforgeApp` plus the four
+// `_clawwright_lookup` (the "top", "first <command>", "after <command> <word>" and
+// "values <command+scope+option>" rows), and what pwsh emits as `$clawwrightApp` plus the four
 // tables, are the ONLY things two renders of two different command sets disagree about. Every
 // other byte — the interpreter, the headers, the registrations — is a constant of the renderer,
 // which is also what lets zsh reuse the bash body verbatim.
 
 /** From the catch-all arm to the end of the script: the fixed interpreter and the registrations. */
-const PWSH_FIXED_FROM = "$clawforgeCompleter = {";
+const PWSH_FIXED_FROM = "$clawwrightCompleter = {";
 const tail = (text: string, from: string): string => text.slice(text.indexOf(from));
 const slice = (text: string, from: string, to: string): string => text.slice(text.indexOf(from), text.indexOf(to));
 
-// bash's render is the header, `_clawforge_lookup`'s frame, the data `case` arms, the catch-all,
-// `_clawforge_complete` — with the gate's own `--app` snippets inside it where it has a selector
+// bash's render is the header, `_clawwright_lookup`'s frame, the data `case` arms, the catch-all,
+// `_clawwright_complete` — with the gate's own `--app` snippets inside it where it has a selector
 // — and the two registrations. Two tables of two different gates differ in the arms and in those
 // snippets and NOWHERE else, which is what the three slices below pin down.
 const ARMS_FROM = '    "top")';

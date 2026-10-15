@@ -1,4 +1,4 @@
-// `clawforge cli-start` / `cli-stop` — explicit control over the persistent CLI helper
+// `clawwright cli-start` / `cli-stop` — explicit control over the persistent CLI helper
 // container that `cli` and `mcp-serve` exec into when it is running, instead of paying a
 // fresh container's create/destroy cost on every call.
 

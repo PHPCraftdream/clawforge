@@ -57,39 +57,39 @@ async function deathOf(run: () => unknown): Promise<string> {
 check(
   "withoutMarkedLine drops only the named job's marked line for the named deployment",
   withoutMarkedLine(
-    `0 3 * * * /usr/bin/other.sh\n${cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp")}\n${cronLine(1440, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp")}\n`,
+    `0 3 * * * /usr/bin/other.sh\n${cronLine(5, { cwd: "/x", command: "./clawwright", args: ["watch", "check"] }, "watch", "myapp")}\n${cronLine(1440, { cwd: "/x", command: "./clawwright", args: ["backup"] }, "backup", "myapp")}\n`,
     "backup",
     "myapp",
   ),
-  ["0 3 * * * /usr/bin/other.sh", cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp")],
+  ["0 3 * * * /usr/bin/other.sh", cronLine(5, { cwd: "/x", command: "./clawwright", args: ["watch", "check"] }, "watch", "myapp")],
 );
 
-const owned = cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp");
+const owned = cronLine(5, { cwd: "/x", command: "./clawwright", args: ["watch", "check"] }, "watch", "myapp");
 const foreign = [
   `# note: ${jobMarker("watch", "myapp")}`,
   `*/5 * * * * echo '${jobMarker("watch", "myapp")}'`,
   `${owned} extra`,
   owned.replace("'watch' 'check'", "'backup'"),
-  owned.replace("# clawforge-watch:myapp", "# clawforge-watch:myapp-extra"),
+  owned.replace("# clawwright-watch:myapp", "# clawwright-watch:myapp-extra"),
   "",
   "  ",
 ];
 check("only an exact generated entry is removed; foreign rows and blank lines survive", withoutMarkedLine(`${foreign.join("\n")}\n${owned}\n`, "watch", "myapp"), foreign);
-const quoted = cronLine(5, { cwd: "/owner's app", command: "./clawforge", args: ["--app", "myapp", "watch", "check"] }, "watch", "myapp");
+const quoted = cronLine(5, { cwd: "/owner's app", command: "./clawwright", args: ["--app", "myapp", "watch", "check"] }, "watch", "myapp");
 check("an owned line with a quoted path and explicit deployment is removed", withoutMarkedLine(`${quoted}\n`, "watch", "myapp"), []);
 
 for (const path of ["/srv/project%blue", "/srv/project\\%blue", "/srv/project\\\\%blue"]) {
-  check("percent paths are refused even with a preceding backslash", (await deathOf(() => cronLine(5, { cwd: path, command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp"))).includes(PERCENT_REFUSAL), true);
+  check("percent paths are refused even with a preceding backslash", (await deathOf(() => cronLine(5, { cwd: path, command: "./clawwright", args: ["watch", "check"] }, "watch", "myapp"))).includes(PERCENT_REFUSAL), true);
   const legacy = owned.replace("'/x'", shellQuote(path));
   check("unsupported legacy percent rows are preserved", withoutMarkedLine(`${legacy}\n`, "watch", "myapp"), [legacy]);
 }
 for (const invocation of [
-  { cwd: "/x", command: "./clawforge%", args: ["watch", "check"] },
-  { cwd: "/x", command: "./clawforge", args: ["watch", "%"] },
+  { cwd: "/x", command: "./clawwright%", args: ["watch", "check"] },
+  { cwd: "/x", command: "./clawwright", args: ["watch", "%"] },
 ]) {
   check("percent in commands or arguments is refused", (await deathOf(() => cronLine(5, invocation, "watch", "myapp"))).includes(PERCENT_REFUSAL), true);
 }
-check("percent in markers is refused", (await deathOf(() => cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "my%app"))).includes(PERCENT_REFUSAL), true);
+check("percent in markers is refused", (await deathOf(() => cronLine(5, { cwd: "/x", command: "./clawwright", args: ["backup"] }, "backup", "my%app"))).includes(PERCENT_REFUSAL), true);
 
 // --- cronSchedule(): only true divisors of 60 (minutes) or 24 (hours) fire evenly — shared
 // by both jobs, and by schtasksSchedule()'s own range check ---------------------------------
@@ -110,7 +110,7 @@ for (const invalid of [7, 25, 45, 59, 90, 300, 420]) {
   check(`cronSchedule(${invalid}) refuses (no even-firing encoding)`, await deathOf(() => cronSchedule(invalid)) !== "", true);
 }
 
-check("cronLine carries the job's own marker, not another job's", cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp").endsWith(jobMarker("backup", "myapp")), true);
+check("cronLine carries the job's own marker, not another job's", cronLine(5, { cwd: "/x", command: "./clawwright", args: ["backup"] }, "backup", "myapp").endsWith(jobMarker("backup", "myapp")), true);
 
 // --- parseIntervalToMinutes(): backup's own duration-string convention, funneled through
 // cronSchedule so it can never accept an interval the cron line itself would then refuse ----
@@ -190,24 +190,24 @@ for (const minutes of [7, 25, 45, 59, 90, 300, 420]) {
 }
 
 {
-  const create = schtasksCreateCommand("clawforge-myapp-backup", 1440, { command: "node.exe", args: ["C:\\tools\\clawforge.ts", "--app", "myapp", "backup"] });
+  const create = schtasksCreateCommand("clawwright-myapp-backup", 1440, { command: "node.exe", args: ["C:\\tools\\clawwright.ts", "--app", "myapp", "backup"] });
   check("schtasksCreateCommand builds /create with the task name, schedule and a quoted /tr", create, {
     command: "schtasks",
-    args: ["/create", "/tn", "clawforge-myapp-backup", "/sc", "DAILY", "/tr", displayCommandLine("node.exe", ["C:\\tools\\clawforge.ts", "--app", "myapp", "backup"]), "/f"],
+    args: ["/create", "/tn", "clawwright-myapp-backup", "/sc", "DAILY", "/tr", displayCommandLine("node.exe", ["C:\\tools\\clawwright.ts", "--app", "myapp", "backup"]), "/f"],
   });
   check("...and /f, so a re-run replaces the same task instead of refusing", create.args.includes("/f"), true);
 }
-check("schtasksDeleteCommand names the task and forces it", schtasksDeleteCommand("clawforge-myapp-backup"), { command: "schtasks", args: ["/delete", "/tn", "clawforge-myapp-backup", "/f"] });
+check("schtasksDeleteCommand names the task and forces it", schtasksDeleteCommand("clawwright-myapp-backup"), { command: "schtasks", args: ["/delete", "/tn", "clawwright-myapp-backup", "/f"] });
 
 {
-  const path = "/mnt/c/team's app/clawforge";
+  const path = "/mnt/c/team's app/clawwright";
   const args = ["backup", "a b", "it's", "$(touch injected)", "a; false"];
   const invocation = new WslTransport("test-distro").clientInvocation(path, args);
   check("WSL scheduled invocation keeps shell syntax in one quoted argument", invocation, {
     command: "wsl.exe",
     args: [
       "-d", "test-distro", "--exec", "bash", "-lc",
-      `set -e; cd -- ${shellQuote("/mnt/c/team's app")}; exec ${[shellQuote("./clawforge"), ...args.map(shellQuote)].join(" ")}`,
+      `set -e; cd -- ${shellQuote("/mnt/c/team's app")}; exec ${[shellQuote("./clawwright"), ...args.map(shellQuote)].join(" ")}`,
     ],
   });
   check("...with no cmd.exe operator outside its quotes", invocation.args.at(-1)?.includes("&"), false);
@@ -256,7 +256,7 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
       async exec() { calls += 1; return answer; },
     },
   } as unknown as Context;
-  const wrongJob = cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp");
+  const wrongJob = cronLine(5, { cwd: "/x", command: "./clawwright", args: ["backup"] }, "backup", "myapp");
   check("an install cannot insert another job's entry", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", wrongJob))).includes(CRONTAB_ENTRY_OWNED), true);
   check("multiline input is refused before target execution", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", `${owned}\nforeign`))).includes(CRONTAB_ENTRY_ONE_LINE), true);
   check("invalid entries never reach the target", calls, 0);
@@ -288,14 +288,14 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
 
 // --- posixTargetInvocation(): ssh vs. a monorepo checkout vs. an installed shim -------------
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-schedule-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-schedule-check-"));
 useDeployment(root);
 const name = deploymentName();
 
 try {
   const sshCtx = { transport: { description: "ssh:user@host" }, settings: { remotePath: "/opt/openclaw" } } as unknown as Context;
   const sshInvocation = await posixTargetInvocation(sshCtx, ["backup"]);
-  check("ssh runs from the mirrored remote path, with --app", sshInvocation, { cwd: "/opt/openclaw", command: "./clawforge", args: ["--app", name, "backup"] });
+  check("ssh runs from the mirrored remote path, with --app", sshInvocation, { cwd: "/opt/openclaw", command: "./clawwright", args: ["--app", name, "backup"] });
 
   const localCtx = { transport: { description: "local" }, settings: {} } as unknown as Context;
   const localInvocation = await posixTargetInvocation(localCtx, ["backup"]);
@@ -348,7 +348,7 @@ try {
 
   // The printed schtasks line, parsed the way cmd.exe + CommandLineToArgvW would, is exactly
   // what --apply passes as argv — on any host (the platform is forced).
-  for (const [entryPath, pasteable] of [["/mnt/d/team's app/clawforge", true], ["/mnt/d/50%/clawforge", false], ["/mnt/d/a&b/clawforge", false]] as const) {
+  for (const [entryPath, pasteable] of [["/mnt/d/team's app/clawwright", true], ["/mnt/d/50%/clawwright", false], ["/mnt/d/a&b/clawwright", false]] as const) {
     const realWsl = new WslTransport("Ubuntu-24.04");
     const realCtx = {
       transport: { description: "wsl:Ubuntu-24.04", clientInvocation: realWsl.clientInvocation.bind(realWsl) },
@@ -388,7 +388,7 @@ try {
       const message = await deathOf(() => withOutputSink((chunk) => out.push(chunk), () =>
         withScheduleRunner(
           async (_command, args) => { applied.push([...args]); return { code: 0, stdout: "", stderr: "" }; },
-          () => printSchedulingInstructions(longCtx(`/mnt/d/${"x".repeat(200)}/clawforge`), "backup", name, 1440, ["backup"], apply),
+          () => printSchedulingInstructions(longCtx(`/mnt/d/${"x".repeat(200)}/clawwright`), "backup", name, 1440, ["backup"], apply),
           "win32",
         )));
       check(`a /tr over 261 characters is refused (apply=${apply}), naming the limit and the fix`, [message.includes("261"), message.includes("shorten")], [true, true]);
@@ -399,7 +399,7 @@ try {
     await withOutputSink(() => {}, () =>
       withScheduleRunner(
         async (_command, args) => { okApplied.push([...args]); return { code: 0, stdout: "", stderr: "" }; },
-        () => printSchedulingInstructions(longCtx(`/mnt/d/${fits}/clawforge`), "backup", name, 1440, ["backup"], true),
+        () => printSchedulingInstructions(longCtx(`/mnt/d/${fits}/clawwright`), "backup", name, 1440, ["backup"], true),
         "win32",
       ));
     check("a /tr within the limit still applies", okApplied.length, 1);
@@ -410,7 +410,7 @@ try {
   const otherCwd = join(root, "other directory");
   await mkdir(installedRoot);
   await mkdir(otherCwd);
-  await writeFile(join(installedRoot, "clawforge"), "");
+  await writeFile(join(installedRoot, "clawwright"), "");
   await writeFile(join(installedRoot, "app.ts"), 'export default { name: "fixture", summary: "Fixture", commands: {} };\n');
   useDeployment(installedRoot);
   const entry = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts");

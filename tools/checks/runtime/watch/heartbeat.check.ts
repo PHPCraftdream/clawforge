@@ -1,4 +1,4 @@
-// `./clawforge watch check`'s heartbeat (dead-man's switch) primitives in webhook.ts —
+// `./clawwright watch check`'s heartbeat (dead-man's switch) primitives in webhook.ts —
 // runWatchCycle's own use of them (pinged only on an ok cycle, a failure never changing
 // level/exit) is check.check.ts's job; this file proves the pieces underneath it:
 //

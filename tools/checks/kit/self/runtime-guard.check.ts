@@ -7,7 +7,7 @@ import { runProcess } from "../spawn.ts";
 import { pwshCommand } from "../capabilities/capabilities.ts";
 import { parseCaseSkips } from "../capabilities/gate.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-runtime-guard-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-runtime-guard-"));
 const entry = (file: string, exclusive = false): LabeledCheck => ({ file, label: "fixture", exclusive, requires: [] });
 const spawnFile = async (file: string, label: string) => {
   const result = await runProcess(process.execPath, [file], { cwd: root, timeoutMs: 60_000 });

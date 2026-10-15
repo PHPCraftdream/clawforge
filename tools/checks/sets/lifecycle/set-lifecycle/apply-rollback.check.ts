@@ -332,7 +332,7 @@ try {
             raced = true;
             // Simulates apply --set installing "C" completing in the window just before
             // this rollback's own lock claim actually lands.
-            files.set(`${sourceData}/clawforge-installed-set.json`, `${JSON.stringify(raceRecord, null, 2)}\n`);
+            files.set(`${sourceData}/clawwright-installed-set.json`, `${JSON.stringify(raceRecord, null, 2)}\n`);
           }
           return ctx.transport.exec(command, args, options);
         },
@@ -370,7 +370,7 @@ try {
     assert.equal(installedB?.previous?.id, built.id, "the fixture for this test needs a valid previous (A) on record");
     assert.ok(installedB?.operationId !== undefined, "the fixture for this test needs a recorded operationId");
 
-    const snapshotPath = `${sourceData}/clawforge-operations/${installedB!.operationId}.openclaw.json`;
+    const snapshotPath = `${sourceData}/clawwright-operations/${installedB!.operationId}.openclaw.json`;
     assert.ok(files.has(snapshotPath), "the fixture for this test needs the operation's own snapshot to exist first");
     const configBeforeMissingSnapshot = files.get(`${sourceData}/config/openclaw.json`);
     files.delete(snapshotPath);

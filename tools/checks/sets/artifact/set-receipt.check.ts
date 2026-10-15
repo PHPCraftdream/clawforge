@@ -13,7 +13,7 @@ async function rejects(name: string, operation: () => Promise<unknown>): Promise
   catch { check(name, "rejected", "rejected"); }
 }
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-set-receipt-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-set-receipt-check-"));
 const setId = "a".repeat(64);
 const base: Omit<WriteReceiptInput, "checks" | "receiptId" | "selection" | "source"> = {
   setId,

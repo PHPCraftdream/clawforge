@@ -1,4 +1,4 @@
-// Implementations of the individual `clawforge recipe <action>` actions. index.ts's
+// Implementations of the individual `clawwright recipe <action>` actions. index.ts's
 // recipe() picks the action, gates it through the instance lock, then calls runRecipeAction
 // here to dispatch to one of these.
 
@@ -140,7 +140,7 @@ function newRecipePrepareStub(): string {
 // Uncomment to write private target files — see recipe.json's privatePaths and
 // ${docsUrl("guide/recipes.md")} ("Private files: privatePaths and privateFiles").
 //
-// import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@clawforge/framework/private-config";
+// import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "clawwright/private-config";
 //
 // export async function prepare(ctx, recipe) {
 //   const dir = \`\${ctx.settings.dataDir}/\${recipe.name}-credentials\`;

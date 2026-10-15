@@ -13,7 +13,7 @@ import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "#src/commands/interface/cli-helper.ts";
-import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
+import { CLAWWRIGHT_CONTROL_MCP_NAME, CLAWWRIGHT_MCP_NAME, MCP_LAUNCHER_FILENAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import type { ArgumentSpec } from "#src/core/command/index.ts";
@@ -117,7 +117,7 @@ export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
 }
 
 async function runMcpSetup(client: McpClient, json: boolean, rewriteLauncher: boolean): Promise<void> {
-  const installed = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
+  const installed = await access(resolve(deploymentDir(), "clawwright")).then(() => true, () => false);
   const changedFiles = await setupProjectMcp(deploymentDir(), installed ? "installed" : "monorepo", client, { rewriteLauncher });
   if (json || isCaptured()) { emit(`${JSON.stringify({ client, changed: changedFiles.length > 0, files: changedFiles }, null, 2)}\n`); return; }
   log(`project MCP configured for ${client === "both" ? "Claude Code and Codex" : client}`);
@@ -163,10 +163,10 @@ async function runMcpCreds(ctx: Context, jsonOnly: boolean, tokenOnly: boolean):
   log("Project MCP client config (.mcp.json and .codex/config.toml)");
   for (const line of (await mcpConfig(ctx)).trimEnd().split("\n")) info(line);
 
-  log(`${CLAWFORGE_MCP_NAME} — bridge to OpenClaw's own channels`);
+  log(`${CLAWWRIGHT_MCP_NAME} — bridge to OpenClaw's own channels`);
   info("conversations_list, conversation_get, messages_read, messages_send, events_poll,");
   info("events_wait, attachments_fetch, permissions_list_open, permissions_respond");
 
-  log(`${CLAWFORGE_CONTROL_MCP_NAME} — this deployment's own commands (bootstrap, status, backup, secrets, …)`);
+  log(`${CLAWWRIGHT_CONTROL_MCP_NAME} — this deployment's own commands (bootstrap, status, backup, secrets, …)`);
   info(`full list: ${commandLine("help")} — destructive commands (push, restore, deploy) need confirm: true`);
 }

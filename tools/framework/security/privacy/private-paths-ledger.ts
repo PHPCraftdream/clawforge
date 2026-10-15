@@ -11,7 +11,7 @@
 // File: <deployment>/config/private-paths.json. Reads fail closed; writes are strict once
 // config/ exists. Recording happens BEFORE the write it describes.
 //
-// A twin copy lives in the data directory: config/clawforge-private-paths.json, so a restore
+// A twin copy lives in the data directory: config/clawwright-private-paths.json, so a restore
 // through a different deployment folder gets its own copy of the history with the data.
 // createArchive() publishes it before a full backup; restore imports it back first.
 // migrate/share exclude the copy — it travels with full backups only.
@@ -201,9 +201,9 @@ export async function privatePathsLedgerState(): Promise<PrivatePathsLedgerState
   return readLedgerState(privatePathsLedgerFile());
 }
 
-/** The target-state copy of the history: <dataDir>/config/clawforge-private-paths.json. */
+/** The target-state copy of the history: <dataDir>/config/clawwright-private-paths.json. */
 export function privatePathsHistoryFile(dataDir: string): string {
-  return `${dataDir.replace(/\/+$/, "")}/config/clawforge-private-paths.json`;
+  return `${dataDir.replace(/\/+$/, "")}/config/clawwright-private-paths.json`;
 }
 
 /** Read-only union for security checks: local history, target history, minus explicit

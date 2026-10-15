@@ -1,9 +1,9 @@
 // What the framework owns, and what happens when a set stops declaring it.
 //
 // Three claims, one per layer: the ledger (set/ledger.ts) can tell an object it created from
-// one it did not, and never proposes touching the latter; `./clawforge plan` turns an orphaned
+// one it did not, and never proposes touching the latter; `./clawwright plan` turns an orphaned
 // object into a step, advisory for an agent (removal prunes its memory) and executable for
-// an MCP server or cron job (it carries none); `./clawforge apply` — and a coder running the same
+// an MCP server or cron job (it carries none); `./clawwright apply` — and a coder running the same
 // command by hand — actually remove it and stop tracking it, through the identical runner.
 
 import { access, mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
@@ -58,7 +58,7 @@ function owned(kind: OwnedKind, name: string, recipe: string): OwnedObject {
  *  and the ledger file on the target (via transport.readFile/writeFile). */
 function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: string; name: string }[] = []) {
   return {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     runtime: {
       async runOneOff(_service: string, args: string[]) {
         calls.push(args);
@@ -122,7 +122,7 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
   // for OBSERVATION only: recordOwned/forgetOwned/updateOwnedPromptFiles never see it, because
   // proceeding on it would overwrite the corrupt file with a ledger that lost every entry it
   // could not prove — see the strict-refuse checks right below.
-  files.set("/srv/clawforge/clawforge-managed.json", "not json at all");
+  files.set("/srv/clawwright/clawwright-managed.json", "not json at all");
   check("a corrupt ledger reads as empty rather than throwing", await readLedger(ctx), { version: LEDGER_VERSION, objects: [] });
 
   // The strict reader used by every mutating path refuses instead — and none of them may
@@ -142,14 +142,14 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
   );
   check(
     "none of the refused writes touched the corrupt file",
-    files.get("/srv/clawforge/clawforge-managed.json"),
+    files.get("/srv/clawwright/clawwright-managed.json"),
     "not json at all",
   );
 
   files.clear();
-  files.set("/srv/clawforge/oc-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("agent", "legacy-agent", "legacy")] }));
+  files.set("/srv/clawwright/oc-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("agent", "legacy-agent", "legacy")] }));
   check("the old oc ledger remains readable", (await readLedger(ctx)).objects[0]?.name, "legacy-agent");
-  files.set("/srv/clawforge/clawforge-managed.json", "not json at all");
+  files.set("/srv/clawwright/clawwright-managed.json", "not json at all");
   check("a malformed current ledger is authoritative over the legacy ledger", (await readLedger(ctx)).objects, []);
 }
 
@@ -165,7 +165,7 @@ function atomicCtx(
   failWrite = false,
 ): Context {
   return {
-    settings: { dataDir: "/srv/clawforge" },
+    settings: { dataDir: "/srv/clawwright" },
     transport: {
       async exists(path: string): Promise<boolean> { return files.has(path); },
       async readFile(path: string): Promise<string> {
@@ -203,7 +203,7 @@ function atomicCtx(
   const files = new Map<string, string>();
   const writes: string[] = [];
   const moves: [string, string][] = [];
-  const ledgerPath = "/srv/clawforge/clawforge-managed.json";
+  const ledgerPath = "/srv/clawwright/clawwright-managed.json";
   const ctx = atomicCtx(files, writes, moves);
 
   await recordOwned(ctx, { kind: "agent", name: "atomic-agent", recipe: "demo" });
@@ -226,7 +226,7 @@ function atomicCtx(
 
   // A publish killed outright leaves its staged sibling behind — a stray that must be
   // invisible to every reader of the real name, not read as a corrupt ledger.
-  files.set(`${ledgerPath}.clawforge-staged-deadbeefdeadbeef`, "{\"version\":1,\"ob");
+  files.set(`${ledgerPath}.clawwright-staged-deadbeefdeadbeef`, "{\"version\":1,\"ob");
   check("a leftover staged sibling from a killed publish does not read as a corrupt ledger", (await readLedgerStrict(ctx)).objects.map((entry) => entry.name), ["atomic-agent"]);
 }
 
@@ -283,7 +283,7 @@ function atomicCtx(
   check("nothing foreign() reports can appear in orphanedBy()'s output", foreign(ledger, "mcp-server", ["ours", "hand-added"]).some((name) => orphanNames.includes(name)), false);
 }
 
-// --- ./clawforge plan: an orphan becomes a step, advisory only for an agent ----------------------
+// --- ./clawwright plan: an orphan becomes a step, advisory only for an agent ----------------------
 
 function inspectionWith(problems: Problem[]): Inspection {
   return {
@@ -315,15 +315,15 @@ function inspectionWith(problems: Problem[]): Inspection {
   const actions = planActions(inspectionWith([orphanedMcp]));
   check("an orphaned mcp server is one step", actions.length, 1);
   check("executable — it carries no memory of its own", actions[0].advisory, undefined);
-  check("with the exact command inspect proposed", actions[0].command, "./clawforge set forget --kind mcp-server --name old-server");
+  check("with the exact command inspect proposed", actions[0].command, "./clawwright set forget --kind mcp-server --name old-server");
   check("the step id names its kind and name", actions[0].id, "remove-owned:mcp-server:old-server");
 }
 
-// --- ./clawforge apply: the same wiring provisioning uses, running the removal for real ----------
+// --- ./clawwright apply: the same wiring provisioning uses, running the removal for real ----------
 
 {
   const files = new Map<string, string>([
-    ["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("mcp-server", "old-server", "beta")] })],
+    ["/srv/clawwright/clawwright-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("mcp-server", "old-server", "beta")] })],
   ]);
   const calls: string[][] = [];
   const ctx = fakeCtx(files, calls);
@@ -332,7 +332,7 @@ function inspectionWith(problems: Problem[]): Inspection {
     runSteps(ctx, [{
       id: "remove-owned:mcp-server:old-server",
       summary: "remove the mcp-server \"old-server\"",
-      command: "./clawforge set forget --kind mcp-server --name old-server",
+      command: "./clawwright set forget --kind mcp-server --name old-server",
       because: ["SET_OBJECT_ORPHANED"],
     }]));
   check("apply runs the removal and reports it done", outcome.map((entry) => ({ id: entry.id, status: entry.status })), [
@@ -345,7 +345,7 @@ function inspectionWith(problems: Problem[]): Inspection {
 // --- removeOwnedObject: the right CLI call per kind, the ledger forgotten after every one --
 
 {
-  const files = new Map<string, string>([["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("agent", "old-agent", "beta")] })]]);
+  const files = new Map<string, string>([["/srv/clawwright/clawwright-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("agent", "old-agent", "beta")] })]]);
   const calls: string[][] = [];
   const ctx = fakeCtx(files, calls);
   await removeOwnedObject(ctx, "agent", "old-agent");
@@ -354,7 +354,7 @@ function inspectionWith(problems: Problem[]): Inspection {
 }
 
 {
-  const files = new Map<string, string>([["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "old-cron", "beta")] })]]);
+  const files = new Map<string, string>([["/srv/clawwright/clawwright-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "old-cron", "beta")] })]]);
   const calls: string[][] = [];
   const ctx = fakeCtx(files, calls, [{ id: "job-9", name: "old-cron" }]);
   await removeOwnedObject(ctx, "cron-job", "old-cron");
@@ -366,7 +366,7 @@ function inspectionWith(problems: Problem[]): Inspection {
 {
   // Already gone from the instance by some other means — nothing to remove there, but the
   // ledger still stops claiming this framework owns it.
-  const files = new Map<string, string>([["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "vanished-cron", "beta")] })]]);
+  const files = new Map<string, string>([["/srv/clawwright/clawwright-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "vanished-cron", "beta")] })]]);
   const calls: string[][] = [];
   const ctx = fakeCtx(files, calls, []);
   await removeOwnedObject(ctx, "cron-job", "vanished-cron");
@@ -379,7 +379,7 @@ function inspectionWith(problems: Problem[]): Inspection {
   // list hides it entirely (docs.openclaw.ai/cli/cron), which would make this
   // indistinguishable from "already gone", so cron rm would never be called and the job
   // would be left behind, its ownership record deleted regardless.
-  const files = new Map<string, string>([["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "disabled-cron", "beta")] })]]);
+  const files = new Map<string, string>([["/srv/clawwright/clawwright-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "disabled-cron", "beta")] })]]);
   const calls: string[][] = [];
   const ctx = fakeCtx(files, calls, [{ id: "job-42", name: "disabled-cron" }]);
   await removeOwnedObject(ctx, "cron-job", "disabled-cron");
@@ -427,7 +427,7 @@ function inspectionWith(problems: Problem[]): Inspection {
 
 {
   const fixture = await createFixture();
-  const recipeRoot = await mkdtemp(join(tmpdir(), "clawforge-ledger-preflight-"));
+  const recipeRoot = await mkdtemp(join(tmpdir(), "clawwright-ledger-preflight-"));
   try {
     await mkdir(join(recipeRoot, "recipes", "demo", "agent"), { recursive: true });
     // recipeRef's resolve (stage 7 S2.5) refuses a recipe without its recipe.json.
@@ -439,8 +439,8 @@ function inspectionWith(problems: Problem[]): Inspection {
     // The fixture's own data dir for everything, so the markers provisioning writes, the
     // markers apply corrupts, and the paths apply's own preflight reads are all one target.
     const dataDir = fixture.sourceData;
-    const ledgerPath = `${dataDir}/clawforge-managed.json`;
-    const markerPath = `${dataDir}/clawforge-installed-set.json`;
+    const ledgerPath = `${dataDir}/clawwright-managed.json`;
+    const markerPath = `${dataDir}/clawwright-installed-set.json`;
     fixture.state.running = true;
     const base = fixture.context({ ...fixture.baseEnv });
     const cliCalls: string[][] = [];

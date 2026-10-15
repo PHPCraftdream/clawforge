@@ -1,4 +1,4 @@
-// `clawforge incident` — contain, preserve, rotate, audit, collect: the incident runbook.
+// `clawwright incident` — contain, preserve, rotate, audit, collect: the incident runbook.
 //
 // contain turns off only tailscale serve route(s) proxying to THIS gateway (never `serve
 // reset`, which drops other services' routes). A publicly-exposed gateway refuses the run

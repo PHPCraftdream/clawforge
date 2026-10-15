@@ -1,4 +1,4 @@
-// `clawforge secrets` — which secrets this instance needs and whether they are in place.
+// `clawwright secrets` — which secrets this instance needs and whether they are in place.
 //
 // Answers the question that otherwise only surfaces as a crash-loop: the gateway refuses to
 // start when a referenced variable is missing, and the reason is buried in its log as

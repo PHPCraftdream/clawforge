@@ -1,7 +1,7 @@
-=== clawforge help (installed) ===
-==> clawforge — self-hosting framework for OpenClaw
+=== clawwright help (installed) ===
+==> clawwright — self-hosting framework for OpenClaw
     
-    Usage: clawforge <command> [options]
+    Usage: clawwright <command> [options]
     
     Start & stop:
       bootstrap            Bring the instance up (idempotent)
@@ -61,45 +61,45 @@
     
     Framework:
       init                 Initialise this directory as an OpenClaw deployment
-      version              Print clawforge's own version (also: --version, -v)
+      version              Print clawwright's own version (also: --version, -v)
       completion           Print a shell completion script (bash, zsh or pwsh) to stdout
-      control-mcp          Expose clawforge's commands as MCP tools, for agents
+      control-mcp          Expose clawwright's commands as MCP tools, for agents
       help <command>       Same as: <command> --help
     
       ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
     
-    Run `clawforge help <command>` or `clawforge <command> --help` for its full description.
+    Run `clawwright help <command>` or `clawwright <command> --help` for its full description.
 
-=== clawforge init --help (installed) ===
+=== clawwright init --help (installed) ===
 ==> init — Initialise this directory as an OpenClaw deployment
-    Usage: clawforge init [--local]
+    Usage: clawwright init [--local]
       --local                Print the npm command for editor types (also in an already initialised directory)
     
-    Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) directly into the current directory, plus config/, secrets/, recipes/, .gitignore entries for the deployment state and node_modules/, and a committed clawforge entrypoint that delegates to this package's CLI. Project MCP settings for Claude Code and Codex are created automatically, without changing global client settings.
+    Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) directly into the current directory, plus config/, secrets/, recipes/, .gitignore entries for the deployment state and node_modules/, and a committed clawwright entrypoint that delegates to this package's CLI. Project MCP settings for Claude Code and Codex are created automatically, without changing global client settings.
     The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.
-    Refuses if app.ts already exists — run this once, then clawforge bootstrap. `init --local` in an already initialised directory only prints the editor-types npm line and writes nothing.
+    Refuses if app.ts already exists — run this once, then clawwright bootstrap. `init --local` in an already initialised directory only prints the editor-types npm line and writes nothing.
 
-=== clawforge version --help (installed) ===
-==> version — Print clawforge's own version (also: --version, -v)
-    Usage: clawforge version [--json] [--verbose]
+=== clawwright version --help (installed) ===
+==> version — Print clawwright's own version (also: --version, -v)
+    Usage: clawwright version [--json] [--verbose]
       --json                 Emit { name, version, source, path } instead of the one-line text
       --verbose              Also print which copy runs and where
     
     Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. --verbose / --json also say which copy runs: global, local (the app's own dependency) or checkout, and its path.
 
-=== clawforge completion --help (installed) ===
+=== clawwright completion --help (installed) ===
 ==> completion — Print a shell completion script (bash, zsh or pwsh) to stdout
-    Usage: clawforge completion <shell>
+    Usage: clawwright completion <shell>
       <shell>                bash, zsh or pwsh [bash|zsh|pwsh] (required)
     
     Generated from the live command declarations — names, flags, and a multi-action command's own flags under the right action — so it cannot drift from --help.
-    Install: eval "$(clawforge completion bash)"; clawforge completion zsh > "${fpath[1]}/_clawforge"; or take clawforge completion pwsh and pipe it through Out-String and Invoke-Expression.
+    Install: eval "$(clawwright completion bash)"; clawwright completion zsh > "${fpath[1]}/_clawwright"; or take clawwright completion pwsh and pipe it through Out-String and Invoke-Expression.
     Completes the built-in commands only: a command a deployment declares itself is not offered, since the script is generated without loading any deployment.
     No deployment is resolved, no .env is read, no lock is touched.
 
-=== clawforge status --help (installed, no app.ts here) ===
+=== clawwright status --help (installed, no app.ts here) ===
 ==> status — Show containers, image, health, data usage
-    Usage: clawforge status [--json]
+    Usage: clawwright status [--json]
       --json                 Status as JSON
     
     Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
@@ -107,5 +107,5 @@
     reports "unhealthy" forever while the gateway is serving traffic fine.
     --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
     
-    "status" runs inside an app folder — there is no app.ts here; run: clawforge init
+    "status" runs inside an app folder — there is no app.ts here; run: clawwright init
 

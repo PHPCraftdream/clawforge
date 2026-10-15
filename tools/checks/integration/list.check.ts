@@ -1,8 +1,8 @@
-// `./clawforge list` — tools/framework/integration/list.ts's listDeployments().
+// `./clawwright list` — tools/framework/integration/list.ts's listDeployments().
 //
 // A scratch apps/ this file builds and owns, never the real one: several fixtures, one
 // broken in each of the ways a real deployment can be, all read through the one function
-// `./clawforge list` calls, with the target query stubbed rather than touching Docker.
+// `./clawwright list` calls, with the target query stubbed rather than touching Docker.
 
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,7 +16,7 @@ import type { Context } from "#framework/core/context.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-list-check-"));
+const root = await mkdtemp(join(tmpdir(), "clawwright-list-check-"));
 
 const FIXTURE_APP =
   'export default { name: "fixture", description: "fixture", service: { name: "gateway" }, ' +
@@ -174,7 +174,7 @@ check("its configuration is still shown despite the broken app.ts", brokenApp?.p
 check("a missing .env is an error row, not a thrown exception", byName.get("no-env"), {
   name: "no-env",
   state: "error",
-  reason: "no .env — run ./clawforge --app no-env bootstrap",
+  reason: "no .env — run ./clawwright --app no-env bootstrap",
 });
 
 const badEnv = byName.get("bad-env");

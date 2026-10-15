@@ -16,7 +16,7 @@ async function waitFor(name: string, condition: () => boolean): Promise<void> {
   checkTrue(name, condition());
 }
 
-const root = await useRecipesRoot("clawforge-recipe-trial-signals");
+const root = await useRecipesRoot("clawwright-recipe-trial-signals");
 try {
   await root.write("subject", { description: "A recipe with a build service and a readiness poll" });
   const fixture = trialFixture();
@@ -54,7 +54,7 @@ try {
     check("the signalled run exits 128+2", exitCode, 130);
     checkTrue("the teardown ran compose down", fixture.docker.some((argv) => argv.includes("down") && argv.includes("--volumes")));
     checkTrue("the teardown ran the trial build image rm", fixture.docker.some((argv) => argv[0] === "image" && argv[1] === "rm" && argv[2] === "--force"));
-    checkTrue("the teardown removed the scratch home", fixture.removed.some((p) => p.includes(".clawforge-recipe-trial-")));
+    checkTrue("the teardown removed the scratch home", fixture.removed.some((p) => p.includes(".clawwright-recipe-trial-")));
     checkTrue("no build-tagged image argv carries a live image", fixture.docker.every((argv) => !argv.includes("nginx")));
 
     // Release the parked body so the check process can end cleanly; the run's own epilogue

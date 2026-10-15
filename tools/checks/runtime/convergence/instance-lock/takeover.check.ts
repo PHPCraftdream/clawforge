@@ -13,7 +13,7 @@ import { stubContext, captureFailure, FIXTURE_LOCK_PATH, FIXTURE_LOCK_HOME } fro
 import { UserError } from "#framework/core/io/log.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
 
-const MUTATION_PATH = "/srv/clawforge-locks/operation.mutation";
+const MUTATION_PATH = "/srv/clawwright-locks/operation.mutation";
 
 // --- stale locks are described, not stolen ------------------------------------------------------
 

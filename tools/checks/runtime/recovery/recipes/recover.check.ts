@@ -70,7 +70,7 @@ const afterFirst = f.containers.find((c) => c.Config.Labels["com.docker.compose.
 const firstProof = up.args[up.args.indexOf("--file") + 1]!;
 const firstRoot = firstProof.slice(0, firstProof.lastIndexOf("/"));
 const firstContent = f.files.get(firstProof)!;
-checkTrue("native executable file is outside source and data", firstRoot.startsWith("/native/instance/data-locks/.clawforge-operation-")
+checkTrue("native executable file is outside source and data", firstRoot.startsWith("/native/instance/data-locks/.clawwright-operation-")
   && !firstProof.startsWith("/mnt/d/project/recipes/db/") && !firstProof.startsWith("/native/instance/data/"));
 check("native Compose preserves source project directory", up.args[up.args.indexOf("--project-directory") + 1], "/mnt/d/project/recipes/db");
 check("native operation directory metadata", f.storage.parents.get(firstRoot), { kind: "directory", mode: 0o700, uid: 1000, gid: 1000, mtime: 0 });
@@ -89,7 +89,7 @@ checkTrue("both durable documents retained", f.files.has(firstProof) && f.files.
 check("native second recovery preserves first executable bytes", f.files.get(firstProof), firstContent);
 const secondUp = f.calls.filter((c) => c.args.includes("up")).at(-1)!;
 const secondProof = secondUp.args[secondUp.args.indexOf("--file") + 1]!;
-checkTrue("native second allocation is distinct under literal native home", secondProof !== firstProof && secondProof.startsWith("/native/instance/data-locks/.clawforge-operation-"));
+checkTrue("native second allocation is distinct under literal native home", secondProof !== firstProof && secondProof.startsWith("/native/instance/data-locks/.clawwright-operation-"));
 check("native repeated recovery leaves source 777 unchanged", f.storage.parents.get("/mnt/d/project/recipes/db"), sourceBefore);
 // Read-only retained provenance remains usable; a new write operation must refuse.
 f.setStagingEntry("/native/instance/data-locks", { kind: "directory", mode: 0o555, uid: 1000, gid: 1000, mtime: 0 });
@@ -312,7 +312,7 @@ Object.defineProperty(collision.transport, "mkdirPrivate", { value: async (path:
 } });
 rejected = false;
 try { await collision.stack.recover!(collisionPlan, collision.lock); } catch (error) { rejected = error instanceof Error; }
-checkTrue("actual native allocation collision reaches exclusive mkdir refusal", rejected && collisionRefused && collidedRoot.startsWith("/native/instance/data-locks/.clawforge-operation-"));
+checkTrue("actual native allocation collision reaches exclusive mkdir refusal", rejected && collisionRefused && collidedRoot.startsWith("/native/instance/data-locks/.clawwright-operation-"));
 check("collision preserves existing sentinel", collision.files.get(`${collidedRoot}/sentinel`), "existing-native-sentinel");
 check("collision preserves existing root metadata", collision.storage.parents.get(collidedRoot), { kind: "directory", mode: 0o700, uid: 1000, gid: 1000, mtime: 17 });
 check("collision never writes secret document", [...collision.files], [[`${collidedRoot}/sentinel`, "existing-native-sentinel"]]);
@@ -340,7 +340,7 @@ for (const defect of ["root777", "file644"] as const) {
   } });
   let refused = false;
   try { await native.stack.recover!(prepared, native.lock); } catch (error) { refused = error instanceof Error; }
-  checkTrue(`native ${defect} stops at actual allocated proof`, refused && allocated.startsWith("/native/instance/data-locks/.clawforge-operation-")
+  checkTrue(`native ${defect} stops at actual allocated proof`, refused && allocated.startsWith("/native/instance/data-locks/.clawwright-operation-")
     && native.calls.slice(start).some((c) => c.args[2] === (defect === "root777" ? "recipe-staging-proof" : "recipe-provenance") && c.args[4] === allocated
       && c.args[5] === (defect === "root777" ? "" : `${allocated}/resolved.json`)));
   check(`native ${defect} preserves lifecycle state`, native.containers, before);

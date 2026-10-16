@@ -161,6 +161,7 @@ Change:
   configure-provider   Configure model providers from target env vars
   secrets              Show required secrets and their state *
   recipe               Deploy service recipes beside the instance *
+  files                Apply or preview declared deployment files *
   provision-agent      Wire a recipe's MCP server to an OpenClaw agent
   set                  Build or validate the set artifact *
 

@@ -177,6 +177,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       // Host-local history and copies of THIS host's configuration — the receiving side
       // has its own, and a shared agent shouldn't carry someone else's.
       `${root}/clawwright-operations`,
+      `${root}/clawwright-files.json`,
       `${root}/clawwright-managed.json`,
       `${root}/clawwright-installed-set.json`,
       `${root}/${DATA_DIR_MARKER}`, // same reasoning as migrate above

@@ -22,7 +22,8 @@ export default defineApp({
 ```
 
 Commands are reusable: two deployments of the same service need the same `bootstrap`; what
-differs is the data directory, the port and the keys.
+ differs is the data directory, the port and the keys. See also [Deployment files](files.md)
+for declaring directories synced into a deployment's data directory.
 
 ### Several deployments side by side
 

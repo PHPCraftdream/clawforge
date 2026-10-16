@@ -4,6 +4,42 @@ All notable changes to `@phpcraftdream/clawwright` will be documented here.
 
 ## Unreleased
 
+## 0.1.1
+
+The framework becomes a bridge to OpenClaw's own capabilities: a new OpenClaw setting, list
+entry or workspace file is now declared as data, without waiting for a framework change.
+
+### Added
+* Keyed selectors in `config/desired-state.json` paths: `agents.list[id=public].tools` addresses the one
+  list element whose `id` is `public` (created when absent, refused when ambiguous);
+  `bindings[agentId=public]` as the last segment with an array value replaces exactly the elements
+  whose `agentId` is `public`, leaving the rest of the list alone. Values may be JSON-quoted
+  (`[name="a.b"]`). Numeric indexes keep working.
+* Removed declarations are removed from the instance: a successful `apply-config` records what it applied
+  in `clawwright-declared.json` in the data directory, and the next apply prunes every recorded path that is
+  no longer declared (numeric-index paths are refused for pruning — use a keyed selector). The record follows
+  the ownership ledger into full and migrate archives and is left out of share archives.
+* `config/files.json` and the `files` command: declarative placement of directories into the data directory —
+  `mirror` (the target becomes exactly the source) or `overlay` (only files this declaration wrote are ever
+  removed, so an agent workspace keeps its own memory). `files` previews, `files --apply` applies under the
+  instance lock; ownership is recorded per target in `clawwright-files.json`. An enclosing recipe's
+  `privateFiles` still hold its private files back, and case-only renames are safe on case-insensitive targets.
+* `OC_AUDIT_BLOCK=warn` makes OpenClaw security-audit warnings block `doctor` and `accept` as well (the default,
+  `critical`, is unchanged); deliberate exceptions stay in `config/security-suppressions.json`. `accept` prints
+  each finding's title and remediation.
+* Guide: "Any OpenClaw setting, without changing the framework", with two worked examples — a model preset with
+  its own key, and a public chat agent restricted to one MCP server.
+
+### Changed
+* `apply-config` writes through `openclaw config patch` instead of `config set --batch-file`: the framework computes
+  the desired configuration (prune, then apply the declarations in order) against the live `openclaw.json` and sends
+  only the difference, which OpenClaw validates against its own schema. Nothing changed means OpenClaw is not called.
+  `inspect`, drift and `smoke` use the same computation, so they report exactly what an apply would change. Recipe-owned
+  paths can be neither written nor pruned by the declaration, including their descendants.
+* `provision-agent` mirrors recipe files through the same machinery as `files`.
+* Releases publish through npm Trusted Publishing by default (`publish_mode: trusted-publisher`); the README
+  installs with `npm install -g @phpcraftdream/clawwright`.
+
 ## 0.1.0
 
 The initial development release, under the dual MIT or Apache-2.0 license. It provides

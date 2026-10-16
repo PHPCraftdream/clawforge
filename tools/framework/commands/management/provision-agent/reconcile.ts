@@ -28,6 +28,7 @@ import {
 } from "./declaration.ts";
 import type { AgentConfig, RecipeAgentBundle, CronJob } from "./declaration.ts";
 import { assertTargetContained } from "./target-boundary.ts";
+import { syncFileTree } from "#src/runtime/files.ts";
 
 /** Mirrors the recipe's runtime files onto the target, deletions included.
  *
@@ -46,74 +47,7 @@ export async function syncRecipeFiles(
 ): Promise<{ written: number; removed: string[] }> {
   const relPaths = await collectRecipeFiles(recipeDir, "agent");
   const targetDir = recipeMirrorTargetDir(ctx.settings.dataDir, recipeName);
-
-  // Read before writing: afterwards the two sets overlap by construction and the answer is
-  // the same, but this way the listing is of the state the previous run actually left.
-  const alreadyThere = await ctx.transport.listFiles(targetDir);
-
-  const declared = new Set(relPaths);
-  const stale = alreadyThere.filter((rel) => !declared.has(rel));
-  // The target workspace is reachable by the instance, so every path this sync will touch
-  // must physically resolve inside the data directory before anything is mutated.
-  await assertTargetContained(ctx.transport, ctx.settings.dataDir, [
-    targetDir,
-    ...relPaths.map((rel) => `${targetDir}/${rel}`),
-    ...stale.map((rel) => `${targetDir}/${rel}`),
-  ]);
-  const removed = new Set<string>();
-  const isBelow = (parent: string, child: string): boolean => child.startsWith(`${parent}/`);
-
-  // Resolve shape changes before creating anything. A stale file can block a desired
-  // directory, while a stale directory must be emptied before its desired file can land.
-  for (const rel of stale) {
-    if (relPaths.some((desired) => isBelow(rel, desired))) {
-      await ctx.transport.remove(`${targetDir}/${rel}`);
-      removed.add(rel);
-    }
-  }
-  for (const desired of relPaths) {
-    const descendants = stale.filter((rel) => isBelow(desired, rel));
-    if (descendants.length === 0) continue;
-    for (const rel of descendants) {
-      if (removed.has(rel)) continue;
-      await ctx.transport.remove(`${targetDir}/${rel}`);
-      removed.add(rel);
-    }
-    // Empty directories are not returned by listFiles. Remove only empty directory branches;
-    // an incomplete listing therefore cannot turn an unknown file into a recursive delete.
-    if (ctx.transport.removeEmptyTree === undefined || !(await ctx.transport.removeEmptyTree(`${targetDir}/${desired}`))) {
-      throw new Error(`cannot replace directory with file "${targetDir}/${desired}" safely: it contains unknown content`);
-    }
-  }
-
-  const dirs = new Set(
-    relPaths
-      .map((rel) => {
-        const slash = rel.lastIndexOf("/");
-        return slash === -1 ? "" : rel.slice(0, slash);
-      })
-      .filter((dir) => dir !== ""),
-  );
-  await ctx.transport.mkdirp(targetDir);
-  for (const dir of dirs) await ctx.transport.mkdirp(`${targetDir}/${dir}`);
-  for (const rel of relPaths) {
-    // An empty directory has no entry in listFiles, but is still a shape conflict. The helper
-    // is a no-op for an absent path or regular file and removes only empty directory trees.
-    const path = `${targetDir}/${rel}`;
-    if (!alreadyThere.includes(rel) && ctx.transport.removeEmptyTree !== undefined) {
-      await ctx.transport.removeEmptyTree(path);
-    }
-    const content = await readFile(resolve(recipeDir, ...rel.split("/")));
-    await ctx.transport.writeFile(path, content);
-  }
-
-  for (const rel of stale) {
-    if (removed.has(rel)) continue;
-    await ctx.transport.remove(`${targetDir}/${rel}`);
-    removed.add(rel);
-  }
-
-  return { written: relPaths.length, removed: [...removed].sort() };
+  return syncFileTree(ctx.transport, ctx.settings.dataDir, recipeDir, targetDir, relPaths);
 }
 
 export async function writeWorkspacePromptFiles(

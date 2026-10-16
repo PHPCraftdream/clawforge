@@ -179,6 +179,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/auth-secrets`,
       // Keep host-local history and configuration copies out of shared archives.
       `${root}/clawwright-operations`,
+      `${root}/clawwright-files.json`,
       `${root}/clawwright-managed.json`,
       `${root}/clawwright-declared.json`,
       `${root}/clawwright-installed-set.json`,

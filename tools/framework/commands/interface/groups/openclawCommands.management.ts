@@ -18,6 +18,7 @@ import { LOCK } from "#src/commands/management/lock.ts";
 import { SECRETS } from "#src/commands/management/configuration/secrets.ts";
 import { RECIPE } from "#src/commands/management/recipe/index.ts";
 import { PROVISION_AGENT } from "#src/commands/management/provision-agent/index.ts";
+import { FILES } from "#src/commands/management/files.ts";
 
 export const managementCommands: Record<string, AppCommand> = materializeCommands({
   memory: { summary: "Declare, set up, inspect, index, verify memory", group: "change", ...MEMORY, structured: true,
@@ -261,10 +262,21 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "also adds commented prepare.ts/verify.ts stubs. Repository-side only, like import: no " +
       "target, no lock.",
   },
+  files: {
+    summary: "Apply or preview declared deployment files",
+    group: "change",
+    ...FILES,
+    details:
+      "Reads config/files.json and syncs declared source directories into the instance data directory. " +
+      "mirror prunes undeclared files; overlay prunes only ledger-owned files. Use {--dry-run} to preview " +
+      "and {--apply} to write. Only data files and the ownership ledger change; the gateway is not restarted. " +
+      "See docs/guide/files.md.",
+    structured: true,
+  },
   "provision-agent": {
     summary: "Wire a recipe's MCP server to an OpenClaw agent",
-    group: "change",
     ...PROVISION_AGENT,
+    group: "change",
     details:
       "Idempotent, re-runnable: creates the isolated agent declared by " +
       "recipes/<recipe>/agent/config.json if missing, mirrors the recipe's files into its " +

@@ -20,7 +20,7 @@ import { randomBytes } from "node:crypto";
 import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { Context } from "../../core/context.ts";
-import { sudoFor } from "../../runtime/datadir.ts";
+import { sudoFor } from "../../runtime/files/datadir.ts";
 import { deploymentDir, selectedDeployment } from "../../runtime/deployment.ts";
 import { renameOverPrivateFile } from "./private-file.ts";
 

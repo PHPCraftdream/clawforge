@@ -355,7 +355,7 @@ try {
 
 // --- toSettings: OC_DATA_DIR must be a safe, already-normalized absolute path ------
 //
-// ensureDataDirs (runtime/datadir.ts) later resolves the canonical root on the target and
+// ensureDataDirs (runtime/files/datadir.ts) later resolves the canonical root on the target and
 // changes ownership only for what it creates or a provenance marker vouches for, so a loose
 // string here must never even reach that machinery: each of these is asserted to throw
 // before any Context (and so any transport) exists.
@@ -413,7 +413,7 @@ for (const [name, value] of [
 
 // Depth is a backstop, not the safety property. A normal, valid-looking standard directory
 // two segments deep passes on purpose — the safety comes from ensureDataDirs
-// (runtime/datadir.ts), which resolves the canonical root through its ancestors and
+// (runtime/files/datadir.ts), which resolves the canonical root through its ancestors and
 // provenance-gates every ownership change on the real filesystem before any mkdir/chown.
 check(
   "OC_DATA_DIR naming a standard two-segment system directory is accepted (handled safely at the filesystem layer)",

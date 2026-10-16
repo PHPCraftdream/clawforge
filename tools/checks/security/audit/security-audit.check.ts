@@ -31,7 +31,7 @@ interface StubOptions {
 function stubContext(options: StubOptions = {}): Context {
   const running = options.running ?? true;
   return {
-    settings: { bindAddress: "127.0.0.1", gatewayPort: "18789" },
+    settings: { env: {}, bindAddress: "127.0.0.1", gatewayPort: "18789" },
     runtime: {
       description: "stub",
       async isRunning(): Promise<boolean> {

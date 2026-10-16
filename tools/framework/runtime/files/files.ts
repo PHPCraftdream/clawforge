@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { Transport } from "./transport/transport.ts";
+import type { Transport } from "../transport/transport.ts";
 import { assertTargetContained } from "./target-boundary.ts";
 
 export interface MirrorResult {

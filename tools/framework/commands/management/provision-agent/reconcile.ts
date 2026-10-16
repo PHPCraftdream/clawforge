@@ -28,7 +28,7 @@ import {
 } from "./declaration.ts";
 import type { AgentConfig, RecipeAgentBundle, CronJob } from "./declaration.ts";
 import { assertTargetContained } from "./target-boundary.ts";
-import { syncFileTree } from "#src/runtime/files.ts";
+import { syncFileTree } from "#src/runtime/files/files.ts";
 
 /** Mirrors the recipe's runtime files onto the target, deletions included.
  *

@@ -94,6 +94,7 @@ function stubUnreachableContext(): Context {
   const fail = async (): Promise<never> => { throw UNREACHABLE; };
   return {
     settings: {
+      env: {},
       image: "ghcr.io/openclaw/openclaw@sha256:abc",
       dataDir: "/srv/clawwright/data",
       backupDir: "/srv/clawwright/backups",

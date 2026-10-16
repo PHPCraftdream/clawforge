@@ -24,7 +24,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseRetention } from "#src/core/env.ts";
 import { randomUUID } from "node:crypto";
-import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
+import { runMaybePrivileged, sudoFor } from "#src/runtime/files/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import {
   archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, backupArchiveName,

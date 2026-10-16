@@ -1,8 +1,8 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import type { Context } from "../core/context.ts";
-import { collectPortableRecipeFiles } from "../security/privacy/recipe-portable-content.ts";
-import { filesFile, deploymentDir } from "./deployment.ts";
+import type { Context } from "../../core/context.ts";
+import { collectPortableRecipeFiles } from "../../security/privacy/recipe-portable-content.ts";
+import { filesFile, deploymentDir } from "../deployment.ts";
 import { assertTargetContained } from "./target-boundary.ts";
 import { syncFileTree } from "./files.ts";
 

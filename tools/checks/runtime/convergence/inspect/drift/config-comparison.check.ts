@@ -7,12 +7,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
 import { configValuesEqual, effectiveDeclarationPaths } from "#framework/commands/orchestration/inspect/helpers.ts";
-import { desiredConfig } from "#framework/core/values/desired-config.ts";
+import { desiredConfig } from "#framework/core/values/config/desired-config.ts";
 import { observeConfig } from "#framework/commands/orchestration/inspect/drift.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "#checks/runtime/convergence/inspect/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();
 
@@ -127,8 +127,7 @@ try {
     check("the desired-config comparison does not mutate its inputs", JSON.stringify([matchingLive, parentDeclaration, childDeclaration]), matchingBefore);
 
     const parentRecorded = [{ path: "a", value: { b: 1 } }];
-    await writeFile(desiredStatePath, JSON.stringify(parentRecorded));
-    try {
+    {
       const base = stubContext({ targetEnv: "ZAI_API_KEY=k\\n", liveConfig: matchingLive, mirrorChecksums: goodChecksums });
       const recordPath = `${base.settings.dataDir}/clawwright-declared.json`;
       const recordedTransport = {
@@ -149,9 +148,8 @@ try {
 
       const removedPathProblems: Parameters<typeof observeConfig>[2] = [];
       await observeConfig(recordedTransport, { config: [], recipes: [], deployment, image: "fixture-image" }, removedPathProblems);
-      check("a removed declaration reports only its affected path", removedPathProblems.filter((entry) => entry.code === "CONFIG_DRIFT").map((entry) => entry.detail), ["configuration differs at a.b"]);
-    } finally {
-      await writeFile(desiredStatePath, validDesiredState);
+      const removedDrift = removedPathProblems.filter((entry) => entry.code === "CONFIG_DRIFT");
+      checkTrue("removed declaration reports exactly its affected config path", removedDrift.length === 1 && removedDrift[0]!.detail.endsWith("a.b"));
     }
 
     check("current declaration matching its live value has no patch", desiredConfig({ a: { b: 1 } }, [{ path: "a.b", value: 1 }], [{ path: "a.b", value: 1 }]).patch, undefined);
@@ -190,7 +188,6 @@ try {
     // reached the live config — before the fix, the secrets check only ever asked the LIVE
     // config, so a new provider declared in config/desired-state.json (with no apiKey set,
     // and no NEWPROV_API_KEY in the target's config/.env either) produced no SECRET_MISSING
-    // at all, and plan.ts's "secrets" step was never scheduled alongside the CONFIG_DRIFT
     // step that was about to write that provider into the live config.
     const desiredStatePath = resolve(deployment, "config", "desired-state.json");
     const validDesiredState = await readFile(desiredStatePath, "utf8");
@@ -222,11 +219,7 @@ try {
       const inspection = await gatherInspection(
         stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
       );
-      check(
-        "a declared path through __proto__ is reported as a finding, not silently applied",
-        inspection.problems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("__proto__")),
-        true,
-      );
+      checkTrue("a declared path through __proto__ is reported as a finding, not silently applied", inspection.problems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("__proto__")));
       check(
         "and Object.prototype itself is never touched",
         (Object.prototype as Record<string, unknown>).clawwrightReviewProbe,
@@ -269,11 +262,7 @@ try {
       },
     } as unknown as Context;
     const inspection = await gatherInspection(ctx);
-    check(
-      "a stale local tag must not fool the set-requirement check — the running container is what matters",
-      codes(inspection.problems).includes("SET_REQUIREMENT_UNMET"),
-      true,
-    );
+      checkTrue("a stale local tag must not fool the set-requirement check — the running container is what matters", codes(inspection.problems).includes("SET_REQUIREMENT_UNMET"));
     // The same stale-tag scenario, but for the DISPLAYED digest: before the fix, this field
     // still called ctx.runtime.imageReference() (the stale, re-pulled tag's digest, A) while
     // the problem two lines above already knew the real running one (B) — one command

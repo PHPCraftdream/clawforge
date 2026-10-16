@@ -4,7 +4,7 @@
 // read the target through ctx.transport, never the local filesystem.
 
 import type { Context } from "../../core/context.ts";
-import { answeredProbe } from "../../runtime/datadir.ts";
+import { answeredProbe } from "../../runtime/files/datadir.ts";
 import { deploymentName } from "../../runtime/deployment.ts";
 import { TransportUnreachableError } from "../../runtime/transport/transport.ts";
 import { parseBackupArchive, parseReplacedCopyName, parseSnapshotArchive, snapshotDeploymentNames, type Profile } from "./profile.ts";

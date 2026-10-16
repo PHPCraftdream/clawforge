@@ -8,7 +8,7 @@ import { readName } from "#src/core/values/names.ts";
 import {
   loadRecipe, recipeNames, recipesConfigured, recipesDirectory,
 } from "#src/service/recipe.ts";
-import { configPathParts } from "#src/core/values/config-selectors.ts";
+import { configPathParts } from "#src/core/values/config/config-selectors.ts";
 
 const unsafeSegments = new Set(["__proto__", "prototype", "constructor"]);
 

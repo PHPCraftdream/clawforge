@@ -60,8 +60,16 @@ function makeCtx(options: { image: string; pulledDigest: string | undefined; reg
     },
     transport: {
       description: "stub",
-      async exists(): Promise<boolean> { return true; },
+      async exists(path: string): Promise<boolean> {
+        if (path === `${DATA_DIR}/clawwright-declared.json`) return false;
+        return true;
+      },
       async readFile(path: string): Promise<string> {
+        if (path === `${DATA_DIR}/clawwright-declared.json`) {
+          const error = new Error(`ENOENT: no such file: ${path}`) as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }
         if (path === CONFIG_PATH) return JSON.stringify({ models: { providers: { zai: { apiKey: "k" } } } });
         return "";
       },

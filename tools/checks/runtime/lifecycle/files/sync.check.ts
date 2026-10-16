@@ -2,16 +2,23 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { check, finish } from "#checks/kit/harness.ts";
-import { syncFileTree } from "#framework/runtime/files.ts";
+import { syncFileTree } from "#framework/runtime/files/files.ts";
 import { collectPortableRecipeFiles } from "#framework/security/privacy/recipe-portable-content.ts";
 import { LocalTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 
 const root = await mkdtemp(resolve(tmpdir(), "files-sync-check-"));
+const source = resolve(root, "source");
+const data = root;
+const target = `${data}/workspace/agent-demo`;
+const blockerSource = resolve(root, "shape-source");
+const blockerTarget = `${data}/shape`;
+const mirrorSource = resolve(root, "mirror-shape-source");
+const mirrorTarget = `${data}/mirror-shape`;
+const caseSource = resolve(root, "case-source");
+const caseTarget = `${data}/case-target`;
 try {
-  const source = resolve(root, "source"), data = resolve(root, "data"), target = `${data}/workspace/agent-demo`;
   await mkdir(source, { recursive: true });
-  await mkdir(data, { recursive: true });
-  await writeFile(resolve(source, "AGENTS.md"), "declared");
+    await writeFile(resolve(source, "AGENTS.md"), "declared");
   await writeFile(resolve(source, "token.secrets.env"), "private");
   const gathered = await collectPortableRecipeFiles(source);
   check("portable walker excludes sensitive files", gathered.files.includes("token.secrets.env"), false);
@@ -27,8 +34,7 @@ try {
   await syncFileTree(transport, data, source, target, ["AGENTS.md"]);
   check("mirror prunes undeclared target file", await transport.exists(`${target}/memory.md`), false);
 
-  const blockerSource = resolve(root, "shape-source"), blockerTarget = `${data}/shape`;
-  await mkdir(blockerSource);
+  await mkdir(blockerSource, { recursive: true });
   await mkdir(`${blockerTarget}/assets`, { recursive: true });
   await writeFile(`${blockerTarget}/assets/foreign.bin`, "unknown");
   await writeFile(resolve(blockerSource, "assets"), "file");
@@ -37,7 +43,6 @@ try {
   check("overlay refuses directory-to-file conflict containing unknown files", shapeRefused, true);
   check("overlay preserves unknown content on shape refusal", await transport.exists(`${blockerTarget}/assets/foreign.bin`), true);
 
-  const mirrorSource = resolve(root, "mirror-shape-source"), mirrorTarget = `${data}/mirror-shape`;
   await mkdir(resolve(mirrorSource, "assets"), { recursive: true });
   await writeFile(resolve(mirrorSource, "assets", "new.bin"), "nested");
   await transport.mkdirp(mirrorTarget);
@@ -49,7 +54,6 @@ try {
   await syncFileTree(transport, data, mirrorSource, mirrorTarget, ["assets"]);
   check("mirror converts directory to file after removing declared contents", await readFile(`${mirrorTarget}/assets`, "utf8"), "replacement");
 
-  const caseSource = resolve(root, "case-source"), caseTarget = `${data}/case-target`;
   await mkdir(caseSource, { recursive: true });
   const contents = new Map<string, { path: string; bytes: Uint8Array }>();
   const events: string[] = [];
@@ -94,14 +98,10 @@ try {
 
   const outside = resolve(root, "outside");
   await mkdir(outside);
-  try {
-    await symlink(outside, resolve(source, "escape"), "junction");
-    let escapeRefused = false;
-    try { await collectPortableRecipeFiles(source); } catch { escapeRefused = true; }
-    check("portable walker refuses escaping source symlink", escapeRefused, true);
-  } catch {
-    process.stderr.write("  skip source symlink containment (symlink privilege unavailable)\n");
-  }
+  await symlink(outside, resolve(source, "escape"), "junction");
+  let escapeRefused = false;
+  try { await collectPortableRecipeFiles(source); } catch { escapeRefused = true; }
+  check("portable walker refuses escaping source symlink", escapeRefused, true);
 } finally {
   await rm(root, { recursive: true, force: true });
 }

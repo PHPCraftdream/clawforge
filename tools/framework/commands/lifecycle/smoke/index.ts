@@ -23,7 +23,7 @@ import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { noProviderConfigured } from "#src/service/secrets.ts";
-import { configPathParts, mergePatchDiff, readConfigPath, setConfigPath } from "#src/core/values/config-selectors.ts";
+import { configPathParts, mergePatchDiff, readConfigPath, setConfigPath } from "#src/core/values/config/config-selectors.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { reach, expect, describeError, evaluate, type Check, type SmokeResult } from "./verdict.ts";
 import { REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY, ROUND_TRIP_ENTRY, ROUND_TRIP_CHECK, ARCHIVE_CHECK_NAMES, runArchiveChecks } from "./round-trip.ts";

@@ -21,7 +21,7 @@ import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
 import { verifySnapshotQuietly } from "#src/commands/lifecycle/verify.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
-import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
+import { runMaybePrivileged, sudoFor } from "#src/runtime/files/datadir.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { reach, expect, describeError, evaluate, toResult, type Check, type SmokeResult } from "./verdict.ts";
 

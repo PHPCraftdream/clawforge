@@ -19,7 +19,7 @@ import type { PortableContent } from "#src/set/content.ts";
 import type { DeploymentLock } from "#src/commands/management/lock.ts";
 import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { safeName } from "#src/core/values/names.ts";
-import { validateConfigDeclaration } from "#src/core/values/config-selectors.ts";
+import { validateConfigDeclaration } from "#src/core/values/config/config-selectors.ts";
 
 
 /** Deliberately shallow: `*`, `*\/N`, a number, a range, a list of those — rejects what is

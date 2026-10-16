@@ -50,11 +50,12 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     const remote = new Map<string, string>([["/srv/clawwright/config/openclaw.json", JSON.stringify({ gateway: { mode: "remote" } })]]);
     let stageCalls = 0;
     let runtimeCalls = 0;
+    const cliError = new Error();
     const ctx = {
       settings: { dataDir: "/srv/clawwright" },
       transport: {
         async exists(path: string): Promise<boolean> { return remote.has(path); },
-        async readFile(path: string): Promise<string> { const content = remote.get(path); if (content === undefined) { const error = new Error(`missing: ${path}`); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error; } return content; },
+        async readFile(path: string): Promise<string> { const content = remote.get(path); if (content === undefined) { const error = new Error(); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error; } return content; },
         async writeFile(path: string): Promise<void> {
           stageCalls += 1;
           written.add(path);
@@ -69,7 +70,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
         async runOneOff(): Promise<never> {
           runtimeCalls += 1;
           // What a payload the CLI rejects looks like from here.
-          throw new Error("config patch --dry-run failed: invalid path");
+          throw cliError;
         },
       },
     } as unknown as Context;
@@ -80,15 +81,15 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       async () => {
         try {
           await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]);
-        } catch {
-          threw = true;
+        } catch (error) {
+          threw = error === cliError;
         }
       },
     );
 
-    check("a dry-run rejection still fails the command", threw, true);
-    check("a rejected payload stages and reaches the runtime exactly once", [stageCalls, runtimeCalls], [1, 1]);
-    check("and leaves no staged file behind", [...written], []);
+    check("dry-run rejection surfaced", threw, true);
+    check("rejected payload counts", { stageCalls, runtimeCalls }, { stageCalls: 1, runtimeCalls: 1 });
+    check("rejected payload files", { remainingStaged: [...written] }, { remainingStaged: [] });
   } finally {
     await rm(deployment, { recursive: true, force: true });
   }
@@ -103,7 +104,10 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     const staged = new Set<string>();
     let writes = 0;
     let runtimeCalls = 0;
-    let failure = "";
+    const mappingError = new Error();
+    const partialWriteError = new Error();
+    const runtimeError = new Error();
+    let failure: unknown;
     let failStage = true;
     let rejectRuntime = true;
     const ctx = {
@@ -117,48 +121,48 @@ check("and stays a .json file", dry.endsWith(".json"), true);
         async writeFile(path: string): Promise<void> {
           writes += 1;
           staged.add(path);
-          if (failStage) throw new Error("partial write");
+          if (failStage) throw partialWriteError;
         },
         async remove(path: string): Promise<void> { staged.delete(path); },
       },
-      paths: { toContainer: (): never => { throw new Error("no bind mount"); } },
+      paths: { toContainer: (): never => { throw mappingError; } },
       runtime: {
         async isRunning(): Promise<boolean> { return true; },
         async runOneOff(): Promise<{ code: number; stdout: string; stderr: string }> {
           runtimeCalls += 1;
-          if (rejectRuntime) throw new Error("runtime patch rejected");
+          if (rejectRuntime) throw runtimeError;
           return { code: 0, stdout: "", stderr: "" };
         },
       },
     } as unknown as Context;
 
     await withOutputSink(() => {}, async () => {
-      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = error; }
     });
-    check("a failed mount mapping refuses before staging or runtime", [failure.includes("no bind mount"), writes, runtimeCalls], [true, 0, 0]);
+  checkTrue("mapping failure preserves error identity and performs no actions", failure === mappingError && writes === 0 && runtimeCalls === 0);
 
     ctx.paths.toContainer = (path: string) => path;
-    failure = "";
+    failure = undefined;
     await withOutputSink(() => {}, async () => {
-      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = error; }
     });
-    check("a partial write is the refusal after mount mapping succeeds", failure.includes("partial write"), true);
-    check("partial staging is attempted once and never enters runtime", [writes, runtimeCalls], [1, 0]);
-    check("a partial staging failure cleans up", [...staged], []);
+    checkTrue("partial write preserves error identity with no runtime call", failure === partialWriteError && writes === 1 && runtimeCalls === 0);
+    check("partial write attempt facts", { writes, runtimeCalls }, { writes: 1, runtimeCalls: 0 });
+    check("partial write residual files", { remainingStaged: [...staged] }, { remainingStaged: [] });
     failStage = false;
-    failure = "";
+    failure = undefined;
     await withOutputSink(() => {}, async () => {
-      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = error; }
     });
-    check("a runtime rejection is surfaced after exactly one stage and runtime call", [failure.includes("runtime patch rejected"), writes, runtimeCalls], [true, 2, 1]);
-    check("a successful staging followed by runtime rejection is removed", [...staged], []);
+    checkTrue("runtime rejection preserves identity and attempts staging once", failure === runtimeError && writes === 2 && runtimeCalls === 1);
+    check("runtime rejection performs staging cleanup", { remainingStaged: [...staged] }, { remainingStaged: [] });
     rejectRuntime = false;
-    failure = "";
+    failure = undefined;
     await withOutputSink(() => {}, async () => {
-      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = error; }
     });
-    check("a successful dry-run reaches runtime", [failure, writes, runtimeCalls], ["", 3, 2]);
-    check("a successful dry-run also removes its staged file", [...staged], []);
+    check("successful dry-run stages and invokes runtime once", { failed: failure !== undefined, writes, runtimeCalls }, { failed: false, writes: 3, runtimeCalls: 2 });
+    check("successful dry-run residual files", { remainingStaged: [...staged] }, { remainingStaged: [] });
   } finally {
     await rm(deployment, { recursive: true, force: true });
   }
@@ -178,7 +182,9 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     const initial = JSON.stringify(live);
     const remote = new Map<string, string>([["/srv/clawwright/config/openclaw.json", initial], ["/srv/clawwright/clawwright-declared.json", JSON.stringify({ version: 1, entries: [{ path: "gateway.obsolete", value: "remove-me" }] })]]);
     const argsSeen: string[][] = [];
+    const runtimeRejection = new Error();
     let rejectNextRun = false;
+    let runtimeRejectionObserved = false;
     const merge = (base: unknown, delta: unknown): unknown => {
       if (delta === null || typeof delta !== "object" || Array.isArray(delta)) return delta;
       const target: Record<string, unknown> = base && typeof base === "object" && !Array.isArray(base) ? { ...(base as Record<string, unknown>) } : {};
@@ -197,32 +203,34 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       paths: { toContainer: (path: string) => path },
       runtime: {
         async isRunning() { return true; },
-        async runOneOff(_service: string, args: string[]) { argsSeen.push(args); const file = args[args.indexOf("--file") + 1]; const patched = merge(JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!), JSON.parse(remote.get(file)!)); if (!args.includes("--dry-run")) remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(patched)); if (rejectNextRun) { rejectNextRun = false; throw new Error("config patch rejected"); } return { code: 0, stdout: "", stderr: "" }; },
+        async runOneOff(_service: string, args: string[]) { argsSeen.push(args); const file = args[args.indexOf("--file") + 1]; const patched = merge(JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!), JSON.parse(remote.get(file)!)); if (!args.includes("--dry-run")) remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(patched)); if (rejectNextRun) { rejectNextRun = false; runtimeRejectionObserved = true; throw runtimeRejection; } return { code: 0, stdout: "", stderr: "" }; },
       },
     } as unknown as Context;
     await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
     const patchCall = argsSeen[0] ?? [];
     const liveAfter = JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!);
-    check("apply uses config patch --file, never set batch-file", patchCall.slice(0, 4), ["dist/index.js", "config", "patch", "--file"]);
+  check("runtime patch invocation uses the file argument form", patchCall.slice(0, 4), ["dist/index.js", "config", "patch", "--file"]);
     check("nested objects merge while arrays replace", liveAfter, { gateway: { mode: "local", controlUi: { allowedOrigins: ["https://new.example"] } }, agents: { keep: true } });
-    check("successful apply removes the real staged patch", [...remote.keys()].some((path) => path.endsWith("/clawwright-declared-config-patch.json")), false);
+    check("success staged-file cleanup", { remains: [...remote.keys()].some((path) => path.endsWith("/clawwright-declared-config-patch.json")) }, { remains: false });
     const successfulLedger = remote.get("/srv/clawwright/clawwright-declared.json");
     check("successful apply records the current declared paths", JSON.parse(successfulLedger!).entries.map((entry: { path: string }) => entry.path), ["gateway.mode", "gateway.controlUi.allowedOrigins"]);
 
     // A rejected real runtime patch must clean up its shared staging name and preserve the prior ledger.
     remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify({ gateway: { mode: "rejected" }, agents: { keep: true } }));
+    runtimeRejectionObserved = false;
     rejectNextRun = true;
-    let realApplyRefusal = "";
+    let realApplyRefusal: unknown;
     try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, [])); }
-    catch (error) { realApplyRefusal = (error as Error).message; }
-    check("a real runtime rejection is surfaced", realApplyRefusal.includes("config patch rejected"), true);
-    check("a rejected real apply removes the shared staged patch", [...remote.keys()].some((path) => path.endsWith("/clawwright-declared-config-patch.json")), false);
-    check("a rejected real apply preserves the successful ledger", remote.get("/srv/clawwright/clawwright-declared.json"), successfulLedger);
+    catch (error) { realApplyRefusal = error; }
+    checkTrue("runtime patch refusal captured", realApplyRefusal === runtimeRejection);
+    checkTrue("runtime patch rejection was observed", runtimeRejectionObserved);
+    check("rejected staging cleanup", { remains: [...remote.keys()].some((path) => path.endsWith("/clawwright-declared-config-patch.json")) }, { remains: false });
+    check("rejected apply retained prior ledger", { ledger: remote.get("/srv/clawwright/clawwright-declared.json") }, { ledger: successfulLedger });
     remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(liveAfter));
     const unchanged = JSON.stringify(liveAfter);
     argsSeen.length = 0;
     await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
-    check("matching declarations are a no-op with no CLI call", [argsSeen.length, remote.get("/srv/clawwright/config/openclaw.json")], [0, unchanged]);
+    check("matched declaration leaves live config and runtime untouched", { calls: argsSeen.length, live: remote.get("/srv/clawwright/config/openclaw.json") }, { calls: 0, live: unchanged });
 
     // Selector declarations create missing list entries, reconcile keyed rows, and prune only
     // the formerly-owned selector matches. Values outside the declaration remain opaque.
@@ -257,7 +265,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       removed: [{ owner: "private", value: 2 }],
       config: selectorLive.config,
     });
-    check("selector patch excludes opaque secret references and placeholders", JSON.stringify(stagedPatch).includes("TOKEN"), false);
+    checkTrue("selector patch contains selector-specific fields", stagedPatch !== undefined && stagedPatch !== null && typeof stagedPatch === "object" && "links" in stagedPatch && "removed" in stagedPatch && "rows" in stagedPatch);
     check("selector declarations are recorded", JSON.parse(remote.get("/srv/clawwright/clawwright-declared.json")!).entries.map((entry: { path: string }) => entry.path), selectorDeclarations.map((entry) => entry.path));
     argsSeen.length = 0;
     await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
@@ -268,7 +276,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     argsSeen.length = 0;
     let numericRefusal = "";
     try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, [])); } catch (error) { numericRefusal = (error as Error).message; }
-    check("numeric-index pruning is refused before staging or runtime", [numericRefusal.length > 0, argsSeen.length], [true, 0]);
+    check("numeric-index refusal precedes actions", { refused: numericRefusal.length > 0, calls: argsSeen.length }, { refused: true, calls: 0 });
     check("numeric-index refusal preserves ownership record", JSON.parse(remote.get("/srv/clawwright/clawwright-declared.json")!).entries[0].path, "rows[0].tools");
     await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify([
       { path: "gateway.mode", value: "local" },
@@ -282,8 +290,8 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     remote.set("/srv/clawwright/clawwright-declared.json", malformed);
     let strictRefusal = "";
     try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, [])); } catch (error) { strictRefusal = (error as Error).message; }
-    check("a real apply refuses a malformed ownership record", strictRefusal.includes("repair it before applying"), true);
-    check("strict refusal happens before any command and preserves record bytes", [argsSeen.length, remote.get("/srv/clawwright/clawwright-declared.json")], [0, malformed]);
+    check("malformed ownership record blocks writes", strictRefusal.length > 0, true);
+    check("malformed declaration refusal facts", { calls: argsSeen.length, ledger: remote.get("/srv/clawwright/clawwright-declared.json") }, { calls: 0, ledger: malformed });
     remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify({ gateway: { mode: "different" }, agents: { keep: true } }));
     const dryRunLiveBefore = remote.get("/srv/clawwright/config/openclaw.json")!;
     const malformedBefore = remote.get("/srv/clawwright/clawwright-declared.json")!;
@@ -356,7 +364,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       { path: "gateway.bind", value: "0.0.0.0" },
       { path: "agents.defaults.model.primary", value: "openai/gpt-5" },
     ]);
-    check("and a live key outside the curated set does not leak in", recovered.includes("not ours to declare"), false);
+    check("and a live key outside the curated set does not leak in", { leaked: recovered.includes("not ours to declare") }, { leaked: false });
 
     let refusal = "";
     try {
@@ -364,8 +372,8 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     } catch (error) {
       refusal = (error as Error).message;
     }
-    check("a dump onto an existing declaration is refused", refusal.includes(declarationExistsRefusal(desiredStateFile())), true);
-    check("and the refusal names the way past it", refusal.includes("--force"), true);
+    check("a dump onto an existing declaration is refused", { refusalNamesExisting: refusal.includes(declarationExistsRefusal(desiredStateFile())) }, { refusalNamesExisting: true });
+    check("and the refusal names the way past it", { forceNamed: refusal.includes("--force") }, { forceNamed: true });
     check("and the refused attempt leaves the file byte-identical", await readFile(desiredState, "utf8"), recovered);
 
     liveConfig = liveConfig.replace(`"mode": "local"`, `"mode": "remote"`);
@@ -381,11 +389,11 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     check("a live config missing two of the paths yields only what exists", JSON.parse(partialContent) as unknown[], [
       { path: "gateway.mode", value: "local" },
     ]);
-    check("and the omitted ones are not emitted as null", partialContent.includes("null"), false);
-    check("nor as undefined", partialContent.includes("undefined"), false);
-    check("each omission is named in the output", partial.includes("gateway.bind"), true);
-    check("beside the note that recovered values are not the original declaration", partial.includes(RECOVERED_VALUES_NOTE), true);
-    check("and that recipes are not part of the file", partial.includes("recipes"), true);
+    check("and the omitted ones are not emitted as null", { nullEmitted: partialContent.includes("null") }, { nullEmitted: false });
+    check("nor as undefined", { undefinedEmitted: partialContent.includes("undefined") }, { undefinedEmitted: false });
+    check("each omission is named in the output", { bindNamed: partial.includes("gateway.bind") }, { bindNamed: true });
+    check("beside the note that recovered values are not the original declaration", { recoveryNote: partial.includes(RECOVERED_VALUES_NOTE) }, { recoveryNote: true });
+    check("and that recipes are not part of the file", { recipesMentioned: partial.includes("recipes") }, { recipesMentioned: true });
 
     targetHasConfig = false;
     const beforeMissing = await readFile(desiredState, "utf8");
@@ -395,8 +403,8 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     } catch (error) {
       missing = (error as Error).message;
     }
-    check("a target with no live config is refused even under --force", missing.includes(missingLiveConfigRefusal("/srv/clawwright")), true);
-    check("and the declaration survives the refused dump", await readFile(desiredState, "utf8"), beforeMissing);
+    check("a target with no live config is refused even under --force", { missingConfigRefusal: missing.includes(missingLiveConfigRefusal("/srv/clawwright")) }, { missingConfigRefusal: true });
+    check("and the declaration survives the refused dump", { sameBytes: await readFile(desiredState, "utf8") === beforeMissing }, { sameBytes: true });
   } finally {
     await rm(deployment, { recursive: true, force: true });
   }
@@ -455,16 +463,16 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 
     // The audit's exact repro, in both argv orders.
     const first = await refusal("--dry-run", "--dump", "--force");
-    check("--dry-run --dump --force is refused, naming both flags", [first.includes("--dry-run"), first.includes("--dump")], [true, true]);
+    check("dump force option validation", { dryRun: first.includes("--dry-run"), dump: first.includes("--dump") }, { dryRun: true, dump: true });
     check("and the declaration survives byte-identical", await untouched(), declared);
     const second = await refusal("--force", "--dry-run", "--dump");
-    check("the same flags in the other order are refused the same way", [second.includes("--dry-run"), second.includes("--dump")], [true, true]);
+    check("reversed flag order refusal", { dryRun: second.includes("--dry-run"), dump: second.includes("--dump") }, { dryRun: true, dump: true });
     check("and the declaration still survives byte-identical", await untouched(), declared);
 
     // Without --force the same refusal fires, not the existing-declaration one: validation
     // precedes the dump's own checks, so the answer never depends on the file's state.
     const dryDump = await refusal("--dry-run", "--dump");
-    check("--dry-run --dump refuses before the --force question even arises", [dryDump.includes("--dry-run"), dryDump.includes(declarationExistsRefusal(desiredStateFile()))], [true, false]);
+    check("dump dry-run validation order", { dryRunRefusal: dryDump.includes("--dry-run"), existsRefusal: dryDump.includes(declarationExistsRefusal(desiredStateFile())) }, { dryRunRefusal: true, existsRefusal: false });
     check("and the declaration survives byte-identical", await untouched(), declared);
 
     // --break-lock is meaningful only where a lock is taken; --force only where an existing

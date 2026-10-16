@@ -436,7 +436,7 @@ const DATA_DIR_HINT =
 const WINDOWS_ROOT = /^[A-Za-z]:[\\/]/;
 
 /** Guards the one string that later reaches a recursive `chown -R 1000:1000` in
- *  ensureDataDirs() (runtime/datadir.ts) — an unvalidated OC_DATA_DIR=/ would turn
+ *  ensureDataDirs() (runtime/files/datadir.ts) — an unvalidated OC_DATA_DIR=/ would turn
  *  bootstrap into `chown -R 1000:1000 /`. Rejects rather than repairs: a mistake the
  *  operator didn't intend to write should surface, not be silently fixed. Plain
  *  string/regex checks, not node:path's normalize, since that would canonicalize to this

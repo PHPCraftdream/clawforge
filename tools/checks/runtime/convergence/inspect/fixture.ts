@@ -48,6 +48,8 @@ export interface TargetSpec {
   /** A failed container or one failed command inside an otherwise complete batch. */
   batchFailure?: "throw" | "exit";
   batchSlotFailures?: readonly string[];
+  securityAuditPayload?: unknown;
+  secretsAuditPayload?: unknown;
   /** `plugins list --json`'s entries, defaulting to none — a case that says nothing about
    *  plugins provokes no PLUGIN_DRIFT, same reasoning as agents/mcpServers above. */
   plugins?: PluginListEntry[];
@@ -236,6 +238,8 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
               { needle: "'skills' 'list' '--json'", result: skillsList },
               { needle: "'memory' 'status' '--json'", result: json(spec.memoryStatus ?? []) },
               { needle: "'channels' 'status' '--json'", result: spec.channelsStatus === "unavailable" ? { code: 1, stdout: "", stderr: "" } : json({ channelAccounts: spec.channelsStatus ?? {} }) },
+              { needle: "'security' 'audit' '--json'", result: json(spec.securityAuditPayload ?? { findings: [] }) },
+              { needle: "'secrets' 'audit' '--json'", result: json(spec.secretsAuditPayload ?? { findings: [] }) },
             ];
             const results = script
               .split("\n")
@@ -252,6 +256,8 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           // provision-agent's own reconcile.ts reads these one at a time, unbatched — same
           // responses, kept reachable this way too.
           const key = args.slice(0, 2).join(" ");
+          if (key === "security audit") return json(spec.securityAuditPayload ?? { findings: [] });
+          if (key === "secrets audit") return json(spec.secretsAuditPayload ?? { findings: [] });
           if (key === "agents list") return agentsList;
           if (key === "mcp list") return mcpList;
           if (key === "cron list") return cronListResult;
@@ -277,6 +283,7 @@ export interface FixtureDeployment {
  *  carry a LOCK_MISSING warning, pure noise in cases about something else. */
 export async function setupFixtureDeployment(): Promise<FixtureDeployment> {
   const deployment = await mkdtemp(join(tmpdir(), "clawwright-inspect-check-"));
+  useDeployment(deployment);
   await mkdir(resolve(deployment, "config"), { recursive: true });
   await writeFile(
     resolve(deployment, "config", "desired-state.json"),
@@ -305,6 +312,8 @@ export async function setupFixtureDeployment(): Promise<FixtureDeployment> {
     Object.entries(await agentBundleChecksums(resolve(deployment, "recipes", "demo"))).filter(([rel]) => rel.endsWith(".md")),
   );
   const stubContext = makeStubContext(goodPrompts);
+  await mkdir(resolve(deployment, "config"), { recursive: true });
+  await writeFile(resolve(deployment, "config", "security-suppressions.json"), JSON.stringify({ suppressions: [] }));
 
   await writeFile(
     lockFile(),

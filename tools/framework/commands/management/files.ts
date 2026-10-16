@@ -6,7 +6,7 @@ import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
-import { planFiles, applyFiles, type FilesPlan } from "#src/runtime/files-deployment.ts";
+import { planFiles, applyFiles, type FilesPlan } from "#src/runtime/files/files-deployment.ts";
 
 export const FILES_ARGUMENTS = [
   { name: "apply", summary: "Apply declared deployment files", description: "Write declared files into the data directory and prune according to mirror/overlay ownership", kind: "flag", effect: "destroy" },
@@ -27,7 +27,7 @@ function view(plan: FilesPlan) {
   };
 }
 export const FILES = commandBody({
-  effect: "change",
+  effect: "read",
   arguments: FILES_ARGUMENTS,
   rules: [
     { rule: "conflicts", name: "apply", with: ["dry-run"], reason: "--dry-run previews without applying" },

@@ -10,8 +10,8 @@ import type { DeclaredState, Problem, MemoryObservation } from "#src/service/ins
 import { problem } from "#src/service/inspection.ts";
 import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
-import { configPathParts as sharedConfigPathParts, configPathPrefix, readConfigPath, setConfigPath } from "#src/core/values/config-selectors.ts";
-import type { ConfigPathPart } from "#src/core/values/config-selectors.ts";
+import { configPathParts as sharedConfigPathParts, configPathPrefix, readConfigPath, setConfigPath } from "#src/core/values/config/config-selectors.ts";
+import type { ConfigPathPart } from "#src/core/values/config/config-selectors.ts";
 
 const configPathParts = (path: string): ConfigPathPart[] => sharedConfigPathParts(path);
 function pathPartsEqual(left: readonly ConfigPathPart[], right: readonly ConfigPathPart[]): boolean {
@@ -135,15 +135,12 @@ export function prospectiveConfig(live: unknown, declared: DeclaredState["config
   return base;
 }
 
-/** The live openclaw.json, parsed as JSON5, or undefined for any reason at all (absent,
- *  unreadable, unparseable) — observeConfig() (drift.ts) owns reporting CONFIG_DRIFT; a
- *  failed read here just falls the prospective view back to the declaration alone. */
+/** The live openclaw.json parsed as JSON5, or undefined only when readIfExists confirms
+ *  that the file is absent. Read failures propagate as TargetReadUnknownError so callers
+ *  cannot build prospective state from an unknown target config. */
 export async function readLiveConfigForProspective(ctx: Context): Promise<unknown> {
-  try {
-    return JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
-  } catch {
-    return undefined;
-  }
+  const read = await readIfExists(ctx.transport, `${ctx.settings.dataDir}/config/openclaw.json`);
+  return read.kind === "absent" ? undefined : JSON5.parse(read.value) as unknown;
 }
 
 /** The same read, for a caller about to WRITE based on the result (secrets --apply). Unlike

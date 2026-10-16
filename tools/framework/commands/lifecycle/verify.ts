@@ -15,7 +15,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shellQuote } from "#src/core/io/shell.ts";
 import { withOutputSink, outputSink, emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import { sudoFor } from "#src/runtime/datadir.ts";
+import { sudoFor } from "#src/runtime/files/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport/transport.ts";
 import {
   archiveRoot,

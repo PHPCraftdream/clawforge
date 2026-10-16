@@ -8,7 +8,7 @@
 //   - workspace/.git matters: the agent versions its own memory there
 
 import { regexEscape } from "../../core/io/log.ts";
-import { DATA_DIR_MARKER } from "../../runtime/datadir.ts";
+import { DATA_DIR_MARKER } from "../../runtime/files/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "../../runtime/transport/transport.ts";
 
 const LEGACY_PREFIXES = ["oc", "cf"] as const;

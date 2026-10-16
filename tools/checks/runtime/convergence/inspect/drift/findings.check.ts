@@ -54,7 +54,7 @@ const scenarios: (() => Promise<void>)[] = [
     const drift = configDrift.problems.find((entry) => entry.code === "CONFIG_DRIFT");
     check("exactly the changed setting is reported", configDrift.problems.length, 1);
     check("a differing declared value is drift", drift !== undefined, true);
-    check("the detail names only the path and mismatch", drift?.detail, "gateway.mode differs from the declaration");
+    check("the detail names only the path and mismatch", drift?.detail, "configuration differs at gateway.mode");
     check("the remedy is the one command that fixes it", drift?.nextAction, "./clawwright apply");
 
     // No <data>/config/.env at all: the provider key has nowhere to come from.

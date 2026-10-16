@@ -65,8 +65,7 @@ try {
       },
       async readFile(path: string): Promise<string> {
         if (path === CONFIG_PATH) return JSON.stringify(LIVE_CONFIG);
-        if (path === TARGET_ENV_PATH) return "CUSTOM_API_KEY=secret-value
-";
+        if (path === TARGET_ENV_PATH) return "CUSTOM_API_KEY=secret-value\n";
         if (path === `${DATA_DIR}/clawwright-declared.json`) { const error = new Error("missing"); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error; }
         return "";
       },

@@ -1,4 +1,4 @@
-import { configPathParts, readConfigPath, setConfigPath, pruneConfigPath, mergePatchDiff } from "#framework/core/values/config-selectors.ts";
+import { configPathParts, readConfigPath, setConfigPath, pruneConfigPath, mergePatchDiff } from "#framework/core/values/config/config-selectors.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function refuses(run: () => unknown): boolean { try { run(); return false; } catch { return true; } }

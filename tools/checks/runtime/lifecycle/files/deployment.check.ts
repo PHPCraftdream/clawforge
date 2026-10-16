@@ -1,5 +1,5 @@
 import { check, finish } from "#checks/kit/harness.ts";
-import { parseFilesDeclaration, parseFilesLedger, compareFilesDrift } from "#framework/runtime/files-deployment.ts";
+import { parseFilesDeclaration, parseFilesLedger, compareFilesDrift } from "#framework/runtime/files/files-deployment.ts";
 
 for (const source of ["/abs", "../escape", "a\\b", "CON", "x.", "bad:name"]) {
   let refused = false;

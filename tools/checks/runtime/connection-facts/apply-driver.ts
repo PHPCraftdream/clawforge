@@ -9,7 +9,7 @@ import { mcpServerSpec } from "#framework/commands/management/provision-agent/in
 import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { fromContainerPath } from "#framework/core/paths.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
-import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
+import type { ExecOptions, ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 
 /** The live config as the fixture's stub presents it, so the plan is quiet except for the
  *  finding each scenario is about. */
@@ -122,21 +122,34 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     }
     return ok();
   };
-  const dispatch = async (command: string, args: string[]): Promise<ExecResult> => {
-    if (command === "sudo" && args[0] === "-n") return dispatch(args[1], args.slice(2));
+  const dispatch = async (command: string, args: string[], options?: ExecOptions): Promise<ExecResult> => {
+    if (command === "sudo" && args[0] === "-n") return dispatch(args[1]!, args.slice(2), options);
     if (command === "docker") return docker(args);
     if (command === "mkdir" || command === "chown" || command === "rmdir") return ok();
+    if (command === "test" && args[0] === "-r") return ok();
     if (command === "test" && args[0] === "-w") return ok();
     if (command === "test") return { code: 1, stdout: "", stderr: "" };
     if (command === "stat") return ok(`${new Date(1_000_000).toISOString().replace("T", " ").replace("Z", " +0000")}\n`);
+    if (command === "sh" && args[1]?.includes("temporary=")) {
+      const match = args[1]!.match(/temporary='([^']+)'/);
+      if (!match) throw new Error(`fixture cannot parse private write destination: ${args[1]}`);
+      const temporary = match[1]!.replace(/\.clawwright-private-[0-9a-f]+$/, "");
+      const input = options?.input;
+      state.files.set(temporary, typeof input === "string" ? input : input === undefined ? "" : Buffer.from(input).toString("utf8"));
+      return ok();
+    }
+    if (command === "cat") return ok(state.files.get(args.at(-1) ?? "") ?? "");
     if (command === "sh" && args[1]?.includes("sha256sum")) {
       // The tree arrives as the positional parameter (args[3]); the program text is a constant.
       const wanted = args[3] === MIRROR ? spec.mirrorChecksums : spec.prompts;
       return ok(`${Object.entries(wanted).map(([rel, sum]) => `${sum}  ./${rel}`).join("\n")}\n`);
     }
     if (command === "mv") {
-      state.files.set(args[3], state.files.get(args[2]) ?? "");
-      state.files.delete(args[2]);
+      const source = args.at(-2)!;
+      const destination = args.at(-1)!;
+      const content = state.files.get(source) ?? "";
+      state.files.set(destination, content);
+      state.files.delete(source);
       return ok();
     }
     if (command === "rm") return ok();
@@ -145,9 +158,14 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
   };
   return {
     description: "refresh-check",
-    exec: dispatch,
+    async exec(command, args, options = {}) { return dispatch(command, args, options); },
     async readFile(path) {
       if (path === CONFIG_FILE) return JSON.stringify(spec.liveConfig);
+      if (path === `${DATA}/clawwright-declared.json` && !state.files.has(path)) {
+        const error = new Error(`ENOENT: no such file: ${path}`) as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }
       if (path === `${DATA}/config/.env`) return state.files.get(path) ?? "";
       if (state.files.has(path)) return state.files.get(path)!;
       throw new Error(`unexpected read: ${path}`);
@@ -160,6 +178,7 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     },
     async exists(path) {
       if (path === CONFIG_FILE) return true;
+      if (path === `${DATA}/clawwright-declared.json` && !state.files.has(path)) return false;
       return state.files.has(path);
     },
     async mkdirp() {},

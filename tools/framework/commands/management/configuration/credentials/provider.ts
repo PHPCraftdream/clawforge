@@ -6,7 +6,7 @@ import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
-import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { secretsFileOnTarget } from "#src/runtime/files/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
 import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";

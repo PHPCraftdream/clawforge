@@ -16,7 +16,7 @@ import {
   SHARE_ALLOWED,
   type ArchiveLink,
 } from "#framework/service/archive/index.ts";
-import { DATA_DIR_MARKER } from "#framework/runtime/datadir.ts";
+import { DATA_DIR_MARKER } from "#framework/runtime/files/datadir.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 

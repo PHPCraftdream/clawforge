@@ -64,6 +64,7 @@ const TABLE: Record<string, FlagPosition> = {
   "cli-start": position({ json: false, jsonReason: "idempotent start of a helper container, no facts to structure", dryRun: false, dryRunReason: NOTHING_TO_PREVIEW }),
   "cli-stop": position({ json: false, jsonReason: "idempotent stop of a helper container, no facts to structure", dryRun: false, dryRunReason: NOTHING_TO_PREVIEW }),
   "configure-provider": position({ json: true, dryRun: false, dryRunReason: "not asked for by U9; every write is a single idempotent config set with its own already-configured skip" }),
+  files: position({ json: true, dryRun: true }),
   secrets: position({ json: true, dryRun: false, dryRunReason: "not asked for by U9; --apply/--init-store/--dump already require MCP confirm, and status/template need no preview" }),
   "recover-env": position({ json: true, dryRun: true }),
   recipe: position({ json: true, dryRun: true }),

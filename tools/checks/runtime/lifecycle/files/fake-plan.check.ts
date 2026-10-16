@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { check, finish } from "#checks/kit/harness.ts";
 import type { Context } from "#framework/core/context.ts";
-import { applyFiles, planFiles } from "#framework/runtime/files-deployment.ts";
+import { applyFiles, planFiles } from "#framework/runtime/files/files-deployment.ts";
 import { clearDeployment, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 
 const deployment = await mkdtemp(resolve(tmpdir(), "files-fake-plan-check-"));
-const dataDir = resolve(deployment, "data");
+const dataDir = deployment;
 const local = new LocalTransport();
 const contents = new Map<string, Uint8Array>();
 const directoryListing = new Map<string, string[]>([[`${dataDir}/workspace/agent-demo`, ["owned-old.md", "memory.md", "stale.md"]]]);
@@ -49,9 +49,9 @@ try {
   await mkdir(resolve(deployment, "config"), { recursive: true });
   await mkdir(resolve(deployment, "source"), { recursive: true });
   await mkdir(targetDirectory, { recursive: true });
-  await mkdir(dataDir, { recursive: true });
-  contents.set(`${targetDirectory}/owned-old.md`, Buffer.from("old owned"));
-  contents.set(`${targetDirectory}/memory.md`, Buffer.from("foreign memory"));
+    contents.set(`${targetDirectory}/owned-old.md`, Buffer.from("old owned"));
+  const foreignMemoryContent = "foreign-memory-content";
+  contents.set(`${targetDirectory}/memory.md`, Buffer.from(foreignMemoryContent));
   contents.set(`${targetDirectory}/stale.md`, Buffer.from("stale owned"));
   await writeFile(resolve(deployment, "source", "owned-new.md"), "new");
   useDeployment(deployment);
@@ -63,8 +63,8 @@ try {
   const overlay = await planFiles(ctx);
   check("fake-transport overlay plans only previously owned files for removal", overlay.entries[0].removals, ["owned-old.md", "stale.md"]);
   await applyFiles(ctx, overlay);
-  check("fake-transport apply preserves foreign memory content", Buffer.from(contents.get(`${targetDirectory}/memory.md`)!).toString("utf8"), "foreign memory");
-  check("fake-transport apply never removes foreign memory", removals.includes(`${targetDirectory}/memory.md`), false);
+  check("fake-transport apply preserves foreign memory content", Buffer.from(contents.get(`${targetDirectory}/memory.md`)!).toString("utf8"), foreignMemoryContent);
+  check("foreign memory path is absent from removals", removals.includes(`${targetDirectory}/memory.md`), false);
   check("fake-transport apply removes stale owned content", contents.has(`${targetDirectory}/stale.md`), false);
   check("fake-transport apply writes desired content", Buffer.from(contents.get(`${targetDirectory}/owned-new.md`)!).toString("utf8"), "new");
 } finally {

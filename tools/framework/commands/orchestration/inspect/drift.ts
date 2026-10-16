@@ -5,6 +5,7 @@
 // live.ts for what the target itself reports without a declared counterpart to compare.
 
 import { readFile } from "node:fs/promises";
+import { readIfExists, TargetReadUnknownError } from "#src/runtime/transport/transport.ts";
 import JSON5 from "json5";
 import { envFile, secretStoreFile } from "#src/runtime/deployment.ts";
 import { parseEnv, readEnvFileText } from "#src/core/env.ts";
@@ -22,8 +23,8 @@ import { readName } from "#src/core/values/names.ts";
 import { readDeclaredConfig as readAppliedDeclarations } from "#src/set/ownership/declared-config.ts";
 import { recipePathOwners, conflictingDeclaredPath } from "#src/set/ownership/recipe-paths.ts";
 import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
-import { configPathParts, readConfigPath } from "#src/core/values/config-selectors.ts";
-import { desiredConfig } from "#src/core/values/desired-config.ts";
+import { configPathParts, readConfigPath } from "#src/core/values/config/config-selectors.ts";
+import { desiredConfig } from "#src/core/values/config/desired-config.ts";
 import type { Context } from "#src/core/context.ts";
 
 /** Parses GNU stat's fractional, timezone-qualified `%y` timestamp. */
@@ -73,13 +74,23 @@ export async function observeConfig(
   try {
     owners = await recipePathOwners();
   } catch (error) {
+    if (error instanceof TargetReadUnknownError) throw error;
     problems.push(problem("SET_RECIPE_INVALID", `recipe config ownership could not be read: ${(error as Error).message}`));
   }
 
+  const read = await readIfExists(ctx.transport, configFile);
+  if (read.kind === "absent") return { config, mtimeMs };
+  const raw = read.value;
+  let parsed: unknown;
   try {
     // JSON5, not JSON: the live config is OpenClaw's JSON5 gateway format, where a comment
     // or trailing comma is legitimate.
-    const parsed = JSON5.parse(await ctx.transport.readFile(configFile)) as unknown;
+    parsed = JSON5.parse(raw) as unknown;
+  } catch {
+    problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or compared`));
+    return { config, mtimeMs };
+  }
+  try {
     for (const entry of declared.config) {
       const terminalSelector = configPathParts(entry.path).at(-1)?.kind === "selector";
       config[entry.path] = terminalSelector && Array.isArray(entry.value)
@@ -100,19 +111,13 @@ export async function observeConfig(
     } else if (desired.patch !== undefined) {
       problems.push(problem("CONFIG_DRIFT", `configuration differs at ${desired.affectedPaths.join(", ")}`));
     }
-    const stamp = await ctx.transport.exec("stat", ["-c", "%y", configFile], { allowFailure: true });
-    if (stamp.code === 0) {
-      mtimeMs = parseStatTimestamp(stamp.stdout);
-    }
-  } catch {
-    // An absent config is the fresh-deployment shape, not evidence of drift. Other
-    // read/parse/selector failures are findings, but their error text may contain values.
-    let exists = false;
-    try { exists = await ctx.transport.exists(configFile); } catch { /* unavailable */ }
-    if (exists) {
-      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or compared`));
-    }
+  } catch (error) {
+    if (error instanceof TargetReadUnknownError) throw error;
+    problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or compared`));
+    return { config, mtimeMs };
   }
+  const stamp = await ctx.transport.exec("stat", ["-c", "%y", configFile], { allowFailure: true });
+  if (stamp.code === 0) mtimeMs = parseStatTimestamp(stamp.stdout);
 
   return { config, mtimeMs };
 }

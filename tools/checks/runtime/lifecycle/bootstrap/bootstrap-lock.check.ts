@@ -13,7 +13,7 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
+import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/files/datadir.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -52,6 +52,7 @@ try {
     transport: {
       description: "stub",
       async exists(path: string): Promise<boolean> {
+        if (path === `${DATA_DIR}/clawwright-declared.json`) return false;
         // The secrets file must look ABSENT, or ensureSecretsFile's own "already there,
         // nothing to do" early return means it never even attempts the write this test
         // exists to catch — everything else can report present, since creating data
@@ -168,6 +169,7 @@ try {
       transport: {
         description: "stub",
         async exists(path: string): Promise<boolean> {
+          if (path === `${DATA_DIR}/clawwright-declared.json`) return false;
           if (path === home) return lockHomeCreated;
           // A fresh host: the data directory and its standard layout do not exist yet —
           // ensureDataDirs creates (and then narrowly owns) them in this run. The secrets
@@ -178,6 +180,11 @@ try {
           return true;
         },
         async readFile(path: string): Promise<string> {
+          if (path === `${DATA_DIR}/clawwright-declared.json`) {
+            const error = new Error(`ENOENT: no such file: ${path}`) as NodeJS.ErrnoException;
+            error.code = "ENOENT";
+            throw error;
+          }
           if (path.endsWith("holder.json")) throw new Error("no holder recorded");
           // A live config that parses: bootstrap runs to its summary here, and the summary
           // is what the token assertions below are about.

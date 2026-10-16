@@ -2,7 +2,7 @@ import type { Context } from "#src/core/context.ts";
 import { readFileCandidate } from "./candidate-file.ts";
 import { writeFileAtomic } from "./ledger.ts";
 import { desiredStateShapeError } from "./validate.ts";
-import { configPathParts } from "#src/core/values/config-selectors.ts";
+import { configPathParts } from "#src/core/values/config/config-selectors.ts";
 
 export interface DeclaredConfigEntry { readonly path: string; readonly value: unknown }
 export interface DeclaredConfigRecord { readonly version: 1; readonly entries: DeclaredConfigEntry[] }

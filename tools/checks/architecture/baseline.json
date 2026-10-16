@@ -223,7 +223,7 @@
           "const separator = rest.indexOf(\":\");": 1
         }
       },
-      "tools/framework/runtime/datadir.ts": {
+      "tools/framework/runtime/files/datadir.ts": {
         "reason": "split(\":\") splits a chown \"uid:gid\" owner spec, not an image reference",
         "lines": {
           "const [uid, gid] = owner.split(\":\");": 1
@@ -232,7 +232,7 @@
     }
   },
   "prosePins": {
-    "comment": "Stage 5 + I9: assertion-owned legacy physical-line pins; fixture inputs and labels do not become assertions. Executed measurement records 377 after readiness wording oracles became structural state/preservation checks. Operator-approved privacy/Unicode, cold archives and captured memory stderr remain counted. No exclusions or re-encoding; future growth requires review.",
+    "comment": "Stage 5 + I9: assertion-owned legacy physical-line pins; fixture inputs and labels do not become assertions. Operator-approved privacy/Unicode, cold archives and captured memory stderr remain counted. No exclusions or re-encoding; future growth requires review.",
     "files": {
       "tools/checks/management/memory.check.ts": 1,
       "tools/checks/foundation/cli/cli-help.check.ts": 14,
@@ -286,8 +286,8 @@
       "tools/checks/runtime/lifecycle/bootstrap/bootstrap-provider-order.check.ts": 3,
       "tools/checks/runtime/lifecycle/bootstrap/requires-bootstrapped.check.ts": 1,
       "tools/checks/runtime/lifecycle/destroy/destroy.check.ts": 1,
-      "tools/checks/runtime/lifecycle/private-declaration-lifetime.check.ts": 1,
-      "tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts": 1,
+      "tools/checks/runtime/lifecycle/private/declaration-lifetime.check.ts": 1,
+      "tools/checks/runtime/lifecycle/private/paths-prefix-boundary.check.ts": 1,
       "tools/checks/runtime/lifecycle/recipe-portable-content.check.ts": 1,
       "tools/checks/runtime/lifecycle/restore/datadir-ancestry.check.ts": 1,
       "tools/checks/runtime/lifecycle/smoke/drift.check.ts": 1,
@@ -480,7 +480,7 @@
           "const otherScope = `${host}:${process.platform === \"win32\" ? \"linux-4026531836\" : \"win32\"}`;": 1
         }
       },
-      "tools/checks/runtime/lifecycle/private-declaration-lifetime.check.ts": {
+      "tools/checks/runtime/lifecycle/private/declaration-lifetime.check.ts": {
         "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix); the skip is its nested availability note",
         "lines": {
           "function skip(name: string): void {": 1,
@@ -492,7 +492,7 @@
           ".exec(\"sh\", [\"-c\", \"true\"], { allowFailure: true, timeoutMs: 30_000 })": 1
         }
       },
-      "tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts": {
+      "tools/checks/runtime/lifecycle/private/paths-prefix-boundary.check.ts": {
         "reason": "the realPosixTransport-style helper's transport choice, kept; the group's gate is the declared capability (local-posix); the skip is its nested availability note",
         "lines": {
           "function skip(name: string): void {": 1,
@@ -701,8 +701,8 @@
     "total": 150
   },
   "transportReadSwallowAllow": {
-    "comment": "Counted ceiling for transport-read-swallow.check.ts's ALLOW list (shrink-only; the check asserts ALLOW.length <= total). fix33-Z (rf7-tails-Z) measurement widening 14 -> 21: the new all-path rule flags conditional rethrows whose other path ends in fail()/warn()/a fallback read; the 7 newly listed sites are tools/framework/commands/lifecycle/bootstrap/prereqs.ts:127,152,195,218,269,374 and tools/framework/service/secrets.ts:312. Not growth: no product behavior changed, the stricter guard measures what the old any-throw acceptance missed. A new allow-list entry requires raising this total with its reason recorded here.",
-    "total": 21
+    "comment": "Measured ceiling for transport-read-swallow.check.ts ALLOW (shrink-only). Three obsolete inspect config catches were removed during migration; 21 -> 18 is justified by the fresh scanner measurement.",
+    "total": 18
   },
   "writeTargetsUnresolved": {
     "comment": "Bound write targets not statically proven temp-rooted or anchored. Operator-approved memory model fixture adds 15 explicit UNKNOWN approximations: 14 guarded pathname/descriptor and VM-adapter sites plus one serialized Node invocation. Canonical boundaries, descriptor leases and cancellation were exercised independently; static uncertainty is not labeled CLEAN. Exact measured total is 438, with zero anchored/unbound writes and no allow entries. Future unreviewed growth remains forbidden.",
@@ -755,7 +755,7 @@
       "tools/checks/runtime/lifecycle/bootstrap/bootstrap-lock.check.ts": 1,
       "tools/checks/runtime/lifecycle/bootstrap/requires-bootstrapped.check.ts": 1,
       "tools/checks/runtime/lifecycle/destroy/destroy.check.ts": 12,
-      "tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts": 3,
+      "tools/checks/runtime/lifecycle/private/paths-prefix-boundary.check.ts": 3,
       "tools/checks/runtime/lifecycle/restore/restore-dry-run.check.ts": 6,
       "tools/checks/runtime/lifecycle/smoke/outcomes.check.ts": 5,
       "tools/checks/runtime/lifecycle/smoke/roundtrip.check.ts": 1,
@@ -827,7 +827,7 @@
     "total": 0
   },
   "frameLawViolations": {
-    "comment": "stage 7 S1.6 second pass: the law is strict again — verbatim producers resolve (first word must be the declared program and the declared entry must exist on the layout), pwsh cannot invoke a quoted program word, checkout-init refusals are failures (design §7.1: a refusal is a failure), and the case set is the fixture's full declared expansion again (5019 attempted). Remaining keys are decrease-only; each group needs an owner decision (bare hand-set programs, pwsh call-operator rows, per-shell quoting rows, npm-bin posix spelling) or is the init-in-checkout refusal the design counts as a failure.",
+    "comment": "stage 7 S1.6 second pass: strict law (5019 attempted); recorded measured decrease 198 -> 192 after six formerly recorded violations no longer occur. Remaining keys are decrease-only; each group needs an owner decision or is the init-in-checkout refusal the design counts as a failure.",
     "violations": {
       "checkout gate shim (cwd: checkout root) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "checkout gate shim (cwd: docs) | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
@@ -1028,7 +1028,7 @@
       "fixture L1 (f620c8a): the legacy launcher variable | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"--app\",\"demo\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]",
       "fixture L2 (a7d027e): v1 checkout launcher + legacy | law: quoting round-trip | cmd": "quoting/spelling drift: the shell model tokenized [\"--app\",\"demo\",\"status\",\"--reason\",\"'two\",\"words'\"] where the advice declares [\"status\",\"--reason\",\"two words\"]"
     },
-    "total": 198
+    "total": 192
   },
   "actionSelectionOutsideCore": {
     "comment": "stage 7 S2.8: the default action is read only inside core/command (selectAction and its defaultActionOf accessor); the registry and the completion table read it through the accessor — any property read outside core/command fails",
@@ -1152,8 +1152,8 @@
       "tools/checks/runtime/lifecycle/bootstrap/bootstrap-provider-order.check.ts": 3,
       "tools/checks/runtime/lifecycle/bootstrap/requires-bootstrapped.check.ts": 2,
       "tools/checks/runtime/lifecycle/destroy/destroy.check.ts": 1,
-      "tools/checks/runtime/lifecycle/private-declaration-lifetime.check.ts": 7,
-      "tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts": 2,
+      "tools/checks/runtime/lifecycle/private/declaration-lifetime.check.ts": 7,
+      "tools/checks/runtime/lifecycle/private/paths-prefix-boundary.check.ts": 2,
       "tools/checks/runtime/lifecycle/recipe-portable-content.check.ts": 8,
       "tools/checks/runtime/lifecycle/restore/datadir-ancestry.check.ts": 2,
       "tools/checks/runtime/lifecycle/restore/restore-dry-run.check.ts": 4,

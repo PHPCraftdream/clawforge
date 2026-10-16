@@ -1692,6 +1692,78 @@
       }
     },
     {
+      "name": "files",
+      "description": "Apply or preview declared deployment files (may require confirm)\nFull text: help command=files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "apply": {
+            "type": "boolean",
+            "description": "Apply declared deployment files"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Preview file changes"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the plan or result as JSON"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over the lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Lock owner's host id"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextSteps": {
+            "type": "array"
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "nextSteps",
+          "result"
+        ]
+      }
+    },
+    {
       "name": "provision-agent",
       "description": "Wire a recipe's MCP server to an OpenClaw agent\nFull text: help command=provision-agent",
       "inputSchema": {

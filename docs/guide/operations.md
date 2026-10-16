@@ -498,6 +498,54 @@ Pinning the reasoning level per model is not possible in OpenClaw — it comes f
 `agents.defaults.thinkingDefault`; a declaration can also carry the provider parameter
 `params.reasoning_effort`, when the selected provider accepts it.
 
+### Any OpenClaw setting, without changing the framework
+
+The framework does not know OpenClaw's configuration schema: a declaration is a path and a
+value, OpenClaw validates the result, and keyed selectors reach into lists. So a new OpenClaw
+feature is used by declaring it — not by waiting for a framework release. Files OpenClaw reads
+from its data directory (agent prompts, skills, data) are declared the same way, in
+`config/files.json` (see [files](files.md)). Two worked examples:
+
+**A model preset** — one name for provider + model + key, so agents and sessions say
+`public-cheap` instead of repeating model ids. A preset that needs its own key (for example a
+separate, spend-capped key for a public bot) is its own provider id:
+
+```json
+[
+  { "path": "models.providers.zai-public", "value": {
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4", "api": "openai-completions",
+      "models": [ { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash (public)", "contextWindow": 1000000, "maxTokens": 131072 } ] } },
+  { "path": "agents.defaults.models[\"zai-public/glm-5.3-flash\"]", "value": { "alias": "public-cheap" } }
+]
+```
+
+The key itself stays out of the repository: put `ZAI_PUBLIC_API_KEY` in the target's
+`config/.env` and run `./clawwright configure-provider --provider zai-public --env ZAI_PUBLIC_API_KEY`.
+
+**A public chat agent that can only read one MCP server** — its own agent, every built-in
+tool denied, only the tools of the `confluence-mock` MCP server allowed, reachable from one
+channel account that anyone may message, with one session per sender:
+
+```json
+[
+  { "path": "agents.list[id=public]", "value": {
+      "workspace": "/home/node/.openclaw/workspace/public",
+      "model": { "primary": "public-cheap" },
+      "tools": { "allow": ["confluence-mock__*"], "deny": ["group:openclaw"] } } },
+  { "path": "bindings[agentId=public]", "value": [ { "match": { "channel": "telegram", "accountId": "public" } } ] },
+  { "path": "channels.telegram.accounts.public", "value": {
+      "botToken": "${PUBLIC_BOT_TOKEN}", "dmPolicy": "open", "allowFrom": ["*"], "groupPolicy": "disabled" } },
+  { "path": "session.dmScope", "value": "per-channel-peer" }
+]
+```
+
+`agents.list[id=public]` replaces only the element whose `id` is `public`;
+`bindings[agentId=public]` replaces only the bindings of that agent — everything else in both
+lists is left as it is. Remove an entry from the file and the next apply removes it from the
+instance. Before opening any agent to strangers, run `./clawwright doctor`: OpenClaw's own
+security audit flags open channels that reach command or file tools, and `OC_AUDIT_BLOCK=warn`
+makes its warnings block `accept` too.
+
 ### Privacy: update checks
 
 OpenClaw checks daily for a new release (`update.checkOnStart`, default `true`). A fresh

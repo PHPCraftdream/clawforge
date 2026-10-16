@@ -15,7 +15,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shellQuote } from "#src/core/io/shell.ts";
 import { withOutputSink, outputSink, emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import { sudoFor } from "#src/runtime/datadir.ts";
+import { sudoFor } from "#src/runtime/files/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport/transport.ts";
 import {
   archiveRoot,
@@ -78,15 +78,15 @@ export interface ForbiddenRules {
 export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly string[]): ForbiddenRules {
   if (profile === "share") {
     return {
-      literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"],
-      prefixes: ["config/.env.clawwright-", "config/clawwright-desired.dry-"],
+      literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/", "config/clawwright-declared-config-patch.json", "config/clawwright-desired.json", "clawwright-declared.json"],
+      prefixes: ["config/.env.clawwright-", "config/clawwright-declared-config-patch.dry-", "config/clawwright-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
   if (profile === "migrate") {
     return {
-      literals: [...recipePrivatePaths, "config/.env"],
-      prefixes: ["config/.env.clawwright-", "config/clawwright-desired.dry-"],
+      literals: [...recipePrivatePaths, "config/.env", "config/clawwright-declared-config-patch.json"],
+      prefixes: ["config/.env.clawwright-", "config/clawwright-declared-config-patch.dry-", "config/clawwright-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }

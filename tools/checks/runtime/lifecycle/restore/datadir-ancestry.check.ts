@@ -1,10 +1,10 @@
-// assertCanonicalAncestry (runtime/datadir.ts) — one ancestry walk for datadir and restore.
+// assertCanonicalAncestry (runtime/files/datadir.ts) — one ancestry walk for datadir and restore.
 //
 // The two copies this helper replaced had drifted: restore's accepted an empty `readlink -f`
 // answer with exit 0 (reading "cannot verify" as "verified") and datadir's ignored the
 // caller's privilege prefix. Both behaviours are asserted here against a stub transport.
 
-import { assertCanonicalAncestry } from "#framework/runtime/datadir.ts";
+import { assertCanonicalAncestry } from "#framework/runtime/files/datadir.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import type { Context } from "#framework/core/context.ts";
 

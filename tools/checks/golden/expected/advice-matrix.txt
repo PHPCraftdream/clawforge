@@ -2344,52 +2344,6 @@
   fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawwright --app demo inspect
   tool form: {"tool":"inspect","arguments":{}}
 
-=== help prose: plan recover-env ===
-  checkout gate shim (cwd: checkout root): ./clawwright recover-env
-  checkout gate shim (cwd: docs): ../clawwright recover-env
-  checkout gate shim (cwd: apps/demo): ../../clawwright recover-env
-  checkout gate, handed over by the init shim: ./clawwright recover-env
-  checkout gate, handed over by the monorepo MCP launcher: ../../clawwright --app demo recover-env
-  MCP launcher (installed): no variables — the entry default: clawwright recover-env
-  defaultLaunch: global install: clawwright recover-env
-  defaultLaunch: checkout copy: ./clawwright recover-env
-  defaultLaunch: local package (posix): ./clawwright recover-env
-  defaultLaunch: local package (win32): node_modules\.bin\clawwright recover-env
-  defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawwright recover-env
-  manual verbatim (bare word): cw recover-env
-  manual verbatim (spaced program): '/opt/claw forge/clawwright' recover-env
-  system-wide inside apps/demo (cwd selection): clawwright recover-env
-  fixture G0: shim before 710cf66 wrote no variables: clawwright recover-env
-  fixture G1 (710cf66): the legacy variable alone: ./clawwright recover-env
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawwright recover-env
-  fixture G3 (a841c16): v1 checkout + legacy: ./clawwright recover-env
-  fixture L1 (f620c8a): the legacy launcher variable: ../../clawwright --app demo recover-env
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawwright --app demo recover-env
-  tool form: {"tool":"recover-env","arguments":{}}
-
-=== help prose: plan apply-config --dump ===
-  checkout gate shim (cwd: checkout root): ./clawwright apply-config --dump
-  checkout gate shim (cwd: docs): ../clawwright apply-config --dump
-  checkout gate shim (cwd: apps/demo): ../../clawwright apply-config --dump
-  checkout gate, handed over by the init shim: ./clawwright apply-config --dump
-  checkout gate, handed over by the monorepo MCP launcher: ../../clawwright --app demo apply-config --dump
-  MCP launcher (installed): no variables — the entry default: clawwright apply-config --dump
-  defaultLaunch: global install: clawwright apply-config --dump
-  defaultLaunch: checkout copy: ./clawwright apply-config --dump
-  defaultLaunch: local package (posix): ./clawwright apply-config --dump
-  defaultLaunch: local package (win32): node_modules\.bin\clawwright apply-config --dump
-  defaultLaunch: local package (win32, Git Bash): node_modules/.bin/clawwright apply-config --dump
-  manual verbatim (bare word): cw apply-config --dump
-  manual verbatim (spaced program): '/opt/claw forge/clawwright' apply-config --dump
-  system-wide inside apps/demo (cwd selection): clawwright apply-config --dump
-  fixture G0: shim before 710cf66 wrote no variables: clawwright apply-config --dump
-  fixture G1 (710cf66): the legacy variable alone: ./clawwright apply-config --dump
-  fixture G2 (a7d027e): v1 installed + legacy (strict parse rejects): ./clawwright apply-config --dump
-  fixture G3 (a841c16): v1 checkout + legacy: ./clawwright apply-config --dump
-  fixture L1 (f620c8a): the legacy launcher variable: ../../clawwright --app demo apply-config --dump
-  fixture L2 (a7d027e): v1 checkout launcher + legacy: ../../clawwright --app demo apply-config --dump
-  tool form: {"tool":"apply-config","arguments":{"dump":true}}
-
 === help prose: plan secrets --dump ===
   checkout gate shim (cwd: checkout root): ./clawwright secrets --dump
   checkout gate shim (cwd: docs): ../clawwright secrets --dump

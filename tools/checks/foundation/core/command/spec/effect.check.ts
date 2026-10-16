@@ -61,6 +61,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   "cli-start": [[[], "change"]],
   "cli-stop": [[[], "change"]],
   "configure-provider": [[[], "change"]],
+  files: [[[], "read", false], [["--dry-run"], "read", false], [["--apply"], "destroy", true]],
   secrets: [
     [[], "read", false], [["--print-template"], "read", false], [["--template"], "change", true],
     [["--init-store"], "destroy", true],

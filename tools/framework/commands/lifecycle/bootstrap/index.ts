@@ -18,7 +18,7 @@ import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
-import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
+import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/files/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/configuration/credentials/provider.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { preflightSecrets } from "#src/commands/management/configuration/secrets.ts";

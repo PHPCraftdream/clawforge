@@ -8,7 +8,7 @@
 // So the assertions are about the shape of what reaches the target, not about the outcome
 // of a run: numeric ids, resolved before any escalation, passed as plain arguments.
 
-import { ensureLockHome, needsOwnerEscalation, sudoFor, answeredProbe } from "#framework/runtime/datadir.ts";
+import { ensureLockHome, needsOwnerEscalation, sudoFor, answeredProbe } from "#framework/runtime/files/datadir.ts";
 import { shellQuote } from "#framework/core/io/shell.ts";
 import { lockHome } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

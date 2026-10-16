@@ -13,7 +13,7 @@ import type { Context } from "#src/core/context.ts";
 import * as kinds from "#src/core/values/kinds.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
-import { runMaybePrivileged, sudoFor, needsOwnerEscalation, OWNER, answeredProbe } from "#src/runtime/datadir.ts";
+import { runMaybePrivileged, sudoFor, needsOwnerEscalation, OWNER, answeredProbe } from "#src/runtime/files/datadir.ts";
 import {
   listReplacedCopies, dataDirName, dataDirParent, parseReplacedCopyName, type ReplacedCopyInfo,
 } from "#src/service/archive/index.ts";

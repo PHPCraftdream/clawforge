@@ -145,7 +145,8 @@ it is a run that reports success and leaves the instance on the old settings.
 Every finding carries a code (`CONFIG_DRIFT`, `SECRET_MISSING`, `RESTART_REQUIRED`,
 `RECIPE_MIRROR_DRIFT`, …) and the command that resolves it, so an agent branches on the code
 instead of reading prose. `./clawwright doctor` is the same inspection as a verdict, exiting non-zero
-when something blocking was found. Over MCP these four return `structuredContent` —
+when something blocking was found. `OC_AUDIT_BLOCK` defaults to `critical`; set it to `warn`
+to also block warnings. Existing `config/security-suppressions.json` exceptions apply. Over MCP these four return `structuredContent` —
 `{operationId, changed, healthy, problems, warnings, nextActions, nextSteps, result}` — beside the usual
 text.
 
@@ -444,7 +445,23 @@ the target at all.
 Everything we decide about an instance — the model, the reasoning level, the gateway
 binding, trusted plugins, the model provider's catalogue — lives in
 `apps/<name>/config/desired-state.json` rather than being edited by hand on the host. It is
-a ready payload for OpenClaw's own `openclaw config set --batch-file`.
+an ordered array of `{path,value}` declarations, applied by computing a JSON Merge Patch
+against live config and invoking OpenClaw's `config patch --file`. A patch `null` deletes a
+value, so a newly stored null cannot be represented; unchanged SecretRefs are preserved.
+
+Paths support dot properties, numeric indexes, quoted bracket keys and selectors such as
+`plugins.entries[name=weather]`. A field name must match `/^[A-Za-z_$][A-Za-z0-9_$-]*$/`. A
+bare selector value must be nonempty and contain no whitespace, `.`, `]`, `=`, `[`, quotes,
+or backslash; surrounding spaces are trimmed. A JSON double-quoted selector value may be any
+string, including the empty string. Properties named `__proto__`, `constructor`, or
+`prototype` are unsafe. A middle selector traverses only when exactly one object matches;
+no match creates `{field:value}`, while multiple matches refuse. A terminal single-object selector appends the declared object when there are no matches, and replaces the matching object at its existing index when exactly one matches; multiple matches refuse. A terminal array selector removes all matches and appends each declared object, forcing its selector fields to the requested values. Selector keys conflicting with declared values refuse. OpenClaw validates the resulting configuration against its own schema; the framework does not hardcode a config schema. JSON Merge Patch null deletes a property, so a patch cannot newly store a null property; null values inside arrays remain possible because arrays are atomic.
+
+Before applying declarations, previously declared paths removed from the file are pruned
+using the target data directory's `clawwright-declared.json` ownership record. The record is
+written atomically only after a successful real apply; dry-run never writes it. A corrupt
+present record refuses a real apply and is treated as empty by dry-run. Pruning numeric-index paths is refused; remove those values by hand or migrate to keyed selectors. Paths overlapping recipe-owned paths are
+refused for writes and pruning. The conservative recipe check uses the list prefix before the first selector; any ancestor/descendant overlap refuses. `--dump` remains limited to its fixed recovery paths.
 
 ```bash
 ./clawwright apply-config              # apply
@@ -480,6 +497,54 @@ repository.
 Pinning the reasoning level per model is not possible in OpenClaw — it comes from
 `agents.defaults.thinkingDefault`; a declaration can also carry the provider parameter
 `params.reasoning_effort`, when the selected provider accepts it.
+
+### Any OpenClaw setting, without changing the framework
+
+The framework does not know OpenClaw's configuration schema: a declaration is a path and a
+value, OpenClaw validates the result, and keyed selectors reach into lists. So a new OpenClaw
+feature is used by declaring it — not by waiting for a framework release. Files OpenClaw reads
+from its data directory (agent prompts, skills, data) are declared the same way, in
+`config/files.json` (see [files](files.md)). Two worked examples:
+
+**A model preset** — one name for provider + model + key, so agents and sessions say
+`public-cheap` instead of repeating model ids. A preset that needs its own key (for example a
+separate, spend-capped key for a public bot) is its own provider id:
+
+```json
+[
+  { "path": "models.providers.zai-public", "value": {
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4", "api": "openai-completions",
+      "models": [ { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash (public)", "contextWindow": 1000000, "maxTokens": 131072 } ] } },
+  { "path": "agents.defaults.models[\"zai-public/glm-5.3-flash\"]", "value": { "alias": "public-cheap" } }
+]
+```
+
+The key itself stays out of the repository: put `ZAI_PUBLIC_API_KEY` in the target's
+`config/.env` and run `./clawwright configure-provider --provider zai-public --env ZAI_PUBLIC_API_KEY`.
+
+**A public chat agent that can only read one MCP server** — its own agent, every built-in
+tool denied, only the tools of the `confluence-mock` MCP server allowed, reachable from one
+channel account that anyone may message, with one session per sender:
+
+```json
+[
+  { "path": "agents.list[id=public]", "value": {
+      "workspace": "/home/node/.openclaw/workspace/public",
+      "model": { "primary": "public-cheap" },
+      "tools": { "allow": ["confluence-mock__*"], "deny": ["group:openclaw"] } } },
+  { "path": "bindings[agentId=public]", "value": [ { "match": { "channel": "telegram", "accountId": "public" } } ] },
+  { "path": "channels.telegram.accounts.public", "value": {
+      "botToken": "${PUBLIC_BOT_TOKEN}", "dmPolicy": "open", "allowFrom": ["*"], "groupPolicy": "disabled" } },
+  { "path": "session.dmScope", "value": "per-channel-peer" }
+]
+```
+
+`agents.list[id=public]` replaces only the element whose `id` is `public`;
+`bindings[agentId=public]` replaces only the bindings of that agent — everything else in both
+lists is left as it is. Remove an entry from the file and the next apply removes it from the
+instance. Before opening any agent to strangers, run `./clawwright doctor`: OpenClaw's own
+security audit flags open channels that reach command or file tools, and `OC_AUDIT_BLOCK=warn`
+makes its warnings block `accept` too.
 
 ### Privacy: update checks
 

@@ -2,7 +2,7 @@
 // prefix and path helpers they need.
 
 import type { Context } from "../../core/context.ts";
-import { sudoFor } from "../../runtime/datadir.ts";
+import { sudoFor } from "../../runtime/files/datadir.ts";
 import { publishPrivatePathsHistory, reconcilePrivatePathsHistory } from "../../security/privacy/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "../recipe.ts";
 import { excludesFor, type Profile } from "./profile.ts";

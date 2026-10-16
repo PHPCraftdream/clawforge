@@ -4,7 +4,7 @@
 // crafted listing and records every command it is asked to run, so the assertion is not
 // "the check reported a failure" but "tar -xzf was never invoked".
 
-import { verifySnapshot, verifySnapshotQuietly } from "#framework/commands/lifecycle/verify.ts";
+import { verifySnapshot, verifySnapshotQuietly, forbiddenViolations } from "#framework/commands/lifecycle/verify.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, SshTransport, WslTransport, spawnLocal, type ExecResult } from "#framework/runtime/transport/transport.ts";
@@ -85,6 +85,25 @@ check(
   "a pre-existing dry-run payload fails the migrate check",
   await withOutputSink(() => {}, () => verifySnapshot(interruptedDryRun.ctx, ARCHIVE, "migrate")),
   false,
+);
+
+check(
+  "new shared patch staging and dry-run names are forbidden for migrate",
+  forbiddenViolations("migrate", [], ["config/clawwright-declared-config-patch.json", "config/clawwright-declared-config-patch.dry-deadbeef.json"]),
+  ["config/clawwright-declared-config-patch.json", "config/clawwright-declared-config-patch.dry-"],
+);
+check(
+  "share forbids shared patch staging and declared ownership ledger but migrate allows ledger records",
+  [
+    forbiddenViolations("share", [], ["config/clawwright-declared-config-patch.json", "config/clawwright-declared-config-patch.dry-deadbeef.json", "clawwright-declared.json"]),
+    forbiddenViolations("migrate", [], ["clawwright-declared.json", "clawwright-managed.json"]),
+  ],
+  [["config/clawwright-declared-config-patch.json", "clawwright-declared.json", "config/clawwright-declared-config-patch.dry-"], []],
+);
+check(
+  "legacy shared staging name remains forbidden and legacy dry family remains forbidden",
+  forbiddenViolations("share", [], ["config/clawwright-desired.json", "config/clawwright-desired.dry-12345678.json"]),
+  ["config/clawwright-desired.json", "config/clawwright-desired.dry-"],
 );
 
 // --- an ordinary archive is still unpacked and scanned -------------------------

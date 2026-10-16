@@ -179,12 +179,20 @@ printf 'PROVIDER_KEY=synthetic-backup-secret-value\\n' > '${dataDir}/config/.env
 printf 'synthetic log\\n' > '${dataDir}/config/logs/fixture.log'
 printf 'fixture\\n' > '${dataDir}/workspace/SOUL.md'
 printf 'synthetic backup\\n' > '${dataDir}/config/openclaw.json.bak-old'
+printf '{}\\n' > '${dataDir}/clawwright-managed.json'
+printf '{}\\n' > '${dataDir}/clawwright-declared.json'
+printf '{}\\n' > '${dataDir}/config/clawwright-declared-config-patch.json'
+printf '{}\\n' > '${dataDir}/config/clawwright-declared-config-patch.dry-deadbeef.json'
+printf '{}\\n' > '${dataDir}/config/clawwright-desired.dry-legacy.json'
 `;
-    assertExec("sh", ["-c", script], await transport.exec("sh", [
-      "-c",
-      script,
-    ]));
-    check(`real tar ${profile} fixture created the exclusion targets`, await transport.exists(`${dataDir}/config/.env`) && await transport.exists(`${dataDir}/config/openclaw.json.bak-old`) && await transport.exists(`${dataDir}/config/logs/fixture.log`), true);
+    assertExec("sh", ["-c", script], await transport.exec("sh", ["-c", script]));
+    const checkTargetsExist = await Promise.all([
+      `${dataDir}/config/.env`,
+      `${dataDir}/config/openclaw.json.bak-old`,
+      `${dataDir}/config/logs/fixture.log`,
+    ].map((path) => transport.exists(path)));
+    check(`real tar ${profile} fixture created the exclusion targets`, checkTargetsExist.every(Boolean), true);
+
     const ctx = {
       settings: { dataDir, backupDir, env: { OC_BACKUP_KEEP: "10" } },
       transport,
@@ -198,6 +206,9 @@ printf 'synthetic backup\\n' > '${dataDir}/config/openclaw.json.bak-old'
     check(`real tar ${profile} excludes provider env under data[1]`, entries.some((entry) => entry.includes(".env")), false);
     check(`real tar ${profile} excludes logs under data[1]`, entries.some((entry) => entry.includes("/logs/")), false);
     check(`real tar ${profile} excludes config backups under data[1]`, entries.some((entry) => entry.endsWith("openclaw.json.bak-old")), false);
+    check(`real tar ${profile} excludes new and legacy staged patch files`, entries.some((entry) => entry.includes("clawwright-declared-config-patch") || entry.includes("clawwright-desired.dry-")), false);
+    check(`real tar ${profile} includes the managed ledger except for share`, entries.some((entry) => entry.endsWith("clawwright-managed.json")), profile !== "share");
+    check(`real tar ${profile} includes declared ownership ledger except for share`, entries.some((entry) => entry.endsWith("clawwright-declared.json")), profile !== "share");
     check(`real tar ${profile} keeps allowed workspace content`, entries.some((entry) => entry.endsWith("workspace/SOUL.md")), true);
   } catch (error) {
     check(`real tar ${profile} policy-checked backup succeeds`, (error as Error).message, "");

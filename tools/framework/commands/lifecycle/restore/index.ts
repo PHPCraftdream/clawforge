@@ -10,7 +10,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry, physicalPath } from "#src/runtime/datadir.ts";
+import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry, physicalPath } from "#src/runtime/files/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,

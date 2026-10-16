@@ -74,7 +74,9 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "deployment's own secret file permissions.\n" +
       "Never every {clawwright} inspect/plan call — each audit is a container exec — only " +
       "doctor and accept. Suppress a finding by upstream checkId in " +
-      "config/security-suppressions.json; it stays visible but stops counting.",
+      "config/security-suppressions.json; it stays visible but stops counting. OC_AUDIT_BLOCK " +
+      "sets the OpenClaw audit threshold (critical by default, or warn); existing " +
+      "config/security-suppressions.json exceptions continue to apply.",
     structured: true,
   },
   plan: {
@@ -95,8 +97,8 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "and any other problem this framework has no specific step for yet still gets one — " +
       "named advisory rather than left out, so a problem plan cannot act on is still a " +
       "problem the reader sees, never one \"nothing to do\" quietly absorbs.\n" +
-      "Recovery steps appear early too: a stale .env plans {clawwright recover-env} " +
-      "and a missing desired-state.json plans {clawwright apply-config --dump}, both run " +
+      "Recovery steps appear early too: a stale .env plans recover-env and a missing " +
+      "desired-state.json plans apply-config --dump, both run " +
       "exactly as planned — the dump's --force refusal protects an existing declaration, and " +
       "this one is absent.\n" +
       "An incomplete local store plans {clawwright secrets --dump} as advisory instead: it " +
@@ -134,9 +136,8 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "instance, so their runners take no instance lock of their own.\n" +
       "{--dry-run} only lists what the plan computed — it touches nothing, so it cannot tell " +
       "you whether desired-state.json would actually validate against the target's own " +
-      "schema. `{clawwright apply-config --dry-run}` does: a real (lockless) `config set " +
-      "--batch-file --dry-run` against the target, usable even before the instance is " +
-      "healthy.",
+      "schema. `{clawwright apply-config --dry-run}` does: a real (lockless) " +
+      "`config patch --file <path> --dry-run` against the target, usable even before the instance is healthy.",
     structured: true,
   },
   accept: {
@@ -160,7 +161,8 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "instance refused the call — is reported as \"could-not-check\" with the reason, never " +
       "as passed.\n" +
       "Also runs the security gate — see `{clawwright doctor}`'s own description — and fails on a " +
-      "blocking finding the same way a failed check does.\n" +
+      "blocking finding the same way a failed check does. OC_AUDIT_BLOCK is critical by default " +
+      "or warn; existing config/security-suppressions.json exceptions continue to apply.\n" +
       "Exits non-zero when a check fails, could not be checked, or the security gate finds a " +
       "blocking issue.",
   },
@@ -208,10 +210,26 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     group: "change",
     ...APPLY_CONFIG,
     details:
-      "The declaration in config/desired-state.json is the source of truth:\n" +
-      "this pushes it onto the running instance via OpenClaw's own `config set --batch-file`, " +
-      "overwriting whatever was set by hand.\n" +
-      "That is the point — drift back to the declared state, not a merge.\n" +
+      "The declaration in config/desired-state.json is an ordered list of {path,value} " +
+      "declarations. Paths support dot properties, numeric indexes, quoted bracket keys, " +
+      "and selector segments for array objects. Field names match " +
+      "[A-Za-z_$][A-Za-z0-9_$-]*. Bare selector values are nonempty, contain no whitespace, " +
+      "dot, brackets, equals, quotes or backslash (surrounding spaces are trimmed); " +
+      "JSON double-quoted values may be any string, including empty. Middle selectors " +
+      "create when missing and refuse multiple matches. Terminal single-object selectors " +
+      "append when there are no matches and replace the matching object at its existing index " +
+      "when exactly one matches; multiple matches refuse. Terminal array selectors remove all " +
+      "matches and append each declared object with selector fields forced. OpenClaw validates " +
+      "the resulting config against its own schema; the framework does not hardcode one.\n" +
+      "Apply calculates a live-config JSON Merge Patch and passes it to OpenClaw's " +
+      "`config patch --file`; JSON Merge Patch null deletes a value, so a new null value " +
+      "cannot be represented. Unchanged SecretRefs are preserved. Removed paths are pruned " +
+      "before new declarations using the target dataDir ownership record " +
+      "clawwright-declared.json; the record is updated atomically only after successful " +
+      "real apply. Dry-run does not write it; a corrupt existing record refuses real apply " +
+      "but is treated as empty for dry-run. Numeric-index pruning refuses; remove those " +
+      "paths manually. The recipe overlap guard conservatively checks the first selector " +
+      "with the list prefix before the first selector; any ancestor/descendant overlap refuses.\n" +
       "bootstrap calls this itself, so a fresh deployment and an existing one end up with " +
       "the same settings.\n" +
       "{--dump} is the reverse: reconstructs a lost desired-state.json from the live instance's " +

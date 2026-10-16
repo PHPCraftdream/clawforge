@@ -16,7 +16,7 @@ import {
   SHARE_ALLOWED,
   type ArchiveLink,
 } from "#framework/service/archive/index.ts";
-import { DATA_DIR_MARKER } from "#framework/runtime/datadir.ts";
+import { DATA_DIR_MARKER } from "#framework/runtime/files/datadir.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -412,13 +412,16 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
     );
     check(
       `interrupted dry-run payload never travels in ${profile}`,
-      excludesFor(profile, "data").includes("data/config/clawwright-desired.dry-*.json"),
+      excludesFor(profile, "data").includes("data/config/clawwright-declared-config-patch.dry-*.json") &&
+        excludesFor(profile, "data").includes("data/config/clawwright-desired.dry-*.json"),
       true,
     );
   }
 
-  // The journal is this host's history and its snapshots are copies of THIS host's
-  // configuration. That belongs in a backup of this instance and nowhere else.
+  check("the declared ownership ledger is kept in full and migrate archives", excludesFor("full", "data").includes("data/clawwright-declared.json") || excludesFor("migrate", "data").includes("data/clawwright-declared.json"), false);
+  check("the declared ownership ledger is excluded from shared archives", excludesFor("share", "data").includes("data/clawwright-declared.json"), true);
+  check("managed ledger stays in full/migrate but not share", [excludesFor("full", "data").includes("data/clawwright-managed.json"), excludesFor("migrate", "data").includes("data/clawwright-managed.json"), excludesFor("share", "data").includes("data/clawwright-managed.json")], [false, false, true]);
+
   check("the journal is kept in a full backup", excludesFor("full", "data").includes("data/clawwright-operations"), false);
   check("but not handed to another host", excludesFor("migrate", "data").includes("data/clawwright-operations"), true);
   check("nor to someone the agent is shared with", excludesFor("share", "data").includes("data/clawwright-operations"), true);

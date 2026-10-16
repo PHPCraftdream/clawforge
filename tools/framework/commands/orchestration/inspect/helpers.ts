@@ -10,6 +10,16 @@ import type { DeclaredState, Problem, MemoryObservation } from "#src/service/ins
 import { problem } from "#src/service/inspection.ts";
 import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
+import { configPathParts as sharedConfigPathParts, configPathPrefix, readConfigPath, setConfigPath } from "#src/core/values/config/config-selectors.ts";
+import type { ConfigPathPart } from "#src/core/values/config/config-selectors.ts";
+
+const configPathParts = (path: string): ConfigPathPart[] => sharedConfigPathParts(path);
+function pathPartsEqual(left: readonly ConfigPathPart[], right: readonly ConfigPathPart[]): boolean {
+  return configPathPrefix(left, right) && configPathPrefix(right, left);
+}
+function pathIsAncestor(ancestor: readonly ConfigPathPart[], descendant: readonly ConfigPathPart[]): boolean {
+  return ancestor.length < descendant.length && configPathPrefix(ancestor, descendant);
+}
 
 const memoryRecord = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const memoryCount = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
@@ -80,25 +90,7 @@ export function cronDifferences(job: CronJob, config: AgentConfig, cronMessage: 
 
 /** Reads a config path without following inherited properties. */
 export function valueAt(config: unknown, path: string): unknown {
-  let node = config;
-  try {
-    for (const part of configPathParts(path)) {
-      if (node === null || (typeof node !== "object" && typeof node !== "function")) return undefined;
-      if (Array.isArray(node) && arrayIndex(part.key) === undefined) return undefined;
-      if (!Object.hasOwn(node, part.key)) return undefined;
-      node = (node as Record<string, unknown>)[part.key];
-    }
-    return node;
-  } catch {
-    return undefined;
-  }
-}
-
-const UNSAFE_PATH_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);
-
-interface ConfigPathPart {
-  readonly key: string;
-  readonly arrayIndex: boolean;
+  try { return readConfigPath(config, path); } catch { return undefined; }
 }
 
 /** Compares JSON-shaped values without making object key order significant. */
@@ -118,111 +110,6 @@ export function configValuesEqual(left: unknown, right: unknown): boolean {
   ));
 }
 
-const MAX_CONFIG_PATH_ARRAY_INDEX = 100_000;
-
-function arrayIndex(key: string): number | undefined {
-  if (!/^(0|[1-9]\d*)$/.test(key)) return undefined;
-  const value = Number(key);
-  return Number.isSafeInteger(value) && value <= MAX_CONFIG_PATH_ARRAY_INDEX ? value : undefined;
-}
-
-/** Parses OpenClaw's dot/bracket path notation, including quoted keys containing dots. */
-function configPathParts(path: string): ConfigPathPart[] {
-  const raw = path.trim();
-  if (raw === "") throw new Error("configuration path must not be empty");
-  const parts: ConfigPathPart[] = [];
-  let current = "";
-  let segmentEmitted = false;
-  const invalid = (): never => { throw new Error(`invalid configuration path "${path}"`); };
-  const emitDotSegment = (): void => {
-    if ((current.length > 0 && !current.trim()) || (!segmentEmitted && !current.trim())) invalid();
-    if (current) {
-      const key = current.trim();
-      parts.push({ key, arrayIndex: arrayIndex(key) !== undefined });
-    }
-    current = "";
-    segmentEmitted = false;
-  };
-  const bracketClose = (open: number): number => {
-    let quote: string | undefined;
-    for (let cursor = open + 1; cursor < raw.length; cursor += 1) {
-      const character = raw[cursor];
-      if (quote !== undefined) {
-        if (character === "\\") cursor += 1;
-        else if (character === quote) quote = undefined;
-        continue;
-      }
-      if (character === "]") return cursor;
-      if ((character === "\"" || character === "'") && !raw.slice(open + 1, cursor).trim()) quote = character;
-    }
-    return -1;
-  };
-  let index = 0;
-  while (index < raw.length) {
-    const character = raw[index];
-    if (character === "\\") {
-      if (raw[index + 1] === undefined) invalid();
-      current += raw[index + 1];
-      index += 2;
-      continue;
-    }
-    if (character === ".") {
-      emitDotSegment();
-      index += 1;
-      continue;
-    }
-    if (character === "[") {
-      if ((current.length > 0 && !current.trim()) || (!current.trim() && !segmentEmitted && parts.length > 0)) invalid();
-      if (current) {
-        const key = current.trim();
-        parts.push({ key, arrayIndex: arrayIndex(key) !== undefined });
-      }
-      current = "";
-      const close = bracketClose(index);
-      if (close === -1) invalid();
-      const inside = raw.slice(index + 1, close).trim();
-      if (inside === "") invalid();
-      let key: string;
-      let isArrayIndex = false;
-      if (inside.startsWith("\"") || inside.startsWith("'")) {
-        let parsed: unknown;
-        try { parsed = JSON5.parse(inside); } catch { invalid(); }
-        if (typeof parsed !== "string" || parsed.trim() === "") invalid();
-        key = parsed as string;
-      } else {
-        key = inside;
-        isArrayIndex = arrayIndex(key) !== undefined;
-      }
-      parts.push({ key, arrayIndex: isArrayIndex });
-      const next = raw[close + 1];
-      if (next !== undefined && next !== "." && next !== "[") invalid();
-      segmentEmitted = true;
-      index = close + 1;
-      continue;
-    }
-    current += character;
-    index += 1;
-  }
-  if (!segmentEmitted && !current.trim()) invalid();
-  if (current) {
-    const key = current.trim();
-    parts.push({ key, arrayIndex: arrayIndex(key) !== undefined });
-  }
-  const unsafe = parts.find((part) => UNSAFE_PATH_SEGMENTS.has(part.key));
-  if (unsafe !== undefined) {
-    throw new Error(`refusing to apply configuration path "${path}": "${unsafe.key}" is not a valid segment`);
-  }
-  return parts;
-}
-
-function pathPartsEqual(left: ConfigPathPart[], right: ConfigPathPart[]): boolean {
-  return left.length === right.length && left.every((part, index) => part.key === right[index].key);
-}
-
-function pathIsAncestor(ancestor: ConfigPathPart[], descendant: ConfigPathPart[]): boolean {
-  return ancestor.length < descendant.length && ancestor.every((part, index) => part.key === descendant[index].key);
-}
-
 /** Keeps only declarations whose final assignment still controls an outer value. */
 export function effectiveDeclarationPaths(
   declared: DeclaredState["config"],
@@ -236,30 +123,8 @@ export function effectiveDeclarationPaths(
     .map(({ entry }) => entry);
 }
 
-/** Writes a config path, preserving arrays and rejecting unsafe segments. */
-function setAt(config: Record<string, unknown>, path: string, value: unknown): void {
-  const parts = configPathParts(path);
-  let node: Record<string, unknown> | unknown[] = config;
-  for (let index = 0; index < parts.length - 1; index += 1) {
-    const key = parts[index].key;
-    if (Array.isArray(node) && arrayIndex(key) === undefined) {
-      throw new Error(`configuration path "${path}" expects a numeric array index`);
-    }
-    const next = Object.hasOwn(node, key) ? (node as Record<string, unknown>)[key] : undefined;
-    if (next !== null && typeof next === "object") {
-      node = next as Record<string, unknown> | unknown[];
-    } else {
-      const created: Record<string, unknown> | unknown[] = parts[index + 1].arrayIndex ? [] : {};
-      (node as Record<string, unknown>)[key] = created;
-      node = created;
-    }
-  }
-  const last = parts.at(-1)!.key;
-  if (Array.isArray(node) && arrayIndex(last) === undefined) {
-    throw new Error(`configuration path "${path}" expects a numeric array index`);
-  }
-  (node as Record<string, unknown>)[last] = value;
-}
+/** Writes a declaration through the shared resolver. */
+function setAt(config: Record<string, unknown>, path: string, value: unknown): void { setConfigPath(config, path, value); }
 
 /** Overlays declarations without mutating either the live config or declared values. */
 export function prospectiveConfig(live: unknown, declared: DeclaredState["config"]): unknown {
@@ -270,15 +135,12 @@ export function prospectiveConfig(live: unknown, declared: DeclaredState["config
   return base;
 }
 
-/** The live openclaw.json, parsed as JSON5, or undefined for any reason at all (absent,
- *  unreadable, unparseable) — observeConfig() (drift.ts) owns reporting CONFIG_DRIFT; a
- *  failed read here just falls the prospective view back to the declaration alone. */
+/** The live openclaw.json parsed as JSON5, or undefined only when readIfExists confirms
+ *  that the file is absent. Read failures propagate as TargetReadUnknownError so callers
+ *  cannot build prospective state from an unknown target config. */
 export async function readLiveConfigForProspective(ctx: Context): Promise<unknown> {
-  try {
-    return JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
-  } catch {
-    return undefined;
-  }
+  const read = await readIfExists(ctx.transport, `${ctx.settings.dataDir}/config/openclaw.json`);
+  return read.kind === "absent" ? undefined : JSON5.parse(read.value) as unknown;
 }
 
 /** The same read, for a caller about to WRITE based on the result (secrets --apply). Unlike
@@ -418,7 +280,7 @@ export function redactEndpointText(text: string, endpoint?: string): string {
 /** Keep config comparisons private while making their reported values safe to inspect. */
 export function publicConfigValue(path: string, value: unknown): unknown {
   const segments = (() => {
-    try { return configPathParts(path).map((part) => part.key); }
+    try { return configPathParts(path).map((part) => part.kind === "key" ? part.key : part.field); }
     catch { return [path]; }
   })();
   if (segments.some((segment) => SECRET_CONFIG_KEY.test(segment))) return "[redacted]";

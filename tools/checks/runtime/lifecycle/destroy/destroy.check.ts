@@ -18,7 +18,7 @@ import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish, requires } from "#checks/kit/harness.ts";
 import { SAFE_DESTROY_SCRIPT, NEVER_BOOTSTRAPPED, WOULD_REMOVE, DRY_RUN_NOTHING_TO_REMOVE, DRY_RUN_REAL_RUN_HINT, DESTROY_ARGUMENTS } from "#framework/commands/lifecycle/instance/destroy.ts";
-import { SUDO_PASSWORD_REFUSAL } from "#framework/runtime/datadir.ts";
+import { SUDO_PASSWORD_REFUSAL } from "#framework/runtime/files/datadir.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { humanSize } from "#framework/core/io/size.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";

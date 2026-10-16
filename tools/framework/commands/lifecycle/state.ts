@@ -12,7 +12,7 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
 import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/files/datadir.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 import { archiveRoot, listArchive, listSnapshotArchives, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";

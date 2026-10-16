@@ -22,7 +22,7 @@ import { forbiddenRules, forbiddenViolations, verifySnapshot } from "#framework/
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { DATA_DIR_MARKER } from "#framework/runtime/datadir.ts";
+import { DATA_DIR_MARKER } from "#framework/runtime/files/datadir.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 import { archiveRoot, createArchive, listArchive } from "#framework/service/archive/index.ts";
@@ -84,29 +84,48 @@ try {
   // --- the rule table and the boundary matcher (no target needed) ---------------------------------
 
   check(
-    "the migrate rule table is the declarations then its secrets file, in order",
+    "the migrate rule table includes the shared staging file literal, in order",
     JSON.stringify(forbiddenRules("migrate", ["x"]).literals),
-    JSON.stringify(["x", "config/.env"]),
+    JSON.stringify(["x", "config/.env", "config/clawwright-declared-config-patch.json"]),
   );
   check(
     "migrate keeps the staging family a prefix rule",
     JSON.stringify(forbiddenRules("migrate", ["x"]).prefixes),
-    JSON.stringify(["config/.env.clawwright-", "config/clawwright-desired.dry-"]),
+    JSON.stringify(["config/.env.clawwright-", "config/clawwright-declared-config-patch.dry-", "config/clawwright-desired.dry-"]),
   );
   check(
     "the share rule table adds its identity/state directories as literals",
     JSON.stringify([...forbiddenRules("share", []).literals].sort()),
-    JSON.stringify(["config/.env", "config/agents/", "config/devices/", "config/identity/", "config/state/"]),
+    JSON.stringify(["clawwright-declared.json", "config/.env", "config/agents/", "config/clawwright-declared-config-patch.json", "config/clawwright-desired.json", "config/devices/", "config/identity/", "config/state/"]),
   );
   check(
     "share keeps the staging family a prefix rule too",
     JSON.stringify(forbiddenRules("share", []).prefixes),
-    JSON.stringify(["config/.env.clawwright-", "config/clawwright-desired.dry-"]),
+    JSON.stringify(["config/.env.clawwright-", "config/clawwright-declared-config-patch.dry-", "config/clawwright-desired.dry-"]),
   );
   check(
     "full forbids nothing structurally",
     JSON.stringify([forbiddenRules("full", ["anything"]).literals, forbiddenRules("full", ["anything"]).prefixes]),
     JSON.stringify([[], []]),
+  );
+
+  check(
+    "the real and dry patch staging rules align and ledgers are profile-specific",
+    [
+      forbiddenViolations("migrate", [], ["config/clawwright-declared-config-patch.json", "config/clawwright-declared-config-patch.dry-deadbeef.json"]),
+      forbiddenViolations("share", [], ["config/clawwright-declared-config-patch.json", "config/clawwright-declared-config-patch.dry-deadbeef.json", "clawwright-declared.json"]),
+      forbiddenViolations("migrate", [], ["clawwright-declared.json", "clawwright-managed.json"]),
+    ],
+    [
+      ["config/clawwright-declared-config-patch.json", "config/clawwright-declared-config-patch.dry-"],
+      ["config/clawwright-declared-config-patch.json", "clawwright-declared.json", "config/clawwright-declared-config-patch.dry-"],
+      [],
+    ],
+  );
+  check(
+    "legacy shared staging names remain forbidden",
+    forbiddenViolations("share", [], ["config/clawwright-desired.json", "config/clawwright-desired.dry-12345678.json"]),
+    ["config/clawwright-desired.json", "config/clawwright-desired.dry-"],
   );
 
   const declarations = ["vault", "config/private.env"];
@@ -176,7 +195,7 @@ try {
     const PARENT = `/tmp/clawwright-pp-prefix-${tag}`;
     const DATA = `${PARENT}/data`;
     const ARCHIVES = `${PARENT}/archives`;
-    await transport.mkdirp(`${DATA}/config`);
+  await transport.mkdirp(`${DATA}/config`);
     await transport.mkdirp(`${DATA}/vault`);
     await transport.mkdirp(`${DATA}/vault-public`);
     await transport.mkdirp(`${DATA}/workspace`);

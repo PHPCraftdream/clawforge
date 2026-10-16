@@ -15,7 +15,7 @@ import { UserError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport, type ExecResult } from "#framework/runtime/transport/transport.ts";
 import { shellQuote } from "#framework/core/io/shell.ts";
-import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
+import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/files/datadir.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { check, finish, requires } from "#checks/kit/harness.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));

@@ -25,7 +25,7 @@ import { setupFixtureDeployment, teardownFixtureDeployment } from "../fixture.ts
 import type { TargetSpec } from "../fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function codes(problems: readonly { code: string }[]): string[] {
   return problems.map((entry) => entry.code).sort();
@@ -317,7 +317,8 @@ const BOTH_OK = [
       const ctx = stubContext({ ...CLEAN, liveConfig });
       const inspection = await gatherInspection(ctx);
       const drift = inspection.problems.filter((entry) => entry.code === "CONFIG_DRIFT");
-      check("credential and unrelated nested configuration both drift", drift.map((entry) => entry.code), ["CONFIG_DRIFT", "CONFIG_DRIFT"]);
+      check("credential and unrelated nested configuration both drift", drift.map((entry) => entry.code), ["CONFIG_DRIFT"]);
+      checkTrue("consolidated drift identifies both affected config paths", drift.length === 1 && drift[0]!.detail.includes("channels.telegram.proxy") && drift[0]!.detail.includes("settings"));
       check("ordinary nested values remain useful", inspection.observed.config.settings, {
         public: "visible", nested: { apiKey: "[redacted]", endpoint: "[redacted]" },
       });
@@ -331,7 +332,9 @@ const BOTH_OK = [
         check(`inspect JSON excludes ${secret}`, serialized.includes(secret), false);
       }
       const plan = await computePlan(ctx);
-      check("plan remains aware of both config drift paths", plan.problems.filter((entry) => entry.code === "CONFIG_DRIFT").length, 2);
+      const planDrift = plan.problems.filter((entry) => entry.code === "CONFIG_DRIFT");
+      check("plan remains aware of both config drift paths", planDrift.length, 1);
+      checkTrue("plan drift identifies both affected config paths", planDrift.length === 1 && planDrift[0]!.detail.includes("channels.telegram.proxy") && planDrift[0]!.detail.includes("settings"));
       check("plan JSON excludes config credentials", JSON.stringify(plan).includes("demo-pass"), false);
       const output: string[] = [];
       await withOutputSink((chunk) => output.push(chunk), () => orchestrationCommands.inspect.run(ctx, ["--json"]));

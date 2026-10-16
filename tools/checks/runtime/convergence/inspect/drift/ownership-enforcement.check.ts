@@ -13,6 +13,7 @@ import {
 import { declaredState } from "#framework/commands/orchestration/inspect/declared.ts";
 import { observeConfig } from "#framework/commands/orchestration/inspect/drift.ts";
 import { problem } from "#framework/service/inspection.ts";
+import { TargetReadUnknownError } from "#framework/runtime/transport/transport.ts";
 import type { Problem, DeclaredState } from "#framework/service/inspection.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -39,7 +40,7 @@ check("exact owner wins over covering prefix", conflictingDeclaredPath([...owner
 // An ancestor of an owned path conflicts too: applying it replaces the object that holds
 // the owned subpath, whether the declared value is an object or a scalar.
 check("ancestor of an owned path conflicts", conflictingDeclaredPath([...owners], "owned"), owners[0]);
-check("deeper-than-owned is unowned", conflictingDeclaredPath([...owners], "owned.value.extra"), undefined);
+check("deeper-than-owned conflicts to protect the owned ancestor", conflictingDeclaredPath([...owners], "owned.value.extra"), owners[0]);
 check("sibling of an owned path is fine", conflictingDeclaredPath([...owners], "owned.other"), undefined);
 check("unowned path is fine", conflictingDeclaredPath([...owners], "free.value"), undefined);
 check("prefix match is segment-wise", conflictingDeclaredPath([{ recipe: "a", path: "z", mode: "value", prefix: true }], "zz.top"), undefined);
@@ -86,16 +87,15 @@ const ctx = {
   settings: { image: "fixture-image", dataDir: join(root, "data") },
   transport: {
     async readFile(path: string): Promise<string> {
-      if (path === `${ctx.settings.dataDir}/config/openclaw.json`) {
-        return JSON.stringify({
-          owned: { value: "live" },
-          zone: { deep: "live" },
-          free: { value: "live", other: "live" },
-        });
-      }
-      throw new Error(`unexpected read: ${path}`);
+      if (path === `${ctx.settings.dataDir}/config/openclaw.json`) return JSON.stringify({ owned: { value: "live" }, zone: { deep: "live" }, free: { value: "live", other: "live" } });
+      throw new Error();
     },
-    async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+    async exists(path: string): Promise<boolean> {
+      if (path === `${ctx.settings.dataDir}/config/openclaw.json`) return true;
+      return false;
+    },
+    async exec(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+      if (command === "stat") return { code: 0, stdout: "2026-09-16 12:00:00.000000000 +0000\n", stderr: "" };
       return { code: 1, stdout: "", stderr: "" };
     },
   },
@@ -141,8 +141,7 @@ try {
     ],
   );
 
-  // Drift: the owned path is skipped, the unowned one still drifts.
-  const driftProblems: Problem[] = [];
+  // Drift: ownership conflicts while independently computable unowned drift remains visible.
   const live: DeclaredState = {
     deployment: "fixture",
     config: [{ path: "owned.value", value: "declared" }, { path: "free.value", value: "declared" }],
@@ -150,32 +149,86 @@ try {
     recipes: [],
     ownedConfigPaths: inspection.ownedConfigPaths,
   };
-  await observeConfig(ctx, live, driftProblems);
-  check(
-    "owned path produces no CONFIG_DRIFT",
-    driftProblems.filter((entry) => entry.code === "CONFIG_DRIFT").map((entry) => entry.detail),
-    driftProblems.filter((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("free.value")).map((entry) => entry.detail),
-  );
+  const conflictProblems: Problem[] = [];
+  await observeConfig(ctx, live, conflictProblems);
   checkTrue(
-    "owned path produces no CONFIG_DRIFT (count)",
-    driftProblems.filter((entry) => entry.code === "CONFIG_DRIFT").length === 1
-      && driftProblems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("owned.value")) === false,
+    "ownership drift identifies its declared path",
+    conflictProblems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("owned.value")),
   );
 
-  // Broken catalog degrades fail-visible: one problem, and BOTH paths compared (the owned
-  // one drifts too, since nothing could be proven owned).
+  const freeOnly: DeclaredState = { ...live, config: [{ path: "free.value", value: "declared" }] };
+  const freeDriftProblems: Problem[] = [];
+  await observeConfig(ctx, freeOnly, freeDriftProblems);
+  checkTrue(
+    "free-path drift excludes owned-path conflict",
+    freeDriftProblems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("free.value"))
+      && freeDriftProblems.every((entry) => entry.code !== "CONFIG_DRIFT" || !entry.detail.includes("owned.value")),
+  );
+
+  const inaccessibleCause = new Error();
+  const inaccessible = {
+    ...ctx,
+    transport: { ...ctx.transport, async exists(): Promise<boolean> { throw inaccessibleCause; } },
+  } as unknown as Context;
+  const inaccessibleError = await refusal(() => observeConfig(inaccessible, live, []));
+  checkTrue("unknown config availability is wrapped", inaccessibleError instanceof TargetReadUnknownError && inaccessibleError.cause === inaccessibleCause);
+  const deniedRead = new Error();
+  const unreadable = {
+    ...ctx,
+    transport: {
+      ...ctx.transport,
+      async readFile(_path: string): Promise<string> { throw deniedRead; },
+    },
+  } as unknown as Context;
+  const unreadableError = await refusal(() => observeConfig(unreadable, live, []));
+  checkTrue("unknown config read propagates", unreadableError instanceof TargetReadUnknownError && unreadableError.cause === deniedRead);
+
+  const statFailure = {
+    ...ctx,
+    transport: { ...ctx.transport, async exec(_command: string): Promise<{ code: number; stdout: string; stderr: string }> { return { code: 1, stdout: "", stderr: "" }; } },
+  } as unknown as Context;
+  check("stat nonzero allows config comparison without mtime", (await observeConfig(statFailure, live, [])).mtimeMs, undefined);
+  const statThrown = new Error();
+  const statException = { ...ctx, transport: { ...ctx.transport, async exec(): Promise<never> { throw statThrown; } } } as unknown as Context;
+  checkTrue("stat transport exception propagates unchanged", await refusal(() => observeConfig(statException, live, [])) === statThrown);
+
+  let malformedReadPath = "";
+  const malformed = {
+    ...ctx,
+    transport: {
+      ...ctx.transport,
+      async readFile(path: string): Promise<string> { malformedReadPath = path; return '{"privateValue":"secret",'; },
+    },
+  } as unknown as Context;
+  const malformedProblems: Problem[] = [];
+  await observeConfig(malformed, live, malformedProblems);
+  checkTrue(
+    "broken live config finding names the file path without leaking content",
+    malformedProblems.length === 1
+      && malformedProblems[0]!.code === "CONFIG_DRIFT"
+      && malformedProblems[0]!.detail.includes(malformedReadPath)
+      && !malformedProblems[0]!.detail.includes("privateValue")
+      && !malformedProblems[0]!.detail.includes("secret"),
+  );
+
+  // A broken catalog leaves ownedConfigPaths undefined, so even an owned path
+  // cannot be proven protected and is conservatively treated as unowned drift.
   await mkdir(join(recipes, "beta"), { recursive: true });
   await writeFile(join(recipes, "beta", "recipe.json"), "{");
   const degraded: Problem[] = [];
   await observeConfig(ctx, live, degraded);
   check(
-    "broken catalog is its own problem, both paths still compared",
+    "broken catalog problem and drift types",
     degraded.map((entry) => entry.code),
-    ["SET_RECIPE_INVALID", "CONFIG_DRIFT", "CONFIG_DRIFT"],
+    ["SET_RECIPE_INVALID", "CONFIG_DRIFT"],
   );
   checkTrue(
-    "broken catalog problem names the broken recipe",
-    degraded[0].detail.includes("beta"),
+    "ownership CONFIG_DRIFT includes both owned and free paths",
+    degraded.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("owned.value") && entry.detail.includes("free.value")),
+  );
+  checkTrue(
+    "broken recipe is identified in catalog problem",
+    degraded[0].code === "SET_RECIPE_INVALID" && degraded[0].detail.includes("beta"),
   );
   checkTrue(
     "async refusal surfaces the catalog error",

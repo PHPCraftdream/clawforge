@@ -5,10 +5,10 @@
 // filesystem actually demands them — blindly prefixing sudo would prompt for a password on
 // every routine run, which is how the shell version once hung.
 
-import { log, info, die } from "../core/io/log.ts";
-import { renderArguments } from "../core/io/invocation/render.ts";
-import type { Context } from "../core/context.ts";
-import { lockHome } from "./lock/instance-lock.ts";
+import { log, info, die } from "../../core/io/log.ts";
+import { renderArguments } from "../../core/io/invocation/render.ts";
+import type { Context } from "../../core/context.ts";
+import { lockHome } from "../lock/instance-lock.ts";
 
 /** The fixed uid:gid the image runs as. Exported for callers that need to force escalation
  *  against it directly — a writable-probe on a tree's root says nothing about a
@@ -27,7 +27,7 @@ export const SUDO_PASSWORD_REFUSAL = "sudo asks for a password, which cannot be 
 export const DATA_DIR_MARKER = ".clawwright-data-dir";
 
 const DATA_DIR_MARKER_CONTENT =
-  "clawwright data directory — created or adopted by clawwright (runtime/datadir.ts).\n" +
+  "clawwright data directory — created or adopted by clawwright (runtime/files/datadir.ts).\n" +
   "Written by ensureDataDirs; its presence is what keeps ownership maintenance narrow:\n" +
   "a tree without it was not set up by this framework and is never re-owned automatically.\n";
 
@@ -451,4 +451,4 @@ export async function ensureSecretsFile(ctx: Context): Promise<void> {
   await runMaybePrivileged(ctx, path, "chown", [OWNER, path], { force: await needsOwnerEscalation(ctx, OWNER) });
   info(`put provider keys there, then run ${commandLine(["configure-provider"])}`);
 }
-import { commandLine } from "../core/io/invocation/render.ts";
+import { commandLine } from "../../core/io/invocation/render.ts";

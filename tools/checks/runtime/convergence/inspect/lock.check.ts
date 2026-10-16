@@ -67,7 +67,7 @@ try {
     check("and still answers with the verdict", (JSON.parse(clean.output) as { healthy: boolean }).healthy, true);
   }
   {
-    const broken = await doctorOutcome({ mirrorChecksums: goodChecksums });
+    const broken = await doctorOutcome({ mirrorChecksums: goodChecksums, targetEnv: "", });
     check("a blocking problem fails the command", broken.failed, true);
     const payload = JSON.parse(broken.output) as { problems: { code: string }[]; nextActions: string[] };
     check("the report is produced before it fails, not instead of it", payload.problems.map((entry) => entry.code), ["SECRET_MISSING"]);

@@ -8,7 +8,7 @@ import { readName } from "#framework/core/values/names.ts";
 import {
   clearRecipesDir, loadRecipe, parseRecipeDefinition, recipeEndpointOwners, useRecipesDir,
 } from "#framework/service/recipe.ts";
-import { ownerOfConfigPath, recipePathOwners, type RecipePathOwner } from "#framework/set/ownership/recipe-paths.ts";
+import { ownerOfConfigPath, conflictingDeclaredPath, filterOwnedDeclarations, recipePathOwners, type RecipePathOwner } from "#framework/set/ownership/recipe-paths.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function refusal(body: () => unknown | Promise<unknown>): Promise<unknown> {
@@ -173,8 +173,20 @@ try {
   check("deepest prefix wins", ownerOfConfigPath(owners, "a.b.z"), owners[1]);
   check("shallow prefix serves the rest", ownerOfConfigPath(owners, "a.z"), owners[0]);
   check("no owner returns undefined", ownerOfConfigPath(owners, "b.c"), undefined);
+  check("list-member owner blocks arbitrary descendants", ownerOfConfigPath(owners, "q.child"), owners[3]);
+  check("deepest/exact conflicting owner is stable", ownerOfConfigPath([
+    { recipe: "wide", path: "a", mode: "value", prefix: true },
+    { recipe: "exact", path: "a.b", mode: "list-member", prefix: false },
+  ], "a.b.child"), { recipe: "exact", path: "a.b", mode: "list-member", prefix: false });
   check("prefix is segment-wise", ownerOfConfigPath(owners, "ab.c"), undefined);
-  check("prefix owns its own segments", ownerOfConfigPath(owners, "a.b.c.d"), owners[1]);
+  check("exact value ownership blocks descendants", ownerOfConfigPath([{ recipe: "exact", path: "a.b", mode: "value", prefix: false }], "a.b.c"), { recipe: "exact", path: "a.b", mode: "value", prefix: false });
+  check("exact value ownership conflicts with descendants", conflictingDeclaredPath([{ recipe: "exact", path: "a.b", mode: "value", prefix: false }], "a.b.c"), { recipe: "exact", path: "a.b", mode: "value", prefix: false });
+  check("exact value ownership blocks selector descendants", ownerOfConfigPath([{ recipe: "exact", path: "a.b", mode: "value", prefix: false }], "a.b[id=x].child"), { recipe: "exact", path: "a.b", mode: "value", prefix: false });
+  check("filter drops descendants under exact ownership", filterOwnedDeclarations([{ path: "a.b.c" }], [{ recipe: "exact", path: "a.b", mode: "value", prefix: false }]), { kept: [], dropped: 1 });
+  check("a narrow exact owner covers a plain descendant lookup", ownerOfConfigPath(owners, "a.b.c.d"), owners[2]);
+  check("deepest owner wins for selector declaration", ownerOfConfigPath(owners, "a.b[id=x].value"), owners[2]);
+  check("selector matching sibling does not overlap unrelated root", ownerOfConfigPath(owners, "other[id=x].value"), undefined);
+  check("root selector overlaps deepest owned subtree", ownerOfConfigPath(owners, "[id=x].value"), owners[2]);
 } finally {
   clearRecipesDir();
   await rm(root, { recursive: true, force: true });

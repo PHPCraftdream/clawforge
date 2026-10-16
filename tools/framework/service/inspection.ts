@@ -313,8 +313,8 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   SET_DECLARATION_INVALID: {
     severity: "blocking",
-    // config/desired-state.json is a batch-file payload for OpenClaw's `config set
-    // --batch-file` (JSON array of {path, value}); syntactically valid JSON of the wrong
+    // config/desired-state.json is an ordered list of {path, value} declarations; each
+    // path is validated by the resolver, so syntactically valid JSON of the wrong shape
     // shape (an object, say) passes JSON.parse but is not a declaration.
     summary: "config/desired-state.json is valid JSON but not a valid list of {path, value} operations",
     next: command("set validate"),

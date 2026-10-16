@@ -527,7 +527,8 @@ function printAcceptanceReport(
     log("security");
     for (const finding of security.findings) {
       const label = finding.suppressed ? "SUPPRESSED" : finding.severity === "blocking" ? "BLOCKING" : "WARN";
-      const line = `${label.padEnd(10)} ${finding.source} ${finding.checkId}  ${finding.message}` +
+      const line = `${label.padEnd(10)} ${finding.source} ${finding.checkId}${finding.title === undefined ? "" : ` ${finding.title}`}  ${finding.message}` +
+        (finding.remediation === undefined ? "" : `; remediation: ${finding.remediation}`) +
         (finding.suppressed ? ` (suppressed: ${finding.suppressedReason})` : "");
       if (finding.severity === "blocking" && !finding.suppressed) warn(line);
       else info(line);

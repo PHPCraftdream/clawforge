@@ -7,10 +7,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
 import { configValuesEqual, effectiveDeclarationPaths } from "#framework/commands/orchestration/inspect/helpers.ts";
+import { desiredConfig } from "#framework/core/values/config/desired-config.ts";
+import { observeConfig } from "#framework/commands/orchestration/inspect/drift.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "#checks/runtime/convergence/inspect/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();
 
@@ -105,6 +107,52 @@ try {
       await writeFile(desiredStatePath, validDesiredState);
     }
 
+    check("removed declaration prunes live drift", desiredConfig({ a: { b: 99 }, list: [{ id: "old", value: 2 }] }, [], [{ path: "a.b", value: 1 }, { path: "list[id=old]", value: [{ id: "old", value: 2 }] }]).patch, { a: { b: null }, list: [] });
+    check("removed terminal object selector prunes without its forced field", desiredConfig({ rows: [{ id: "a", value: 2 }] }, [], [{ path: "rows[id=a]", value: { id: "a", value: 2, forced: true } }]).patch, { rows: [] });
+    check("removed terminal set selector prunes without recorded key", desiredConfig({ rows: [{ id: "a", value: 2 }] }, [], [{ path: "rows[id=a]", value: [{ value: 2 }, { extra: true }] }]).patch, { rows: [] });
+    let numericRefused = false;
+    try { desiredConfig({}, [], [{ path: "rows[0]", value: "recorded" }]); } catch { numericRefused = true; }
+    check("removed numeric path refuses even when absent", numericRefused, true);
+    check("missing live configuration starts empty", desiredConfig(undefined, [{ path: "a", value: 1 }], []).desired, { a: 1 });
+    let invalidLiveRefused = false;
+    try { desiredConfig([], [], []); } catch { invalidLiveRefused = true; }
+    check("present non-object live configuration is refused", invalidLiveRefused, true);
+    const matchingLive = { a: { b: 1 } };
+    const parentDeclaration = [{ path: "a", value: { b: 1 } }];
+    const childDeclaration = [{ path: "a.b", value: 1 }];
+    const matchingBefore = JSON.stringify([matchingLive, parentDeclaration, childDeclaration]);
+    const parentDesired = desiredConfig(matchingLive, parentDeclaration, childDeclaration);
+    check("a matching child declaration is not a parent replacement patch", parentDesired.patch, undefined);
+    check("a matching child declaration has no affected paths", parentDesired.affectedPaths, []);
+    check("the desired-config comparison does not mutate its inputs", JSON.stringify([matchingLive, parentDeclaration, childDeclaration]), matchingBefore);
+
+    const parentRecorded = [{ path: "a", value: { b: 1 } }];
+    {
+      const base = stubContext({ targetEnv: "ZAI_API_KEY=k\\n", liveConfig: matchingLive, mirrorChecksums: goodChecksums });
+      const recordPath = `${base.settings.dataDir}/clawwright-declared.json`;
+      const recordedTransport = {
+        ...base,
+        transport: {
+          ...base.transport,
+          exists: async (path: string) => path === CONFIG_FILE || path === recordPath || base.transport.exists(path),
+          readFile: async (path: string) => path === CONFIG_FILE
+            ? JSON.stringify(matchingLive)
+            : path === recordPath
+              ? JSON.stringify({ version: 1, entries: childDeclaration })
+              : base.transport.readFile(path),
+        },
+      } as unknown as Context;
+      const integrationProblems: Parameters<typeof observeConfig>[2] = [];
+      await observeConfig(recordedTransport, { config: parentRecorded, recipes: [], deployment, image: "fixture-image" }, integrationProblems);
+      check("observeConfig sees no drift when a parent declaration matches the live child", integrationProblems.filter((entry) => entry.code === "CONFIG_DRIFT"), []);
+
+      const removedPathProblems: Parameters<typeof observeConfig>[2] = [];
+      await observeConfig(recordedTransport, { config: [], recipes: [], deployment, image: "fixture-image" }, removedPathProblems);
+      const removedDrift = removedPathProblems.filter((entry) => entry.code === "CONFIG_DRIFT");
+      checkTrue("removed declaration reports exactly its affected config path", removedDrift.length === 1 && removedDrift[0]!.detail.endsWith("a.b"));
+    }
+
+    check("current declaration matching its live value has no patch", desiredConfig({ a: { b: 1 } }, [{ path: "a.b", value: 1 }], [{ path: "a.b", value: 1 }]).patch, undefined);
     check("semantic equality distinguishes values with different types", configValuesEqual(1, "1"), false);
     check("effective paths normalize dot and bracket aliases", effectiveDeclarationPaths([
       { path: "gateway.mode", value: "remote" },
@@ -140,7 +188,6 @@ try {
     // reached the live config — before the fix, the secrets check only ever asked the LIVE
     // config, so a new provider declared in config/desired-state.json (with no apiKey set,
     // and no NEWPROV_API_KEY in the target's config/.env either) produced no SECRET_MISSING
-    // at all, and plan.ts's "secrets" step was never scheduled alongside the CONFIG_DRIFT
     // step that was about to write that provider into the live config.
     const desiredStatePath = resolve(deployment, "config", "desired-state.json");
     const validDesiredState = await readFile(desiredStatePath, "utf8");
@@ -172,11 +219,7 @@ try {
       const inspection = await gatherInspection(
         stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
       );
-      check(
-        "a declared path through __proto__ is reported as a finding, not silently applied",
-        inspection.problems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("__proto__")),
-        true,
-      );
+      checkTrue("a declared path through __proto__ is reported as a finding, not silently applied", inspection.problems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("__proto__")));
       check(
         "and Object.prototype itself is never touched",
         (Object.prototype as Record<string, unknown>).clawwrightReviewProbe,
@@ -219,11 +262,7 @@ try {
       },
     } as unknown as Context;
     const inspection = await gatherInspection(ctx);
-    check(
-      "a stale local tag must not fool the set-requirement check — the running container is what matters",
-      codes(inspection.problems).includes("SET_REQUIREMENT_UNMET"),
-      true,
-    );
+      checkTrue("a stale local tag must not fool the set-requirement check — the running container is what matters", codes(inspection.problems).includes("SET_REQUIREMENT_UNMET"));
     // The same stale-tag scenario, but for the DISPLAYED digest: before the fix, this field
     // still called ctx.runtime.imageReference() (the stale, re-pulled tag's digest, A) while
     // the problem two lines above already knew the real running one (B) — one command

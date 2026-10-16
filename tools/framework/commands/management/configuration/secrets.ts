@@ -16,7 +16,7 @@ import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
 import type { SecretLocation, SecretRequirement } from "#src/service/secrets.ts";
 import { loadSecrets, dumpSecrets } from "#src/commands/lifecycle/state.ts";
-import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { secretsFileOnTarget } from "#src/runtime/files/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";

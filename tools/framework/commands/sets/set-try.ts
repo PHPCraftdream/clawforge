@@ -26,7 +26,7 @@ import { recordInstalledSet, unpackArtifactVerified } from "#src/set/artifacts/i
 import { localSecretValues } from "./set-secrets-guard.ts";
 import type { LocalArtifact } from "#src/core/values/plan.ts";
 import * as kinds from "#src/core/values/kinds.ts";
-import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/datadir.ts";
+import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/files/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/configuration/credentials/provider.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { preflightSecrets } from "#src/commands/management/configuration/secrets.ts";

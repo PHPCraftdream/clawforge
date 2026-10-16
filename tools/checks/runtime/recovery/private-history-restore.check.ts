@@ -35,7 +35,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 import { createArchive, listArchive } from "#framework/service/archive/index.ts";
-import { sudoFor } from "#framework/runtime/datadir.ts";
+import { sudoFor } from "#framework/runtime/files/datadir.ts";
 import {
   clearRecipesDir,
   installedRecipePrivatePaths,

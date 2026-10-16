@@ -91,6 +91,7 @@ over automatically, without the flag.
 | `configure-provider` | `[--provider <id>] [--env <var>] [--force] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Configure model providers from target env vars |
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force] [--break-foreign-lock <hostId>] [--json]` | Show required secrets and their state (destructive for some actions) |
 | `recipe` | `[<action>] [<name>] [<new-name>] [<recipe-action>] [<arg…>] [--json] [--with-hooks] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--volumes] [--service <service>] [--build] [--pull] [--reconcile-consumer] [--helper-image <sha256>] [--shutdown-timeout <seconds>] [--apply] [--version <version>] [--artifact <basename>]` | Deploy service recipes beside the instance (destructive for some actions) |
+| `files` | `[--apply] [--dry-run] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | Apply or preview declared deployment files (destructive for some actions) |
 | `provision-agent` | `<recipe> [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Wire a recipe's MCP server to an OpenClaw agent |
 | `set` | `<action> [<artifacts…>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]` | Build or validate the set artifact (destructive for some actions) |
 

@@ -15,13 +15,15 @@ import { check, finish } from "#checks/kit/harness.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
+const CONFIG_PATH = `${DATA_DIR}/config/openclaw.json`;
 const LOCK_HOME = "/srv/openclaw/data-locks";
 
 /** A stub context whose bootstrap run succeeds end to end. `live` decides whether the
  *  gateway answers isRunning() with true (an instance already up) or false (fresh). */
-function liveOrFreshContext(live: boolean): { ctx: Context; runtimeCalls: string[] } {
+function liveOrFreshContext(live: boolean): { ctx: Context; runtimeCalls: string[]; patchCalls: string[][] } {
   const runtimeCalls: string[] = [];
   const files = new Map<string, string>();
+  const patchCalls: string[][] = [];
   const dirs = new Set<string>();
   const ctx = {
     settings: {
@@ -35,12 +37,18 @@ function liveOrFreshContext(live: boolean): { ctx: Context; runtimeCalls: string
     transport: {
       description: "stub",
       async exists(path: string): Promise<boolean> {
-        if (path === DATA_DIR || path.startsWith(`${DATA_DIR}/`)) return path.endsWith("openclaw.json");
+        if (path === `${DATA_DIR}/clawwright-declared.json`) return false;
+        if (path === DATA_DIR || path.startsWith(`${DATA_DIR}/`)) return path === CONFIG_PATH || path === `${DATA_DIR}/clawwright-declared.json`;
         return true;
       },
       async readFile(path: string): Promise<string> {
+        if (path === `${DATA_DIR}/clawwright-declared.json`) {
+          const error = new Error(`ENOENT: no such file: ${path}`) as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }
+        if (path === CONFIG_PATH) return JSON.stringify({ gateway: { bind: "all" } });
         if (path.endsWith("holder.json")) throw new Error("no holder recorded");
-        if (path.endsWith("openclaw.json")) return "{}";
         return files.get(path) ?? "";
       },
       async writeFile(path: string, content: string): Promise<void> {
@@ -85,7 +93,8 @@ function liveOrFreshContext(live: boolean): { ctx: Context; runtimeCalls: string
         runtimeCalls.push("isRunning");
         return live;
       },
-      async runOneOff(): Promise<{ code: number; stdout: string; stderr: string }> {
+      async runOneOff(_service: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        patchCalls.push(args);
         runtimeCalls.push("runOneOff");
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -103,18 +112,21 @@ function liveOrFreshContext(live: boolean): { ctx: Context; runtimeCalls: string
       },
     },
   } as unknown as Context;
-  return { ctx, runtimeCalls };
+  return { ctx, runtimeCalls, patchCalls };
 }
 
 const deployment = await mkdtemp(join(tmpdir(), "clawwright-bootstrap-live-"));
 try {
   await mkdir(resolve(deployment, "config"), { recursive: true });
-  await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
+  await writeFile(
+    resolve(deployment, "config", "desired-state.json"),
+    JSON.stringify([{ path: "gateway.bind", value: "loopback" }]),
+  );
   await writeFile(resolve(deployment, "config", "openclaw.json"), "{}");
   useDeployment(deployment);
 
   {
-    const { ctx, runtimeCalls } = liveOrFreshContext(true);
+    const { ctx, runtimeCalls, patchCalls } = liveOrFreshContext(true);
     let said = "";
     await withOutputSink((chunk: string) => {
       said += chunk;
@@ -125,6 +137,7 @@ try {
       said.includes("restart to pick it up"),
       true,
     );
+    check("live config drift really invokes the config patch", patchCalls.length, 1);
     check("bootstrap still starts (not restarts) the gateway service", runtimeCalls.includes("start") && !runtimeCalls.includes("restart"), true);
   }
 

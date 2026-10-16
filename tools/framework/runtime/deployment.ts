@@ -109,6 +109,10 @@ export function desiredStateFile(): string {
   return resolve(setSourceDir() ?? deploymentDir(), "config", "desired-state.json");
 }
 
+export function filesFile(): string {
+  return resolve(setSourceDir() ?? deploymentDir(), "config", "files.json");
+}
+
 /** Template listing the variables this deployment needs, without values. */
 export function secretsTemplateFile(): string {
   return resolve(deploymentDir(), "config", "secrets.template.env");

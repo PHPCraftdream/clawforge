@@ -30,6 +30,7 @@
       configure-provider   Configure model providers from target env vars
       secrets              Show required secrets and their state *
       recipe               Deploy service recipes beside the instance *
+      files                Apply or preview declared deployment files *
       provision-agent      Wire a recipe's MCP server to an OpenClaw agent
       set                  Build or validate the set artifact *
     
@@ -402,7 +403,7 @@
     The deployment-folder findings — a stale .env fact, a missing desired-state.json, an incomplete local store — are warnings for the same reason: the instance is doing its job, and a folder that is merely behind must not fail a build.
     A check that fails on everything it has an opinion about stops being consulted.
     Also runs the security gate — `openclaw security audit` and `openclaw secrets audit` inside the instance, plus what only the host side can see: the gateway published on every interface (blocking unless acknowledged in config/security-suppressions.json), a public port that Docker's DOCKER-USER chain may let bypass an active UFW, and the deployment's own secret file permissions.
-    Never every ./clawwright inspect/plan call — each audit is a container exec — only doctor and accept. Suppress a finding by upstream checkId in config/security-suppressions.json; it stays visible but stops counting.
+    Never every ./clawwright inspect/plan call — each audit is a container exec — only doctor and accept. Suppress a finding by upstream checkId in config/security-suppressions.json; it stays visible but stops counting. OC_AUDIT_BLOCK sets the OpenClaw audit threshold (critical by default, or warn); existing config/security-suppressions.json exceptions continue to apply.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
@@ -417,7 +418,7 @@
     Each step says which finding put it there.
     A few steps are advisory: reconnecting an MCP client is something only the client can do, the lock file is never re-pinned automatically since doing that would rubber-stamp whatever drifted,
     and any other problem this framework has no specific step for yet still gets one — named advisory rather than left out, so a problem plan cannot act on is still a problem the reader sees, never one "nothing to do" quietly absorbs.
-    Recovery steps appear early too: a stale .env plans ./clawwright recover-env and a missing desired-state.json plans ./clawwright apply-config --dump, both run exactly as planned — the dump's --force refusal protects an existing declaration, and this one is absent.
+    Recovery steps appear early too: a stale .env plans recover-env and a missing desired-state.json plans apply-config --dump, both run exactly as planned — the dump's --force refusal protects an existing declaration, and this one is absent.
     An incomplete local store plans ./clawwright secrets --dump as advisory instead: it refuses to overwrite an existing store without --force, and whether the store's contents matter is the reader's decision, not a step.
     "nothing to do" prints only once inspect finds this deployment healthy with no problems at all — never merely because plan has no step for what it found.
     Changes nothing. `./clawwright apply` runs exactly this list.
@@ -439,7 +440,7 @@
     --expect <checksum> refuses to run if the declaration changed since that plan was computed (the plan's declarationChecksum). Checked before the first step, because the whole value of the refusal is that it happens first.
     Advisory steps are never performed: reconnecting an MCP client is the client's to do, re-pinning the lock file is a decision, not a repair, and so is the store recovery a plan lists when the local secret store is incomplete — ./clawwright secrets --dump would overwrite it only with --force, so apply reports the step as advisory and leaves the decision where it belongs.
     The operator-side recovery steps that are executable — recover-env, apply-config --dump — run under the same rules as every step: one operation id, a journal entry each, stop at the first failure; they write to the deployment folder rather than the instance, so their runners take no instance lock of their own.
-    --dry-run only lists what the plan computed — it touches nothing, so it cannot tell you whether desired-state.json would actually validate against the target's own schema. `./clawwright apply-config --dry-run` does: a real (lockless) `config set --batch-file --dry-run` against the target, usable even before the instance is healthy.
+    --dry-run only lists what the plan computed — it touches nothing, so it cannot tell you whether desired-state.json would actually validate against the target's own schema. `./clawwright apply-config --dry-run` does: a real (lockless) `config patch --file <path> --dry-run` against the target, usable even before the instance is healthy.
     
     This command can replace or destroy state, depending on the flags given.
     
@@ -457,7 +458,7 @@
     So a recipe declares them in recipes/<name>/acceptance.json and this runs them. The check kinds are the framework's (mcp_responds, mcp_tool, agent_has_tools, cron_matches, agent_answers); no code travels from a deployment into the framework.
     Checks marked usesModel are never run without --with-model: they cost tokens and take an agent turn, which writes to that agent's own workspace. They are always reported as "not-checked" and counted — a suite that silently drops what it did not run reads as coverage it does not have.
     A check that was attempted but got no verdict — the server would not start, the instance refused the call — is reported as "could-not-check" with the reason, never as passed.
-    Also runs the security gate — see `./clawwright doctor`'s own description — and fails on a blocking finding the same way a failed check does.
+    Also runs the security gate — see `./clawwright doctor`'s own description — and fails on a blocking finding the same way a failed check does. OC_AUDIT_BLOCK is critical by default or warn; existing config/security-suppressions.json exceptions continue to apply.
     Exits non-zero when a check fails, could not be checked, or the security gate finds a blocking issue.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
@@ -526,9 +527,8 @@
       --break-foreign-lock cannot be combined with any of --dry-run
       --force requires --dump
     
-    The declaration in config/desired-state.json is the source of truth:
-    this pushes it onto the running instance via OpenClaw's own `config set --batch-file`, overwriting whatever was set by hand.
-    That is the point — drift back to the declared state, not a merge.
+    The declaration in config/desired-state.json is an ordered list of {path,value} declarations. Paths support dot properties, numeric indexes, quoted bracket keys, and selector segments for array objects. Field names match [A-Za-z_$][A-Za-z0-9_$-]*. Bare selector values are nonempty, contain no whitespace, dot, brackets, equals, quotes or backslash (surrounding spaces are trimmed); JSON double-quoted values may be any string, including empty. Middle selectors create when missing and refuse multiple matches. Terminal single-object selectors append when there are no matches and replace the matching object at its existing index when exactly one matches; multiple matches refuse. Terminal array selectors remove all matches and append each declared object with selector fields forced. OpenClaw validates the resulting config against its own schema; the framework does not hardcode one.
+    Apply calculates a live-config JSON Merge Patch and passes it to OpenClaw's `config patch --file`; JSON Merge Patch null deletes a value, so a new null value cannot be represented. Unchanged SecretRefs are preserved. Removed paths are pruned before new declarations using the target dataDir ownership record clawwright-declared.json; the record is updated atomically only after successful real apply. Dry-run does not write it; a corrupt existing record refuses real apply but is treated as empty for dry-run. Numeric-index pruning refuses; remove those paths manually. The recipe overlap guard conservatively checks the first selector with the list prefix before the first selector; any ancestor/descendant overlap refuses.
     bootstrap calls this itself, so a fresh deployment and an existing one end up with the same settings.
     --dump is the reverse: reconstructs a lost desired-state.json from the live instance's own openclaw.json. Recovery is honestly limited — the live config shows the outcome of the declaration, not the declaration itself —
     so only a fixed set of commonly declared paths is recovered (a value OpenClaw defaults to cannot be told apart from a declared one), paths the live config never set are omitted rather than guessed, and recipes are not part of this file at all.
@@ -907,6 +907,24 @@
     new scaffolds recipes/<name>/ — a minimal recipe.json and compose.yml skeleton, no hooks by default — refuses an existing directory the same way import does; --with-hooks also adds commented prepare.ts/verify.ts stubs. Repository-side only, like import: no target, no lock.
     
     This command can replace or destroy state, depending on the action given.
+    
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
+
+=== files --help ===
+==> files — Apply or preview declared deployment files
+    Usage: ./clawwright files [--apply] [--dry-run] [--json] [--break-lock] [--break-foreign-lock <hostId>]
+      --apply                Write declared files into the data directory and prune according to mirror/overlay ownership
+      --dry-run              Plan writes and removals without changing the data directory
+      --json                 Emit the plan or result as JSON
+      --break-lock           Take over the instance lock held by another operation
+      --break-foreign-lock <hostId> Confirm <hostId> for a recorded remote lock owner
+      --apply cannot be combined with any of --dry-run
+      --break-lock cannot be combined with any of --dry-run
+      --break-foreign-lock cannot be combined with any of --dry-run
+    
+    Reads config/files.json and syncs declared source directories into the instance data directory. mirror prunes undeclared files; overlay prunes only ledger-owned files. Use --dry-run to preview and --apply to write. Only data files and the ownership ledger change; the gateway is not restarted. See docs/guide/files.md.
+    
+    This command can replace or destroy state, depending on the flags given.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 

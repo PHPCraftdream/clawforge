@@ -326,3 +326,7 @@ suppression without one. A suppressed finding is never simply gone: it still app
 `doctor`/`accept` gate on. The file fails closed — missing is read as "nothing suppressed",
 but one that exists and cannot be parsed or validated stops the gate outright rather than
 being read as empty.
+
+`OC_AUDIT_BLOCK` controls which OpenClaw security-audit findings block `doctor` and `accept`:
+`critical` (the default) blocks critical findings; `warn` also blocks warnings. Existing
+exceptions remain in `config/security-suppressions.json`.

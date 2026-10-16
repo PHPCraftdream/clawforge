@@ -42,6 +42,7 @@ function ctxWith(answer: (args: string[], attempt: number) => ExecResult) {
   const options: Array<Record<string, unknown> | undefined> = [];
   const attempts = new Map<string, number>();
   const ctx = {
+    settings: { env: { OC_AUDIT_BLOCK: "critical" } },
     runtime: {
       async runOneOff(_service: string, args: string[], opts?: Record<string, unknown>) {
         calls.push(args);
@@ -265,7 +266,9 @@ check(
   }));
   const refused = { code: 1, stdout: "", stderr: SCOPE_ERROR };
   const listed = { code: 0, stdout: JSON.stringify({ jobs: [{ name: "refresh" }] }), stderr: "" };
-  const answer = (args: string[], attempt: number): ExecResult => {
+const answer = (args: string[], attempt: number): ExecResult => {
+    if (args[0] === "security" && args[1] === "audit") return { code: 0, stdout: JSON.stringify({ findings: [] }), stderr: "" };
+    if (args[0] === "secrets" && args[1] === "audit") return { code: 0, stdout: JSON.stringify({ findings: [] }), stderr: "" };
     if (args[0] === "cron" && args[1] === "list") return attempt === 1 ? refused : listed;
     if (args[0] === "agent") return { code: 0, stdout: "{}", stderr: "" };
     return { code: 0, stdout: "{}", stderr: "" };

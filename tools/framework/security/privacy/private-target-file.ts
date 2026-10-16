@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { posix } from "node:path";
 import type { Context } from "../../core/context.ts";
-import { OWNER, needsOwnerEscalation, runMaybePrivileged, sudoFor } from "../../runtime/datadir.ts";
+import { OWNER, needsOwnerEscalation, runMaybePrivileged, sudoFor } from "../../runtime/files/datadir.ts";
 import { PRIVATE_STAGING_MARKER, privateWriteCommand } from "../../runtime/transport/quoting.ts";
 
 /** Publishes private target content atomically, with its runtime owner set before rename. */

@@ -105,7 +105,7 @@ the app.
 | Get a pass/fail exit code for scripts | `./clawwright doctor` | the same inspection `inspect` computes, but exits non-zero on a blocking finding |
 | Understand what's wrong and why | `./clawwright inspect` | every declared-vs-running difference, each with a stable code and a remedy; read-only, never fails the process |
 | Prove the instance actually works, not just runs | `./clawwright smoke` | exercises it end to end — the agent answers, config drift self-heals, snapshots round-trip — `status`/`inspect`/`doctor` only observe |
-| Change the declared configuration | edit the declaration, then `./clawwright plan` → `./clawwright apply` | `apply-config` re-applies the current declaration as it stands, without planning first — the only path before the instance exists at all (bootstrap uses it) and, with `--dry-run`, the only one that actually validates against the target rather than just listing the plan; `configure-provider` only wires a model provider from a secret; `secrets --apply` only pushes secret values into force — none of the three touch `desired-state.json` itself |
+| Change the declared configuration | edit the declaration, then `./clawwright plan` → `./clawwright apply` | `apply-config` applies the ordered `{path,value}` declarations as a patch against live config; it prunes removed declarations using its target-side ownership record, preserving unchanged SecretRefs. See [instance settings as code](docs/guide/operations.md#instance-settings-as-code) for path and selector rules. `configure-provider` only wires a model provider from a secret; `secrets --apply` only pushes secret values into force — none of the three touch `desired-state.json` itself |
 | Save or restore a point-in-time snapshot | `./clawwright backup` / `./clawwright restore` | one archive of this instance's data, by name, kept on the target (the server itself for SSH, not this machine) |
 | Run backups on a schedule | `./clawwright backup install` | crontab (or, on Windows, a printed/applyable Task Scheduler entry) that runs a plain `backup` on `--interval` (default 1d) — pairs with `OC_BACKUP_KEEP` |
 | Move or share an instance's state | `./clawwright pull` / `./clawwright push` | same archive format as backup, meant to travel instead — `migrate`/`share` profiles leave secrets out |
@@ -161,6 +161,7 @@ Change:
   configure-provider   Configure model providers from target env vars
   secrets              Show required secrets and their state *
   recipe               Deploy service recipes beside the instance *
+  files                Apply or preview declared deployment files *
   provision-agent      Wire a recipe's MCP server to an OpenClaw agent
   set                  Build or validate the set artifact *
 

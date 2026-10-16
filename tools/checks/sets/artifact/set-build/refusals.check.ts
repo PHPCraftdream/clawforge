@@ -16,11 +16,9 @@ try {
   // --- a desired-state.json that is syntactically valid JSON but not a list of {path,value}
   // operations must refuse, not build silently -------------------------------------------------
   //
-  // config/desired-state.json is a batch-file payload — OpenClaw's own `config set
-  // --batch-file` (config.ts's applyConfig) consumes it as an array of operations. Before the
-  // fix, only "is this valid JSON" was checked; an object like {"gateway":{"mode":"local"}}
-  // passed JSON.parse and built into a real artifact, failing only later, inside the
-  // container, when config set --batch-file itself choked on it.
+  // desired-state.json remains an operations declaration; apply-config compiles it to a
+  // JSON Merge Patch before transport. This check validates declaration shape, not CLI syntax.
+  // An object like {"gateway":{"mode":"local"}} is not a path/value operations list.
   {
     const desiredStatePath = resolve(deployment, "config", "desired-state.json");
     const validDesiredState = await readFile(desiredStatePath, "utf8");

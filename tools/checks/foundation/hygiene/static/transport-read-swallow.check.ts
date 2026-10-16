@@ -243,24 +243,6 @@ const ALLOW: readonly AllowEntry[] = [
       "noProviderConfigured is a best-effort diagnostic feeding smoke's hint; an unreadable config answers false (documented on the function) rather than aborting a report that has its own failure path",
   },
   {
-    file: "tools/framework/commands/orchestration/inspect/helpers.ts",
-    line: 279,
-    reason:
-      "readLiveConfigForProspective only falls the prospective view back to the declaration; observeConfig (drift.ts) owns reporting the unknown and re-probes with exists(), so the unknown surfaces there",
-  },
-  {
-    file: "tools/framework/commands/orchestration/inspect/drift.ts",
-    line: 97,
-    reason:
-      "the outer catch re-probes existence and reports CONFIG_DRIFT 'could not be read or reached' - the unknown becomes a visible finding, never an empty answer, and inspect keeps its other observations",
-  },
-  {
-    file: "tools/framework/commands/orchestration/inspect/drift.ts",
-    line: 104,
-    reason:
-      "the inner re-probe reports the unreachable stat as a CONFIG_DRIFT finding naming the cause and marks the file not-present for the outer handler - reported, never silent",
-  },
-  {
     file: "tools/framework/commands/lifecycle/bootstrap/index.ts",
     line: 220,
     reason:

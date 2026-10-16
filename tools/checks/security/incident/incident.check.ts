@@ -80,7 +80,7 @@ function stubContext(options: StubOptions = {}): Context & { execCalls: string[]
   };
 
   const ctx = {
-    settings: { bindAddress: "127.0.0.1", gatewayPort: "18789" },
+    settings: { env: {}, bindAddress: "127.0.0.1", gatewayPort: "18789" },
     transport: { description: "stub", exec: transportExec },
     runtime: {
       description: "stub-runtime",

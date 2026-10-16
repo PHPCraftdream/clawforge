@@ -7,6 +7,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
 import { configValuesEqual, effectiveDeclarationPaths } from "#framework/commands/orchestration/inspect/helpers.ts";
+import { desiredConfig } from "#framework/core/values/desired-config.ts";
+import { observeConfig } from "#framework/commands/orchestration/inspect/drift.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "#checks/runtime/convergence/inspect/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -105,6 +107,54 @@ try {
       await writeFile(desiredStatePath, validDesiredState);
     }
 
+    check("removed declaration prunes live drift", desiredConfig({ a: { b: 99 }, list: [{ id: "old", value: 2 }] }, [], [{ path: "a.b", value: 1 }, { path: "list[id=old]", value: [{ id: "old", value: 2 }] }]).patch, { a: { b: null }, list: [] });
+    check("removed terminal object selector prunes without its forced field", desiredConfig({ rows: [{ id: "a", value: 2 }] }, [], [{ path: "rows[id=a]", value: { id: "a", value: 2, forced: true } }]).patch, { rows: [] });
+    check("removed terminal set selector prunes without recorded key", desiredConfig({ rows: [{ id: "a", value: 2 }] }, [], [{ path: "rows[id=a]", value: [{ value: 2 }, { extra: true }] }]).patch, { rows: [] });
+    let numericRefused = false;
+    try { desiredConfig({}, [], [{ path: "rows[0]", value: "recorded" }]); } catch { numericRefused = true; }
+    check("removed numeric path refuses even when absent", numericRefused, true);
+    check("missing live configuration starts empty", desiredConfig(undefined, [{ path: "a", value: 1 }], []).desired, { a: 1 });
+    let invalidLiveRefused = false;
+    try { desiredConfig([], [], []); } catch { invalidLiveRefused = true; }
+    check("present non-object live configuration is refused", invalidLiveRefused, true);
+    const matchingLive = { a: { b: 1 } };
+    const parentDeclaration = [{ path: "a", value: { b: 1 } }];
+    const childDeclaration = [{ path: "a.b", value: 1 }];
+    const matchingBefore = JSON.stringify([matchingLive, parentDeclaration, childDeclaration]);
+    const parentDesired = desiredConfig(matchingLive, parentDeclaration, childDeclaration);
+    check("a matching child declaration is not a parent replacement patch", parentDesired.patch, undefined);
+    check("a matching child declaration has no affected paths", parentDesired.affectedPaths, []);
+    check("the desired-config comparison does not mutate its inputs", JSON.stringify([matchingLive, parentDeclaration, childDeclaration]), matchingBefore);
+
+    const parentRecorded = [{ path: "a", value: { b: 1 } }];
+    await writeFile(desiredStatePath, JSON.stringify(parentRecorded));
+    try {
+      const base = stubContext({ targetEnv: "ZAI_API_KEY=k\\n", liveConfig: matchingLive, mirrorChecksums: goodChecksums });
+      const recordPath = `${base.settings.dataDir}/clawwright-declared.json`;
+      const recordedTransport = {
+        ...base,
+        transport: {
+          ...base.transport,
+          exists: async (path: string) => path === CONFIG_FILE || path === recordPath || base.transport.exists(path),
+          readFile: async (path: string) => path === CONFIG_FILE
+            ? JSON.stringify(matchingLive)
+            : path === recordPath
+              ? JSON.stringify({ version: 1, entries: childDeclaration })
+              : base.transport.readFile(path),
+        },
+      } as unknown as Context;
+      const integrationProblems: Parameters<typeof observeConfig>[2] = [];
+      await observeConfig(recordedTransport, { config: parentRecorded, recipes: [], deployment, image: "fixture-image" }, integrationProblems);
+      check("observeConfig sees no drift when a parent declaration matches the live child", integrationProblems.filter((entry) => entry.code === "CONFIG_DRIFT"), []);
+
+      const removedPathProblems: Parameters<typeof observeConfig>[2] = [];
+      await observeConfig(recordedTransport, { config: [], recipes: [], deployment, image: "fixture-image" }, removedPathProblems);
+      check("a removed declaration reports only its affected path", removedPathProblems.filter((entry) => entry.code === "CONFIG_DRIFT").map((entry) => entry.detail), ["configuration differs at a.b"]);
+    } finally {
+      await writeFile(desiredStatePath, validDesiredState);
+    }
+
+    check("current declaration matching its live value has no patch", desiredConfig({ a: { b: 1 } }, [{ path: "a.b", value: 1 }], [{ path: "a.b", value: 1 }]).patch, undefined);
     check("semantic equality distinguishes values with different types", configValuesEqual(1, "1"), false);
     check("effective paths normalize dot and bracket aliases", effectiveDeclarationPaths([
       { path: "gateway.mode", value: "remote" },

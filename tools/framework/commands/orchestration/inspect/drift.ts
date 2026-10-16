@@ -19,9 +19,11 @@ import {
 import type { ConnectionFacts } from "#src/commands/operate/recover-env/facts.ts";
 import { DEFAULT_SECRET_STORE } from "#src/commands/management/configuration/secrets.ts";
 import { readName } from "#src/core/values/names.ts";
-import { ownerOfConfigPath, recipePathOwners } from "#src/set/ownership/recipe-paths.ts";
+import { readDeclaredConfig as readAppliedDeclarations } from "#src/set/ownership/declared-config.ts";
+import { recipePathOwners, conflictingDeclaredPath } from "#src/set/ownership/recipe-paths.ts";
 import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
-import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt } from "./helpers.ts";
+import { configPathParts, readConfigPath } from "#src/core/values/config-selectors.ts";
+import { desiredConfig } from "#src/core/values/desired-config.ts";
 import type { Context } from "#src/core/context.ts";
 
 /** Parses GNU stat's fractional, timezone-qualified `%y` timestamp. */
@@ -78,35 +80,37 @@ export async function observeConfig(
     // JSON5, not JSON: the live config is OpenClaw's JSON5 gateway format, where a comment
     // or trailing comma is legitimate.
     const parsed = JSON5.parse(await ctx.transport.readFile(configFile)) as unknown;
-    for (const entry of declared.config) config[entry.path] = valueAt(parsed, entry.path);
-    const target = prospectiveConfig(parsed, declared.config);
-    for (const entry of effectiveDeclarationPaths(declared.config)) {
-      if (owners !== undefined && ownerOfConfigPath(owners, entry.path) !== undefined) continue;
-      const actual = valueAt(parsed, entry.path);
-      const desired = valueAt(target, entry.path);
-      if (!configValuesEqual(actual, desired)) {
-        problems.push(
-          problem("CONFIG_DRIFT", `${entry.path} differs from the declaration`),
-        );
-      }
+    for (const entry of declared.config) {
+      const terminalSelector = configPathParts(entry.path).at(-1)?.kind === "selector";
+      config[entry.path] = terminalSelector && Array.isArray(entry.value)
+        ? readConfigPath(parsed, entry.path, "set")
+        : readConfigPath(parsed, entry.path);
+    }
+    const previous = await readAppliedDeclarations(ctx);
+    const desired = desiredConfig(parsed, declared.config, previous.entries);
+    const conflicts = (owners ?? []).flatMap((owner) => {
+      const paths = [...declared.config.map((entry) => entry.path), ...previous.entries.filter((entry) => !declared.config.some((current) => current.path === entry.path)).map((entry) => entry.path)];
+      return paths.flatMap((path) => {
+        const conflict = conflictingDeclaredPath([owner], path);
+        return conflict === undefined ? [] : [path];
+      });
+    });
+    if (conflicts.length > 0) {
+      problems.push(problem("CONFIG_DRIFT", `configuration ownership conflict at ${[...new Set(conflicts)].join(", ")}`));
+    } else if (desired.patch !== undefined) {
+      problems.push(problem("CONFIG_DRIFT", `configuration differs at ${desired.affectedPaths.join(", ")}`));
     }
     const stamp = await ctx.transport.exec("stat", ["-c", "%y", configFile], { allowFailure: true });
     if (stamp.code === 0) {
       mtimeMs = parseStatTimestamp(stamp.stdout);
     }
   } catch {
-    // A never-bootstrapped deployment has no config at all — not drift. Only a file that
-    // exists and cannot be understood is a finding. exists() throwing (unreachable target)
-    // is caught rather than left to abandon every other observation already gathered.
-    let present: boolean;
-    try {
-      present = await ctx.transport.exists(configFile);
-    } catch (error) {
-      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be reached: ${(error as Error).message}`));
-      present = false;
-    }
-    if (present) {
-      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or parsed`));
+    // An absent config is the fresh-deployment shape, not evidence of drift. Other
+    // read/parse/selector failures are findings, but their error text may contain values.
+    let exists = false;
+    try { exists = await ctx.transport.exists(configFile); } catch { /* unavailable */ }
+    if (exists) {
+      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or compared`));
     }
   }
 

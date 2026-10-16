@@ -78,15 +78,15 @@ export interface ForbiddenRules {
 export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly string[]): ForbiddenRules {
   if (profile === "share") {
     return {
-      literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"],
-      prefixes: ["config/.env.clawwright-", "config/clawwright-desired.dry-"],
+      literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/", "config/clawwright-declared-config-patch.json", "config/clawwright-desired.json", "clawwright-declared.json"],
+      prefixes: ["config/.env.clawwright-", "config/clawwright-declared-config-patch.dry-", "config/clawwright-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
   if (profile === "migrate") {
     return {
-      literals: [...recipePrivatePaths, "config/.env"],
-      prefixes: ["config/.env.clawwright-", "config/clawwright-desired.dry-"],
+      literals: [...recipePrivatePaths, "config/.env", "config/clawwright-declared-config-patch.json"],
+      prefixes: ["config/.env.clawwright-", "config/clawwright-declared-config-patch.dry-", "config/clawwright-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }

@@ -444,7 +444,23 @@ the target at all.
 Everything we decide about an instance — the model, the reasoning level, the gateway
 binding, trusted plugins, the model provider's catalogue — lives in
 `apps/<name>/config/desired-state.json` rather than being edited by hand on the host. It is
-a ready payload for OpenClaw's own `openclaw config set --batch-file`.
+an ordered array of `{path,value}` declarations, applied by computing a JSON Merge Patch
+against live config and invoking OpenClaw's `config patch --file`. A patch `null` deletes a
+value, so a newly stored null cannot be represented; unchanged SecretRefs are preserved.
+
+Paths support dot properties, numeric indexes, quoted bracket keys and selectors such as
+`plugins.entries[name=weather]`. A field name must match `/^[A-Za-z_$][A-Za-z0-9_$-]*$/`. A
+bare selector value must be nonempty and contain no whitespace, `.`, `]`, `=`, `[`, quotes,
+or backslash; surrounding spaces are trimmed. A JSON double-quoted selector value may be any
+string, including the empty string. Properties named `__proto__`, `constructor`, or
+`prototype` are unsafe. A middle selector traverses only when exactly one object matches;
+no match creates `{field:value}`, while multiple matches refuse. A terminal single-object selector appends the declared object when there are no matches, and replaces the matching object at its existing index when exactly one matches; multiple matches refuse. A terminal array selector removes all matches and appends each declared object, forcing its selector fields to the requested values. Selector keys conflicting with declared values refuse. OpenClaw validates the resulting configuration against its own schema; the framework does not hardcode a config schema. JSON Merge Patch null deletes a property, so a patch cannot newly store a null property; null values inside arrays remain possible because arrays are atomic.
+
+Before applying declarations, previously declared paths removed from the file are pruned
+using the target data directory's `clawwright-declared.json` ownership record. The record is
+written atomically only after a successful real apply; dry-run never writes it. A corrupt
+present record refuses a real apply and is treated as empty by dry-run. Pruning numeric-index paths is refused; remove those values by hand or migrate to keyed selectors. Paths overlapping recipe-owned paths are
+refused for writes and pruning. The conservative recipe check uses the list prefix before the first selector; any ancestor/descendant overlap refuses. `--dump` remains limited to its fixed recovery paths.
 
 ```bash
 ./clawwright apply-config              # apply

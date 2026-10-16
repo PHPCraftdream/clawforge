@@ -1,15 +1,14 @@
 // The harness the apply checks drive the REAL apply()/runSteps with: a real createContext(),
 // with the transport and docker answers stubbed — the seam a hand-built Context cannot reach.
 // Shared by convergence/apply/apply-refresh.check.ts and connection-facts/operator-edit.check.ts.
-//
-// Everything here is check-side scaffolding, not framework code: it lives under tools/checks/
-// because both of its consumers do. The stubbed `config set --batch-file` payload goes out
-// through the transport's writeFile under the staged declaration name apply-config uses, which
-// is what lets a check apply it to the live config the way the real CLI would.
+// The apply-config driver stages a JSON Merge Patch on the target and resolves its mounted
+// target path to the container-visible path before invoking config patch.
 
 import { json, matchingJob, CONFIG_FILE, MIRROR, DATA } from "../convergence/inspect/fixture.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
+import { fromContainerPath } from "#framework/core/paths.ts";
+import { mountPoints } from "#framework/runtime/mounts.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 
 /** The live config as the fixture's stub presents it, so the plan is quiet except for the
@@ -54,6 +53,16 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     NetworkSettings: { Ports: { "18789/tcp": [{ HostPort: "18789" }] } },
     Config: { Labels: { "com.docker.compose.project": "refresh-check", Image: "ghcr.io/openclaw/openclaw:extended-stable" } },
   };
+  const mergePatch = (target: unknown, patch: unknown): unknown => {
+    if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return patch;
+    const result: Record<string, unknown> = target !== null && typeof target === "object" && !Array.isArray(target)
+      ? { ...(target as Record<string, unknown>) } : {};
+    for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+      if (value === null) delete result[key];
+      else result[key] = mergePatch(result[key], value);
+    }
+    return result;
+  };
   const docker = (args: string[]): ExecResult => {
     state.dockerCalls.push([...args]);
     const format = args[args.indexOf("--format") + 1] ?? "";
@@ -72,7 +81,24 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     if (args.includes("ps")) return ok(state.running ? "container-one" : "");
     if (args.includes("run")) {
       const rest = args.slice(args.indexOf("run") + 1);
-      const tail = rest.slice(rest.indexOf("cli") + 1);
+      const entryAt = rest.indexOf("dist/index.js");
+      const shellAt = rest.indexOf("-c");
+      const tail = entryAt >= 0 ? rest.slice(entryAt + 1) : shellAt >= 0 ? rest.slice(shellAt) : rest;
+      if (tail[0] === "config" && tail[1] === "patch" && tail[2] === "--file") {
+        const containerPath = tail[3];
+        if (!containerPath) throw new Error("config patch omitted its staged file path");
+        let targetPath: string;
+        try { targetPath = fromContainerPath(containerPath, mountPoints(DATA)); }
+        catch (error) { throw new Error(`staged config path is not covered by a container mount: ${containerPath}`, { cause: error }); }
+        const staged = state.files.get(targetPath);
+        if (staged === undefined) throw new Error(`staged config file is missing on target: ${targetPath}`);
+        if (!tail.includes("--dry-run")) {
+          const updated = mergePatch(spec.liveConfig, JSON.parse(staged)) as Record<string, unknown>;
+          for (const key of Object.keys(spec.liveConfig)) delete spec.liveConfig[key];
+          Object.assign(spec.liveConfig, updated);
+        }
+        return ok();
+      }
       const agentsResult = json((spec.agents ?? ["main", "onboarding"]).map((id) => ({ id })));
       const mcpResult = json(Object.fromEntries((spec.mcpServers ?? ["demo-mcp"]).map((name) => [name, spec.mcpServerEntries ?? mcpServerSpec("demo")])));
       const cronResult = json({ jobs: spec.cronJobs ?? [matchingJob()] });
@@ -129,12 +155,9 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     async writeFile(path, content) {
       const text = typeof content === "string" ? content : "";
       if (path.endsWith("/compose.env")) state.composeEnvWrites.push(text);
-      // The non-dry-run staged declaration apply-config writes before invoking the CLI with
-      // it: handed to the driver so a check can make the stubbed batch apply really happen.
-      if (path.endsWith("/clawwright-desired.json")) driver?.onStagedConfig?.(text);
+      if (path.endsWith("/clawwright-declared-config-patch.json")) driver?.onStagedConfig?.(text);
       state.files.set(path, text);
     },
-    async writePrivateFile(path, content) { state.files.set(path, typeof content === "string" ? content : ""); },
     async exists(path) {
       if (path === CONFIG_FILE) return true;
       return state.files.has(path);

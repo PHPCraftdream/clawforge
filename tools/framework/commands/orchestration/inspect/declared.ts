@@ -15,8 +15,9 @@ import {
   conflictingDeclaredPath, declaredOwnershipConflictDetail, recipePathOwners,
 } from "#src/set/ownership/recipe-paths.ts";
 import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
+import { readEnvFileText, suspiciousEnvLines } from "#src/core/env.ts";
+import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
 import type { Context } from "#src/core/context.ts";
-import { suspiciousEnvLines, readEnvFileText } from "#src/core/env.ts";
 
 /** A recipe's agent bundle, in the fields inspect compares against the instance. Parsed
  *  loosely on purpose: this is reading someone else's declaration to report on it, not
@@ -70,13 +71,15 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
   if (raw !== undefined) {
     let parsedOk = false;
     try {
-      const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
-      config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
+      const parsed = JSON.parse(raw) as unknown;
+      const shapeError = desiredStateShapeError(parsed);
+      if (shapeError !== undefined) throw new Error(shapeError);
+      config = (parsed as { path: string; value: unknown }[]).map((entry) => ({ path: entry.path, value: entry.value }));
       parsedOk = true;
-    } catch {
-      // Exists but unparseable must be reported, not treated like "no file". Same code
+    } catch (error) {
+      // Exists but unparseable or structurally invalid must be reported, not treated like "no file". Same code
       // observeConfig() (drift.ts) uses for the equivalent LIVE-config failure.
-      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON`));
+      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not a valid desired-state declaration: ${(error as Error).message}`));
     }
     if (parsedOk) {
       // Declared paths a recipe owns are a declaration bug, reported like the other

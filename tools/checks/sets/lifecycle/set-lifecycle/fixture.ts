@@ -204,15 +204,18 @@ export async function createFixture(): Promise<LifecycleFixture> {
             return { code: 0, stdout: formatBatchStub(results), stderr: "" };
           }
           if (args.includes("onboard")) files.set(configFile, "{}");
-          if (args.includes("--batch-file")) {
-            const entries = JSON.parse(files.get(args[args.indexOf("--batch-file") + 1])!);
-            const config = JSON.parse(files.get(configFile) ?? "{}");
-            for (const { path, value } of entries) {
-              const parts = path.split("."); let node = config;
-              for (const key of parts.slice(0, -1)) node = node[key] ??= {};
-              node[parts.at(-1)!] = value;
-            }
-            files.set(configFile, JSON.stringify(config));
+          const patchAt = args.indexOf("config");
+          if (patchAt >= 0 && args[patchAt + 1] === "patch" && args[patchAt + 2] === "--file") {
+            const patch = JSON.parse(files.get(args[patchAt + 3])!);
+            const mergePatch = (target: unknown, delta: unknown): unknown => {
+              if (delta === null || typeof delta !== "object" || Array.isArray(delta)) return delta;
+              const result: Record<string, unknown> = target !== null && typeof target === "object" && !Array.isArray(target) ? { ...(target as Record<string, unknown>) } : {};
+              for (const [key, value] of Object.entries(delta as Record<string, unknown>)) {
+                if (value === null) delete result[key]; else result[key] = mergePatch(result[key], value);
+              }
+              return result;
+            };
+            if (!args.includes("--dry-run")) files.set(configFile, JSON.stringify(mergePatch(JSON.parse(files.get(configFile) ?? "{}"), patch)));
           }
           if (args[0] === "agents") stdout = "[]";
           if (args[0] === "cron") stdout = '{"jobs":[]}';

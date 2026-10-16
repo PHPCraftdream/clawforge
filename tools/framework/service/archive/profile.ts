@@ -109,8 +109,11 @@ function baseExcludes(dataName: string): string[] {
     `${root}/config/logs`,
     `${root}/config/openclaw.json.bak*`,
     `${root}/config/openclaw.json.last-good`,
-    `${root}/config/clawwright-desired.json`,
+    `${root}/config/clawwright-declared-config-patch.json`,
+    `${root}/config/clawwright-declared-config-patch.dry-*.json`,
+    // Previous staging names remain excluded for archives made by older releases.
     `${root}/config/clawwright-desired.dry-*.json`,
+    `${root}/config/clawwright-desired.json`,
     // Provider-key staging is private from creation and normally removed after rename, but a
     // process can die between those steps. It is credential material, never instance state.
     `${root}/config/.env.clawwright-*`,
@@ -174,10 +177,10 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/config/state`,
       `${root}/config/agents`,
       `${root}/auth-secrets`,
-      // Host-local history and copies of THIS host's configuration — the receiving side
-      // has its own, and a shared agent shouldn't carry someone else's.
+      // Keep host-local history and configuration copies out of shared archives.
       `${root}/clawwright-operations`,
       `${root}/clawwright-managed.json`,
+      `${root}/clawwright-declared.json`,
       `${root}/clawwright-installed-set.json`,
       `${root}/${DATA_DIR_MARKER}`, // same reasoning as migrate above
       ...LEGACY_PREFIXES.flatMap((prefix) => [

@@ -19,6 +19,8 @@ import type { PortableContent } from "#src/set/content.ts";
 import type { DeploymentLock } from "#src/commands/management/lock.ts";
 import { hasDigest, invalidImageReference, tryParse } from "#src/runtime/docker/image-ref.ts";
 import { safeName } from "#src/core/values/names.ts";
+import { validateConfigDeclaration } from "#src/core/values/config-selectors.ts";
+
 
 /** Deliberately shallow: `*`, `*\/N`, a number, a range, a list of those — rejects what is
  *  plainly not a schedule, passes everything that looks like one. Ranges aren't checked
@@ -47,7 +49,7 @@ export function cronProblem(expression: string): string | undefined {
 }
 
 /** Why `value` is not a valid desired-state declaration, or undefined when it is — a list
- *  of { path, value } ops, the exact shape OpenClaw's `config set --batch-file` consumes.
+ *  of { path, value } declarations that the framework resolves into an OpenClaw config patch.
  *  Exported so `set build` can refuse the same malformed declaration early, rather than
  *  only here or inside the container during an actual apply. */
 export function desiredStateShapeError(value: unknown): string | undefined {
@@ -62,6 +64,11 @@ export function desiredStateShapeError(value: unknown): string | undefined {
       return `entry ${index} has no non-empty string "path"`;
     }
     if (!Object.hasOwn(entry, "value")) return `entry ${index} has no "value"`;
+    try {
+      validateConfigDeclaration((entry as { path: string }).path, (entry as { value: unknown }).value);
+    } catch (error) {
+      return `entry ${index} has an invalid declaration: ${(error as Error).message}`;
+    }
   }
   return undefined;
 }

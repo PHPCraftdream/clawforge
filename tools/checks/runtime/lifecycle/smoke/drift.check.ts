@@ -22,8 +22,11 @@ import { check, finish } from "#checks/kit/harness.ts";
     ]));
     useDeployment(root);
 
-    // Fail only the restore call; the first apply establishes the verdict.
+    // The first patch restores the declaration; the check then observes deliberate drift on
+    // its second read, so the cleanup patch is real work and its injected failure is exercised.
+    let liveReads = 0;
     let batchCalls = 0;
+    let setCalls = 0;
     const files = new Map<string, string>();
     const dirs = new Set<string>();
     const dataDir = "/srv/clawwright";
@@ -73,13 +76,20 @@ import { check, finish } from "#checks/kit/harness.ts";
           if (command === "test" && args[0] === "-d") {
             return { code: dirs.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
           }
+          if (command === "test") return { code: 1, stdout: "", stderr: "" };
           return { code: 0, stdout: "", stderr: "" };
         },
         async readFile(path: string): Promise<string> {
           const content = files.get(path);
-          if (content === undefined) throw new Error(`no such file: ${path}`);
+          if (content === undefined) { const error = new Error(`no such file: ${path}`); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error; }
+          if (path === `${dataDir}/config/openclaw.json` && ++liveReads === 2) {
+            const drifted = { agents: { defaults: { model: { primary: "manual-drift" } } } };
+            files.set(path, JSON.stringify(drifted));
+            return JSON.stringify(drifted);
+          }
           return content;
         },
+        async exists(path: string): Promise<boolean> { return files.has(path); },
         async writeFile(path: string, content: string): Promise<void> {
           files.set(path, content);
         },
@@ -96,10 +106,23 @@ import { check, finish } from "#checks/kit/harness.ts";
       runtime: {
         async isRunning() { return true; },
         async runOneOff(_service: string, args: string[]) {
-          if (!args.includes("--batch-file")) return { code: 0, stdout: "", stderr: "" };
-          batchCalls += 1;
-          if (batchCalls === 1) return { code: 0, stdout: "", stderr: "" };
-          throw new Error("docker unreachable");
+          const patchAt = args.indexOf("config");
+          if (patchAt >= 0 && args[patchAt + 1] === "set") {
+            setCalls += 1;
+            files.set(`${dataDir}/config/openclaw.json`, JSON.stringify({ agents: { defaults: { model: { primary: JSON.parse(args[patchAt + 3]!) } } } }));
+          }
+          if (patchAt >= 0 && args[patchAt + 1] === "patch" && args[patchAt + 2] === "--file") {
+            batchCalls += 1;
+            if (batchCalls === 1) {
+              const stagedPath = args[patchAt + 3]!;
+              const staged = files.get(stagedPath);
+              if (staged === undefined) throw new Error(`missing staged patch: ${stagedPath}`);
+              const patch = JSON.parse(staged) as { agents?: { defaults?: { model?: { primary?: unknown } } } };
+              check("the first patch restores fixture-model", patch.agents?.defaults?.model?.primary, "fixture-model");
+              files.set(`${dataDir}/config/openclaw.json`, JSON.stringify({ agents: { defaults: { model: { primary: "fixture-model" } } } }));
+            } else if (batchCalls === 2) throw new Error("docker unreachable");
+          }
+          return { code: 0, stdout: "", stderr: "" };
         },
       },
     } as unknown as Context;
@@ -108,7 +131,8 @@ import { check, finish } from "#checks/kit/harness.ts";
     if (drift === undefined) throw new Error("smoke.ts no longer has the drift check under its documented name");
 
     const summary = await withOutputSink(() => {}, () => runChecks(ctx, [drift], () => {}));
-    check("the setup drove both applyConfig calls — the verdict came from the first", batchCalls, 2);
+    check("apply sets the live primary once before patching", setCalls, 1);
+    check("the setup drove both non-noop applyConfig calls — the verdict came from the first", batchCalls, 2);
     check("a restore that fails after the verdict stays a failed check", summary.results.map((result) => result.status), ["failed"]);
     check("saying the instance may still hold the drifted value", summary.results[0].detail?.includes("may still hold the drifted value"), true);
     check("naming the path it could not restore", summary.results[0].detail?.includes("agents.defaults.model.primary"), true);

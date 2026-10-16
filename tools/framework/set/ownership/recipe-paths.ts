@@ -1,11 +1,14 @@
 // Config-path ownership: the `owns` manifest field and the joined catalog over
 // `consumerEndpoints` + `owns` (U1). Paths are the same safe dot grammar as
-// consumerEndpoints; prefixes are segment-wise, never textual.
+// consumerEndpoints; prefixes match whole segments only (for example, `a.b` does not
+// cover `a.bc`). A declaration touching an owned path, its descendants, or its ancestor
+// conflicts because applying an ancestor replaces the owned subtree.
 
 import { readName } from "#src/core/values/names.ts";
 import {
   loadRecipe, recipeNames, recipesConfigured, recipesDirectory,
 } from "#src/service/recipe.ts";
+import { configPathParts } from "#src/core/values/config-selectors.ts";
 
 const unsafeSegments = new Set(["__proto__", "prototype", "constructor"]);
 
@@ -140,15 +143,50 @@ export async function recipePathOwners(): Promise<readonly RecipePathOwner[]> {
   return entries.map(({ recipe, path, mode, prefix }) => ({ recipe, path, mode, prefix }));
 }
 
+function pathSegments(path: string): { keys: string[]; selectorAt: number } {
+  const parts = configPathParts(path);
+  const selectorAt = parts.findIndex((part) => part.kind === "selector");
+  return { keys: parts.slice(0, selectorAt < 0 ? parts.length : selectorAt).map((part) => part.kind === "key" ? part.key : part.value), selectorAt };
+}
+function overlaps(a: readonly string[], b: readonly string[], requireExact = false): boolean {
+  const min = Math.min(a.length, b.length);
+  return a.slice(0, min).every((segment, index) => segment === b[index]) && (!requireExact || a.length === b.length);
+}
+function ownerConflict(owners: readonly RecipePathOwner[], path: string): RecipePathOwner | undefined {
+  let parsed: ReturnType<typeof pathSegments>;
+  try { parsed = pathSegments(path); } catch { return undefined; }
+  const selector = parsed.selectorAt >= 0;
+  const conflicts = owners.filter((owner) => {
+    const owned = owner.path.split(".");
+    const listOverlap = overlaps(parsed.keys, owned);
+    if (selector) return listOverlap;
+    const exact = parsed.keys.length === owned.length && overlaps(parsed.keys, owned, true);
+    const declarationAncestor = parsed.keys.length < owned.length && overlaps(parsed.keys, owned);
+    const declarationDescendant = parsed.keys.length > owned.length && overlaps(owned, parsed.keys);
+    return exact || declarationAncestor || declarationDescendant;
+  });
+  conflicts.sort((a, b) => b.path.split(".").length - a.path.split(".").length || Number(b.prefix) - Number(a.prefix));
+  return conflicts[0];
+}
+
 /** Pure segment-aware lookup: exact match wins, else the deepest covering prefix. */
 export function ownerOfConfigPath(owners: readonly RecipePathOwner[], path: string): RecipePathOwner | undefined {
-  for (const owner of owners) {
-    if (owner.path === path) return owner;
-  }
+  let direct: RecipePathOwner | undefined;
+  let parsed: ReturnType<typeof pathSegments>;
+  try { parsed = pathSegments(path); } catch { return undefined; }
+  if (parsed.selectorAt >= 0) return ownerConflict(owners, path);
+  const keys = parsed.keys;
+  direct = owners.find((owner) => {
+    const owned = owner.path.split(".");
+    return overlaps(keys, owned, true);
+  });
+  if (direct !== undefined) return direct;
   let best: RecipePathOwner | undefined;
+  let length = -1;
   for (const owner of owners) {
-    if (!owner.prefix || !underPrefix(owner.path, path)) continue;
-    if (best === undefined || owner.path.split(".").length > best.path.split(".").length) best = owner;
+    const owned = owner.path.split(".");
+    if (!overlaps(owned, keys) || owned.length >= keys.length) continue;
+    if (owned.length > length) { best = owner; length = owned.length; }
   }
   return best;
 }
@@ -163,12 +201,7 @@ export function conflictingDeclaredPath(
   owners: readonly RecipePathOwner[],
   declaredPath: string,
 ): RecipePathOwner | undefined {
-  const direct = ownerOfConfigPath(owners, declaredPath);
-  if (direct !== undefined) return direct;
-  for (const owner of owners) {
-    if (underPrefix(declaredPath, owner.path)) return owner;
-  }
-  return undefined;
+  return ownerConflict(owners, declaredPath);
 }
 
 /** The one refusal wording, shared by the async wrapper and inspect's problem detail. */
@@ -198,6 +231,6 @@ export function filterOwnedDeclarations<T extends { path: string }>(
   declared: readonly T[],
   owners: readonly RecipePathOwner[],
 ): { kept: T[]; dropped: number } {
-  const kept = declared.filter((entry) => ownerOfConfigPath(owners, entry.path) === undefined);
+  const kept = declared.filter((entry) => conflictingDeclaredPath(owners, entry.path) === undefined);
   return { kept, dropped: declared.length - kept.length };
 }

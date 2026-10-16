@@ -1,9 +1,7 @@
 // Where `apply-config` stages its payload, and why the two runs must not share a name.
 //
-// The real run writes a shared file inside the data directory and holds the instance lock
-// while it does. A dry run deliberately takes no lock — locking would make inspecting a busy
-// instance fail for no reason — so it must not write that shared file: a dry run concurrent
-// with a real apply would replace the payload the real one is about to hand to the CLI.
+// The real run stages a shared file while holding the instance lock. Dry runs take no lock,
+// so their isolated payload name must not collide with that real staging name.
 
 import { appliedHeadline, stagedFileName, declarationExistsRefusal, missingLiveConfigRefusal, RECOVERED_VALUES_NOTE, RESTART_ADVICE } from "#framework/commands/orchestration/config.ts";
 import { desiredStateFile } from "#framework/runtime/deployment.ts";
@@ -21,7 +19,7 @@ import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import type { AppDefinition, AppCommand } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 
-check("a real run stages under the shared name the container reads", stagedFileName(false), "clawwright-desired.json");
+check("a real run stages under the shared name the container reads", stagedFileName(false), "clawwright-declared-config-patch.json");
 check("a dry run does not", stagedFileName(true) === stagedFileName(false), false);
 
 // Two dry runs at once are as ordinary as one dry run beside a real one — neither takes a
@@ -31,13 +29,13 @@ check("two dry runs do not collide with each other", stagedFileName(true) === st
 // Still recognisable in a directory listing, and still JSON to anything that reads by
 // extension.
 const dry = stagedFileName(true);
-check("the dry-run name says what it is", dry.startsWith("clawwright-desired.dry-"), true);
+check("the dry-run name says what it is", dry.startsWith("clawwright-declared-config-patch.dry-"), true);
 check("and stays a .json file", dry.endsWith(".json"), true);
 
 // --- the run that leaves a file behind is the one that failed ---------------------------------
 //
 // Cleaning up only after a successful run meant every rejected payload left an
-// clawwright-desired.dry-<hex>.json in the config directory. Those accumulate, travel into an
+// clawwright-declared-config-patch.dry-<hex>.json in the config directory. Those accumulate, travel into an
 // archive, and get the snapshot refused by the share allow-list — the same failure the
 // operation journal caused, arriving by a different route.
 
@@ -49,10 +47,16 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     useDeployment(deployment);
 
     const written = new Set<string>();
+    const remote = new Map<string, string>([["/srv/clawwright/config/openclaw.json", JSON.stringify({ gateway: { mode: "remote" } })]]);
+    let stageCalls = 0;
+    let runtimeCalls = 0;
     const ctx = {
       settings: { dataDir: "/srv/clawwright" },
       transport: {
+        async exists(path: string): Promise<boolean> { return remote.has(path); },
+        async readFile(path: string): Promise<string> { const content = remote.get(path); if (content === undefined) { const error = new Error(`missing: ${path}`); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error; } return content; },
         async writeFile(path: string): Promise<void> {
+          stageCalls += 1;
           written.add(path);
         },
         async remove(path: string): Promise<void> {
@@ -63,8 +67,9 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       runtime: {
         async isRunning(): Promise<boolean> { return true; },
         async runOneOff(): Promise<never> {
+          runtimeCalls += 1;
           // What a payload the CLI rejects looks like from here.
-          throw new Error("config set --dry-run failed: invalid path");
+          throw new Error("config patch --dry-run failed: invalid path");
         },
       },
     } as unknown as Context;
@@ -81,7 +86,8 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       },
     );
 
-    check("a rejected payload still fails the command", threw, true);
+    check("a dry-run rejection still fails the command", threw, true);
+    check("a rejected payload stages and reaches the runtime exactly once", [stageCalls, runtimeCalls], [1, 1]);
     check("and leaves no staged file behind", [...written], []);
   } finally {
     await rm(deployment, { recursive: true, force: true });
@@ -92,43 +98,204 @@ check("and stays a .json file", dry.endsWith(".json"), true);
   const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-config-map-check-"));
   try {
     await mkdir(resolve(deployment, "config"), { recursive: true });
-    await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
+    await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify([{ path: "gateway.mode", value: "local" }]));
     useDeployment(deployment);
     const staged = new Set<string>();
     let writes = 0;
-    let oneOffs = 0;
+    let runtimeCalls = 0;
+    let failure = "";
+    let failStage = true;
+    let rejectRuntime = true;
     const ctx = {
       settings: { dataDir: "/srv/clawwright" },
       transport: {
+        async exists(path: string): Promise<boolean> { return path.endsWith("openclaw.json"); },
+        async readFile(path: string): Promise<string> {
+          if (path.endsWith("openclaw.json")) return JSON.stringify({ gateway: { mode: "remote" } });
+          const error = new Error(`missing: ${path}`); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error;
+        },
         async writeFile(path: string): Promise<void> {
           writes += 1;
           staged.add(path);
-          throw new Error("partial write");
+          if (failStage) throw new Error("partial write");
         },
         async remove(path: string): Promise<void> { staged.delete(path); },
       },
       paths: { toContainer: (): never => { throw new Error("no bind mount"); } },
       runtime: {
         async isRunning(): Promise<boolean> { return true; },
-        async runOneOff(): Promise<void> { oneOffs += 1; },
+        async runOneOff(): Promise<{ code: number; stdout: string; stderr: string }> {
+          runtimeCalls += 1;
+          if (rejectRuntime) throw new Error("runtime patch rejected");
+          return { code: 0, stdout: "", stderr: "" };
+        },
       },
     } as unknown as Context;
 
     await withOutputSink(() => {}, async () => {
-      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch { /* expected */ }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
     });
-    check("a failed mount mapping never stages the dry-run payload", writes, 0);
-    check("a failed mount mapping never enters the container", oneOffs, 0);
+    check("a failed mount mapping refuses before staging or runtime", [failure.includes("no bind mount"), writes, runtimeCalls], [true, 0, 0]);
 
     ctx.paths.toContainer = (path: string) => path;
+    failure = "";
     await withOutputSink(() => {}, async () => {
-      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch { /* expected */ }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
     });
-    check("a partial staging failure removes the dry-run payload", [...staged], []);
-    check("a partial staging failure never enters the container", oneOffs, 0);
+    check("a partial write is the refusal after mount mapping succeeds", failure.includes("partial write"), true);
+    check("partial staging is attempted once and never enters runtime", [writes, runtimeCalls], [1, 0]);
+    check("a partial staging failure cleans up", [...staged], []);
+    failStage = false;
+    failure = "";
+    await withOutputSink(() => {}, async () => {
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
+    });
+    check("a runtime rejection is surfaced after exactly one stage and runtime call", [failure.includes("runtime patch rejected"), writes, runtimeCalls], [true, 2, 1]);
+    check("a successful staging followed by runtime rejection is removed", [...staged], []);
+    rejectRuntime = false;
+    failure = "";
+    await withOutputSink(() => {}, async () => {
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch (error) { failure = (error as Error).message; }
+    });
+    check("a successful dry-run reaches runtime", [failure, writes, runtimeCalls], ["", 3, 2]);
+    check("a successful dry-run also removes its staged file", [...staged], []);
   } finally {
     await rm(deployment, { recursive: true, force: true });
   }
+}
+
+// --- declared paths reconcile as a JSON Merge Patch, with durable pruning evidence ---------
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawwright-apply-config-patch-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify([
+      { path: "gateway.mode", value: "local" },
+      { path: "gateway.controlUi.allowedOrigins", value: ["https://new.example"] },
+    ]));
+    useDeployment(deployment);
+    const live = { gateway: { mode: "remote", obsolete: "remove-me", controlUi: { allowedOrigins: ["https://old.example", "https://keep.example"] } }, agents: { keep: true } };
+    const initial = JSON.stringify(live);
+    const remote = new Map<string, string>([["/srv/clawwright/config/openclaw.json", initial], ["/srv/clawwright/clawwright-declared.json", JSON.stringify({ version: 1, entries: [{ path: "gateway.obsolete", value: "remove-me" }] })]]);
+    const argsSeen: string[][] = [];
+    let rejectNextRun = false;
+    const merge = (base: unknown, delta: unknown): unknown => {
+      if (delta === null || typeof delta !== "object" || Array.isArray(delta)) return delta;
+      const target: Record<string, unknown> = base && typeof base === "object" && !Array.isArray(base) ? { ...(base as Record<string, unknown>) } : {};
+      for (const [key, value] of Object.entries(delta as Record<string, unknown>)) if (value === null) delete target[key]; else target[key] = merge(target[key], value);
+      return target;
+    };
+    const ctx = {
+      settings: { dataDir: "/srv/clawwright" },
+      transport: {
+        async exists(path: string) { return remote.has(path); },
+        async readFile(path: string) { const value = remote.get(path); if (value === undefined) { const e = new Error("missing"); (e as NodeJS.ErrnoException).code = "ENOENT"; throw e; } return value; },
+        async writeFile(path: string, content: string) { remote.set(path, content); },
+        async remove(path: string) { remote.delete(path); },
+        async exec(command: string, args: string[]) { if (command === "mv") { const from = args.at(-2)!; const to = args.at(-1)!; if (remote.has(from)) { remote.set(to, remote.get(from)!); remote.delete(from); } } return { code: 0, stdout: "", stderr: "" }; },
+      },
+      paths: { toContainer: (path: string) => path },
+      runtime: {
+        async isRunning() { return true; },
+        async runOneOff(_service: string, args: string[]) { argsSeen.push(args); const file = args[args.indexOf("--file") + 1]; const patched = merge(JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!), JSON.parse(remote.get(file)!)); if (!args.includes("--dry-run")) remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(patched)); if (rejectNextRun) { rejectNextRun = false; throw new Error("config patch rejected"); } return { code: 0, stdout: "", stderr: "" }; },
+      },
+    } as unknown as Context;
+    await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
+    const patchCall = argsSeen[0] ?? [];
+    const liveAfter = JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!);
+    check("apply uses config patch --file, never set batch-file", patchCall.slice(0, 4), ["dist/index.js", "config", "patch", "--file"]);
+    check("nested objects merge while arrays replace", liveAfter, { gateway: { mode: "local", controlUi: { allowedOrigins: ["https://new.example"] } }, agents: { keep: true } });
+    check("successful apply removes the real staged patch", [...remote.keys()].some((path) => path.endsWith("/clawwright-declared-config-patch.json")), false);
+    const successfulLedger = remote.get("/srv/clawwright/clawwright-declared.json");
+    check("successful apply records the current declared paths", JSON.parse(successfulLedger!).entries.map((entry: { path: string }) => entry.path), ["gateway.mode", "gateway.controlUi.allowedOrigins"]);
+
+    // A rejected real runtime patch must clean up its shared staging name and preserve the prior ledger.
+    remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify({ gateway: { mode: "rejected" }, agents: { keep: true } }));
+    rejectNextRun = true;
+    let realApplyRefusal = "";
+    try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, [])); }
+    catch (error) { realApplyRefusal = (error as Error).message; }
+    check("a real runtime rejection is surfaced", realApplyRefusal.includes("config patch rejected"), true);
+    check("a rejected real apply removes the shared staged patch", [...remote.keys()].some((path) => path.endsWith("/clawwright-declared-config-patch.json")), false);
+    check("a rejected real apply preserves the successful ledger", remote.get("/srv/clawwright/clawwright-declared.json"), successfulLedger);
+    remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(liveAfter));
+    const unchanged = JSON.stringify(liveAfter);
+    argsSeen.length = 0;
+    await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
+    check("matching declarations are a no-op with no CLI call", [argsSeen.length, remote.get("/srv/clawwright/config/openclaw.json")], [0, unchanged]);
+
+    // Selector declarations create missing list entries, reconcile keyed rows, and prune only
+    // the formerly-owned selector matches. Values outside the declaration remain opaque.
+    const selectorLive = {
+      links: [{ owner: "public", to: "old1" }, { owner: "private", to: "keep" }, { owner: "public", to: "old2" }],
+      removed: [{ owner: "public", value: 1 }, { owner: "private", value: 2 }, { owner: "public", value: 3 }],
+      config: { secret: { SecretRef: { name: "TOKEN" } }, placeholder: "${TOKEN}" },
+    };
+    const selectorDeclarations = [
+      { path: "rows[id=public].tools", value: { allow: ["read"] } },
+      { path: "links[owner=public]", value: [{ to: "new1" }, { to: "new2" }] },
+    ];
+    await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify(selectorDeclarations));
+    remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(selectorLive));
+    remote.set("/srv/clawwright/clawwright-declared.json", JSON.stringify({ version: 1, entries: [{ path: "removed[owner=public]", value: [{ value: 1 }, { value: 3 }] }] }));
+    argsSeen.length = 0;
+    let stagedPatch: unknown;
+    const originalRunOneOff = ctx.runtime.runOneOff;
+    ctx.runtime.runOneOff = async (_service: string, args: string[]) => {
+      argsSeen.push(args);
+      const file = args[args.indexOf("--file") + 1]!;
+      stagedPatch = JSON.parse(remote.get(file)!);
+      const patched = merge(JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!), stagedPatch);
+      remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify(patched));
+      return { code: 0, stdout: "", stderr: "" };
+    };
+    await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
+    const selectorAfter = JSON.parse(remote.get("/srv/clawwright/config/openclaw.json")!);
+    check("selector paths create and reconcile entries while pruning only owned matches", selectorAfter, {
+      rows: [{ id: "public", tools: { allow: ["read"] } }],
+      links: [{ owner: "private", to: "keep" }, { owner: "public", to: "new1" }, { owner: "public", to: "new2" }],
+      removed: [{ owner: "private", value: 2 }],
+      config: selectorLive.config,
+    });
+    check("selector patch excludes opaque secret references and placeholders", JSON.stringify(stagedPatch).includes("TOKEN"), false);
+    check("selector declarations are recorded", JSON.parse(remote.get("/srv/clawwright/clawwright-declared.json")!).entries.map((entry: { path: string }) => entry.path), selectorDeclarations.map((entry) => entry.path));
+    argsSeen.length = 0;
+    await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, []));
+    check("selector no-op reapply invokes no CLI commands", argsSeen.length, 0);
+
+    await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
+    remote.set("/srv/clawwright/clawwright-declared.json", JSON.stringify({ version: 1, entries: [{ path: "rows[0].tools", value: { allow: ["read"] } }] }));
+    argsSeen.length = 0;
+    let numericRefusal = "";
+    try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, [])); } catch (error) { numericRefusal = (error as Error).message; }
+    check("numeric-index pruning is refused before staging or runtime", [numericRefusal.length > 0, argsSeen.length], [true, 0]);
+    check("numeric-index refusal preserves ownership record", JSON.parse(remote.get("/srv/clawwright/clawwright-declared.json")!).entries[0].path, "rows[0].tools");
+    await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify([
+      { path: "gateway.mode", value: "local" },
+      { path: "gateway.controlUi.allowedOrigins", value: ["https://new.example"] },
+    ]));
+    remote.set("/srv/clawwright/config/openclaw.json", initial);
+    remote.set("/srv/clawwright/clawwright-declared.json", JSON.stringify({ version: 1, entries: [{ path: "gateway.obsolete", value: "remove-me" }] }));
+    ctx.runtime.runOneOff = originalRunOneOff;
+
+    const malformed = "{broken";
+    remote.set("/srv/clawwright/clawwright-declared.json", malformed);
+    let strictRefusal = "";
+    try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, [])); } catch (error) { strictRefusal = (error as Error).message; }
+    check("a real apply refuses a malformed ownership record", strictRefusal.includes("repair it before applying"), true);
+    check("strict refusal happens before any command and preserves record bytes", [argsSeen.length, remote.get("/srv/clawwright/clawwright-declared.json")], [0, malformed]);
+    remote.set("/srv/clawwright/config/openclaw.json", JSON.stringify({ gateway: { mode: "different" }, agents: { keep: true } }));
+    const dryRunLiveBefore = remote.get("/srv/clawwright/config/openclaw.json")!;
+    const malformedBefore = remote.get("/srv/clawwright/clawwright-declared.json")!;
+    rejectNextRun = true;
+    let dryRunRejected = false;
+    try { await withOutputSink(() => {}, () => orchestrationCommands["apply-config"].run(ctx, ["--dry-run"])); } catch { dryRunRejected = true; }
+    check("dry-run rejection is surfaced", dryRunRejected, true);
+    check("dry-run treats malformed record as empty and stages only a unique temporary file", argsSeen.length === 1 && argsSeen[0]!.some((arg) => arg.includes(".dry-")), true);
+    check("dry-run cleans its unique staged file after CLI rejection", ![...remote.keys()].some((path) => path.includes(".dry-")), true);
+    check("dry-run leaves live config unchanged", remote.get("/srv/clawwright/config/openclaw.json"), dryRunLiveBefore);
+    check("dry-run leaves the malformed ledger untouched", remote.get("/srv/clawwright/clawwright-declared.json"), malformedBefore);
+  } finally { await rm(deployment, { recursive: true, force: true }); }
 }
 
 // --- --dump: the reverse run, rebuilding the declaration from the instance's own config -------

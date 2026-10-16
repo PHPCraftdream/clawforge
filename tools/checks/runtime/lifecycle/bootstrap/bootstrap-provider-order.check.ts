@@ -59,12 +59,15 @@ try {
     },
     transport: {
       description: "stub",
-      async exists(): Promise<boolean> {
-        return true;
+      async exists(path: string): Promise<boolean> {
+        // No declaration record yet: the first apply on this data directory.
+        return path !== `${DATA_DIR}/clawwright-declared.json`;
       },
       async readFile(path: string): Promise<string> {
         if (path === CONFIG_PATH) return JSON.stringify(LIVE_CONFIG);
-        if (path === TARGET_ENV_PATH) return "CUSTOM_API_KEY=secret-value\n";
+        if (path === TARGET_ENV_PATH) return "CUSTOM_API_KEY=secret-value
+";
+        if (path === `${DATA_DIR}/clawwright-declared.json`) { const error = new Error("missing"); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error; }
         return "";
       },
       async writeFile(): Promise<void> {},
@@ -101,7 +104,7 @@ try {
         calls.push({ kind: "pull", args: [] });
       },
       async runOneOff(_service: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-        if (args[1] === "config" && args[3] === "--batch-file") calls.push({ kind: "apply-config", args });
+        if (args[1] === "config" && args[2] === "patch" && args[3] === "--file") calls.push({ kind: "apply-config", args });
         else if (args[1] === "config" && typeof args[3] === "string" && args[3].startsWith("models.providers.")) {
           calls.push({ kind: "configure-provider", args });
         }
@@ -195,11 +198,13 @@ function providerHintContext(liveConfig: unknown, targetEnv = ""): Context {
     },
     transport: {
       description: "stub",
-      async exists(): Promise<boolean> { return true; },
+      async exists(path: string): Promise<boolean> {
+        return path === CONFIG_PATH || path === TARGET_ENV_PATH;
+      },
       async readFile(path: string): Promise<string> {
         if (path === CONFIG_PATH) return JSON.stringify(liveConfig);
         if (path === TARGET_ENV_PATH) return targetEnv;
-        return "";
+        const error = new Error(`missing: ${path}`); (error as NodeJS.ErrnoException).code = "ENOENT"; throw error;
       },
       async writeFile(): Promise<void> {},
       async remove(): Promise<void> {},

@@ -1,8 +1,4 @@
-// `clawwright apply-config` — applies config/desired-state.json to the instance.
-//
-// The declaration in the repository is the source of
-// truth: editing openclaw.json on a host makes that host diverge, re-applying brings it
-// back. The file is a native `openclaw config set --batch-file` payload.
+// `clawwright apply-config` — reconciles config/desired-state.json with the live instance.
 
 import { access, readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -14,10 +10,11 @@ import type { Context } from "#src/core/context.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
-import {
-  conflictingDeclaredPath, declaredOwnershipConflictDetail, filterOwnedDeclarations,
-  refuseDeclaredOwnedPaths, recipePathOwners,
-} from "#src/set/ownership/recipe-paths.ts";
+import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
+import { configPathParts } from "#src/core/values/config-selectors.ts";
+import { desiredConfig } from "#src/core/values/desired-config.ts";
+import { readDeclaredConfig, readDeclaredConfigStrict, writeDeclaredConfig } from "#src/set/ownership/declared-config.ts";
+import { conflictingDeclaredPath, declaredOwnershipConflictDetail, filterOwnedDeclarations, recipePathOwners, refuseDeclaredOwnedPaths } from "#src/set/ownership/recipe-paths.ts";
 import type { RecipePathOwner } from "#src/set/ownership/recipe-paths.ts";
 import type { ArgumentSpec, ParsedCall } from "#src/core/command/spec.ts";
 import { commandBody, parseCall, specShape } from "#src/core/command/index.ts";
@@ -40,10 +37,10 @@ export const APPLY_CONFIG_ARGUMENTS = [
  *  A real run stages under this shared name, only while holding the instance lock. A dry
  *  run gets its own name: it deliberately takes no lock, and the shared file without one
  *  could replace the payload a concurrent real apply was about to read. */
-const stagedName = "clawwright-desired.json";
+const stagedName = "clawwright-declared-config-patch.json";
 
 export function stagedFileName(dryRun: boolean): string {
-  return dryRun ? `clawwright-desired.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
+  return dryRun ? `clawwright-declared-config-patch.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
 }
 
 export function declarationExistsRefusal(path: string): string {
@@ -57,9 +54,7 @@ export function missingLiveConfigRefusal(dataDir: string): string {
 export const RECOVERED_VALUES_NOTE =
   "recovered values are what the live config holds now, not the original declaration — a value OpenClaw defaults to is indistinguishable from a declared one once the declaration is gone";
 
-/** The headline for a real (non-dry) apply. Exported so checks can pin the wording without
- *  a live instance. bootstrap.ts/set-try.ts/apply.ts pass `restartAdvice: false` since each
- *  starts or restarts the gateway itself moments later. */
+// The headline for a real apply. Callers that restart immediately suppress restart advice.
 /** The advice a headline carries when the caller does not restart the gateway itself. */
 export const RESTART_ADVICE = "restart to pick it up";
 
@@ -140,11 +135,18 @@ async function runApplyConfig(ctx: Context, plan: ConfigPlan, restartAdvice: boo
 
   // A dry run changes no applied config, so it needs no lock. Its isolated staging file
   // is removed after the container reads it.
-  if (dryRun) return writeDesiredState(ctx, true, restartAdvice, jsonOnly);
+  if (dryRun) {
+    const changed = await writeDesiredState(ctx, true, restartAdvice, false);
+    if (jsonOnly) emit(`${JSON.stringify({ ok: true, changed, dryRun: true, source: desiredStateFile() }, null, 2)}\n`);
+    return;
+  }
   if (jsonOnly) {
     let caught: unknown;
+    let outcome = false;
     try {
-      await guardedWith(ctx, "apply-config", takeover, () => writeDesiredState(ctx, false, restartAdvice, false));
+      outcome = await guardedWith(ctx, "apply-config", takeover, async () => {
+        return await writeDesiredState(ctx, false, restartAdvice, false);
+      });
     } catch (error) {
       caught = error;
     }
@@ -153,87 +155,83 @@ async function runApplyConfig(ctx: Context, plan: ConfigPlan, restartAdvice: boo
       emit(`${JSON.stringify({ ok: false, changed: false, source: desiredStateFile(), problems: [message] }, null, 2)}\n`);
       throw caught;
     }
-    emit(`${JSON.stringify({ ok: true, changed: true, source: desiredStateFile() }, null, 2)}\n`);
+    emit(`${JSON.stringify({ ok: true, changed: outcome, source: desiredStateFile() }, null, 2)}\n`);
     return;
   }
-  return guardedWith(ctx, "apply-config", takeover, () => writeDesiredState(ctx, false, restartAdvice, false));
+  return guardedWith(ctx, "apply-config", takeover, () => writeDesiredState(ctx, false, restartAdvice, false)).then(() => undefined);
 }
 
-async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = true, jsonOnly = false): Promise<void> {
-
+async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = true, jsonOnly = false): Promise<boolean> {
   let payload: string;
-  try {
-    payload = await readFile(desiredStateFile(), "utf8");
-  } catch {
-    die(`${desiredStateFile()} not found`);
-  }
+  try { payload = await readFile(desiredStateFile(), "utf8"); }
+  catch { die(`${desiredStateFile()} not found`); }
 
-  // Fail here rather than inside the container with a less helpful message.
   let entries: { path: string; value: unknown }[];
-  try {
-    const parsed: unknown = JSON.parse(payload);
-    if (!Array.isArray(parsed)) throw new Error("expected a JSON array of { path, value }");
-    entries = parsed as { path: string; value: unknown }[];
-  } catch (error) {
-    die(`${desiredStateFile()} is not valid JSON: ${(error as Error).message}`);
-  }
+  try { entries = JSON.parse(payload) as { path: string; value: unknown }[]; }
+  catch (error) { die(`${desiredStateFile()} is not valid JSON: ${(error as Error).message}`); }
+  const shapeError = desiredStateShapeError(entries);
+  if (shapeError !== undefined) die(`${desiredStateFile()}: ${shapeError}`);
+  for (const entry of entries) configPathParts(entry.path);
 
-  // Recipe-owned config paths never come from the declaration. An ambiguous or broken
-  // ownership catalog must surface here too, not read as "nothing is owned".
   let owners: readonly RecipePathOwner[];
-  try {
-    owners = await recipePathOwners();
-  } catch (error) {
-    die(`recipe config ownership could not be read: ${(error as Error).message}`);
-  }
+  try { owners = await recipePathOwners(); }
+  catch (error) { die(`recipe config ownership could not be read: ${(error as Error).message}`); }
   for (const entry of entries) {
     const owner = conflictingDeclaredPath(owners, entry.path);
     if (owner !== undefined) die(declaredOwnershipConflictDetail(entry.path, owner));
   }
-
-  // Drop owned entries before staging; the declaration file on disk is left as written.
   const filtered = filterOwnedDeclarations(entries, owners);
   if (filtered.dropped > 0) {
-    // Entries existed but none survive: an empty batch would silently apply nothing.
     if (filtered.kept.length === 0) die("every declared config path is owned by a recipe — nothing to apply");
     log(`skipping ${filtered.dropped} path(s) owned by recipes`);
   }
-  payload = JSON.stringify(filtered.kept);
+
+  // A real writer must establish that the record is safe to replace before any staged file
+  // or OpenClaw run. Dry runs intentionally treat damaged records as empty.
+  const previousRecord = dryRun ? await readDeclaredConfig(ctx) : await readDeclaredConfigStrict(ctx);
+  const liveValue = await readLiveConfigOrThrow(ctx);
+  let live: Record<string, unknown>;
+  if (liveValue === undefined) live = {};
+  else if (liveValue === null || typeof liveValue !== "object" || Array.isArray(liveValue)) die("live OpenClaw config is present but is not an object");
+  else live = structuredClone(liveValue) as Record<string, unknown>;
+
+  const declaredPaths = new Set(filtered.kept.map((entry) => entry.path));
+  for (const old of previousRecord.entries.filter((entry) => !declaredPaths.has(entry.path))) {
+    const owner = conflictingDeclaredPath(owners, old.path);
+    if (owner !== undefined) die(declaredOwnershipConflictDetail(old.path, owner));
+  }
+  const resolved = desiredConfig(live, filtered.kept, previousRecord.entries);
+  const patch = resolved.patch;
+  if (patch === undefined) {
+    if (!dryRun) await writeDeclaredConfig(ctx, filtered.kept);
+    if (jsonOnly) emit(`${JSON.stringify({ ok: true, changed: false, dryRun, source: desiredStateFile(), message: "already matches" }, null, 2)}\n`);
+    else log("already matches");
+    return false;
+  }
 
   const fileName = stagedFileName(dryRun);
   const stagedOnTarget = `${ctx.settings.dataDir}/config/${fileName}`;
-  // The path the CLI sees is the container's, not the target's — asked of the bridge
-  // rather than written out by hand.
   const stagedInContainer = ctx.paths.toContainer(stagedOnTarget);
-
-  const runArgs = ["config", "set", "--batch-file", stagedInContainer];
+  const runArgs = ["config", "patch", "--file", stagedInContainer];
   if (dryRun) runArgs.push("--dry-run");
-
   try {
     log(`staging ${fileName} on the target`);
-    await ctx.transport.writeFile(stagedOnTarget, payload);
+    await ctx.transport.writeFile(stagedOnTarget, JSON.stringify(patch));
     log(dryRun ? "applying desired state (dry run)" : "applying desired state");
-    await ctx.runtime.runOneOff("gateway", ["dist/index.js", ...runArgs], {
-      noDeps: true,
-      entrypoint: "node",
-    });
+    const result = await ctx.runtime.runOneOff("gateway", ["dist/index.js", ...runArgs], { noDeps: true, entrypoint: "node" });
+    if (result.code !== 0) throw new Error(`OpenClaw config patch failed: ${(result.stderr || result.stdout).trim()}`);
   } finally {
-    // In a finally: the run that leaves this file behind is the one that failed. Cleaning
-    // up only on success meant a rejected dry-run payload leaked into a later archive.
-    if (dryRun) await ctx.transport.remove(stagedOnTarget);
+    await ctx.transport.remove(stagedOnTarget);
   }
-
+  if (!dryRun) await writeDeclaredConfig(ctx, filtered.kept);
   if (jsonOnly) {
-    emit(`${JSON.stringify({ ok: true, changed: !dryRun, dryRun, source: desiredStateFile() }, null, 2)}\n`);
-    return;
+    return !dryRun;
   }
-  if (dryRun) {
-    log("dry run only — nothing was written");
-  } else {
-    log(appliedHeadline(restartAdvice));
-    info(`source: ${desiredStateFile()}`);
-  }
+  if (dryRun) log("dry run only — nothing was written");
+  else { log(appliedHeadline(restartAdvice)); info(`source: ${desiredStateFile()}`); }
+  return !dryRun;
 }
+
 
 /** The paths a dump attempts to recover: a fixed, small set this framework treats as
  *  commonly declared. The live config can't say which values were declared vs. OpenClaw's
@@ -301,5 +299,5 @@ async function dumpDesiredState(ctx: Context, force: boolean, jsonOnly = false):
   for (const declaredPath of omitted) info(`${declaredPath} has no value in the live config — omitted, not guessed`);
   if (recovered.length === 0) warn("nothing was recoverable — the file was written as an empty declaration");
   info(RECOVERED_VALUES_NOTE);
-  info("recipes are not part of desired-state.json (it is a config set --batch-file payload), so there is nothing to recover them into");
+  info("recipes are not part of desired-state.json, so there is nothing to recover them into");
 }

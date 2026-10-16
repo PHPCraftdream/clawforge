@@ -11,6 +11,7 @@
 // This file: health-probe checks and orchestration. round-trip.ts: the backup/restore round
 // trip and archive/privacy checks. verdict.ts: the shared four-outcome vocabulary.
 
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
@@ -22,7 +23,7 @@ import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { noProviderConfigured } from "#src/service/secrets.ts";
-import { valueAt } from "#src/commands/orchestration/inspect/helpers.ts";
+import { configPathParts, mergePatchDiff, readConfigPath, setConfigPath } from "#src/core/values/config-selectors.ts";
 import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { reach, expect, describeError, evaluate, type Check, type SmokeResult } from "./verdict.ts";
 import { REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY, ROUND_TRIP_ENTRY, ROUND_TRIP_CHECK, ARCHIVE_CHECK_NAMES, runArchiveChecks } from "./round-trip.ts";
@@ -115,20 +116,41 @@ export const checks: Check[] = [
 
       const wanted = subject.value as string;
       const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
+      const parts = configPathParts(subject.path);
+      const selectorPath = parts.some((part) => part.kind === "selector");
+      const stage = selectorPath ? `${ctx.settings.dataDir}/config/clawwright-smoke-${randomBytes(6).toString("hex")}.json` : undefined;
 
       try {
-        await reach("drift the setting on the instance", () =>
-          ctx.runtime.runOneOff(
-            "gateway",
-            ["dist/index.js", "config", "set", subject.path, JSON.stringify(`${wanted}-drifted`), "--strict-json"],
-            { noDeps: true, entrypoint: "node", input: "" },
-          ),
-        );
+        if (selectorPath) {
+          const live = JSON5.parse(await reach("read the live configuration", () => ctx.transport.readFile(configPath))) as Record<string, unknown>;
+          const changed = structuredClone(live);
+          setConfigPath(changed, subject.path, `${wanted}-drifted`);
+          const patch = mergePatchDiff(live, changed);
+          if (patch === undefined) throw new Error(`${subject.path} could not be drifted`);
+          const staged = stage!;
+          await reach("stage selector drift patch", () => ctx.transport.writeFile(staged, JSON.stringify(patch)));
+          try {
+            await reach("drift the setting on the instance", () => ctx.runtime.runOneOff(
+              "gateway", ["dist/index.js", "config", "patch", "--file", ctx.paths.toContainer(staged)],
+              { noDeps: true, entrypoint: "node", input: "" },
+            ));
+          } finally {
+            await ctx.transport.remove(staged).catch(() => {});
+          }
+        } else {
+          await reach("drift the setting on the instance", () =>
+            ctx.runtime.runOneOff(
+              "gateway",
+              ["dist/index.js", "config", "set", subject.path, JSON.stringify(`${wanted}-drifted`), "--strict-json"],
+              { noDeps: true, entrypoint: "node", input: "" },
+            ),
+          );
+        }
         await reach("apply the declaration", () => applyConfig(ctx, []));
 
         // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format.
         const config = JSON5.parse(await reach("read the live configuration", () => ctx.transport.readFile(configPath))) as Record<string, unknown>;
-        const actual = valueAt(config, subject.path);
+        const actual = readConfigPath(config, subject.path);
         expect(actual === wanted, `${subject.path} is ${String(actual)}, expected ${wanted}`);
       } finally {
         // Whatever happened, the declaration is what the instance should be left with. The

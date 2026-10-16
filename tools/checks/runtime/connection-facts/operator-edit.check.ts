@@ -20,16 +20,6 @@ import { refreshCheckTransport, refreshLiveConfig } from "./apply-driver.ts";
 import type { RefreshState } from "./apply-driver.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
-  const parts = path.split(".");
-  let cursor = target;
-  for (const part of parts.slice(0, -1)) {
-    if (typeof cursor[part] !== "object" || cursor[part] === null) cursor[part] = {};
-    cursor = cursor[part] as Record<string, unknown>;
-  }
-  cursor[parts[parts.length - 1]!] = value;
-}
-
 {
   const { deployment, goodChecksums, goodPrompts, stubContext } = await setupFixtureDeployment();
   try {
@@ -74,11 +64,7 @@ function setAtPath(target: Record<string, unknown>, path: string, value: unknown
 
     const liveConfig = refreshLiveConfig();
     const ctx = await createContext({
-      transport: refreshCheckTransport({ liveConfig, mirrorChecksums: goodChecksums, prompts: goodPrompts }, state, {
-        onStagedConfig: (payload) => {
-          for (const op of JSON.parse(payload) as { path: string; value: unknown }[]) setAtPath(liveConfig, op.path, op.value);
-        },
-      }),
+      transport: refreshCheckTransport({ liveConfig, mirrorChecksums: goodChecksums, prompts: goodPrompts }, state),
       service: { name: "gateway" },
       // The real app's mounts, so the staged declaration path has a container path to travel to.
       mounts: (dataDir: string) => mountPoints(dataDir),

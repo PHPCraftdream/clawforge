@@ -542,6 +542,7 @@ check(
     "OC_WSL_DISTRO",
     "OC_BACKUP_MAX_AGE",
     "OC_DISK_MIN_FREE_MB",
+    "OC_AUDIT_BLOCK",
   ].sort(),
 );
 

@@ -74,7 +74,9 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "deployment's own secret file permissions.\n" +
       "Never every {clawwright} inspect/plan call — each audit is a container exec — only " +
       "doctor and accept. Suppress a finding by upstream checkId in " +
-      "config/security-suppressions.json; it stays visible but stops counting.",
+      "config/security-suppressions.json; it stays visible but stops counting. OC_AUDIT_BLOCK " +
+      "sets the OpenClaw audit threshold (critical by default, or warn); existing " +
+      "config/security-suppressions.json exceptions continue to apply.",
     structured: true,
   },
   plan: {
@@ -160,7 +162,8 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "instance refused the call — is reported as \"could-not-check\" with the reason, never " +
       "as passed.\n" +
       "Also runs the security gate — see `{clawwright doctor}`'s own description — and fails on a " +
-      "blocking finding the same way a failed check does.\n" +
+      "blocking finding the same way a failed check does. OC_AUDIT_BLOCK is critical by default " +
+      "or warn; existing config/security-suppressions.json exceptions continue to apply.\n" +
       "Exits non-zero when a check fails, could not be checked, or the security gate finds a " +
       "blocking issue.",
   },

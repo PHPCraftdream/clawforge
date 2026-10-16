@@ -145,7 +145,8 @@ it is a run that reports success and leaves the instance on the old settings.
 Every finding carries a code (`CONFIG_DRIFT`, `SECRET_MISSING`, `RESTART_REQUIRED`,
 `RECIPE_MIRROR_DRIFT`, …) and the command that resolves it, so an agent branches on the code
 instead of reading prose. `./clawwright doctor` is the same inspection as a verdict, exiting non-zero
-when something blocking was found. Over MCP these four return `structuredContent` —
+when something blocking was found. `OC_AUDIT_BLOCK` defaults to `critical`; set it to `warn`
+to also block warnings. Existing `config/security-suppressions.json` exceptions apply. Over MCP these four return `structuredContent` —
 `{operationId, changed, healthy, problems, warnings, nextActions, nextSteps, result}` — beside the usual
 text.
 

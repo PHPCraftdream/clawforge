@@ -18,6 +18,7 @@ import { openclawCliJson } from "../service/openclaw-cli.ts";
 import { summarizeExposure } from "../commands/operate/expose/status.ts";
 import { safeConnectionFacts } from "../runtime/runtime.ts";
 import { unprotectedPrivateFile } from "./privacy/private-file.ts";
+import { auditFindingBlocks, parseAuditFindings, parseAuditPolicy } from "./audit-policy.ts";
 
 export type SecurityFindingSource = "security-audit" | "secrets-audit";
 
@@ -33,6 +34,7 @@ export interface SecurityFinding {
   readonly remediation?: string;
   readonly suppressed: boolean;
   readonly suppressedReason?: string;
+  readonly title?: string;
 }
 
 export interface SecurityAuditReport {
@@ -41,14 +43,6 @@ export interface SecurityAuditReport {
   /** Non-suppressed in-instance findings plus every host-side finding, ready to merge into a
    *  caller's problem list. */
   readonly problems: readonly Problem[];
-}
-
-interface UpstreamSecurityAuditFinding {
-  readonly checkId?: unknown;
-  readonly severity?: unknown;
-  readonly title?: unknown;
-  readonly detail?: unknown;
-  readonly remediation?: unknown;
 }
 
 interface UpstreamSecretsAuditFinding {
@@ -71,18 +65,15 @@ function mapSecretsAuditSeverity(value: unknown): Severity | undefined {
 }
 
 async function collectSecurityAuditFindings(ctx: Context): Promise<SecurityFinding[]> {
-  const result = await openclawCliJson<{ findings?: UpstreamSecurityAuditFinding[] }>(ctx, ["security", "audit", "--json"]);
-  const findings = Array.isArray(result.findings) ? result.findings : [];
-  const out: SecurityFinding[] = [];
-  for (const entry of findings) {
+  const result: unknown = await openclawCliJson<unknown>(ctx, ["security", "audit", "--json"]);
+  const findings = parseAuditFindings(result);
+  if (findings === undefined) throw new Error("security audit returned malformed JSON findings");
+  return findings.flatMap((entry) => {
     const severity = mapSecurityAuditSeverity(entry.severity);
-    if (severity === undefined) continue;
-    const checkId = typeof entry.checkId === "string" ? entry.checkId : "unknown";
-    const message = typeof entry.detail === "string" ? entry.detail : typeof entry.title === "string" ? entry.title : checkId;
-    const remediation = typeof entry.remediation === "string" ? entry.remediation : undefined;
-    out.push({ source: "security-audit", checkId, severity, message, remediation, suppressed: false });
-  }
-  return out;
+    if (severity === undefined) return [];
+    return [{ source: "security-audit" as const, checkId: entry.checkId, severity, title: entry.title,
+      message: entry.detail, remediation: entry.remediation, suppressed: false }];
+  });
 }
 
 async function collectSecretsAuditFindings(ctx: Context): Promise<SecurityFinding[]> {
@@ -341,11 +332,18 @@ export async function runSecurityAudit(ctx: Context): Promise<SecurityAuditRepor
   // non-loopback. When the host publishes it on loopback only, those findings describe a
   // bind nothing outside this host can reach: reported, not blocking.
   const loopbackOnly = running && await publishedLoopbackOnly(ctx);
-  const findings = applySuppressions(inInstance, suppressions.suppressions).map((finding) =>
-    loopbackOnly && finding.source === "security-audit" && CONTAINER_BIND_FINDING.test(finding.message)
+  const policy = parseAuditPolicy(ctx.settings.env.OC_AUDIT_BLOCK);
+  const findings = applySuppressions(inInstance, suppressions.suppressions).map((finding) => {
+    const downgraded = loopbackOnly && finding.source === "security-audit" && CONTAINER_BIND_FINDING.test(finding.message)
       ? { ...finding, severity: "warning" as const, message: `${finding.message} (container-internal bind; the host publishes the gateway on loopback only)` }
-      : finding
-  );
+      : finding;
+    const upstreamSeverity = finding.severity === "blocking" ? "critical" : "warn";
+    if (downgraded.suppressed || downgraded.source !== "security-audit" || downgraded.checkId === "AUDIT_UNAVAILABLE") return downgraded;
+    const promoted = policy.block === "warn" && auditFindingBlocks(upstreamSeverity, policy) && downgraded.severity === "warning";
+    return promoted
+      ? { ...downgraded, severity: "blocking" as const, message: `${downgraded.message} (upstream severity: ${upstreamSeverity})` }
+      : downgraded;
+  });
   const inInstanceProblems = findings
     .filter((finding) => !finding.suppressed)
     .map((finding) =>

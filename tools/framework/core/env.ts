@@ -351,6 +351,7 @@ export const ENV_FILE_ONLY_VARS = [
   "OC_SNAPSHOT_KEEP",
   "OC_BACKUP_MAX_AGE",
   "OC_DISK_MIN_FREE_MB",
+  "OC_AUDIT_BLOCK",
 ] as const;
 
 /** Names (never values — some are secrets) of exported variables that `fileEnv` lacks or
